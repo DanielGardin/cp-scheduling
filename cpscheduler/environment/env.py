@@ -1,0 +1,291 @@
+from typing import Mapping, TypeVar, Generic, ClassVar, Any, Optional, Final, Sequence, Iterable, Container, Literal, Protocol, NamedTuple, Never
+from numpy.typing import NDArray
+from pandas import DataFrame
+
+import numpy as np
+
+from .constraints import Constraint
+from .objectives import Objective
+from .variables import IntervalVars, Scalar
+
+MIN_INT: Final[int] = -2 ** 31 + 1
+MAX_INT: Final[int] =  2 ** 31 - 1
+
+
+class CPSolution(NamedTuple):
+    start_times: NDArray[np.int32]
+    objective_values: NDArray[np.int32]
+    is_optimal: bool
+
+
+class StepReturn(NamedTuple):
+    obs: NDArray[np.void] | DataFrame
+    reward: NDArray[np.float32]
+    terminated: bool
+    truncated: bool
+    info: dict[str, Any]
+
+
+class SchedulingCPEnv:
+    constraints : dict[str, Constraint] = {}
+    objectives  : dict[str, Objective]  = {}
+
+    current_time    : int
+    n_queries       : int
+    scheduled_action: NDArray[np.generic]
+    current_task    : int
+
+    tasks: IntervalVars
+
+
+    def __init__(
+            self,
+            instance: DataFrame,
+            duration_feature: str | int,
+            dataframe_obs: bool = False
+        ) -> None:
+        tasks = self.process_dataframe(instance)
+
+        self.tasks = IntervalVars(tasks, tasks[duration_feature])
+
+        self.dataframe_obs = dataframe_obs
+
+
+    def process_dataframe(self, df: DataFrame, ignore_index: bool = False) -> NDArray[np.void]:
+        if ignore_index:
+            df.set_index(
+                np.arange(len(self.tasks), len(self.tasks) + len(df))
+            )
+
+        return np.asarray(df.to_records(index=False))
+
+
+    def add_constraint(self, constraint: Constraint, name: Optional[str] = None) -> None:
+        if name is None: name = constraint.__class__.__name__
+
+        self.constraints[name] = constraint
+
+
+    def add_objective(self, objective: Objective, name: Optional[str] = None) -> None:
+        if name is None: name = objective.__class__.__name__
+
+        self.objectives[name] = objective
+
+
+    def export_model(self) -> str:
+        model = [
+            self.tasks.export_variables(),
+            *[constraint.export_constraint() for constraint in self.constraints.values()],
+            *[objective.export_objective() for objective in self.objectives.values()]
+        ]
+
+        return '\n'.join(model)
+
+
+    def get_cp_solution(
+            self,
+            timelimit: int = 60
+        ) -> CPSolution:
+        from docplex.cp.model import CpoModel, CpoSolveResult
+
+        model = CpoModel()
+
+        model.set_parameters(TimeLimit=timelimit)
+        model.import_model_string(self.export_model())
+
+        result: CpoSolveResult = model.solve(LogVerbosity="Quiet")
+
+        if result is None:
+            raise Exception("No solution found")
+
+        if not result.is_solution():
+            raise Exception("No solution found")
+
+        start_times = np.array([
+            result.get_var_solution(name).start for name in self.tasks.names
+        ], dtype=np.int32)
+
+        objective_values = np.asarray(result.get_objective_values(), dtype=np.int32)
+        is_optimal = result.is_solution_optimal()
+
+        return CPSolution(start_times, objective_values, is_optimal)
+
+
+    def is_terminal(self) -> bool:
+        return bool(self.tasks.is_fixed().all() and (self.current_time >= self.tasks.end_lb).all())
+
+
+    def is_truncated(self) -> bool:
+        return False
+
+
+    def _get_obs(self) -> NDArray[np.void] | DataFrame:
+        obs = self.tasks.get_state(self.current_time)
+
+        if self.dataframe_obs:
+            return DataFrame(obs, index=self.tasks.ids)
+
+        return obs
+
+
+    def _get_info(self) -> dict[str, Any]:
+        return {
+            'n_queries': self.n_queries,
+            'current_time': self.current_time,
+            'executed_actions': self.scheduled_action[:self.current_task],
+            'scheduled_actions': self.scheduled_action[self.current_task:],
+        }
+
+
+    def reset(self) -> tuple[NDArray[np.void] | DataFrame, dict[str, Any]]:
+        self.current_time = 0
+        self.current_task = 0
+        self.scheduled_action = np.array([], dtype=self.tasks.index_dtype)
+
+        self.n_queries = 0
+
+        self.tasks.reset_state()
+        # self.check_env()
+        self.update_state()
+
+        return self._get_obs(), self._get_info()
+
+
+    # TODO: Implement this method
+    def check_env(self) -> None | Never:
+        """
+            Check if the constraints and objectives are consistent with the tasks.
+        """
+        raise NotImplementedError()
+
+
+    def update_state(self) -> None:
+        for constraint in self.constraints.values():
+            constraint.propagate()
+
+
+    def get_objective_values(self) -> NDArray[np.float32]:
+        return np.array([objective.get_current() for objective in self.objectives.values()], dtype=np.float32)
+
+
+    def available_actions(self) -> NDArray[np.generic]:
+        is_fixed = self.tasks.is_fixed()
+        mask = np.less_equal(self.tasks.start_lb, self.current_time) & ~is_fixed
+
+        available: NDArray[np.generic] = self.tasks.ids[mask]
+
+        return available
+
+
+    def step(
+            self,
+            actions: Optional[NDArray[np.generic]]       = None,
+            time_skip: Optional[int]                     = 1,
+            extend: bool                                 = False,
+            enforce_order: bool                          = True
+        ) -> StepReturn:
+
+        self.current_task = 0
+        if actions is not None:
+            if extend:
+                self.scheduled_action = np.concatenate([self.scheduled_action, actions])
+            
+            else:
+                self.scheduled_action = actions
+
+        if time_skip == 0:
+            obs        = self._get_obs()
+            reward     = np.zeros(len(self.objectives), dtype=np.float32)
+            terminated = self.is_terminal()
+            truncated  = self.is_truncated()
+            info       = self._get_info()
+
+            return StepReturn(obs, reward, terminated, truncated, info)
+    
+
+        previous_objectives = self.get_objective_values()
+
+        self.n_queries += 1
+
+        stop       = False
+        terminated = self.is_terminal()
+        truncated  = self.is_truncated()
+        time_limit = self.current_time + time_skip if time_skip is not None else MAX_INT
+
+        while not (stop or terminated or truncated):
+            stop       = self.one_action(enforce_order, time_limit)
+            terminated = self.is_terminal()
+            truncated  = self.is_truncated()
+
+        obs        = self._get_obs()
+        reward     = previous_objectives - self.get_objective_values()
+        info       = self._get_info()
+
+        self.scheduled_action = self.scheduled_action[self.current_task:]
+
+        return StepReturn(obs, reward, terminated, truncated, info)
+
+
+    def one_action(self, enforce_order: bool, time_limit: int) -> bool:
+        if self.current_task >= len(self.scheduled_action):
+            executing_tasks = self.tasks.is_executing(self.current_time)
+            if not np.any(executing_tasks):
+                return True
+
+            next_task_end = int(np.min(self.tasks.end_lb[executing_tasks]))
+
+            self.current_time = min(next_task_end, time_limit)
+
+            return True
+
+
+        task: Scalar
+
+        available_actions = self.available_actions()
+        if enforce_order:
+            task = self.scheduled_action[self.current_task]
+
+            if task not in available_actions:
+                executing_tasks = self.tasks.is_executing(self.current_time)
+
+                if not np.any(executing_tasks):
+                    return True
+
+                next_task_end = int(np.min(self.tasks.end_lb[executing_tasks]))
+
+                self.current_time = min(next_task_end, time_limit)
+
+                return False
+
+        else:
+            try:
+                task_id, task = next((i, task) for i, task in enumerate(self.scheduled_action[self.current_task:]) if task in available_actions)
+
+                self.scheduled_action[self.current_task], self.scheduled_action[self.current_task + task_id] = self.scheduled_action[self.current_task + task_id], self.scheduled_action[self.current_task]
+
+            except StopIteration:
+                to_schedule = ~self.tasks.is_fixed()
+                next_task_start = np.min(self.tasks.start_lb[to_schedule], initial=time_limit)
+                self.current_time = int(next_task_start)
+
+                return False
+
+        self.tasks.fix_start(task, self.current_time)
+        self.current_task += 1
+
+        self.update_state()
+
+        to_schedule = ~self.tasks.is_fixed()
+
+        if np.any(to_schedule):
+            next_task_start   = np.min(self.tasks.start_lb[to_schedule], initial=time_limit)
+            self.current_time = int(next_task_start)
+
+        else:
+            self.current_time = int(np.max(self.tasks.end_lb))
+
+        return False
+
+
+    def render(self, mode: str = 'human') -> None:
+        ...
