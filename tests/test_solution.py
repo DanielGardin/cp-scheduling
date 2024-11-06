@@ -18,7 +18,7 @@ TEST_INSTANCES = [
 ]
 
 @pytest.mark.parametrize("instance_name", TEST_INSTANCES)
-def test_env(instance_name: str) -> None:
+def test_cp_solution(instance_name: str) -> None:
     path = Path(__file__).parent.parent / f"instances/{instance_name}.txt"
 
     instance = read_instance(path)
@@ -39,28 +39,20 @@ def test_env(instance_name: str) -> None:
 
     env.reset()
 
-    assert env.current_time == 0
+    order, objective_value, is_optimal = env.get_cp_solution(timelimit=1)
 
-    first_action = np.array([0])
-    obs, reward, terminated, truncated, info = env.step(first_action, time_skip=0)
+    obs, reward, terminated, truncated, info = env.step(order, time_skip=None)
 
-    last_objective_values = env.get_objective_values()
+    assert (obs['buffer'] == 'finished').all()
+    assert (obs['remaining_time'] == 0).all()
+    assert reward < 0
+    assert terminated
+    assert info['current_time'] == objective_value
 
-    assert reward == 0
-    assert not terminated
-    assert not truncated
-    assert info['current_time'] == 0
-
-    new_obs, new_reward, new_terminated, new_truncated, new_info = env.step(time_skip=100)
-
-    assert new_reward == last_objective_values - env.get_objective_values()
-    assert not new_terminated
-    assert not new_truncated
-    assert new_info['current_time'] == min(100, env.tasks.durations[0])
 
 
 @pytest.mark.parametrize("instance_name", TEST_INSTANCES)
-def test_not_enforce_order(instance_name: str) -> None:
+def test_partial_cp_solution(instance_name: str) -> None:
     path = Path(__file__).parent.parent / f"instances/{instance_name}.txt"
 
     instance = read_instance(path)
@@ -82,7 +74,21 @@ def test_not_enforce_order(instance_name: str) -> None:
     obs, info = env.reset()
     spt = np.argsort(obs['processing_time'])
 
-    obs, reward, terminated, truncated, info = env.step(spt, time_skip=None, enforce_order=False)
+    time_skip = 500
+
+    obs, reward, terminated, truncated, info = env.step(spt, time_skip=time_skip, enforce_order=False)
+
+    assert info['current_time'] == time_skip
+    assert not terminated
+
+    order, objective_value, is_optimal = env.get_cp_solution(timelimit=1)
+
+    assert (np.sort(order) == env.tasks.ids[obs['buffer'] == 'awaiting']).all()
+
+    obs, reward, terminated, truncated, info = env.step(order, time_skip=None)
 
     assert (obs['buffer'] == 'finished').all()
+    assert (obs['remaining_time'] == 0).all()
+    assert reward < 0
     assert terminated
+    assert info['current_time'] == objective_value
