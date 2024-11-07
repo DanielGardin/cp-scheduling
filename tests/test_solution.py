@@ -21,7 +21,7 @@ TEST_INSTANCES = [
 def test_cp_solution(instance_name: str) -> None:
     path = Path(__file__).parent.parent / f"instances/{instance_name}.txt"
 
-    instance = read_instance(path)
+    instance, _ = read_instance(path)
 
     env = SchedulingCPEnv(instance, "processing_time")
 
@@ -55,7 +55,7 @@ def test_cp_solution(instance_name: str) -> None:
 def test_partial_cp_solution(instance_name: str) -> None:
     path = Path(__file__).parent.parent / f"instances/{instance_name}.txt"
 
-    instance = read_instance(path)
+    instance, _ = read_instance(path)
 
     env = SchedulingCPEnv(instance, "processing_time")
 
