@@ -13,7 +13,7 @@ TEST_INSTANCES = [
     "la10",
     "orb01",
     "swv12",
-    "ta07",
+    "ta20",
     "tai_j10_m10_1"
 ]
 
