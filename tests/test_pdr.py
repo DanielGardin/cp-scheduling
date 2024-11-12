@@ -5,7 +5,7 @@ import pytest
 import numpy as np
 
 from cpscheduler.common_envs import JobShopEnv
-from cpscheduler.utils import read_instance
+from cpscheduler.environment import read_instance
 
 from cpscheduler.policies.heuristics import ShortestProcessingTime, MostOperationsRemaining, MostWorkRemaining
 
@@ -41,7 +41,7 @@ heuristics = {
 
 @pytest.mark.parametrize("instance_no", pdr_expected_results)
 def test_pdr(instance_no: int) -> None:
-    path = Path(__file__).parent.parent / f"instances/ta{instance_no:02d}.txt"
+    path = Path(__file__).parent.parent / f"instances/jobshop/ta{instance_no:02d}.txt"
 
     instance, _ = read_instance(path)
 

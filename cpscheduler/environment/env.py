@@ -1,6 +1,8 @@
-from typing import Any, Optional, Final, Never, Iterable, ClassVar
+from typing import Any, Optional, Final, Never, Iterable, ClassVar, Literal
 from numpy.typing import NDArray
 from pandas import DataFrame
+
+from pathlib import Path
 
 from mypy_extensions import mypyc_attr
 
@@ -9,11 +11,12 @@ import numpy.lib.recfunctions as rf
 
 from .constraints import Constraint
 from .objectives import Objective
-from .variables import IntervalVars, Scalar
+from .variables import IntervalVars, Scalar, AVAILABLE_SOLVERS
 
 
 MIN_INT: Final[int] = -2 ** 31 + 1
 MAX_INT: Final[int] =  2 ** 31 - 1
+
 
 @mypyc_attr(allow_interpreted_subclasses=True)
 class SchedulingCPEnv:
@@ -21,6 +24,7 @@ class SchedulingCPEnv:
 
     constraints : dict[str, Constraint]
     objectives  : dict[str, Objective]
+    minimize    : bool
 
     current_time    : int
     n_queries       : int
@@ -38,6 +42,7 @@ class SchedulingCPEnv:
         ) -> None:
         self.constraints = {}
         self.objectives  = {}
+        self.minimize    = True
 
         tasks = self.process_dataframe(instance)
 
@@ -61,17 +66,18 @@ class SchedulingCPEnv:
         self.constraints[name] = constraint
 
 
-    def add_objective(self, objective: Objective, name: Optional[str] = None) -> None:
+    def add_objective(self, objective: Objective, minimize: bool = True, name: Optional[str] = None) -> None:
         if name is None: name = objective.__class__.__name__
 
         self.objectives[name] = objective
+        self.minimize = minimize
 
 
-    def export_model(self) -> str:
+    def export_model(self, solver: AVAILABLE_SOLVERS = 'cplex') -> str:
         model = [
-            self.tasks.export_variables(),
-            *[constraint.export_constraint() for constraint in self.constraints.values()],
-            *[objective.export_objective() for objective in self.objectives.values()]
+            self.tasks.export_variables(solver=solver),
+            *[constraint.export_constraint(solver=solver) for constraint in self.constraints.values()],
+            *[objective.export_objective(self.minimize, solver=solver) for objective in self.objectives.values()]
         ]
 
         return '\n'.join(model)
@@ -79,37 +85,75 @@ class SchedulingCPEnv:
 
     def get_cp_solution(
             self,
-            timelimit: float = 60
-        ) -> tuple[NDArray[np.generic], NDArray[np.int32], bool]:
-        from docplex.cp.model import CpoModel, CpoSolveResult
+            timelimit: Optional[float] = None,
+            solver: AVAILABLE_SOLVERS = 'cplex'
+        ) -> tuple[NDArray[np.int32], NDArray[np.generic], NDArray[np.int32], bool]:
+        model_string = self.export_model(solver)
 
-        model = CpoModel()
+        if solver == 'cplex':
+            from docplex.cp.model import CpoModel, CpoSolveResult
 
-        model.set_parameters(TimeLimit=timelimit)
-        model.import_model_string(self.export_model())
+            model = CpoModel()
 
-        result: CpoSolveResult = model.solve(LogVerbosity="Quiet") # type: ignore
+            if timelimit is not None:
+                model.set_parameters(TimeLimit=timelimit)
 
-        if result is None:
-            raise Exception("No solution found")
+            model.import_model_string(model_string)
 
-        if not result.is_solution():
-            raise Exception("No solution found")
+            result: CpoSolveResult = model.solve(LogVerbosity="Quiet") # type: ignore
 
-        start_times = np.array([
-            result.get_var_solution(name).start for name in self.tasks.names # type: ignore
-        ], dtype=np.int32)
+            if result is None:
+                raise Exception("No solution found")
 
-        objective_values = np.asarray(result.get_objective_values(), dtype=np.int32)
-        is_optimal = result.is_solution_optimal()
+            if not result.is_solution():
+                raise Exception("No solution found")
 
-        order = np.argsort(start_times)
+            start_times = np.array([
+                result.get_var_solution(name).start for name in self.tasks.names # type: ignore
+            ], dtype=np.int32)
 
+            objective_values = np.asarray(result.get_objective_values(), dtype=np.int32)
+            is_optimal = result.is_solution_optimal()
+
+            order = np.argsort(start_times)
+
+
+        elif solver == 'ortools':
+            from ortools.sat.python import cp_model
+
+            model = cp_model.CpModel()
+
+            locals_: dict[str, cp_model.LinearExprT] = {}
+
+            exec(model_string, {'model' : model}, locals_)
+
+            cp_solver = cp_model.CpSolver()
+
+            if timelimit is not None:
+                cp_solver.parameters.max_time_in_seconds = timelimit
+
+            status = cp_solver.Solve(model)
+
+            if status is cp_model.INFEASIBLE: # type: ignore[comparison-overlap]
+                raise Exception("No solution found")
+
+            start_times = np.array([
+                cp_solver.Value(locals_[f"{name}_end"]) for name in self.tasks.names
+            ], dtype=np.int32)
+
+            objective_values = np.array([cp_solver.ObjectiveValue()], dtype=np.int32)
+            is_optimal = status is cp_model.OPTIMAL # type: ignore[comparison-overlap]
+
+        else:
+            raise ValueError(f"Unknown solver {solver}, available solvers are 'cplex' or 'ortools'")
+
+        order = np.argsort(start_times, stable=True)
         free_tasks = order[~self.tasks.is_fixed()[order]]
 
         task_order = self.tasks.ids[free_tasks]
 
-        return task_order, objective_values, is_optimal
+        return start_times, task_order, objective_values, is_optimal
+
 
 
     def is_terminal(self) -> bool:
@@ -300,6 +344,10 @@ class SchedulingCPEnv:
 
 
         else: # not enforce_order
+            # possible_tasks = np.where(np.isin(self.scheduled_action[self.current_task:], available_actions))[0]
+            # if task_place != (possible_tasks[0] + self.current_task):
+
+
             for task_place, task in enumerate(self.scheduled_action[self.current_task:]):
                 if task in available_actions:
                     current     = self.current_task
