@@ -52,7 +52,7 @@ class ShortestProcessingTime(PriorityDispatchingRule):
 
 
     def priority_rule(self, obs: NDArray[np.void]) -> NDArray[np.float32]:
-        return -obs[self.processing_time].astype(np.float32)
+        return -obs[self.processing_time]
 
 
 
