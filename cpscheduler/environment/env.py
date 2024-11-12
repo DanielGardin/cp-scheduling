@@ -1,8 +1,6 @@
-from typing import Any, Optional, Final, Never, Iterable, ClassVar, Literal
+from typing import Any, Optional, Final, Never, ClassVar
 from numpy.typing import NDArray
 from pandas import DataFrame
-
-from pathlib import Path
 
 from mypy_extensions import mypyc_attr
 
@@ -17,6 +15,35 @@ from .variables import IntervalVars, Scalar, AVAILABLE_SOLVERS
 MIN_INT: Final[int] = -2 ** 31 + 1
 MAX_INT: Final[int] =  2 ** 31 - 1
 
+def binary_search(element: Any, array: NDArray[Any]) -> bool:
+    left, right = 0, len(array) - 1
+
+    while left <= right:
+        mid = (left + right) // 2
+
+        if array[mid] == element:
+            return True
+
+        if array[mid] < element:
+            left = mid + 1
+
+        else:
+            right = mid - 1
+
+    return False
+
+
+def isin_sorted(array: NDArray[Any], query: NDArray[Any]) -> NDArray[np.bool]:
+    if len(array) == 0:
+        return np.zeros(len(query), dtype=np.bool)
+
+    indices = np.searchsorted(array, query)
+
+    indices = np.clip(indices, 0, len(array) - 1)
+
+    mask: NDArray[np.bool] = array[indices] == query
+
+    return mask
 
 @mypyc_attr(allow_interpreted_subclasses=True)
 class SchedulingCPEnv:
@@ -231,6 +258,7 @@ class SchedulingCPEnv:
         raise NotImplementedError()
 
 
+    # TODO: Implement a SAT-CP algorithm for dealing with constraint propagations
     def update_state(self) -> None:
         original = self.tasks.to_propagate.copy()
 
@@ -332,7 +360,7 @@ class SchedulingCPEnv:
         if enforce_order:
             task = self.scheduled_action[self.current_task]
 
-            if task not in available_actions:
+            if not binary_search(task, available_actions):
                 executing_tasks = self.tasks.is_executing(self.current_time)
 
                 if not np.any(executing_tasks) or self.current_time >= time_limit:
@@ -344,28 +372,22 @@ class SchedulingCPEnv:
 
 
         else: # not enforce_order
-            # possible_tasks = np.where(np.isin(self.scheduled_action[self.current_task:], available_actions))[0]
-            # if task_place != (possible_tasks[0] + self.current_task):
+            available_mask = isin_sorted(available_actions, self.scheduled_action[self.current_task:])
 
-
-            for task_place, task in enumerate(self.scheduled_action[self.current_task:]):
-                if task in available_actions:
-                    current     = self.current_task
-                    task_place += current
-
-                    if task_place == current: break
-
-                    self.scheduled_action[current+1:task_place+1] = self.scheduled_action[current:task_place]
-                    self.scheduled_action[current] = task
-                    break
-
-
-            else:
+            if not np.any(available_mask):
                 to_schedule = self.tasks.is_awaiting()
 
                 self.current_time = np.min(self.tasks.start_lb[to_schedule], initial=time_limit).item()
 
                 return self.current_time >= time_limit
+            
+
+            task_place = self.current_task + int(np.where(available_mask)[0][0])
+            task       = self.scheduled_action[task_place]
+
+            if task_place != self.current_task:
+                self.scheduled_action[self.current_task+1:task_place+1] = self.scheduled_action[self.current_task:task_place]
+                self.scheduled_action[self.current_task] = task
 
 
         self.tasks.fix_start(task, self.current_time)
