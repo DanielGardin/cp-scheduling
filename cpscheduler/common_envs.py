@@ -9,10 +9,9 @@ class JobShopEnv(SchedulingCPEnv):
             duration_feature: str | int = 'processing_time',
             job_feature: str = 'job',
             operation_feature: str = 'operation',
-            machine_feature: str = 'machine',
-            dataframe_obs: bool = True
+            machine_feature: str = 'machine'
         ) -> None:
-        super().__init__(instance, duration_feature, dataframe_obs)
+        super().__init__(instance, duration_feature)
         self.add_constraint(
             PrecedenceConstraint.jobshop_precedence(self.tasks, job_feature, operation_feature)
         )
