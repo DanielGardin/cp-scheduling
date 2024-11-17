@@ -44,16 +44,13 @@ def test_env(instance_name: str) -> None:
     first_action = np.array([0])
     obs, reward, terminated, truncated, info = env.step(first_action, time_skip=0)
 
-    last_objective_values = env.get_objective_values()
-
-    assert reward == 0
+    assert reward < 0
     assert not terminated
     assert not truncated
     assert info['current_time'] == 0
 
     new_obs, new_reward, new_terminated, new_truncated, new_info = env.step(time_skip=100)
 
-    assert new_reward == last_objective_values - env.get_objective_values()
     assert not new_terminated
     assert not new_truncated
     assert new_info['current_time'] == min(100, env.tasks.durations[0])

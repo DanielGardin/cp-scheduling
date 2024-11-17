@@ -272,7 +272,7 @@ class NonOverlapConstraint(Constraint):
         
         else:
             constraints = [
-                f"model.AddNoOverlap([{', '.join(names[indices])}]);"
+                f"model.AddNoOverlap([{', '.join(names[indices])}])"
                 for indices in self.non_overlaping_groups.values()
             ]
 

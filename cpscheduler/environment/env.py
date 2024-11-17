@@ -50,7 +50,7 @@ class SchedulingCPEnv:
     render_mode: ClassVar[list[str]] = ['gantt']
 
     constraints : dict[str, Constraint]
-    objectives  : dict[str, Objective]
+    objective   : Objective
     minimize    : bool
 
     current_time    : int
@@ -67,7 +67,7 @@ class SchedulingCPEnv:
             duration_feature: str | int
         ) -> None:
         self.constraints = {}
-        self.objectives  = {}
+        self.objective   = Objective()
         self.minimize    = True
 
         tasks = self.process_dataframe(instance)
@@ -93,15 +93,15 @@ class SchedulingCPEnv:
     def add_objective(self, objective: Objective, minimize: bool = True, name: Optional[str] = None) -> None:
         if name is None: name = objective.__class__.__name__
 
-        self.objectives[name] = objective
-        self.minimize = minimize
+        self.objective = objective
+        self.minimize  = minimize
 
 
     def export_model(self, solver: AVAILABLE_SOLVERS = 'cplex') -> str:
         model = [
             self.tasks.export_variables(solver=solver),
             *[constraint.export_constraint(solver=solver) for constraint in self.constraints.values()],
-            *[objective.export_objective(self.minimize, solver=solver) for objective in self.objectives.values()]
+            self.objective.export_objective(self.minimize, solver=solver)
         ]
 
         return '\n'.join(model)
@@ -162,7 +162,7 @@ class SchedulingCPEnv:
                 raise Exception("No solution found")
 
             start_times = np.array([
-                cp_solver.Value(locals_[f"{name}_end"]) for name in self.tasks.names
+                cp_solver.Value(locals_[f"{name}_start"]) for name in self.tasks.names
             ], dtype=np.int32)
 
             objective_values = np.array([cp_solver.ObjectiveValue()], dtype=np.int32)
@@ -214,7 +214,8 @@ class SchedulingCPEnv:
             'current_time'      : self.current_time,
             'executed_actions'  : self.scheduled_action[:self.current_task],
             'scheduled_actions' : self.scheduled_action[self.current_task:],
-            'objectives'        : self.get_objective_values()
+            'objective_value'   : self.objective.get_current(),
+            'available_mask'    : self.available_mask()
         }
 
         if not self.is_terminal(): return info
@@ -227,6 +228,8 @@ class SchedulingCPEnv:
 
 
     def reset(self) -> tuple[NDArray[np.void], dict[str, Any]]:
+        self.check_env()
+
         self.current_time = 0
         self.current_task = 0
         self.scheduled_action = np.array([], dtype=self.tasks.index_dtype)
@@ -246,7 +249,10 @@ class SchedulingCPEnv:
         """
             Check if the constraints and objectives are consistent with the tasks.
         """
-        raise NotImplementedError()
+        if type(self.objective) is Objective:
+            raise ValueError("No objectives have been added to the environment. Please add at least one objective.")
+    
+        return None
 
 
     # TODO: Implement a SAT-CP algorithm for dealing with constraint propagations
@@ -269,17 +275,11 @@ class SchedulingCPEnv:
         self.tasks.to_propagate[:] = False
 
 
-    def get_objective_values(self) -> NDArray[np.float32]:
-        return np.array([objective.get_current() for objective in self.objectives.values()], dtype=np.float32)
-
-
-    def available_actions(self) -> NDArray[np.generic]:
+    def available_mask(self) -> NDArray[np.bool]:
         is_fixed = self.tasks.is_fixed()
         mask = np.less_equal(self.tasks.start_lb[:], self.current_time) & ~is_fixed
 
-        available: NDArray[np.generic] = self.tasks.ids[mask]
-
-        return available
+        return mask
 
 
     def step(
@@ -288,7 +288,7 @@ class SchedulingCPEnv:
             time_skip: Optional[int]                     = None,
             extend: bool                                 = False,
             enforce_order: bool                          = True
-        ) -> tuple[NDArray[np.void] | DataFrame, NDArray[np.float32], bool, bool, dict[str, Any]]:
+        ) -> tuple[NDArray[np.void], float, bool, bool, dict[str, Any]]:
 
         self.current_task = 0
         if actions is not None:
@@ -298,17 +298,7 @@ class SchedulingCPEnv:
             else:
                 self.scheduled_action = actions.copy()
 
-        if time_skip == 0:
-            obs        = self._get_obs()
-            reward     = np.zeros(len(self.objectives), dtype=np.float32)
-            terminated = self.is_terminal()
-            truncated  = self.is_truncated()
-            info       = self._get_info()
-
-            return obs, reward, terminated, truncated, info
-
-
-        previous_objectives = self.get_objective_values()
+        previous_objective = self.objective.get_current()
 
         self.n_queries += 1
 
@@ -322,9 +312,9 @@ class SchedulingCPEnv:
             terminated = self.is_terminal()
             truncated  = self.is_truncated()
 
-        obs        = self._get_obs()
-        reward     = previous_objectives - self.get_objective_values()
-        info       = self._get_info()
+        obs    = self._get_obs()
+        reward = (self.objective.get_current() - previous_objective) * (-1 if self.minimize else 1)
+        info   = self._get_info()
 
         self.scheduled_action = self.scheduled_action[self.current_task:]
 
@@ -347,11 +337,12 @@ class SchedulingCPEnv:
 
         task: Scalar
 
-        available_actions = self.available_actions()
+        available_mask = self.available_mask()
         if enforce_order:
             task = self.scheduled_action[self.current_task]
+            task_id = self.tasks.get_indices(task)
 
-            if not binary_search(task, available_actions):
+            if not available_mask[task_id]:
                 executing_tasks = self.tasks.is_executing(self.current_time)
 
                 if not np.any(executing_tasks) or self.current_time >= time_limit:
@@ -363,17 +354,18 @@ class SchedulingCPEnv:
 
 
         else: # not enforce_order
-            available_mask = isin_sorted(available_actions, self.scheduled_action[self.current_task:])
+            task_ids = self.tasks.get_indices(self.scheduled_action[self.current_task:])
+            available_schedule = available_mask[task_ids]
 
-            if not np.any(available_mask):
+            if not np.any(available_schedule):
                 to_schedule = self.tasks.is_awaiting()
 
                 self.current_time = np.min(self.tasks.start_lb[to_schedule], initial=time_limit).item()
 
                 return self.current_time >= time_limit
-            
 
-            task_place = self.current_task + int(np.where(available_mask)[0][0])
+
+            task_place = self.current_task + int(np.nonzero(available_schedule)[0][0])
             task       = self.scheduled_action[task_place]
 
             if task_place != self.current_task:
@@ -390,7 +382,6 @@ class SchedulingCPEnv:
 
         if np.any(to_schedule):
             self.current_time = np.min(self.tasks.start_lb[to_schedule], initial=time_limit).item()
-
 
         else:
             self.current_time = int(np.max(self.tasks.end_lb[:]))
