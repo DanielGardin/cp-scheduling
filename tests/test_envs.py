@@ -33,7 +33,7 @@ def test_env(instance_name: str) -> None:
         NonOverlapConstraint.jobshop_non_overlap(env.tasks, 'machine')
     )
 
-    env.add_objective(
+    env.set_objective(
         Makespan(env.tasks)
     )
 
@@ -72,7 +72,7 @@ def test_not_enforce_order(instance_name: str) -> None:
         NonOverlapConstraint.jobshop_non_overlap(env.tasks, 'machine')
     )
 
-    env.add_objective(
+    env.set_objective(
         Makespan(env.tasks)
     )
 
