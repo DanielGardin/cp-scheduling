@@ -22,7 +22,7 @@ setup(
         "cpscheduler/environment/constraints.py",
         "cpscheduler/environment/env.py",
         "cpscheduler/environment/instances.py",
-    ]),
+    ]), # type: ignore
     classifiers=[
         'Programming Language :: Python :: 3.11',
         'Programming Language :: Python :: 3.12',
