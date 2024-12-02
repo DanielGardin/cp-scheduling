@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Sequence, TypeVar, TypeGuard
 from numpy.typing import NDArray
 from pandas import DataFrame
 
@@ -28,7 +28,7 @@ class PriorityDispatchingRule:
         raise NotImplementedError
 
 
-    def __call__(self, obs: NDArray[np.void] | DataFrame) -> NDArray[np.generic]:
+    def __call__(self, obs: NDArray[np.void] | DataFrame) -> NDArray[Any]:
         if isinstance(obs, DataFrame):
             obs = dataframe_to_structured(obs)
 
@@ -36,7 +36,7 @@ class PriorityDispatchingRule:
 
         priority_queue = np.argsort(-priorities, stable=True).astype(np.int32)
 
-        tasks_order: NDArray[np.generic] = obs['task_id'][priority_queue]
+        tasks_order: NDArray[Any] = np.take(obs['task_id'], priority_queue)
 
         return tasks_order
 
