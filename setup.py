@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import tomllib
 from setuptools import setup
 from mypyc.build import mypycify
@@ -5,6 +7,10 @@ from mypyc.build import mypycify
 # Load metadata from pyproject.toml
 with open('pyproject.toml', 'rb') as f:
     project_info = tomllib.load(f)['project']
+
+compiling_files = [
+    str(path) for path in Path('cpscheduler/environment').glob('*.py') if path.name != '__init__.py'
+]
 
 setup(
     name=project_info['name'],
@@ -16,13 +22,7 @@ setup(
     install_requires=project_info.get('dependencies', []),
     tests_require=['pytest'],
     include_package_data=True,
-    ext_modules=mypycify([
-        "cpscheduler/environment/variables.py",
-        "cpscheduler/environment/objectives.py",
-        "cpscheduler/environment/constraints.py",
-        "cpscheduler/environment/env.py",
-        "cpscheduler/environment/instances.py",
-    ]), # type: ignore
+    ext_modules=mypycify(compiling_files), # type: ignore
     classifiers=[
         'Programming Language :: Python :: 3.11',
         'Programming Language :: Python :: 3.12',

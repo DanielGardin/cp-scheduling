@@ -8,7 +8,6 @@ import numpy.lib.recfunctions as rf
 import pandas as pd
 
 _T = TypeVar('_T')
-
 def issequence(obs: Any, type: type[_T]) -> TypeGuard[Sequence[_T]]:
     return isinstance(obs, Sequence) and all(isinstance(elem, type) for elem in obs)
 
