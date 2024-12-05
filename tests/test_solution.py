@@ -5,7 +5,7 @@ import pytest
 
 import numpy as np
 
-from cpscheduler.environment import SchedulingCPEnv, PrecedenceConstraint, NonOverlapConstraint, Makespan, read_instance
+from cpscheduler.environment import SchedulingCPEnv, PrecedenceConstraint, NonOverlapConstraint, Makespan, read_jsp_instance
 
 
 TEST_INSTANCES = [
@@ -29,7 +29,7 @@ SOLVERS = [
 def test_cp_solution(instance_name: str, cp_solver: Literal['cplex', 'ortools']) -> None:
     path = Path(__file__).parent.parent / f"instances/jobshop/{instance_name}.txt"
 
-    instance, _ = read_instance(path)
+    instance, _ = read_jsp_instance(path)
 
     env = SchedulingCPEnv(instance, "processing_time")
 
@@ -65,7 +65,7 @@ def test_cp_solution(instance_name: str, cp_solver: Literal['cplex', 'ortools'])
 def test_partial_cp_solution(instance_name: str) -> None:
     path = Path(__file__).parent.parent / f"instances/jobshop/{instance_name}.txt"
 
-    instance, _ = read_instance(path)
+    instance, _ = read_jsp_instance(path)
 
     env = SchedulingCPEnv(instance, "processing_time")
 

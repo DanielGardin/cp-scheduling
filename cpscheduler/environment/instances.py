@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 
 
-def read_instance(path: Path | str) -> tuple[DataFrame, dict[str, Any]]:
+def read_jsp_instance(path: Path | str) -> tuple[DataFrame, dict[str, Any]]:
     """
     Reads an instance from a file. The file must be in the Taillard format, with the following structure:
     - The first line contains the number of jobs and the number of machines in the instance.
@@ -17,7 +17,7 @@ def read_instance(path: Path | str) -> tuple[DataFrame, dict[str, Any]]:
     ----------
     path : str or Path
         Path to the file containing the instance data.
-    
+
     Returns
     -------
     instance : pandas.DataFrame
@@ -26,9 +26,11 @@ def read_instance(path: Path | str) -> tuple[DataFrame, dict[str, Any]]:
         - operation: Operation ID.
         - machine: Machine ID.
         - processing_time: Processing time for the operation.
-    
+
     metadata : dict
         Dictionary with metadata about the instance.
+        - n_jobs: Number of jobs in the instance.
+        - n_machines: Number of machines in the instance.
     """
 
     with open(path, 'r') as f:
@@ -40,7 +42,7 @@ def read_instance(path: Path | str) -> tuple[DataFrame, dict[str, Any]]:
 
         for job_id in range(n_jobs):
             job_info = f.readline()
-            
+
             job_data = list(map(int, job_info.split()))
 
             for operation_id, (machine_id, processing_time) in enumerate(zip(job_data[::2], job_data[1::2])):
@@ -55,6 +57,79 @@ def read_instance(path: Path | str) -> tuple[DataFrame, dict[str, Any]]:
     }
 
     return instance, metadata
+
+
+def read_rcpsp_instance(path: Path | str) -> tuple[DataFrame, dict[str, Any]]:
+    """
+    Reads an instance from a file. The file must be in the Patterson format, with the following structure:
+    - The first line contains the number of jobs and the number of resources in the instance.
+    - The second line contains the resource capacities.
+    - The following lines contain the processing times, the amount of
+    resource required and successors for each task.
+
+    Parameters
+    ----------
+    path : str or Path
+        Path to the file containing the instance data.
+
+    Returns
+    -------
+    instance : pandas.DataFrame
+        DataFrame with the instance data in the following columns:
+        - job: Job ID.
+        - operation: Operation ID.
+        - processing_time: Processing time for the operation.
+        - resource: Resource ID.
+
+    metadata : dict
+        Dictionary with metadata about the instance.
+        - n_tasks: Number of tasks in the instance.
+        - n_resources: Number of resources in the instance.
+        - resource_capacities: List with the capacities of each resource.
+        - successors: List with the successors of each task.
+    """
+    with open(path, 'r') as f:
+        n_tasks, n_resources = map(int, f.readline().split())
+
+        n_tasks -= 2 # Remove dummy tasks
+
+        resource_capacities = list(map(int, f.readline().split()))
+
+        # Dummy line
+        f.readline()
+
+        durations        = np.zeros(n_tasks, dtype=np.int32)
+        resource_demands = np.zeros((n_tasks, n_resources), dtype=np.int32)
+
+        precedence_tasks: list[list[int]] = []
+
+        for task_id in range(n_tasks):
+            task_data = list(map(int, f.readline().split()))
+            
+            durations[task_id]           = task_data[0]
+            resource_demands[task_id, :] = task_data[1:n_resources+1]
+
+            precedence_tasks.append([
+                task - 2 for task in task_data[n_resources+2:] if task-2 != n_tasks
+            ])
+
+        instance = DataFrame({
+            'duration': durations,
+            **{
+                f'resource_{i}': resource_demands[:, i] for i in range(n_resources)
+            }
+        })
+
+        metadata = {
+            'n_tasks': n_tasks,
+            'n_resources': n_resources,
+            'resource_capacities': resource_capacities,
+            'precedence_tasks': precedence_tasks
+        }
+
+    return instance, metadata
+
+
 
 def generate_taillard_instance(
         n_jobs: int,
@@ -88,6 +163,8 @@ def generate_taillard_instance(
 
     metadata : dict
         Dictionary with metadata about the instance.
+        - n_jobs: Number of jobs in the instance.
+        - n_machines: Number of machines in the instance.
 
     References
     ----------
@@ -189,9 +266,6 @@ def generate_known_optimal_instance(
     ----------
     [2] Da Col, G., & Teppan, E. C. (2022). Industrial-size job shop scheduling with constraint programming. Operations Research Perspectives, 9, 100249.
     """
-
-    instance = DataFrame(columns=['job', 'operation', 'machine', 'processing_time'], index=range(n_ops))
-
     rng = np.random.default_rng(seed)
 
     avg_op_per_machine  = n_ops // n_machines
@@ -199,18 +273,27 @@ def generate_known_optimal_instance(
     n_ops_per_machine = rng.normal(avg_op_per_machine, 0.05 * avg_op_per_machine, size=n_machines).astype(int)
     n_ops_per_machine[-1] = n_ops - n_ops_per_machine[:-1].sum()
 
-    instance['machine']         = np.concatenate([np.full(n_ops_per_machine[machine], machine) for machine in range(n_machines)])
-    instance['processing_time'] = np.concatenate([dirichlet_multinomial(rng, np.ones(n_ops_per_machine[machine]), optimal_makespan) for machine in range(n_machines)]).astype(int)
+    machines         = np.concatenate([np.full(n_ops_per_machine[machine], machine) for machine in range(n_machines)]).astype(np.int32)
+    processing_times = np.concatenate([dirichlet_multinomial(rng, np.ones(n_ops_per_machine[machine]), optimal_makespan) for machine in range(n_machines)]).astype(np.int32)
 
-    start_times = (instance.groupby('machine')['processing_time'].cumsum() - instance['processing_time']).to_numpy()
-    order       = np.argsort(start_times, stable=True)
-    instance    = instance.loc[order]
+    start_times = np.zeros_like(processing_times)
+    current_sum = np.zeros(n_machines, dtype=np.int32)
 
-    start_times = start_times[order]
-    end_times   = start_times + instance['processing_time'].to_numpy()
-    machines    = instance['machine'].to_numpy()
-    chosen      = np.zeros(n_ops, dtype=bool)
+    for i in range(n_ops):
+        machine = machines[i]
 
+        start_times[i] = current_sum[machine]
+        current_sum[machine] += processing_times[i]
+
+
+    time_order = np.argsort(start_times, stable=True)
+
+    machines         = machines[time_order]
+    processing_times = processing_times[time_order]
+    start_times      = start_times[time_order]
+    end_times        = start_times + processing_times
+
+    chosen       = np.zeros(n_ops, dtype=bool)
     job_ids      = np.zeros(n_ops, dtype=int)
     operation_id = np.zeros(n_ops, dtype=int)
 
@@ -229,7 +312,7 @@ def generate_known_optimal_instance(
             new_job_id += 1
 
         job_id = job_ids[i]
-    
+
         possible_sucessors = (end_times[i] <= start_times[i+1:]) & ~job_machines[job_id][machines[i+1:]] & ~chosen[i+1:]
 
         if not possible_sucessors.any():
@@ -250,8 +333,12 @@ def generate_known_optimal_instance(
         job_machines[job_id, machines[suc]] = True
 
 
-    instance['job']       = job_ids
-    instance['operation'] = operation_id
+    instance = DataFrame({
+        'job': job_ids,
+        'operation': operation_id,
+        'machine': machines,
+        'processing_time': processing_times
+    })
 
     instance = instance.sort_values(['job', 'operation']).reset_index(drop=True)
 
@@ -262,7 +349,7 @@ def generate_known_optimal_instance(
     }
 
     return instance, metadata
-    
+
 
 
 def generate_vepsalainen_instance(

@@ -1,32 +1,22 @@
 from typing import Any, Optional, Literal, overload, Callable, Sequence
-from numpy.typing import NDArray
+from numpy.typing import NDArray, ArrayLike
 from pandas import DataFrame
 
 import numpy as np
 
 from copy import deepcopy
 
-from .environment import SchedulingCPEnv, PrecedenceConstraint, NonOverlapConstraint, Makespan
-from .environment.vector import SyncVectorEnv, AsyncVectorEnv
 
-from .environment.constraints import Constraint
-from .environment.objectives import Objective
-from .environment.variables import IntervalVars
+from .environment.constraints import PrecedenceConstraint, NonOverlapConstraint, ResourceCapacityConstraint
+from .environment.objectives import Makespan
+from .environment import register_env, SchedulingCPEnv
 
-known_envs: dict[str, type[SchedulingCPEnv]] = {}
-
-
-def register_env(env: type[SchedulingCPEnv], name: Optional[str] = None) -> None:
-    if name is None:
-        name = env.__name__
-
-    known_envs[name] = env
 
 class JobShopEnv(SchedulingCPEnv):
     def __init__(
             self,
             instance: DataFrame,
-            duration: str | NDArray[np.int32] = 'processing_time',
+            duration: str | ArrayLike = 'processing_time',
             job_feature: str = 'job',
             operation_feature: str = 'operation',
             machine_feature: str = 'machine'
@@ -41,7 +31,7 @@ class JobShopEnv(SchedulingCPEnv):
         )
 
         self.set_objective(
-            Makespan(self.tasks)
+            Makespan
         )
 
     def render(self) -> None:
@@ -51,3 +41,32 @@ class JobShopEnv(SchedulingCPEnv):
         )
 
 register_env(JobShopEnv, 'jobshop')
+
+
+class ResourceConstraintEnv(SchedulingCPEnv):
+    def __init__(
+            self,
+            instance: DataFrame,
+            capacity: ArrayLike,
+            precedence: Sequence[Sequence[int]],
+            duration: str | NDArray[np.int32] = 'processing_time',
+            resource_features: str | list[str] = 'resource',
+
+        ) -> None:
+        super().__init__(instance, duration)
+
+        self.add_constraint(
+            PrecedenceConstraint,
+            precedence_list=precedence
+        )
+
+        self.add_constraint(
+            ResourceCapacityConstraint,
+        )
+
+        self.set_objective(
+            Makespan
+        )
+
+    def render(self) -> None:
+        return self.render_gantt()
