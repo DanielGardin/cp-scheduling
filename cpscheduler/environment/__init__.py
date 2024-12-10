@@ -34,13 +34,11 @@ __all__ = [
 known_envs: dict[str, type[SchedulingCPEnv]] = {}
 
 
-def register_env(env: type[SchedulingCPEnv], name: Optional[str] = None) -> type[SchedulingCPEnv]:
+def register_env(env: type[SchedulingCPEnv], name: Optional[str] = None) -> None:
     if name is None:
         name = env.__name__
 
     known_envs[name] = env
-
-    return env
 
 
 # TODO: Change all NDArrays in the parameters to ArrayLike (not trivial, ArrayLike can be Sequence)
@@ -103,7 +101,7 @@ def make_env(
         raise ValueError(f'Environment {name} not registered.')
     
     if num_envs is None:
-        if not isinstance(instances, DataFrame) or isinstance(durations, Sequence):
+        if not isinstance(instances, DataFrame) or (isinstance(durations, Sequence) and not isinstance(durations, str)):
             raise ValueError('When `num_envs` is not provided, `instances` must be a DataFrame.')
 
         return known_envs[name](instances, durations, *args, **kwargs)

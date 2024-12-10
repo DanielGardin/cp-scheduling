@@ -40,9 +40,6 @@ class JobShopEnv(SchedulingCPEnv):
             'job',
         )
 
-register_env(JobShopEnv, 'jobshop')
-
-
 class ResourceConstraintEnv(SchedulingCPEnv):
     def __init__(
             self,
