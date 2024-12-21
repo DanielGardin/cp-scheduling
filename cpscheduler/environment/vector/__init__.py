@@ -1,4 +1,4 @@
-from typing import Any, Protocol, Iterable, Callable
+from typing import Any, Protocol, Iterable, Callable, SupportsFloat
 
 from .async_env import AsyncVectorEnv
 from .sync_env import SyncVectorEnv
@@ -16,7 +16,7 @@ class VectorEnv(Protocol):
 
     def reset(self) -> tuple[Any, dict[str, Any]]: ...
 
-    def step(self, actions: Iterable[Any], *args: Any, **kwargs: Any) -> tuple[list[Any], list[float], list[bool], list[bool], dict[str, Any]]: ...
+    def step(self, actions: Iterable[Any], *args: Any, **kwargs: Any) -> tuple[list[Any], list[SupportsFloat], list[bool], list[bool], dict[str, Any]]: ...
 
     def render(self) -> None: ...
 

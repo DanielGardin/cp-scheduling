@@ -1,4 +1,4 @@
-from typing import Any, Optional, Final, Never, ClassVar, TypeVar, runtime_checkable, Protocol, Generic, TypeAlias, Callable, ParamSpec, Concatenate
+from typing import Any, Optional, Final, Never, ClassVar, TypeVar, Protocol, TypeAlias, Callable, Concatenate, SupportsFloat
 from numpy.typing import NDArray, ArrayLike
 from pandas import DataFrame
 
@@ -20,13 +20,12 @@ MAX_INT: Final[int] =   2 ** 31 - 1
 _T = TypeVar('_T', covariant=True,)
 SetupClass: TypeAlias = Callable[Concatenate[IntervalVars, ...], _T] | type[_T] | _T
 
-
 class Env(Protocol):
     def reset(self) -> tuple[Any, dict[str, Any]]: ...
 
-    def step(self, action: Any, *args: Any, **kwargs: Any) -> tuple[Any, float, bool, bool, dict[str, Any]]: ...
+    def step(self, action: Any, *args: Any, **kwargs: Any) -> tuple[Any, SupportsFloat, bool, bool, dict[str, Any]]: ...
 
-    def render(self) -> None: ...
+    def render(self) -> Any: ...
 
 
 @mypyc_attr(allow_interpreted_subclasses=True)

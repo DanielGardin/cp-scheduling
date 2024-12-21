@@ -1,4 +1,4 @@
-from typing import Any, TypeVar, Iterable, Callable, Sequence
+from typing import Any, TypeVar, Iterable, Callable, Sequence, SupportsFloat
 from numpy.typing import NDArray
 from pandas import DataFrame
 
@@ -21,7 +21,7 @@ class RayEnvWorker:
         return self.env.reset()
 
 
-    def step(self, action: Any, *args: Any, **kwargs: Any) -> tuple[Any, float, bool, bool, dict[str, Any]]:
+    def step(self, action: Any, *args: Any, **kwargs: Any) -> tuple[Any, SupportsFloat, bool, bool, dict[str, Any]]:
         if self.auto_reset:
             return step_with_autoreset(self.env, action, *args, **kwargs)
 
@@ -77,7 +77,7 @@ class RayVectorEnv:
 
     def step(
         self, actions: Iterable[Any], *args: Any, **kwargs: Any
-    ) -> tuple[list[Any], list[float], list[bool], list[bool], dict[str, Any]]:
+    ) -> tuple[list[Any], list[SupportsFloat], list[bool], list[bool], dict[str, Any]]:
         if (isinstance(actions, Sequence) and len(actions) != self.n_envs) or sum(1 for _ in actions) != self.n_envs:
             raise ValueError(f'Number of actions does not match number of environments ({self.n_envs})')
 

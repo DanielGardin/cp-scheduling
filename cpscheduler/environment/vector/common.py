@@ -1,4 +1,4 @@
-from typing import Any, Sequence
+from typing import Any, Sequence, SupportsFloat
 
 from ..env import Env
 
@@ -6,7 +6,7 @@ def step_with_autoreset(
         env: Env,
         action: Any,
         *args: Any, **kwargs: Any
-    ) -> tuple[Any, float, bool, bool, dict[str, Any]]:
+    ) -> tuple[Any, SupportsFloat, bool, bool, dict[str, Any]]:
     obs, reward, terminated, truncated, info = env.step(action, *args, **kwargs)
 
     if terminated:
