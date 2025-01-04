@@ -1,12 +1,20 @@
-from typing import Any, Sequence, SupportsFloat
+from typing import Any, Sequence, SupportsFloat, TypeVar, Protocol, Iterable, Callable, runtime_checkable
 
-from ..env import Env
+_Obs = TypeVar('_Obs', covariant=True)
+_Act = TypeVar('_Act', contravariant=True)
+@runtime_checkable
+class Env(Protocol[_Obs, _Act]):
+    def reset(self) -> tuple[_Obs, dict[str, Any]]: ...
+
+    def step(self, action: _Act, *args: Any, **kwargs: Any) -> tuple[_Obs, SupportsFloat, bool, bool, dict[str, Any]]: ...
+
+    def render(self) -> Any: ...
 
 def step_with_autoreset(
-        env: Env,
-        action: Any,
+        env: Env[_Obs, _Act],
+        action: _Act,
         *args: Any, **kwargs: Any
-    ) -> tuple[Any, SupportsFloat, bool, bool, dict[str, Any]]:
+    ) -> tuple[_Obs, SupportsFloat, bool, bool, dict[str, Any]]:
     obs, reward, terminated, truncated, info = env.step(action, *args, **kwargs)
 
     if terminated:
@@ -28,7 +36,25 @@ def step_with_autoreset(
     return obs, reward, terminated, truncated, info
 
 
-def get_attribute(env: Env, name: str, *args: Any, **kwargs: Any) -> Any:
+_SingleObs = TypeVar('_SingleObs')
+_SingleAct = TypeVar('_SingleAct', contravariant=True)
+class VectorEnv(Protocol[_SingleObs, _SingleAct]):
+    def __init__(
+            self,
+            env_fns: Iterable[Callable[[], Env[_SingleObs, _SingleAct]]],
+            *args: Any, **kwargs: Any
+        ) -> None: ...
+
+    def reset(self) -> tuple[list[_SingleObs], dict[str, Any]]: ...
+
+    def step(self, actions: Iterable[_SingleAct], *args: Any, **kwargs: Any) -> tuple[list[_SingleObs], list[SupportsFloat], list[bool], list[bool], dict[str, Any]]: ...
+
+    def render(self) -> None: ...
+
+    def call(self, name: str, *args: Any, **kwargs: Any) -> tuple[Any, ...]: ...
+
+
+def get_attribute(env: Env[_Obs, _Act], name: str, *args: Any, **kwargs: Any) -> Any:
     attr = getattr(env, name)
 
     if not callable(attr):

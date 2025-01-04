@@ -1,27 +1,25 @@
 from typing import Any, TypeVar, Iterable, Callable, Sequence, SupportsFloat
-from numpy.typing import NDArray
-from pandas import DataFrame
 
 import ray
 from copy import deepcopy
 
-import numpy as np
+from .common import Env, VectorEnv, step_with_autoreset, get_attribute, info_union
 
-from ..env import Env
-from .common import step_with_autoreset, get_attribute, info_union
 
+_Obs = TypeVar('_Obs')
+_Act = TypeVar('_Act')
 @ray.remote
-class RayEnvWorker:
-    def __init__(self, env_fn: Callable[[], Env], auto_reset: bool):
+class RayEnvWorker(Env[_Obs, _Act]):
+    def __init__(self, env_fn: Callable[[], Env[_Obs, _Act]], auto_reset: bool):
         self.env = env_fn()
         self.auto_reset = auto_reset
 
 
-    def reset(self) -> tuple[Any, dict[str, Any]]:
+    def reset(self) -> tuple[_Obs, dict[str, Any]]:
         return self.env.reset()
 
 
-    def step(self, action: Any, *args: Any, **kwargs: Any) -> tuple[Any, SupportsFloat, bool, bool, dict[str, Any]]:
+    def step(self, action: _Act, *args: Any, **kwargs: Any) -> tuple[_Obs, SupportsFloat, bool, bool, dict[str, Any]]:
         if self.auto_reset:
             return step_with_autoreset(self.env, action, *args, **kwargs)
 
@@ -42,10 +40,10 @@ class RayEnvWorker:
         return get_attribute(self.env, name, *args, **kwargs)
 
 
-class RayVectorEnv:
+class RayVectorEnv(VectorEnv[_Obs, _Act]):
     def __init__(
         self,
-        env_fns: Iterable[Callable[[], Env]],
+        env_fns: Iterable[Callable[[], Env[_Obs, _Act]]],
         copy: bool = False,
         auto_reset: bool = True,
     ):
@@ -65,7 +63,7 @@ class RayVectorEnv:
             raise ValueError(f'Error in operation: {results}')
 
 
-    def reset(self) -> tuple[list[Any], dict[str, Any]]:
+    def reset(self) -> tuple[list[_Obs], dict[str, Any]]:
         results = ray.get([worker.reset.remote() for worker in self.workers]) # type: ignore
         obs, infos = map(list, zip(*results))
 
@@ -76,8 +74,8 @@ class RayVectorEnv:
 
 
     def step(
-        self, actions: Iterable[Any], *args: Any, **kwargs: Any
-    ) -> tuple[list[Any], list[SupportsFloat], list[bool], list[bool], dict[str, Any]]:
+        self, actions: Iterable[_Act], *args: Any, **kwargs: Any
+    ) -> tuple[list[_Obs], list[SupportsFloat], list[bool], list[bool], dict[str, Any]]:
         if (isinstance(actions, Sequence) and len(actions) != self.n_envs) or sum(1 for _ in actions) != self.n_envs:
             raise ValueError(f'Number of actions does not match number of environments ({self.n_envs})')
 
