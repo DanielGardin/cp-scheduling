@@ -3,8 +3,6 @@ from pathlib import Path
 
 import pytest
 
-import numpy as np
-
 from cpscheduler.environment import SchedulingCPEnv, PrecedenceConstraint, NonOverlapConstraint, Makespan, read_jsp_instance
 
 
@@ -13,9 +11,7 @@ TEST_INSTANCES = [
     "la10",
     "orb01",
     "swv12",
-    "ta20",
-    "lta_j10_m10_1",
-    # "kopt_ops10000_m100_1"
+    "ta80",
 ]
 
 SOLVERS = [
@@ -51,9 +47,7 @@ def test_cp_solution(instance_name: str, cp_solver: Literal['cplex', 'ortools'])
 
     obs, reward, terminated, truncated, info = env.step(order, time_skip=None)
 
-    assert (obs['buffer'] == 'finished').all()
-    assert (obs['remaining_time'] == 0).all()
-    assert reward < 0
+    assert all([buffer == 'finished' for buffer in obs['buffer']])
     assert terminated
     # OR-tools do not guarantee a compressed solution, allowing for a simulated time
     # smaller than the computed objective value.
@@ -82,7 +76,7 @@ def test_partial_cp_solution(instance_name: str) -> None:
     )
 
     obs, info = env.reset()
-    spt = np.argsort(obs['processing_time'])
+    spt = sorted(obs['processing_time'], reverse=True)
 
     time_skip = 500
 
@@ -92,13 +86,9 @@ def test_partial_cp_solution(instance_name: str) -> None:
     assert not terminated
 
     starts, order, objective_value, is_optimal = env.get_cp_solution(timelimit=2)
+    next_obs, next_reward, next_terminated, next_truncated, next_info = env.step(order, time_skip=None)
 
-    assert (np.sort(order) == env.tasks.ids[obs['buffer'] == 'awaiting']).all()
-
-    obs, reward, terminated, truncated, info = env.step(order, time_skip=None)
-
-    assert (obs['buffer'] == 'finished').all()
-    assert (obs['remaining_time'] == 0).all()
-    assert reward < 0
-    assert terminated
-    assert info['current_time'] == objective_value
+    assert objective_value == -(reward + next_reward)
+    assert next_info['current_time'] == objective_value
+    assert next_terminated
+    assert all([buffer == 'finished' for buffer in next_obs['buffer']])

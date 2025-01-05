@@ -4,6 +4,7 @@ from pandas import DataFrame
 
 from pathlib import Path
 
+# TODO: Remove numpy dependency
 import numpy as np
 
 
@@ -51,10 +52,20 @@ def read_jsp_instance(path: Path | str) -> tuple[DataFrame, dict[str, Any]]:
 
         instance = DataFrame(data, columns=['job', 'operation', 'machine', 'processing_time'])
 
-    metadata = {
-        'n_jobs': n_jobs,
-        'n_machines': n_machines
-    }
+        metadata: dict[str, Any] = {
+            'n_jobs': n_jobs,
+            'n_machines': n_machines
+        }
+
+        metadata_line = f.readline() # Skip the first line that separates the data from the metadata
+        while True:
+            metadata_line = f.readline()
+
+            if not metadata_line: break
+
+            key, value = metadata_line.split(':')
+
+            metadata[key.strip()] = value.strip()
 
     return instance, metadata
 
@@ -126,6 +137,16 @@ def read_rcpsp_instance(path: Path | str) -> tuple[DataFrame, dict[str, Any]]:
             'resource_capacities': resource_capacities,
             'precedence_tasks': precedence_tasks
         }
+
+        metadata_line = f.readline() # Skip the first line that separates the data from the metadata
+
+        while metadata_line:
+            metadata_line = f.readline()
+
+            key, value = metadata_line.split(':')
+
+            metadata[key.strip()] = value.strip()
+
 
     return instance, metadata
 

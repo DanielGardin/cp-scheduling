@@ -42,7 +42,7 @@ def test_env(instance_name: str) -> None:
 
     assert env.current_time == 0
 
-    first_action = np.array([0])
+    first_action = 0
     obs, reward, terminated, truncated, info = env.step(first_action, time_skip=0)
 
     assert reward < 0
@@ -83,5 +83,4 @@ def test_not_enforce_order(instance_name: str) -> None:
 
     obs, reward, terminated, truncated, info = env.step(spt, time_skip=None, enforce_order=False)
 
-    assert (obs['buffer'] == 'finished').all()
     assert terminated

@@ -1,1 +1,5 @@
-from .wrapper import wrap_obs, wrap_action
+__all__ = [
+    'WrappedEnv',
+]
+
+from .wrapper import WrappedEnv

@@ -8,7 +8,7 @@ import numpy as np
 from cpscheduler.common_envs import JobShopEnv
 from cpscheduler.environment.instances import generate_taillard_instance
 
-from cpscheduler.policies.heuristics import ShortestProcessingTime, MostOperationsRemaining, MostWorkRemaining
+from cpscheduler.policies.heuristics import ShortestProcessingTime, MostOperationsRemaining, MostWorkRemaining, PriorityDispatchingRule
 from cpscheduler.environment.vector import SyncVectorEnv, AsyncVectorEnv, RayVectorEnv, VectorEnv
 
 def make_jsp_env(
@@ -19,7 +19,7 @@ def make_jsp_env(
     return lambda : env_cls(instance_generator(*args, **kwargs)[0])
 
 
-pdrs = [
+pdrs: list[PriorityDispatchingRule] = [
     ShortestProcessingTime(),
     MostOperationsRemaining(),
     MostWorkRemaining()
@@ -27,7 +27,7 @@ pdrs = [
 
 @pytest.mark.vector
 @pytest.mark.parametrize('env_cls', [AsyncVectorEnv, SyncVectorEnv, RayVectorEnv])
-def test_sync_env(env_cls: type[VectorEnv]) -> None:
+def test_sync_env(env_cls: type[VectorEnv[Any, Any]]) -> None:
     env_fns = [
         make_jsp_env(
             generate_taillard_instance,
@@ -44,10 +44,8 @@ def test_sync_env(env_cls: type[VectorEnv]) -> None:
     for env, obs, info in zip(envs, obss, infos):
         single_obs, single_info = env.reset()
 
-        assert np.all(obs == single_obs)
-        # Fix me: checking equality of empty np.array results in False
-        # assert info == single_info
-    
+        assert obs == single_obs
+
 
     actions = [pdr(obs) for pdr, obs in zip(pdrs, obss)]
 
@@ -60,7 +58,6 @@ def test_sync_env(env_cls: type[VectorEnv]) -> None:
         assert final_rewards[i] == single_reward
         assert final_terminated[i] == single_terminated
         assert final_truncated[i] == single_truncated
-        # assert final_infos[i] == single_new_info
     
     sync_env = SyncVectorEnv(env_fns, auto_reset=True)
 

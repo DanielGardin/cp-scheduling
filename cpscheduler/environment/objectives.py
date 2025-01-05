@@ -1,11 +1,8 @@
-from typing import Any, Optional, ClassVar
-from numpy.typing import NDArray
+from typing import Any, ClassVar, Iterable
 
-from .variables import IntervalVars, AVAILABLE_SOLVERS, MAX_INT
+from .variables import IntervalVars
+from .utils import AVAILABLE_SOLVERS, MAX_INT, convert_to_list
 
-import numpy as np
-
-from collections import defaultdict
 
 class Objective:
     is_parameterized: ClassVar[bool] = False
@@ -57,7 +54,7 @@ class Makespan(Objective):
     def export_objective(self, minimize: bool = False, solver: AVAILABLE_SOLVERS = 'cplex') -> str:
         objective_type = 'minimize' if minimize else 'maximize'
 
-        names = self.tasks.names
+        names = self.tasks.get_var_name()
 
         if solver == 'cplex':
             ends = [f"endOf({name})" for name in names]
@@ -70,8 +67,11 @@ class Makespan(Objective):
 
             return f"{makespan}\nmodel.AddMaxEquality(makespan, [{', '.join(ends)}])\nmodel.{objective_type}(makespan)"
 
+
     def get_current(self, time: int) -> int:
-        return int(np.max(self.tasks.end_lb[self.tasks.is_fixed()], initial=0))
+        fixed_tasks = [task for task in range(len(self.tasks)) if self.tasks.is_fixed(task)]
+
+        return max(self.tasks.get_end_lb(fixed_tasks), default=0)
 
 
 
@@ -81,8 +81,8 @@ class WeightedCompletionTime(Objective):
     def __init__(
             self,
             interval_var: IntervalVars,
-            job_feature: str | NDArray[np.integer[Any]],
-            job_weights: NDArray[np.float32],
+            job_feature: str | Iterable[Any],
+            weights: Iterable[float]
         ):
         """
         Objective function that aims to minimize the weighted completion time of each client.
@@ -93,45 +93,48 @@ class WeightedCompletionTime(Objective):
         interval_var : IntervalVars
             The interval variables that represent the tasks to be scheduled.
 
-        job_feature : str | NDArray[int]
-            The feature of each job that will be used to calculate the completion time.
+        job_feature : str | Arraylike, shape=(n_tasks,)
+            The feature of containing the job associated with each task.
             If a string is passed, it is assumed that the feature is a column of the interval variable.
 
-        job_weights : NDArray[float]
+        weights : NDArray[float]
             The weight of each job.
 
         """
 
         self.tasks = interval_var
 
-        self.job_op: NDArray[np.integer[Any]] = self.tasks[job_feature] if isinstance(job_feature, str) else job_feature
+        self.jobs: list[Any] = self.tasks[job_feature] if isinstance(job_feature, str) else convert_to_list(job_feature)
 
-        self.n_jobs    = len(job_weights)
-
-        self.job_weights = job_weights
+        self.weights = convert_to_list(weights, dtype=float)
+        self.n_jobs = len(self.weights)
 
 
     def export_objective(self, minimize: bool = True, solver: AVAILABLE_SOLVERS = 'cplex') -> str:
         objective_type = 'minimize' if minimize else 'maximize'
 
-        names = self.tasks.names
+        names = self.tasks.get_var_name()
 
         rep = ''
 
-        ends: list[list[str]] = [[] for _ in range(self.n_jobs)]
-        job: int
+        ends: dict[Any, list[str]] = {}
 
-        for name, job in zip(names, self.job_op.tolist()):
+        for i, name in enumerate(names):
             if solver == 'cplex':
                 job_end = f"endOf({name})"
 
             else:
                 job_end = f"{name}_end"
 
-            ends[job].append(job_end)
+            job = self.jobs[i]
+
+            if job not in ends:
+                ends[job] = []
+
+            ends[self.jobs[i]].append(job_end)
 
 
-        for job in range(self.n_jobs):
+        for job in ends:
             if solver == 'cplex':
                 rep += f"job{job}_completion = max([{', '.join(ends[job])}]);\n"
 
@@ -141,7 +144,7 @@ class WeightedCompletionTime(Objective):
 
 
         weighted_completion_times = ' + '.join([
-            f"{weight} * job{job}_completion" for job, weight in enumerate(self.job_weights)
+            f"{weight} * job{job}_completion" for job, weight in enumerate(self.weights)
         ])
 
         if solver == 'cplex':
@@ -154,15 +157,20 @@ class WeightedCompletionTime(Objective):
     def get_current(self, time: int) -> float:
         is_fixed = self.tasks.is_fixed()
 
-        max_end = [0 for _ in range(self.n_jobs)]
+        completion_times: dict[Any, int] = {}
 
-        for end, job in zip(self.tasks.end_lb[is_fixed], self.job_op[is_fixed]):
-            max_end[job] = max(max_end[job], end)
+        for task, end_time in enumerate(self.tasks.get_end_lb()):
+            if is_fixed[task]:
+                job = self.jobs[task]
 
-        current_objective_value = float(np.sum(self.job_weights * max_end))
+                if job not in completion_times:
+                    completion_times[job] = 0
 
-        return current_objective_value
+                completion_times[job] = max(completion_times[job], end_time)
 
+        objective_value = sum([weight * job_end for weight, job_end in zip(self.weights, completion_times.values())], start=0.)
 
-    def set_parameters(self, job_weights: NDArray[np.float32]) -> None:
-        self.job_weights = job_weights
+        return objective_value
+
+    def set_parameters(self, weights: Iterable[float]) -> None:
+        self.weights = convert_to_list(weights, dtype=float)

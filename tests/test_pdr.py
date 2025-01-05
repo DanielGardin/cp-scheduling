@@ -2,8 +2,6 @@ from pathlib import Path
 
 import pytest
 
-import numpy as np
-
 from cpscheduler.common_envs import JobShopEnv
 from cpscheduler.environment import read_jsp_instance
 
