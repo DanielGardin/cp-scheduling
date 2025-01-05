@@ -7,10 +7,10 @@ __all__ = [
     "read_jsp_instance",
     "PrecedenceConstraint",
     "NonOverlapConstraint",
-    # "ReleaseTimesConstraint",
-    # "DueDatesConstraint",
+    "ReleaseTimesConstraint",
+    "DueDatesConstraint",
     "Makespan",
-    # "WeightedCompletionTime",
+    "WeightedCompletionTime",
     "VectorEnv",
 ]
 
@@ -20,10 +20,9 @@ from pandas import DataFrame
 
 import numpy as np
 
-from .constraints import Constraint, PrecedenceConstraint, NonOverlapConstraint#, ReleaseTimesConstraint, \
-   # DueDatesConstraint
+from .constraints import Constraint, PrecedenceConstraint, NonOverlapConstraint, ReleaseTimesConstraint, DueDatesConstraint
 
-from .objectives import Objective, Makespan#, WeightedCompletionTime
+from .objectives import Objective, Makespan, WeightedCompletionTime
 
 from .variables import IntervalVars
 
