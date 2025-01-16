@@ -112,7 +112,7 @@ def read_rcpsp_instance(path: Path | str) -> tuple[DataFrame, dict[str, Any]]:
         durations        = np.zeros(n_tasks, dtype=np.int32)
         resource_demands = np.zeros((n_tasks, n_resources), dtype=np.int32)
 
-        precedence_tasks: list[list[int]] = []
+        precedence_tasks: dict[int, list[int]] = {}
 
         for task_id in range(n_tasks):
             task_data = list(map(int, f.readline().split()))
@@ -120,9 +120,11 @@ def read_rcpsp_instance(path: Path | str) -> tuple[DataFrame, dict[str, Any]]:
             durations[task_id]           = task_data[0]
             resource_demands[task_id, :] = task_data[1:n_resources+1]
 
-            precedence_tasks.append([
-                task - 2 for task in task_data[n_resources+2:] if task-2 != n_tasks
-            ])
+            precedence_tasks[task_id] = [
+                task - 2 for task in task_data[n_resources+2:] if task - 2 != n_tasks
+            ]
+
+        f.readline() # Dummy line (Sink task)
 
         instance = DataFrame({
             'duration': durations,
@@ -139,6 +141,8 @@ def read_rcpsp_instance(path: Path | str) -> tuple[DataFrame, dict[str, Any]]:
         }
 
         metadata_line = f.readline() # Skip the first line that separates the data from the metadata
+
+        print(metadata_line)
 
         while metadata_line:
             metadata_line = f.readline()
