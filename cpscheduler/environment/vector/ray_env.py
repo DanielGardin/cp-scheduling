@@ -93,9 +93,11 @@ class RayVectorEnv(VectorEnv[_Obs, _Act]):
     def render(self) -> None:
         ray.get([worker.render.remote() for worker in self.workers]) # type: ignore
 
+
     def close(self) -> None:
         ray.get([worker.close.remote() for worker in self.workers]) # type: ignore
         self.workers = []
+
 
     def call(self, name: str, *args: Any, **kwargs: Any) -> tuple[list[Any], ...]:
         results = ray.get([

@@ -43,7 +43,7 @@ def test_cp_solution(instance_name: str, cp_solver: Literal['cplex', 'ortools'])
 
     env.reset()
 
-    starts, order, objective_value, is_optimal = env.get_cp_solution(timelimit=2, solver=cp_solver)
+    order, starts, objective_value, is_optimal = env.get_cp_solution(timelimit=2, solver=cp_solver)
 
     obs, reward, terminated, truncated, info = env.step(order, time_skip=None)
 
@@ -54,7 +54,7 @@ def test_cp_solution(instance_name: str, cp_solver: Literal['cplex', 'ortools'])
     assert info['current_time'] <= objective_value
 
 
-@pytest.mark.env
+# @pytest.mark.env
 @pytest.mark.parametrize("instance_name", TEST_INSTANCES)
 def test_partial_cp_solution(instance_name: str) -> None:
     path = Path(__file__).parent.parent / f"instances/jobshop/{instance_name}.txt"
@@ -85,7 +85,7 @@ def test_partial_cp_solution(instance_name: str) -> None:
     assert info['current_time'] == time_skip
     assert not terminated
 
-    starts, order, objective_value, is_optimal = env.get_cp_solution(timelimit=2)
+    order, starts, objective_value, is_optimal = env.get_cp_solution(timelimit=2)
     next_obs, next_reward, next_terminated, next_truncated, next_info = env.step(order, time_skip=None)
 
     assert objective_value == -(reward + next_reward)

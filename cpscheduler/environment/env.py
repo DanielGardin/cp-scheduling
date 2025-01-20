@@ -189,7 +189,7 @@ class SchedulingCPEnv:
 
         task_order = [task for _, task in arg_order]
 
-        return start_times, task_order, objective_values, is_optimal
+        return task_order, start_times, objective_values, is_optimal
 
 
     def _get_obs(self) -> dict[str, Any]:
