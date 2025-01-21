@@ -192,7 +192,7 @@ class SchedulingCPEnv:
         return task_order, start_times, objective_values, is_optimal
 
 
-    def _get_obs(self) -> dict[str, Any]:
+    def _get_obs(self) -> dict[str, list[Any]]:
         return self.tasks.get_state(self.current_time)
 
 
@@ -218,7 +218,7 @@ class SchedulingCPEnv:
         }
 
 
-    def reset(self) -> tuple[dict[str, Any], dict[str, Any]]:
+    def reset(self) -> tuple[dict[str, list[Any]], dict[str, Any]]:
         self.check_env()
 
         self.current_time = 0
@@ -317,7 +317,7 @@ class SchedulingCPEnv:
             time_skip: Optional[int]    = None,
             extend: bool                = False,
             enforce_order: bool         = True
-        ) -> tuple[dict[str, Any], float, bool, bool, dict[str, Any]]:
+        ) -> tuple[dict[str, list[Any]], float, bool, bool, dict[str, Any]]:
         if action is not None:
             if not extend:
                 self.scheduled_actions.clear()
