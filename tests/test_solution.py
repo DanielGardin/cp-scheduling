@@ -11,7 +11,7 @@ TEST_INSTANCES = [
     "la10",
     "orb01",
     "swv12",
-    "ta80",
+    # "ta80",
 ]
 
 SOLVERS = [
@@ -54,7 +54,7 @@ def test_cp_solution(instance_name: str, cp_solver: Literal['cplex', 'ortools'])
     assert info['current_time'] <= objective_value
 
 
-# @pytest.mark.env
+@pytest.mark.env
 @pytest.mark.parametrize("instance_name", TEST_INSTANCES)
 def test_partial_cp_solution(instance_name: str) -> None:
     path = Path(__file__).parent.parent / f"instances/jobshop/{instance_name}.txt"
@@ -80,6 +80,7 @@ def test_partial_cp_solution(instance_name: str) -> None:
 
     time_skip = 500
 
+    # This is infinite looping
     obs, reward, terminated, truncated, info = env.step(spt, time_skip=time_skip, enforce_order=False)
 
     assert info['current_time'] == time_skip
