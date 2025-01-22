@@ -45,7 +45,7 @@ def convert_to_list(array: Iterable[Any], dtype: Optional[type[_T]] = None) -> l
 
     try:
         if dtype is None:
-            return list(array)
+            return array if isinstance(array, list) else list(array)
 
         return [dtype(item) for item in array]
 

@@ -298,7 +298,7 @@ class SchedulingCPEnv:
             next_time = min([
                 self.tasks.get_start_lb(task) for task in awaiting_tasks
                 if self.tasks.get_start_lb(task) > self.current_time
-            ])
+            ], default=self.current_time)
 
         else:
             next_time = max(self.tasks.get_end_lb())
