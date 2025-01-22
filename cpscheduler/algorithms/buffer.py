@@ -1,4 +1,4 @@
-from typing import Any, Mapping, Optional, Iterable, Never, Union, overload
+from typing import Any, Mapping, Optional, Iterable, Never, Union, overload, Sequence, Literal
 from torch.types import Device, Tensor
 
 import torch
@@ -28,9 +28,12 @@ class Buffer:
             device=device
         )
 
-        self.buffer_shapes = buffer_shapes
-        self.allow_grad = allow_grad
+        self.norm: dict[str, tuple[Tensor, Tensor]] = {}
 
+        self.buffer_shapes = buffer_shapes
+        self.allow_grad    = allow_grad
+
+        self.initialized = False
         self.clear()
 
 
@@ -75,15 +78,20 @@ class Buffer:
     def clear(self) -> None:
         self.idx = 0
         self.current_size = 0
-        self.initialized = False
+
+        self.norm.clear()
 
 
     def add(self, **kwargs: Tensor) -> None:
         self.check_input(**kwargs)
 
+        # Correct tensor shapes
+        for key, value in kwargs.items():
+            kwargs[key] = value.reshape(-1, *self.buffer_shapes[key])
+
         first_dims = [x.shape[0] for x in kwargs.values()]
         n_samples  = first_dims[0]
-        
+
         if not all(x == n_samples for x in first_dims):
             raise ValueError("All tensors must have the same batch size")
 
@@ -104,19 +112,61 @@ class Buffer:
         self.current_size = min(self.current_size + n_samples, self.capacity)
 
 
-    def sample(self, batch_size: int, device: Optional[Device] = None) -> TensorDict:
-        idxs = torch.randint(0, self.current_size, (batch_size,))
+    def normalize(
+            self,
+            keys: Optional[Iterable[str]] = None,
+            kind: Literal['minmax', 'standard'] = 'minmax',
+        ) -> None:
 
-        buffer = self.buffer[idxs]
+        if keys is None:
+            keys = self.buffer_shapes.keys()
+        
+        elif isinstance(keys, str):
+            keys = [keys]
 
-        if device is not None and device != self.device:
-            buffer = buffer.to(device)
+        for key in keys:
+            if key not in self.buffer_shapes:
+                raise ValueError(f"Key {key} not found in buffer shapes")
+        
+            if kind == 'minmax':
+                min_val, _ = self[key].min(dim=0)
+                max_val, _ = self[key].max(dim=0)
+
+                shift = min_val
+                scale = max_val - shift
+
+            elif kind == 'standard':
+                shift = self[key].mean(dim=0)
+                scale = self[key].std(dim=0)
+
+
+            if torch.any(scale == 0):
+                raise ValueError(f"Normalization scale for key {key} is zero. Does the data have constant values?")
+
+            self.norm[key] = (shift, scale)
+
+
+    def _apply_norm(self, buffer: TensorDict) -> TensorDict:
+        for key, (shift, scale) in self.norm.items():
+            buffer[key] = (buffer[key] - shift) / scale
 
         return buffer
 
 
+    def sample(self, batch_size: int, device: Optional[Device] = None) -> TensorDict:
+        idxs = torch.randint(0, self.current_size, (batch_size,))
+
+        buffer: TensorDict = self.buffer[idxs]
+
+        if device is not None and device != self.device:
+            buffer = buffer.to(device)
+
+        return self._apply_norm(buffer)
+
+
     def loader(self, batch_size: int, device: Optional[Device] = None) -> Iterable[TensorDict]:
         idxs = torch.randperm(self.current_size)
+        batch: TensorDict
 
         i = 0
         for i in range(0, self.current_size - batch_size + 1, batch_size):
@@ -125,26 +175,17 @@ class Buffer:
             if device is not None and device != self.device:
                 batch = batch.to(device)
 
-            yield batch
+            yield self._apply_norm(batch)
 
-        last_batch = self.buffer[idxs[i:self.current_size]]
+        # Yield the (potentially incomplete) last batch
+        batch = self.buffer[idxs[i:self.current_size]]
 
         if device is not None and device != self.device:
-            last_batch = last_batch.to(device)
-        
-        yield last_batch
+            batch = batch.to(device)
+
+        yield self._apply_norm(batch)
 
 
-    @overload
     def __getitem__(self, idx: str) -> Tensor:
-        ...
+        return self.buffer[idx][:self.current_size]
 
-    @overload
-    def __getitem__(self, idx: IndexType) -> TensorDict:
-        ...
-
-    def __getitem__(self, idx: str | IndexType) -> Tensor | TensorDict:
-        if isinstance(idx, str):
-            return self.buffer[idx][:self.current_size]
-
-        return self.buffer[idx]
