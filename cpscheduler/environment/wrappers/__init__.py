@@ -1,5 +1,9 @@
 __all__ = [
-    'WrappedEnv',
+    'JobActionWrapper',
+    'PytorchWrapper',
+    'End2EndStateWrapper'
 ]
 
-from .wrapper import WrappedEnv
+
+from .act_wrappers import JobActionWrapper
+from .obs_wrappers import PytorchWrapper, End2EndStateWrapper

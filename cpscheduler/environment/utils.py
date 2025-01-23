@@ -1,4 +1,5 @@
 from typing import Any, TypeVar, Literal, Final, Optional, overload, Iterable, TypeGuard
+from abc import ABC
 
 from collections import deque
 
@@ -54,7 +55,8 @@ def convert_to_list(array: Iterable[Any], dtype: Optional[type[_T]] = None) -> l
         return [array] if dtype is None else [dtype(array)]
 
 
-def is_iterable_type(obj: Any, dtype: type[_T]) -> TypeGuard[Iterable[_T]]:
+_Type = TypeVar('_Type', Any, ABC)
+def is_iterable_type(obj: Any, dtype: type[_Type]) -> TypeGuard[Iterable[_Type]]:
     """
     Returns whether the object is an iterable containing elements of the specified type.
 

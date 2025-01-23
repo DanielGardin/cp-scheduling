@@ -9,7 +9,8 @@ from cpscheduler.common_envs import JobShopEnv
 from cpscheduler.environment.instances import generate_taillard_instance
 
 from cpscheduler.policies.heuristics import ShortestProcessingTime, MostOperationsRemaining, MostWorkRemaining, PriorityDispatchingRule
-from cpscheduler.environment.vector import SyncVectorEnv, AsyncVectorEnv, RayVectorEnv, VectorEnv
+from cpscheduler.environment.vector import SyncVectorEnv, AsyncVectorEnv, RayVectorEnv
+from cpscheduler.environment.protocols import VectorEnv
 
 def make_jsp_env(
         instance_generator: Callable[..., tuple[DataFrame, dict[str, Any]]],

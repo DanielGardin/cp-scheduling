@@ -53,7 +53,7 @@ def test_cp_solution(instance_name: str, cp_solver: Literal['cplex', 'ortools'])
     # smaller than the computed objective value.
     assert info['current_time'] <= objective_value
 
-
+# TODO: la10 breaks the test with an Index error
 @pytest.mark.env
 @pytest.mark.parametrize("instance_name", TEST_INSTANCES)
 def test_partial_cp_solution(instance_name: str) -> None:
