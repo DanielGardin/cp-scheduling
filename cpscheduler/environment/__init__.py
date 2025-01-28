@@ -126,27 +126,3 @@ def make_env(
         return RayVectorEnv(env_fns, auto_reset=auto_reset)
 
     raise ValueError(f'Unknown vector environment {vector_env}. Available options are `sync`, `async` and `ray`.')
-
-
-def build_env(
-        instance: DataFrame,
-        duration: str | NDArray[np.int32],
-        objective: Objective | Callable[[IntervalVars], Objective],
-        constraints: list[Constraint] | list[Callable[[IntervalVars], Constraint]] = [],
-    ) -> SchedulingCPEnv:
-    env = SchedulingCPEnv(instance, duration)
-
-    if isinstance(objective, Objective):
-        env.set_objective(objective)
-
-    else:
-        env.set_objective(objective(env.tasks))
-    
-    for constraint in constraints:
-        if isinstance(constraint, Constraint):
-            env.add_constraint(constraint)
-        
-        else:
-            env.add_constraint(constraint(env.tasks))
-    
-    return env

@@ -1,4 +1,4 @@
-from typing import Any, Optional, Never, ClassVar, TypeVar, TypeAlias, Callable, Concatenate, SupportsFloat, Iterable, SupportsInt
+from typing import Any, Optional, Never, ClassVar, TypeVar, TypeAlias, Callable, Concatenate, SupportsFloat, Iterable, SupportsInt, ParamSpec
 from pandas import DataFrame
 
 from warnings import warn
@@ -13,7 +13,8 @@ from mypy_extensions import mypyc_attr
 
 
 _T = TypeVar('_T', covariant=True)
-SetupClass: TypeAlias = Callable[Concatenate[IntervalVars, ...], _T] | type[_T] | _T
+_P = ParamSpec('_P')
+SetupClass: TypeAlias = Callable[Concatenate[IntervalVars, _P], _T]
 
 def solve_cplex(
         model_string: str,
@@ -81,6 +82,9 @@ def solve_ortools(
 
     return start_times, objective_values, is_optimal
 
+_Constraint = TypeVar('_Constraint', bound=Constraint)
+_Objective = TypeVar('_Objective', bound=Objective)
+_Params = ParamSpec('_Params')
 @mypyc_attr(allow_interpreted_subclasses=True)
 class SchedulingCPEnv:
     metadata: ClassVar[dict[str, Any]] = {
@@ -124,32 +128,22 @@ class SchedulingCPEnv:
 
     def add_constraint(
             self,
-            constraint_fn: SetupClass[Constraint],
-            name: Optional[str] = None,
+            constraint_fn: SetupClass[_Params, _Constraint],
             *args: Any, **kwargs: Any
         ) -> None:
-        if isinstance(constraint_fn, Constraint):
-            constraint = constraint_fn
+        constraint = constraint_fn(self.tasks, *args, **kwargs)
 
-        else:
-            constraint = constraint_fn(self.tasks, *args, **kwargs) # type: ignore
-
-        if name is None: name = constraint.__class__.__name__
-
+        name = constraint.__class__.__name__
         self.constraints[name] = constraint
 
 
     def set_objective(
             self,
-            objective_fn: SetupClass[Objective],
+            objective_fn: SetupClass[_Params, _Objective],
             minimize: bool = True,
             *args: Any, **kwargs: Any
         ) -> None:
-        if isinstance(objective_fn, Objective):
-            objective = objective_fn
-        
-        else:
-            objective = objective_fn(self.tasks, *args, **kwargs) # type: ignore
+        objective = objective_fn(self.tasks, *args, **kwargs)
 
         self.objective = objective
         self.minimize  = minimize

@@ -2,7 +2,7 @@ from typing import Sequence, Iterable
 from pandas import DataFrame
 
 from .environment.constraints import PrecedenceConstraint, NonOverlapConstraint, ResourceCapacityConstraint
-from .environment.objectives import Makespan
+from .environment.objectives import Makespan, WeightedCompletionTime
 from .environment import SchedulingCPEnv
 
 
@@ -17,11 +17,14 @@ class JobShopEnv(SchedulingCPEnv):
         ) -> None:
         super().__init__(instance, duration)
         self.add_constraint(
-            PrecedenceConstraint.jobshop_precedence(self.tasks, job_feature, operation_feature)
+            PrecedenceConstraint.jobshop_precedence,
+            job_feature,
+            operation_feature
         )
 
         self.add_constraint(
-            NonOverlapConstraint.jobshop_non_overlap(self.tasks, machine_feature)
+            NonOverlapConstraint.jobshop_non_overlap,
+            machine_feature
         )
 
         self.set_objective(
@@ -42,7 +45,7 @@ class ResourceConstraintEnv(SchedulingCPEnv):
             capacity: Iterable[float],
             precedence: Sequence[Sequence[int]],
             duration: str | Iterable[int] = 'processing_time',
-            resource_features: str | list[str] = 'resource',
+            resource_features: str | Iterable[str] | Iterable[float] | Iterable[Iterable[float]] = 'resource',
 
         ) -> None:
         super().__init__(instance, duration)
@@ -54,7 +57,8 @@ class ResourceConstraintEnv(SchedulingCPEnv):
 
         self.add_constraint(
             ResourceCapacityConstraint,
-            capacity=capacity,
+            resources=resource_features,
+            resource_capacity=capacity,
         )
 
         self.set_objective(
@@ -63,3 +67,33 @@ class ResourceConstraintEnv(SchedulingCPEnv):
 
     def render(self) -> None:
         return self.render_gantt()
+
+
+class CustomerJobShopEnv(SchedulingCPEnv):
+    def __init__(
+            self,
+            instance: DataFrame,
+            customer_weights: Iterable[float],
+            duration: str | Iterable[int] = 'processing_time',
+            job_feature: str = 'job',
+            operation_feature: str = 'operation',
+            machine_feature: str = 'machine',
+            customer_feature: str = 'customer',
+        ):
+        super().__init__(instance, duration)
+        self.add_constraint(
+            PrecedenceConstraint.jobshop_precedence,
+            job_feature,
+            operation_feature
+        )
+
+        self.add_constraint(
+            NonOverlapConstraint.jobshop_non_overlap,
+            machine_feature
+        )
+
+
+
+        self.set_objective(
+            WeightedCompletionTime
+        )
