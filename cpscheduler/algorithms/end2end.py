@@ -33,6 +33,7 @@ class End2End(BaseAlgorithm):
         target_kl: Optional[float] = None,
         anneal_lr: bool = True,
         time_limit: Optional[int] = 30,
+        improvement_window: float = 0.9
     ):
         buffer_shapes = {
             "obs": (n_jobs, 2 + n_future_tasks, 6),
@@ -55,6 +56,8 @@ class End2End(BaseAlgorithm):
         self.reward_norm    = reward_norm
         self.anneal_lr      = anneal_lr
         self.target_kl      = float('inf') if target_kl is None else target_kl
+
+        self.improvement_window = improvement_window
 
         self.n_jobs     = n_jobs
         self.n_machines = n_machines
@@ -129,9 +132,11 @@ class End2End(BaseAlgorithm):
 
 
         agent_return = torch.tensor(info["objective_value"], dtype=torch.float32)
+        efficiency   = [speedup / self.n_machines for speedup in info["speedup"]]
 
         # Calculate partial solution with the cp solver to calculate improvement
-        sampled_idx = random.randint(1, horizon-1)
+        sampled_idx = random.randint(1, int(self.improvement_window * horizon))
+        new_horizon = horizon - sampled_idx
 
         logged_actions = actions[:, :sampled_idx]
 
@@ -140,21 +145,27 @@ class End2End(BaseAlgorithm):
         obs, reward, terminated, truncated, info = envs.step(logged_actions)
         cp_actions, cp_start_time, cp_makespan, is_optimal = envs.call("get_cp_solution", timelimit=self.time_limit)
 
-        cp_return = torch.tensor(cp_makespan, dtype=torch.float32)
+        cp_return   = torch.tensor(cp_makespan, dtype=torch.float32)
+        improvement = agent_return / cp_return - 1 # Optimal gap, differently from the original paper
 
-        improvement = 1 - cp_return / agent_return
-        return_ = cp_return.repeat(horizon, 1).T
-        return_[:, sampled_idx:] = agent_return.unsqueeze(-1)
-
+        # Add common experiences to the buffer
         self.buffer.add(
-            obs         = observations,
-            action      = actions,
-            log_prob    = log_probs,
-            improvement = -improvement.repeat(horizon, 1).T,
-            returns     = return_,
+            obs         = observations[:, :sampled_idx],
+            action      = actions[:, :sampled_idx],
+            log_prob    = log_probs[:, :sampled_idx],
+            improvement = torch.zeros(self.n_envs, sampled_idx, dtype=torch.float32),
+            returns     = cp_return.repeat(sampled_idx, 1).T,
         )
 
-        new_horizon = horizon - sampled_idx
+        # Add agent experiences to the buffer
+        self.buffer.add(
+            obs         = observations[:, sampled_idx:],
+            action      = actions[:, sampled_idx:],
+            log_prob    = log_probs[:, sampled_idx:],
+            improvement = -improvement.repeat(new_horizon, 1).T,
+            returns     = agent_return.repeat(new_horizon, 1).T,
+        )
+
         for i in range(new_horizon):
             tensor_obs = torch.stack(obs).to(self.device)
             observations[:, i] = tensor_obs
@@ -177,6 +188,7 @@ class End2End(BaseAlgorithm):
 
             obs, reward, terminated, truncated, info = envs.step(action.cpu())
 
+        # Add optimal experiences to the buffer
         self.buffer.add(
             obs         = observations[:, :new_horizon],
             action      = actions[:, :new_horizon],
@@ -194,6 +206,7 @@ class End2End(BaseAlgorithm):
         return {
             "objective": agent_return.tolist(),
             "improvement": improvement.tolist(),
+            "efficiency": efficiency
         }
 
 
@@ -207,7 +220,7 @@ class End2End(BaseAlgorithm):
         log_ratio = log_prob - batch["log_prob"]
         ratio = torch.exp(log_ratio)
 
-        improvement = batch["improvement"]
+        improvement: Tensor = batch["improvement"]
 
         improvement_loss1 = -improvement * ratio
         improvement_loss2 = -improvement * torch.clamp(ratio, 1 - self.clip_coef, 1 + self.clip_coef)
@@ -228,12 +241,12 @@ class End2End(BaseAlgorithm):
 
         with torch.no_grad():
             # calculate approx_kl http://joschu.net/blog/kl-approx.html
-            approx_kl = torch.mean((ratio - 1) - new_log_ratio)
+            approx_kl = torch.mean((new_ratio - 1) - new_log_ratio)
 
         if approx_kl > self.target_kl:
             raise ValueError(f"approx_kl is too high: {approx_kl}")
 
-        returns = batch["returns"]
+        returns: Tensor = batch["returns"]
 
         pg_loss1 = returns * new_ratio
         pg_loss2 = returns * torch.clamp(new_ratio, 1 - self.clip_coef, 1 + self.clip_coef)
@@ -258,44 +271,5 @@ class End2End(BaseAlgorithm):
         return {"learning rate": epoch_lr}
 
 
-    # def validate(self) -> dict[str, Any] | Logs:
-    #     makespans = list(map(
-    #         int,
-    #         [
-    #             read_jsp_instance(root / f"instances/jobshop/ta{i:02d}.txt")[1]["Makespan UB"]
-    #             for i in range(1, 81)
-    #         ],
-    #     ))
-
-    #     val_makespans = []
-
-    #     for group in range(8):
-    #         initial = group * 10 + 1
-    #         taillard_envs = AsyncVectorEnv(
-    #             [make_eval_env(i) for i in range(initial, initial + 10)],
-    #             auto_reset=False,
-    #         )
-
-    #         obs, info = taillard_envs.reset()
-    #         running = [True] * 10
-    #         while any(running):
-    #             tensor_obs, tensor_mask = obs
-
-    #             with torch.no_grad():
-    #                 logits = self.agent(tensor_obs, tensor_mask)
-    #                 action = torch.argmax(logits, dim=1)
-
-    #             obs, reward, terminated, truncated, info = taillard_envs.step(
-    #                 action.cpu().numpy()
-    #             )
-
-    #             running = [not done for done in terminated]
-
-    #         val_makespans.extend(info["objective_value"])
-
-    #     return Logs({
-    #         "optimality gap": [
-    #             (val - optimal) / optimal
-    #             for val, optimal in zip(val_makespans, makespans)
-    #         ]
-    #     })
+    def validate(self) -> dict[str, Any]:
+        ...
