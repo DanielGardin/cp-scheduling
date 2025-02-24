@@ -5,74 +5,95 @@ import pytest
 
 import numpy as np
 
-from cpscheduler.common_envs import JobShopEnv
+from gymnasium.vector import SyncVectorEnv, AsyncVectorEnv
+
+from cpscheduler.environment import SchedulingCPEnv
 from cpscheduler.environment.instances import generate_taillard_instance
-
 from cpscheduler.policies.heuristics import ShortestProcessingTime, MostOperationsRemaining, MostWorkRemaining, PriorityDispatchingRule
-from cpscheduler.environment.vector import SyncVectorEnv, AsyncVectorEnv, RayVectorEnv
-from cpscheduler.environment.protocols import VectorEnv
 
-def make_jsp_env(
-        instance_generator: Callable[..., tuple[DataFrame, dict[str, Any]]],
-        env_cls: Callable[[DataFrame], JobShopEnv],
-        *args: Any, **kwargs: Any
-    ) -> Callable[[], JobShopEnv]:
-    return lambda : env_cls(instance_generator(*args, **kwargs)[0])
-
-
-pdrs: list[PriorityDispatchingRule] = [
-    ShortestProcessingTime(),
-    MostOperationsRemaining(),
-    MostWorkRemaining()
-]
+from common import env_setup
 
 @pytest.mark.vector
-@pytest.mark.parametrize('env_cls', [AsyncVectorEnv, SyncVectorEnv, RayVectorEnv])
-def test_sync_env(env_cls: type[VectorEnv[Any, Any]]) -> None:
-    env_fns = [
-        make_jsp_env(
-            generate_taillard_instance,
-            JobShopEnv,
-            15, 15, seed=i
-        ) for i in range(3)
+def test_sync_env() -> None:
+
+    def make_env_fn(instance_name: str) -> Callable[[], SchedulingCPEnv]:
+        def env_fn() -> SchedulingCPEnv:
+            return env_setup(instance_name)
+        
+        return env_fn
+
+    # Observation space is the same
+
+    sync_env = SyncVectorEnv([
+        make_env_fn(instance_name) for instance_name in [f"ta{i:02d}" for i in range(1, 11)]
+    ])
+
+    envs = [
+        make_env_fn(instance_name)() for instance_name in [f"ta{i:02d}" for i in range(1, 11)]
     ]
 
-    sync_env = env_cls(env_fns, auto_reset=False)
-    envs     = [env_fn() for env_fn in env_fns]
+    sync_obs, sync_info = sync_env.reset()
 
-    obss, infos = sync_env.reset()
-
-    for env, obs, info in zip(envs, obss, infos):
+    for i, env in enumerate(envs):
         single_obs, single_info = env.reset()
+    
+        assert all([np.all(single_obs[feat] == sync_obs[feat][i]) for feat in single_obs])
 
-        assert obs == single_obs
+    pdr = ShortestProcessingTime()
 
+    actions = [
+        pdr({feat: sync_obs[feat][i] for feat in sync_obs}) for i in range(len(envs))
+    ]
 
-    actions = [pdr(obs) for pdr, obs in zip(pdrs, obss)]
-
-    final_obss, final_rewards, final_terminated, final_truncated, final_infos = sync_env.step(actions, enforce_order=False)
+    final_obss, final_rewards, final_terminated, final_truncated, final_infos = sync_env.step(actions)
 
     for i in range(len(envs)):
-        single_new_obs, single_reward, single_terminated, single_truncated, single_new_info = envs[i].step(actions[i], enforce_order=False)
+        single_new_obs, single_reward, single_terminated, single_truncated, single_new_info = envs[i].step(actions[i])
 
-        assert np.all(final_obss[i] == single_new_obs)
+        assert all([np.all(single_new_obs[feat] == final_obss[feat][i]) for feat in single_new_obs])
         assert final_rewards[i] == single_reward
         assert final_terminated[i] == single_terminated
         assert final_truncated[i] == single_truncated
+
+
+@pytest.mark.vector
+def test_async_env() -> None:
+
+    def make_env_fn(instance_name: str) -> Callable[[], SchedulingCPEnv]:
+        def env_fn() -> SchedulingCPEnv:
+            return env_setup(instance_name)
+        
+        return env_fn
+
+    # Observation space is the same
+
+    sync_env = AsyncVectorEnv([
+        make_env_fn(instance_name) for instance_name in [f"ta{i:02d}" for i in range(1, 11)]
+    ])#, shared_memory=False) # TODO: verify why shared_memory=True is not working
+
+    envs = [
+        make_env_fn(instance_name)() for instance_name in [f"ta{i:02d}" for i in range(1, 11)]
+    ]
+
+    sync_obs, sync_info = sync_env.reset()
+
+    for i, env in enumerate(envs):
+        single_obs, single_info = env.reset()
     
-    sync_env = SyncVectorEnv(env_fns, auto_reset=True)
+        assert all([np.all(single_obs[feat] == sync_obs[feat][i]) for feat in single_obs])
 
-    obss, _ = sync_env.reset()
+    pdr = ShortestProcessingTime()
 
-    actions = [pdr(obs) for pdr, obs in zip(pdrs, obss)]
+    actions = [
+        pdr({feat: sync_obs[feat][i] for feat in sync_obs}) for i in range(len(envs))
+    ]
 
-    new_obss, rewards, terminated, truncated, new_infos = sync_env.step(actions, enforce_order=False)
+    final_obss, final_rewards, final_terminated, final_truncated, final_infos = sync_env.step(actions)
 
-    assert all([np.all(new_obs == obs) for obs, new_obs in zip(obss, new_obss)])
-    assert 'final_obs' in new_infos
-    assert 'final_reward' in new_infos
-    assert 'final_terminated' in new_infos
-    assert 'final_truncated' in new_infos
-    assert 'final_info' in new_infos
+    for i in range(len(envs)):
+        single_new_obs, single_reward, single_terminated, single_truncated, single_new_info = envs[i].step(actions[i])
 
-    assert new_infos['final_info'].keys() == final_infos.keys()
+        assert all([np.all(single_new_obs[feat] == final_obss[feat][i]) for feat in single_new_obs])
+        assert final_rewards[i] == single_reward
+        assert final_terminated[i] == single_terminated
+        assert final_truncated[i] == single_truncated
