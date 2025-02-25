@@ -11,12 +11,15 @@ from typing import (
 
 import numpy as np
 from collections import deque
+from fractions import Fraction
+from math import lcm
 
 MIN_INT: Final[int] = -(2**31 - 1)
 MAX_INT: Final[int] = 2**31 - 1
 
 _S = TypeVar("_S")
 _T = TypeVar("_T", bound=Any)
+
 
 @overload
 def convert_to_list(array: Any, dtype: type[_T]) -> list[_T]: ...
@@ -92,9 +95,14 @@ def is_iterable_type(obj: Any, dtype: type[_Type]) -> TypeGuard[Iterable[_Type]]
     except Exception:  # If __iter__ is implemented but iterating raises an exception
         return False
 
+
 _K = TypeVar("_K")
 _V = TypeVar("_V")
-def is_dict(obj: Any, keys_type: type[_K], values_type: type[_V]) -> TypeGuard[dict[_K, _V]]:
+
+
+def is_dict(
+    obj: Any, keys_type: type[_K], values_type: type[_V]
+) -> TypeGuard[dict[_K, _V]]:
     """
     Returns whether the object is a dictionary.
 
@@ -109,7 +117,10 @@ def is_dict(obj: Any, keys_type: type[_K], values_type: type[_V]) -> TypeGuard[d
         Whether the object is a dictionary.
     """
     return isinstance(obj, dict) and all(
-        [isinstance(key, keys_type) and isinstance(value, values_type) for key, value in obj.items()]
+        [
+            isinstance(key, keys_type) and isinstance(value, values_type)
+            for key, value in obj.items()
+        ]
     )
 
 
@@ -251,19 +262,33 @@ def binary_search(
 
 
 from gymnasium import spaces
+
+
 def infer_list_space(array: list[_T]) -> spaces.Space[Any]:
     n = len(array)
 
     if is_iterable_type(array, bool):
         return spaces.MultiBinary(n)
-    
+
     if is_iterable_type(array, int):
         return spaces.Box(low=MIN_INT, high=MAX_INT, shape=(n,), dtype=np.int64)
 
     if is_iterable_type(array, float):
         return spaces.Box(low=-np.inf, high=np.inf, shape=(n,), dtype=np.float64)
-    
+
     if is_iterable_type(array, str):
         return spaces.Tuple([spaces.Text(max_length=100) for _ in range(n)])
 
     raise TypeError(f"Cannot infer the space of the list: {array}")
+
+
+def scale_to_int(float_list: list[float], scale_factor: float = 1000.0) -> list[int]:
+    fractions = [Fraction(value).limit_denominator() for value in float_list]
+
+    denominators = [fraction.denominator for fraction in fractions]
+    lcm_denominator = lcm(*denominators)
+
+    if lcm_denominator <= scale_factor:
+        scale_factor = lcm_denominator
+
+    return [int(value * scale_factor) for value in float_list]

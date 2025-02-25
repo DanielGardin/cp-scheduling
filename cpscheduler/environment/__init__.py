@@ -9,7 +9,13 @@ from pandas import DataFrame
 
 import numpy as np
 
-from .constraints import Constraint, PrecedenceConstraint, DisjunctiveConstraint, ReleaseDateConstraint, DeadlineConstraint
+from .constraints import (
+    Constraint,
+    PrecedenceConstraint,
+    DisjunctiveConstraint,
+    ReleaseDateConstraint,
+    DeadlineConstraint,
+)
 
 from .objectives import Objective, Makespan, WeightedCompletionTime
 

@@ -5,7 +5,7 @@ from abc import ABC
 from textwrap import dedent
 
 from .tasks import Tasks, Status
-from .utils import convert_to_list, topological_sort
+from .utils import convert_to_list, topological_sort, binary_search
 
 
 class Constraint(ABC):
@@ -30,12 +30,25 @@ class Constraint(ABC):
     def export_data(self) -> str:
         return ""
 
+    def get_entry(self) -> str:
+        """
+        Produce the β entry for the constraint.
+        """
+
+        return ""
+
 
 class PrecedenceConstraint(Constraint):
-    def __init__(self, precedence: Mapping[int, Iterable[int]]):
+    def __init__(
+        self,
+        precedence: Mapping[int, Iterable[int]],
+        no_wait: bool = False,
+    ):
         self.precedence = {
             task: convert_to_list(tasks) for task, tasks in precedence.items()
         }
+
+        self.no_wait = no_wait
 
         self.original_precedence = deepcopy(self.precedence)
 
@@ -85,14 +98,16 @@ class PrecedenceConstraint(Constraint):
                 ptr += 1
 
     def export_model(self) -> str:
-        model = rf"""
+        operator = "==" if self.no_wait else "<="
+
+        model = f"""\
             set of int: edges;
 
             array[edges] of 1..num_tasks: precedence_tasks;
             array[edges] of 1..num_tasks: child_tasks;
 
             constraint forall(e in edges) (
-                end[precedence_tasks[e], num_parts] <= start[child_tasks[e], 1]
+                end[precedence_tasks[e], num_parts] {operator} start[child_tasks[e], 1]
             );
         """
 
@@ -107,13 +122,40 @@ class PrecedenceConstraint(Constraint):
                 precedence_tasks.append(str(task + 1))
                 child_tasks.append(str(child + 1))
 
-        data = f"""
+        data = f"""\
             edges = 1..{len(precedence_tasks)};
             precedence_tasks = [{', '.join(precedence_tasks)}];
             child_tasks = [{', '.join(child_tasks)}];
         """
 
         return dedent(data)
+
+    def get_entry(self) -> str:
+        intree = all(len(tasks) <= 1 for tasks in self.precedence.values())
+
+        children = sum([tasks for tasks in self.precedence.values()], [])
+
+        outtree = len(set(children)) == len(children)
+
+        graph = "prec"
+        if intree and outtree:
+            graph = "chains"
+
+        elif intree:
+            graph = "intree"
+
+        elif outtree:
+            graph = "outtree"
+
+        if self.no_wait:
+            graph += ", nwt"
+
+        return graph
+
+
+class NoWait(PrecedenceConstraint):
+    def __init__(self, precedence: Mapping[int, Iterable[int]]):
+        super().__init__(precedence, no_wait=True)
 
 
 _T = TypeVar("_T")
@@ -153,7 +195,7 @@ class DisjunctiveConstraint(Constraint):
                     task.set_start_lb(minimum_start_time)
 
     def export_model(self) -> str:
-        model = rf"""
+        model = """\
             int: num_groups;
             int: num_group_tasks;
 
@@ -198,6 +240,9 @@ class ReleaseDateConstraint(Constraint):
         for task_id, date in self.release_dates.items():
             self.tasks[task_id].set_start_lb(date)
 
+    def get_entry(self) -> str:
+        return "r_j"
+
 
 class DeadlineConstraint(Constraint):
     def __init__(self, deadlines: Mapping[int, int]):
@@ -206,3 +251,71 @@ class DeadlineConstraint(Constraint):
     def reset(self) -> None:
         for task_id, date in self.deadlines.items():
             self.tasks[task_id].set_end_ub(date)
+
+    def get_entry(self) -> str:
+        return "d_j"
+
+
+class ResourceConstraint(Constraint):
+    def __init__(
+        self,
+        capacities: Iterable[float],
+        resource_usage: Iterable[Mapping[int, float]],
+    ) -> None:
+        self.capacities = convert_to_list(capacities)
+        self.resources = [
+            {task: usage for task, usage in resources.items()}
+            for resources in resource_usage
+        ]
+
+        self.original_resources = deepcopy(self.resources)
+
+    def reset(self) -> None:
+        self.resources = deepcopy(self.original_resources)
+
+
+    def propagate(self, time: int) -> None:
+        for i, (capacity, task_resources) in enumerate(zip(self.capacities, self.resources)):
+            minimum_start_time = time
+
+            minimum_end_time: list[int] = []
+            resource_taken: list[float] = []
+            for task_id in task_resources:
+                task = self.tasks[task_id]
+
+                if task.is_executing(time):
+                    resource = task_resources[task_id]
+
+                    minimum_end_time.append(task.get_end_lb())
+                    resource_taken.append(resource)
+
+
+                if task.is_completed(time):
+                    del self.resources[i]
+
+            if not resource_taken:
+                continue
+
+            argsort = sorted([(end, i) for i, end in enumerate(minimum_end_time)])
+            minimum_end_time = [minimum_end_time[i] for _, i in argsort]
+            available_resources = resource_taken.copy()
+
+            available_resources[-1] = capacity - resource_taken[argsort[-1][1]]
+
+            for i in range(len(minimum_end_time) - 2, -1, -1):
+                available_resources[i] = available_resources[i + 1] - resource_taken[argsort[i + 1][1]]
+
+            for task_id in self.resources[i]:
+                task     = self.tasks[task_id]
+                resource = task_resources[task_id]
+
+                if task.is_fixed():
+                    continue
+
+                index = binary_search(available_resources, resource)
+
+                if index > 0:
+                    minimum_start_time = minimum_end_time[index - 1]
+
+                if task.get_start_lb() < minimum_start_time:
+                    task.set_start_lb(minimum_start_time)
