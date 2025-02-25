@@ -4,9 +4,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cpscheduler"
-version = "0.1.0"
+version = "0.2.0"
 authors = [
-  { name="Daniel Gardin", email="gardin.dan@gmail.com" },
+    { name="Daniel Gardin", email="gardin.dan@gmail.com" },
 ]
 description = "Solving Scheduling Problems with Constraint Programming and Reinforcement Learning"
 readme = "README.md"
@@ -29,3 +29,11 @@ pretty = true
 ignore_missing_imports = true
 disallow_untyped_defs = true
 warn_unused_ignores = false
+disallow_subclassing_any = false
+disable_error_code = ["type-abstract"]
+
+[[tool.mypy.overrides]]
+module = "torch.*"
+ignore_missing_imports = true
+follow_imports = "skip"
+follow_imports_for_stubs = true

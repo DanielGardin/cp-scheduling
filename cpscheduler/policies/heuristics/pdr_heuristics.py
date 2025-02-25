@@ -10,7 +10,7 @@ class PriorityDispatchingRule:
     of priority.
     """
 
-    def priority_rule(self, obs: dict[str, list[Any]]) -> Sequence[float]:
+    def priority_rule(self, obs: dict[str, list[Any]]) -> list[float]:
         """
         Implements a priority rule to sort the tasks in the waiting buffer by a given criterion.
 
@@ -45,7 +45,7 @@ class ShortestProcessingTime(PriorityDispatchingRule):
         self.processing_time_label = processing_time_label
 
 
-    def priority_rule(self, obs: dict[str, list[Any]]) -> Sequence[float]:
+    def priority_rule(self, obs: dict[str, list[Any]]) -> list[float]:
         return [-processing_time for processing_time in obs[self.processing_time_label]]
 
 
@@ -65,7 +65,7 @@ class MostOperationsRemaining(PriorityDispatchingRule):
         self.operation_label = operation_label
     
 
-    def priority_rule(self, obs: dict[str, list[Any]]) -> Sequence[float]:
+    def priority_rule(self, obs: dict[str, list[Any]]) -> list[float]:
         priority_values: list[float] = obs[self.operation_label].copy()
 
         max_ops: dict[Any, int] = {}
@@ -99,7 +99,7 @@ class MostWorkRemaining(PriorityDispatchingRule):
         self.processing_time_label = processing_time_label
 
 
-    def priority_rule(self, obs: dict[str, list[Any]]) -> Sequence[float]:
+    def priority_rule(self, obs: dict[str, list[Any]]) -> list[float]:
         jobs             = obs[self.job_label]
         ops: list[int]   = obs[self.operation_label]
         procs: list[float] = obs[self.processing_time_label]
@@ -137,7 +137,7 @@ class EarliestDueDate(PriorityDispatchingRule):
         self.due_date_label = due_date_label
 
 
-    def priority_rule(self, obs: dict[str, list[Any]]) -> Sequence[float]:
+    def priority_rule(self, obs: dict[str, list[Any]]) -> list[float]:
         return [-due_date for due_date in obs[self.due_date_label]]
 
 
@@ -160,7 +160,7 @@ class WeightedShortestProcessingTime(PriorityDispatchingRule):
         self.weight = weight
 
 
-    def priority_rule(self, obs: dict[str, list[Any]]) -> Sequence[float]:
+    def priority_rule(self, obs: dict[str, list[Any]]) -> list[float]:
         weight_ids: list[int]   = obs[self.weighted_label]
         proc_times: list[float] = obs[self.processing_time]
 
@@ -186,12 +186,12 @@ class MinimumSlackTime(PriorityDispatchingRule):
         self.processing_time_label = processing_time_label
 
 
-    def priority_rule(self, obs: dict[str, list[Any]]) -> Sequence[float]:
-        due_dates: list[int]    = obs[self.due_date_label]
+    def priority_rule(self, obs: dict[str, list[Any]]) -> list[float]:
+        due_dates: list[int]  = obs[self.due_date_label]
         proc_times: list[int] = obs[self.processing_time_label]
     
         priority_values = [
-            due_date - proc_time for due_date, proc_time in zip(due_dates, proc_times)
+            float(due_date - proc_time) for due_date, proc_time in zip(due_dates, proc_times)
         ]
 
         return priority_values

@@ -1,504 +1,505 @@
-from typing import Any, Optional, Never, ClassVar, TypeVar, TypeAlias, Callable, Concatenate, SupportsFloat, Iterable, SupportsInt
+from typing import Any, Optional, ClassVar, TypeAlias, Iterable, SupportsInt, TypeGuard
+from minizinc import Result, Instance
+from numpy.typing import ArrayLike
 from pandas import DataFrame
 
-from warnings import warn
-import heapq
+from numpy import int64
 
+from warnings import warn
+from datetime import timedelta
+
+from gymnasium import Env
+from gymnasium.spaces import Dict, Tuple, Text, Box, OneOf
+
+from collections import deque
+
+from .tasks import Tasks, status_str
+from .schedule_setup import ScheduleSetup
 from .constraints import Constraint
 from .objectives import Objective
-from .variables import IntervalVars
-from .utils import MAX_INT, AVAILABLE_SOLVERS, convert_to_list
+from .utils import MAX_INT, convert_to_list, is_iterable_type, is_dict, infer_list_space
 
-from mypy_extensions import mypyc_attr
-
-
-_T = TypeVar('_T', covariant=True)
-SetupClass: TypeAlias = Callable[Concatenate[IntervalVars, ...], _T] | type[_T] | _T
-
-def solve_cplex(
-        model_string: str,
-        var_names: list[str],
-        timelimit: Optional[float] = None
-    ) -> tuple[list[int], float, bool]:
-        from docplex.cp.model import CpoModel, CpoSolveResult
-
-        model = CpoModel()
-
-        if timelimit is not None:
-            model.set_parameters(TimeLimit=timelimit)
-
-        model.import_model_string(model_string)
-
-        result: CpoSolveResult = model.solve(LogVerbosity="Quiet") # type: ignore
-
-        if result is None:
-            raise Exception("No solution found")
-
-        if not result.is_solution():
-            raise Exception("No solution found")
-
-        start_times = [
-            int(result.get_var_solution(name).start) for name in var_names # type: ignore
-        ]
-
-        model.get_all_variables()
-
-        objective_values = float(result.get_objective_value()) # type: ignore
-        is_optimal       = bool(result.is_solution_optimal())
-
-        return start_times, objective_values, is_optimal
+from .instructions import Instruction, Signal, Instructions
+from . import instructions
 
 
-def solve_ortools(
-        model_string: str,
-        var_names: list[str],
-        timelimit: Optional[float] = None
-    ) -> tuple[list[int], float, bool]:
-    from ortools.sat.python import cp_model
+TaskAllowedTypes: TypeAlias = DataFrame | dict[str, ArrayLike]
+ProcessTimeAllowedTypes: TypeAlias = ArrayLike | Iterable[int] | str
+ActionType: TypeAlias = (
+    Iterable[tuple[str | Instruction, *tuple[int, ...]]]
+    | tuple[str | Instruction, *tuple[int, ...]]
+    | None
+)
 
-    model = cp_model.CpModel()
-
-    locals_: dict[str, cp_model.LinearExprT] = {}
-
-    exec(model_string, {'model' : model}, locals_)
-
-    cp_solver = cp_model.CpSolver()
-
-    if timelimit is not None:
-        cp_solver.parameters.max_time_in_seconds = timelimit
-
-    status = cp_solver.Solve(model)
-
-    if status is cp_model.INFEASIBLE: # type: ignore[comparison-overlap]
-        raise Exception("No solution found")
-
-    start_times = [
-        cp_solver.Value(locals_[f"{name}_start"]) for name in var_names
+InstructionSpace = Text(max_length=1, charset=frozenset(Instructions))
+IntSpace = Box(low=0, high=MAX_INT, shape=(), dtype=int64)
+ActionSpace = OneOf(
+    [
+        Tuple([InstructionSpace]),
+        Tuple([InstructionSpace, IntSpace]),
+        Tuple([InstructionSpace, IntSpace, IntSpace]),
+        Tuple([InstructionSpace, IntSpace, IntSpace, IntSpace]),
     ]
+)
 
-    objective_values = cp_solver.ObjectiveValue()
-    is_optimal = status is cp_model.OPTIMAL # type: ignore[comparison-overlap]
 
-    return start_times, objective_values, is_optimal
+def is_single_action(
+    action: ActionType,
+) -> TypeGuard[tuple[str | Instruction, *tuple[int, ...]]]:
+    return isinstance(action, tuple) and isinstance(action[0], str)
 
-@mypyc_attr(allow_interpreted_subclasses=True)
-class SchedulingCPEnv:
-    metadata: ClassVar[dict[str, Any]] = {
-        'render_modes': ['gantt']
-    }
 
-    constraints : dict[str, Constraint]
-    objective   : Objective
-    minimize    : bool
-    
-    tasks: IntervalVars
+def parse_args(
+    instruction_name: str,
+    args: tuple[int, ...],
+    n_required: int,
+) -> tuple[tuple[int, ...], int]:
+    if len(args) == n_required:
+        return args, -1
+
+    elif len(args) == n_required + 1:
+        return args[:-1], args[-1]
+
+    else:
+        raise ValueError(
+            f"Expected {n_required} or {n_required + 1} arguments for instruction {instruction_name} , got {len(args)}."
+        )
+
+
+class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
+    # Environment static variables
+    constraints: dict[str, Constraint]
+    objective: Objective
+
+    # Environment dynamic variables
+    tasks: Tasks
+    data: dict[str, list[Any]]
+    scheduled_instructions: dict[int, deque[Instruction]]
     current_time: int
     n_queries: int
-    scheduled_actions: list[int]
-    current_task: int
-    action_sequence: list[int]
 
+    advancing_to: int
+
+    # Functions with interaction with the user can be slower.
     def __init__(
-            self,
-            instance: DataFrame,
-            duration: str | Iterable[int],
-        ) -> None:
+        self,
+        machine_setup: Optional[ScheduleSetup] = None,
+        constraints: Optional[dict[str, Constraint] | Iterable[Constraint]] = None,
+        objective: Optional[Objective] = None,
+        instance: Optional[TaskAllowedTypes] = None,
+        *,
+        n_machines: int = 1,
+        allow_preemption: bool = False,
+        processing_times: ProcessTimeAllowedTypes = "processing_time",
+        jobs: Optional[Iterable[int] | str] = None,
+    ):
+        self.setup = (
+            machine_setup if machine_setup is not None else ScheduleSetup(n_machines)
+        )
+        self.allow_preemption = allow_preemption
+
         self.constraints = {}
-        self.objective   = Objective()
-        self.minimize    = True
+        self.objective = Objective()
 
-        tasks = {
-            feature: instance[feature].tolist() for feature in instance.columns
-        }
+        self.scheduled_instructions = {-1: deque()}
 
-        if isinstance(duration, str):
-            duration_list: list[int] = tasks[duration]
-        
-        else:
-            duration_list = convert_to_list(duration, dtype=int)
+        self.current_time = 0
+        self.n_queries = 0
 
-        self.tasks = IntervalVars(tasks, duration_list)
-        self.scheduled_actions = []
-        self.action_sequence   = []
+        self.advancing_to = 0
 
+        self.action_space = ActionSpace
+
+        if is_iterable_type(constraints, Constraint):
+            for constraint in constraints:
+                self.add_constraint(constraint)
+
+        elif is_dict(constraints, str, Constraint):
+            for name, constraint in constraints.items():
+                self.add_constraint(constraint, name)
+
+        if objective is not None:
+            self.set_objective(objective)
+
+        if instance is not None:
+            self.set_instance(instance, processing_times=processing_times, jobs=jobs)
+
+    def load_configuration(self, config: dict[str, Any]) -> None:
+        # TODO: Implement the loading of the configuration
+        pass
 
     def add_constraint(
-            self,
-            constraint_fn: SetupClass[Constraint],
-            name: Optional[str] = None,
-            *args: Any, **kwargs: Any
-        ) -> None:
-        if isinstance(constraint_fn, Constraint):
-            constraint = constraint_fn
-
-        else:
-            constraint = constraint_fn(self.tasks, *args, **kwargs) # type: ignore
-
-        if name is None: name = constraint.__class__.__name__
+        self, constraint: Constraint, name: Optional[str] = None
+    ) -> None:
+        name = name if name is not None else constraint.__class__.__name__
 
         self.constraints[name] = constraint
 
-
-    def set_objective(
-            self,
-            objective_fn: SetupClass[Objective],
-            minimize: bool = True,
-            *args: Any, **kwargs: Any
-        ) -> None:
-        if isinstance(objective_fn, Objective):
-            objective = objective_fn
-        
-        else:
-            objective = objective_fn(self.tasks, *args, **kwargs) # type: ignore
-
+    def set_objective(self, objective: Objective) -> None:
         self.objective = objective
-        self.minimize  = minimize
 
+    def set_instance(
+        self,
+        instance: TaskAllowedTypes,
+        processing_times: ProcessTimeAllowedTypes = "processing_time",
+        jobs: Optional[Iterable[int] | str] = None,
+        n_parts: Optional[
+            int
+        ] = None,  # if we allow preemption, we must define a maximum number of splits
+    ) -> None:
+        if n_parts is None:
+            n_parts = 16 if self.allow_preemption else 1
 
-    def export_model(self, solver: AVAILABLE_SOLVERS = 'cplex') -> str:
-        model = [
-            self.tasks.export_variables(solver=solver),
-            *[constraint.export_constraint(solver=solver) for constraint in self.constraints.values()],
-            self.objective.export_objective(self.minimize, solver=solver)
-        ]
+        features = instance.keys() if isinstance(instance, dict) else instance.columns
+        data = {feature: convert_to_list(instance[feature]) for feature in features}
 
-        return '\n'.join(model)
+        if isinstance(processing_times, str):
+            processing_times = data[processing_times]
 
+        assert is_iterable_type(processing_times, SupportsInt)
+        if jobs is None:
+            jobs = [i for i, _ in enumerate(processing_times)]
 
-    def get_cp_solution(
-            self,
-            timelimit: Optional[float] = None,
-            solver: AVAILABLE_SOLVERS = 'cplex'
-        ) -> tuple[list[int], list[int], SupportsFloat, bool]:
-        model_string = self.export_model(solver)
-        var_names    = self.tasks.get_var_name()
+        elif isinstance(jobs, str):
+            jobs = data[jobs]
 
-        if solver == 'cplex':
-            start_times, objective_values, is_optimal = solve_cplex(model_string, var_names, timelimit)
+        self.tasks = Tasks(data, n_parts)
 
-        elif solver == 'ortools':
-            start_times, objective_values, is_optimal = solve_ortools(model_string, var_names, timelimit)
+        for processing_time, job in zip(processing_times, jobs):
+            self.tasks.add_task(int(processing_time), job)
 
-        else:
-            raise ValueError(f"Unknown solver {solver}, available solvers are 'cplex' or 'ortools'")
+        self.setup.set_tasks(self.tasks)
+        for constraint in self.setup.setup_constraints():
+            name = f"_setup_{constraint.__class__.__name__}"
+            self.add_constraint(constraint, name)
 
-        is_fixed = self.tasks.is_fixed()
-        arg_order = sorted([
-            (start, task) for task, start in enumerate(start_times) if not is_fixed[task]
-        ])
+        for constraint in self.constraints.values():
+            constraint.set_tasks(self.tasks)
 
-        task_order = [task for _, task in arg_order]
+        self.objective.set_tasks(self.tasks)
 
-        return start_times, task_order, objective_values, is_optimal
+        self.observation_space = Dict(
+            {
+                "task_id": Box(
+                    low=0, high=len(self.tasks), shape=(len(self.tasks),), dtype=int64
+                ),
+                **{feature: infer_list_space(data[feature]) for feature in data.keys()},
+                "remaining_time": Box(
+                    low=0, high=MAX_INT, shape=(len(self.tasks),), dtype=int64
+                ),
+                "status": Text(max_length=1, charset=frozenset(status_str.values())),
+            }
+        )
 
-
-    def _get_obs(self) -> dict[str, Any]:
+    def get_state(self) -> dict[str, list[Any]]:
         return self.tasks.get_state(self.current_time)
 
-
-    def _get_reward(self, previous_objective: float) -> float:
-        return (self.objective.get_current(self.current_time) - previous_objective) * (-1 if self.minimize else 1)
-
-
-    def is_terminal(self) -> bool:
-        return all([self.tasks.is_finished(task, self.current_time) for task in range(len(self.tasks))])
-
-
-    def is_truncated(self) -> bool:
-        return False
-
-
-    def _get_info(self) -> dict[str, Any]:
+    def get_info(self) -> dict[str, Any]:
         return {
-            'n_queries'         : self.n_queries,
-            'current_time'      : self.current_time,
-            'executed_actions'  : self.action_sequence,
-            'scheduled_actions' : self.scheduled_actions[self.current_task:],
-            'objective_value'   : self.objective.get_current(self.current_time)
+            "n_queries": self.n_queries,
+            "current_time": self.current_time,
         }
 
+    def get_objective(self) -> float:
+        return float(self.objective.get_current(self.current_time))
 
-    def reset(self) -> tuple[dict[str, Any], dict[str, Any]]:
-        self.check_env()
+    def is_terminal(self) -> bool:
+        return all([task.is_completed(self.current_time) for task in self.tasks])
 
-        self.current_time = 0
-        self.current_task = 0
-        self.scheduled_actions.clear()
-        self.action_sequence.clear()
-
-        self.n_queries = 0
-
-        self.tasks.reset_state()
-        for constraint in self.constraints.values():
-            constraint.reset()
-
-        return self._get_obs(), self._get_info()
-
-
-    def check_env(self) -> None | Never:
-        """
-            Check if the constraints and objectives are consistent with the tasks.
-        """
-        if type(self.objective) is Objective:
-            warn("No objective has been set, the environment will provide null rewards.")
-
-        return None
-
-
-    def get_awaiting_tasks(self) -> list[int]:
-        return [task for task in range(len(self.tasks)) if self.tasks.is_awaiting(task)]
-
-
-    def get_executing_tasks(self) -> list[int]:
-        return [task for task in range(len(self.tasks)) if self.tasks.is_executing(task, self.current_time)]
-
-
-    def get_available_tasks(self) -> list[int]:
-        return [task for task in range(len(self.tasks)) if self.tasks.is_available(task, self.current_time)]
-
-
-    def get_finished_tasks(self) -> list[int]:
-        return [task for task in range(len(self.tasks)) if self.tasks.is_finished(task, self.current_time)]
-
-
-    def get_fixed_tasks(self) -> list[int]:
-        return [task for task in range(len(self.tasks)) if self.tasks.is_fixed(task)]
-
-
-    def set_minimum_time(
-            self,
-            time_options: list[int],
-            time_limit: int
-        ) -> None:
-        best_time         = min(time_options + [time_limit])
-        self.current_time = max(self.current_time, best_time)
-
+    def truncate(self) -> bool:
+        return False
 
     def update_state(self) -> None:
         for constraint in self.constraints.values():
             constraint.propagate(self.current_time)
 
-    
-    def step(
-            self,
-            action: Optional[Iterable[SupportsInt] | SupportsInt] = None,
-            time_skip: Optional[int]    = None,
-            extend: bool                = False,
-            enforce_order: bool         = True
-        ) -> tuple[dict[str, Any], float, bool, bool, dict[str, Any]]:
-        if action is not None:
-            if not extend:
-                self.scheduled_actions.clear()
+    def reset(
+        self, *, seed: Optional[int] = None, options: dict[str, Any] | None = None
+    ) -> tuple[dict[str, list[Any]], dict[str, Any]]:
+        super().reset(seed=seed)
 
-            next_actions = convert_to_list(action, int)
+        self.scheduled_instructions.clear()
+        self.scheduled_instructions[-1] = deque()
 
-            self.scheduled_actions.extend(next_actions)
+        self.current_time = 0
+        self.n_queries = 0
+        self.advancing_to = 0
 
-        previous_objective = self.objective.get_current(self.current_time)
+        self.tasks.reset()
+        for constraint in self.constraints.values():
+            constraint.reset()
 
-        self.current_task = 0
-        self.n_queries += 1
+        self.update_state()
 
-        stop       = False
-        terminated = self.is_terminal()
-        truncated  = self.is_truncated()
-        time_limit = self.current_time + time_skip if time_skip is not None else MAX_INT
+        return self.get_state(), self.get_info()
 
-        while not (stop or terminated or truncated):
-            stop = self.one_action(enforce_order, time_limit)
-
-            self.update_state()
-
-            terminated = self.is_terminal()
-            truncated  = self.is_truncated()
-
-
-        obs    = self._get_obs()
-        reward = self._get_reward(previous_objective)
-        info   = self._get_info()
-
-        self.action_sequence.extend(self.scheduled_actions[:self.current_task])
-        self.scheduled_actions = self.scheduled_actions[self.current_task:]
-
-        return obs, reward, terminated, truncated, info
-
-
-    def one_action(self, enforce_order: bool, time_limit: int) -> bool:
-        if self.current_task >= len(self.scheduled_actions):
-            executing_tasks = self.get_executing_tasks()
-
-            if executing_tasks:
-                self.set_minimum_time(self.tasks.get_end_lb(executing_tasks), time_limit)
-
-            else:
-                # Maybe checking in the scheduled actions is enough
-                awaiting_tasks = self.get_available_tasks()
-                self.set_minimum_time(self.tasks.get_start_lb(awaiting_tasks), time_limit)
-
-            return True
-
-        if enforce_order:
-            task = self.scheduled_actions[self.current_task]
-
-            if not self.tasks.is_available(task, self.current_time):
-                executing_tasks = self.get_executing_tasks()
-
-                if not executing_tasks or self.current_time >= time_limit:
-                    return True
-
-                self.set_minimum_time(self.tasks.get_end_lb(executing_tasks), time_limit)
-
-                return False
-
-
-        else: # not enforce_order
-            available_schedule = [
-                (pos, task) for pos, task in enumerate(self.scheduled_actions[self.current_task:])
-                if self.tasks.is_available(task, self.current_time)
+    def instruction_times(self, strict: bool = False) -> list[int]:
+        if strict:
+            instruction_times = [
+                instruction_time
+                for instruction_time in self.scheduled_instructions.keys()
+                if instruction_time > self.current_time
             ]
 
-            if not available_schedule:
-                executing_tasks = self.get_executing_tasks()
+        else:
+            instruction_times = list(self.scheduled_instructions.keys())
+            instruction_times.remove(-1)
 
-                if not executing_tasks:
-                    self.current_time = time_limit
-                    return True
+        return instruction_times
 
-                awaiting_tasks = self.get_awaiting_tasks()
-                self.set_minimum_time(self.tasks.get_start_lb(awaiting_tasks), time_limit)
-
-                return self.current_time >= time_limit
-
-            pos, task = available_schedule[0]
-
-            if pos != 0:
-                task_place = self.current_task + pos
-
-                self.scheduled_actions[self.current_task+1:task_place+1] = self.scheduled_actions[self.current_task:task_place]
-                self.scheduled_actions[self.current_task] = task
-
-
-        self.tasks.fix_start(task, self.current_time)
-        self.current_task += 1
-
-        # Maybe checking in the scheduled actions is enough
-        awaiting_tasks = self.get_awaiting_tasks()
-        if awaiting_tasks:
-            self.set_minimum_time(self.tasks.get_start_lb(awaiting_tasks), time_limit)
+    def next_decision_time(self, strict: bool = False) -> int:
+        if strict:
+            operation_points = [
+                task.get_start_lb()
+                for task in self.tasks
+                if task.is_awaiting(self.current_time)
+                and task.get_start_lb() > self.current_time
+            ]
 
         else:
-            self.current_time = max(self.tasks.get_end_lb() + [self.current_time])
+            operation_points = [
+                task.get_start_lb()
+                for task in self.tasks
+                if task.is_awaiting(self.current_time)
+            ]
 
-        return self.current_task >= len(self.scheduled_actions)
+        instruction_times = self.instruction_times(strict)
 
+        time = MAX_INT
+        if operation_points:
+            time = min(time, min(operation_points))
 
-    def render_gantt(
-            self,
-            bin_feature: Optional[str] = None,
-            group_feature: Optional[str] = None,
-            palette: str = 'cubehelix',
-            bar_width: float = 0.8
-        ) -> None:
-        """
-            Render a Gantt chart of the scheduled operations.
+        if instruction_times:
+            time = min(time, min(instruction_times))
 
-        """
-        import matplotlib.pyplot as plt
-        from matplotlib.patches import Patch
-        import seaborn as sns
+        if self.current_time < self.advancing_to:
+            time = min(time, self.advancing_to)
 
-        fig, ax = plt.subplots(figsize=(12, 6))
+        if time == MAX_INT:
+            return self.tasks.get_time_ub()
 
-        fixed_tasks = self.get_fixed_tasks()
+        return time
 
-        start_times = self.tasks.get_start_lb(fixed_tasks)
-        durations   = self.tasks.get_duration(fixed_tasks)
+    def advance_to(self, time: int) -> None:
+        self.current_time = time
+        self.update_state()
 
-        features    = self.tasks.get_features(fixed_tasks)
-
-        group_mapping: dict[Any, int]
-        if group_feature is None:
-            group_mapping = {0: 0}
-            groups = [0] * len(start_times)
-
-        else:
-            group_mapping = {}
-            groups = features[group_feature]
-
-            for group in features[group_feature]:
-                if group not in group_mapping:
-                    group_mapping[group] = len(group_mapping)
-
-        color_pallete = sns.color_palette(palette, n_colors=len(group_mapping))
-
-        if bin_feature is None:
-            bins = allocate_bins(self.tasks)
-
-        else:
-            bins   = features[bin_feature]
-
-        colors = [color_pallete[group_mapping[group]] for group in groups]
-
-        ax.barh(
-            y         = bins,
-            width     = durations,
-            left      = start_times,
-            color     = colors,
-            edgecolor = 'white',
-            linewidth = 0.5,
-            height    = bar_width
+    def advance_to_next_instruction(self) -> None:
+        time = max(
+            min(self.instruction_times(), default=self.advancing_to), self.current_time
         )
+        self.advance_to(time)
 
-        ax.set_ylabel(bin_feature if bin_feature is not None else 'Task bins')
+    def advance_decision_point(self) -> None:
+        time = self.next_decision_time(False)
+        self.advance_to(time)
 
-        ax.set_xlim(0, max(self.current_time/0.95, 1))
-        ax.set_xlabel('Time')
+    def skip_to_next_decision_point(self) -> None:
+        time = self.next_decision_time(True)
+        self.advance_to(time)
 
-        ax.set_title('Gantt Chart of Scheduled Tasks')
+    def schedule_instruction(
+        self, instruction: str | Instruction, args: tuple[int, ...]
+    ) -> None:
+        match instruction:
+            case "execute":
+                if self.setup.parallel_machines:
+                    (task_id, machine), time = parse_args(instruction, args, 2)
 
-        legend_elements = [Patch(facecolor=colors[i], label=group) for i, group in enumerate(group_mapping)]
-        ax.legend(handles=legend_elements ,title=group_feature, loc='center left', bbox_to_anchor=(1, 0.5))
+                else:
+                    (task_id,), time = parse_args(instruction, args, 1)
+                    machine = 0
 
-        ax.grid(True, alpha=0.4)
-        ax.set_axisbelow(True)
+                instruction = instructions.Execute(task_id, machine)
 
-        plt.show()
+            case "submit":
+                if self.setup.parallel_machines:
+                    (task_id, machine), time = parse_args(instruction, args, 2)
 
+                else:
+                    (task_id,), time = parse_args(instruction, args, 1)
+                    machine = self.setup.get_machine(task_id)
 
-    def render(
-            self,
-        ) -> None:
-        ...
+                instruction = instructions.Submit(task_id, machine)
 
-def allocate_bins(tasks: IntervalVars) -> list[int]:
-    fixed_tasks = [task for task in range(len(tasks)) if tasks.is_fixed(task)]
+            case "pause":
+                (task_id,), time = parse_args(instruction, args, 1)
+                instruction = instructions.Pause(task_id)
 
-    start_times = tasks.get_start_lb(fixed_tasks)
-    end_times   = tasks.get_end_lb(fixed_tasks)
+            case "complete":
+                (task_id,), time = parse_args(instruction, args, 1)
+                instruction = instructions.Complete(task_id)
 
-    indexed_tasks = sorted([
-        (start_times[i], end_times[i], i) for i in range(len(fixed_tasks))
-    ])
+            case "advance":
+                (to_time,), time = parse_args(instruction, args, 1)
+                instruction = instructions.Advance(to_time)
 
-    first_start, first_end, first_task = indexed_tasks[0]
+            case "query":
+                args, time = parse_args(instruction, args, 0)
+                instruction = instructions.Query()
 
-    heap = [(first_end, 0)]
+            case "clear":
+                args, time = parse_args(instruction, args, 0)
+                instruction = instructions.Clear()
 
-    bins = [0] * len(indexed_tasks)
+            case Instruction():
+                args, time = parse_args(instruction.name, args, 0)
 
-    current_bins = 1
-    for start, end, task_id in indexed_tasks[1:]:
-        earliest_end, bin_id = heap[0]
+            case _:
+                raise ValueError(f"Instruction {instruction} not recognized.")
 
-        if start >= earliest_end:
-            heapq.heappop(heap)
-            bin_ = bin_id
+        if time != -1 and time < self.current_time:
+            warn(
+                f"Scheduled instruction {instruction} with arguments {args} is in the past. \
+                It will be executed immediately."
+            )
+            time = self.current_time
+
+        if time not in self.scheduled_instructions:
+            self.scheduled_instructions[time] = deque()
+
+        self.scheduled_instructions[time].append(instruction)
+
+    def execute_next_instruction(self) -> bool:
+        if self.current_time in self.scheduled_instructions:
+            instruction = self.scheduled_instructions[self.current_time].popleft()
+
+            if not self.scheduled_instructions[self.current_time]:
+                del self.scheduled_instructions[self.current_time]
+
+            signal, args = instruction.process(
+                self.current_time, self.tasks, self.scheduled_instructions
+            )
+
+            if signal.is_failure():
+                if isinstance(args, str):
+                    warn(f"Instruction {instruction} failed with message: {args}.")
+
+                else:
+                    warn(
+                        f"Scheduled instruction {instruction} could not be executed at time {self.current_time}."
+                    )
+
+                return True
+
+        elif self.current_time < self.advancing_to:
+            self.advance_to_next_instruction()
+            return False
+
+        elif (
+            not self.scheduled_instructions[-1]
+            and len(self.scheduled_instructions) == 1
+        ):
+            # Force query when no instructions are left
+            return True
 
         else:
-            bin_ = current_bins
-            current_bins += 1
-        
-        bins[task_id] = bin_
-        heapq.heappush(heap, (end, bin_))
-    
-    return bins
+            for i, instruction in enumerate(self.scheduled_instructions[-1]):
+                signal, args = instruction.process(
+                    self.current_time, self.tasks, self.scheduled_instructions
+                )
+
+                if signal == Signal.Skip:
+                    continue
+
+                elif signal != Signal.Pending:
+                    del self.scheduled_instructions[-1][i]
+                    break
+
+            else:
+                for task in self.tasks:
+                    if task.is_executing(self.current_time):
+                        self.skip_to_next_decision_point()
+                        return self.current_time >= self.tasks.get_time_ub()
+
+                return True
+
+        if signal == Signal.Finish:
+            self.advance_decision_point()
+
+        elif signal == Signal.Pending:
+            self.skip_to_next_decision_point()
+
+        elif signal == Signal.Halt:
+            return True
+
+        elif signal == Signal.Advance:
+            assert isinstance(args, int)
+
+            self.advancing_to = args
+            self.skip_to_next_decision_point()
+
+        elif signal == Signal.Error:
+            warn(f"Instruction {instruction.name} failed with message: {args}.")
+            return True
+
+        return False
+
+    def step(
+        self,
+        action: ActionType,
+    ) -> tuple[dict[str, list[Any]], float, bool, bool, dict[str, Any]]:
+
+        act_instructions: Iterable[tuple[str | Instruction, *tuple[int, ...]]]
+        if is_single_action(action):
+            act_instructions = [action]
+
+        elif action is None:
+            act_instructions = []
+
+        else:
+            assert is_iterable_type(action, tuple)
+            act_instructions = action
+
+        for instruction_args in act_instructions:
+            self.schedule_instruction(instruction_args[0], instruction_args[1:])
+
+        previous_objective = self.get_objective()
+
+        stop = False
+        while not stop:
+            stop = self.execute_next_instruction()
+
+        self.n_queries += 1
+
+        obs = self.get_state()
+
+        reward = self.get_objective() - previous_objective
+        if self.objective.direction == "minimize":
+            reward *= -1
+
+        info = self.get_info()
+
+        return obs, reward, self.is_terminal(), self.truncate(), info
+
+    def export(self, filename: str) -> None:
+        with open(f"{filename}.mzn", "w") as file:
+            file.write(self.tasks.export_model())
+            file.write(self.setup.export_model())
+
+            for constraint in self.constraints.values():
+                file.write(constraint.export_model())
+
+            file.write(self.objective.export_model())
+
+        with open(f"{filename}.dzn", "w") as file:
+            file.write(self.tasks.export_data())
+            file.write(self.setup.export_data())
+
+            for constraint in self.constraints.values():
+                file.write(constraint.export_data())
+
+            file.write(self.objective.export_data())
+
+    def get_entry(self) -> str:
+        alpha = self.setup.get_entry()
+        beta = ", ".join(
+            [
+                constraint.get_entry()
+                for name, constraint in self.constraints.items()
+                if not name.startswith("_setup_") and constraint.get_entry()
+            ]
+        )
+        gamma = self.objective.get_entry()
+
+        return f"{alpha} | {beta} | {gamma}"
