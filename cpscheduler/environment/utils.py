@@ -289,6 +289,6 @@ def scale_to_int(float_list: list[float], scale_factor: float = 1000.0) -> list[
     lcm_denominator = lcm(*denominators)
 
     if lcm_denominator <= scale_factor:
-        scale_factor = lcm_denominator
+        scale_factor = float(lcm_denominator)
 
     return [int(value * scale_factor) for value in float_list]
