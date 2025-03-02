@@ -11,12 +11,23 @@ with open('pyproject.toml', 'rb') as f:
 
 excluding_files = [
     '__init__.py',
-    'protocols.py',
 ]
 
+compiling_dirs = [
+    'cpscheduler/environment',
+    'cpscheduler/instances',
+]
+
+
 compiling_files = [
-    str(path) for path in Path('cpscheduler/environment').glob('*.py') if path.name not in excluding_files
-] + ['cpscheduler/policies/heuristics/pdr_heuristics.py']
+    'cpscheduler/policies/heuristics/pdr_heuristics.py',
+
+]
+for dir in compiling_dirs:
+    compiling_files.extend([
+        str(file) for file in Path(dir).rglob('*.py') if file.name not in excluding_files
+    ])
+
 
 
 setup(

@@ -14,8 +14,8 @@ from collections import deque
 from fractions import Fraction
 from math import lcm
 
-MIN_INT: Final[int] = -(2**31 - 1)
-MAX_INT: Final[int] = 2**31 - 1
+MIN_INT: Final[int] = -(2**24 + 1)
+MAX_INT: Final[int] = 2**24 - 1
 
 _S = TypeVar("_S")
 _T = TypeVar("_T", bound=Any)

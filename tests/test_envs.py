@@ -1,5 +1,9 @@
 import pytest
 
+from cpscheduler.instances import generate_taillard_instance
+from cpscheduler.environment import SchedulingCPEnv, ResourceConstraint
+from cpscheduler.environment.schedule_setup import ScheduleSetup
+
 from common import env_setup, TEST_INSTANCES
 
 @pytest.mark.env
@@ -40,7 +44,7 @@ def test_execute(instance_name: str) -> None:
     env.reset()    
 
     first_action = ("execute", 0)
-    obs, reward, terminated, truncated, info = env.step([first_action])
+    obs, reward, terminated, truncated, info = env.step(first_action)
 
     assert not terminated
     assert not truncated
@@ -53,8 +57,8 @@ def test_execute(instance_name: str) -> None:
 
     assert not new_terminated
     assert not new_truncated
-    assert new_reward == -env.tasks[0].processing_time
     assert new_info['current_time'] == advancing_time
+    assert new_reward == -env.tasks[0].processing_time
     assert new_obs['status'][0] == 'completed'
 
 
@@ -132,7 +136,7 @@ def test_pause(instance_name: str) -> None:
 
     processing_time = env.tasks[0].processing_time
 
-    actions = [
+    actions: list[tuple[str, *tuple[int, ...]]] = [
         ("execute", 0),
         ("advance", processing_time//2),
         ("pause", 0),
@@ -148,7 +152,50 @@ def test_pause(instance_name: str) -> None:
     assert info['current_time'] == 2* (processing_time//2)
     assert obs['remaining_time'][0] == processing_time - processing_time//2
 
-    new_obs, new_reward, new_terminated, new_truncated, new_info = env.step([])
+    new_obs, new_reward, new_terminated, new_truncated, new_info = env.step()
 
     assert new_obs['status'][0] == 'completed'
     assert new_info['current_time'] == processing_time + processing_time//2
+
+
+@pytest.mark.env
+def test_resource_constrained() -> None:
+    instance, _ = generate_taillard_instance(4, 1, seed=42)
+
+    resource_constraint = ResourceConstraint([3.], [{
+        0: 1.,
+        1: 1.,
+        2: 2.,
+        3: 3.,
+    }])
+
+    env = SchedulingCPEnv(
+        ScheduleSetup(1),
+        [resource_constraint],
+        instance=instance,
+    )
+
+    obs, info = env.reset()
+
+    new_obs, _, _, _, new_info = env.step(("execute", 0, 0))
+    assert new_info['current_time'] == 0
+    assert new_obs['status'][0] == 'executing'
+    assert new_obs['status'][1] == 'available'
+    assert new_obs['status'][2] == 'available'
+    assert new_obs['status'][3] == 'awaiting'
+
+    new_obs, _, _, _, new_info = env.step(("execute", 1, 0))
+    assert new_info['current_time'] == env.tasks[0].get_end()
+    assert new_obs['status'][0] == 'completed'
+    assert new_obs['status'][1] == 'executing'
+    assert new_obs['status'][2] == 'available'
+    assert new_obs['status'][3] == 'awaiting'
+
+    new_obs, _, _, _, new_info = env.step(("execute", 2, 0))
+    assert new_obs['status'][0] == 'completed'
+    assert new_obs['status'][1] == 'completed'
+    assert new_obs['status'][2] == 'completed'
+    assert new_obs['status'][3] == 'available'
+
+    new_obs, _, terminated, _, new_info = env.step(("execute", 3, 0))
+    assert terminated

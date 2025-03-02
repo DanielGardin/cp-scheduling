@@ -1,6 +1,7 @@
 from pathlib import Path
 
-from cpscheduler.environment import SchedulingCPEnv, JobShopSetup, Makespan, read_jsp_instance
+from cpscheduler.environment import SchedulingCPEnv, JobShopSetup, Makespan
+from cpscheduler.instances import read_jsp_instance
 
 TEST_INSTANCES = [
     "dmu04",
