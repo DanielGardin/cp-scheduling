@@ -1,30 +1,29 @@
-from typing import Self, ClassVar
+from typing import Self, ClassVar, Final
 
-from enum import Flag, auto
+from enum import Enum
 from dataclasses import dataclass
 
 from .tasks import Tasks, Status
 
+# Flags are not supported by mypyc
+class Action:
+    SKIPPED: Final[int]      = 1 # Tell the scheduler the instruction was skiped
+    REEVALUATE: Final[int]   = 2 # The scheduler should reevaluate the current bounds
+    PROPAGATE: Final[int]    = 4 # The scheduler should propagate the constraints further
+    ADVANCE: Final[int]      = 8 # The scheduler should advance the time
+    ADVANCE_NEXT: Final[int] = 16 # The scheduler should advance to the next decision point
+    RAISE: Final[int]        = 32 # The scheduler should raise an exception
+    HALT: Final[int]         = 64 # The scheduler should stop processing instructions
 
-class Action(Flag):
-    """Scheduler actions that can be taken, they are processed in the order they are defined"""
-    SKIPPED      = auto() # Tell the scheduler the instruction was skiped
-    REEVALUATE   = auto() # The scheduler should reevaluate the current bounds
-    PROPAGATE    = auto() # The scheduler should propagate the constraints further
-    ADVANCE      = auto() # The scheduler should advance the time
-    ADVANCE_NEXT = auto() # The scheduler should advance to the next decision point
-    RAISE        = auto() # The scheduler should raise an exception
-    HALT         = auto() # The scheduler should stop processing instructions
-
-    DONE  = PROPAGATE | ADVANCE
-    ERROR = RAISE | HALT
-    WAIT  = SKIPPED | PROPAGATE | ADVANCE_NEXT
+    DONE: Final[int]  = PROPAGATE | ADVANCE
+    ERROR :Final[int] = RAISE | HALT
+    WAIT: Final[int]  = SKIPPED | PROPAGATE | ADVANCE_NEXT
 
 
 
 @dataclass
 class Signal:
-    action: Action
+    action: int
     param: int = 0
     info: str = ""
 

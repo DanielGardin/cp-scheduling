@@ -10,7 +10,7 @@ from gymnasium import Env
 from gymnasium.spaces import Dict, Tuple, Text, Box, OneOf
 
 from .tasks import Tasks, status_str
-from .instructions import Instruction, Signal, Action, parse_instruction
+from .instructions import Instruction, Signal, parse_instruction, Action
 from .schedule_setup import ScheduleSetup
 from .constraints import Constraint
 from .objectives import Objective
@@ -323,7 +323,7 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
 
         i = -1
         schedule = self.scheduled_instructions[time]
-        while Action.SKIPPED in signal.action and i+1 < len(schedule):
+        while signal.action & Action.SKIPPED and i+1 < len(schedule):
             i += 1
             instruction = schedule[i]
 
@@ -334,7 +334,7 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
         action       = signal.action
         halt, change = False, False
 
-        if Action.SKIPPED in action:
+        if action & Action.SKIPPED:
             halt = True
             for task in self.tasks:
                 if task.is_executing(self.current_time):
@@ -346,15 +346,15 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
         else:
             schedule.pop(i)
         
-        if Action.REEVALUATE in action:
+        if action & Action.REEVALUATE:
             for task in self.tasks:
                 task.set_start_lb(self.current_time)
     
-        if Action.PROPAGATE in action:
+        if action & Action.PROPAGATE:
             self.propagate()
             change = True
         
-        if Action.ADVANCE in action:
+        if action & Action.ADVANCE:
             previous_time = self.current_time
             if signal.param > 0:
                 self.advancing_to = signal.param
@@ -367,14 +367,14 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
 
             change = self.current_time != previous_time
 
-        if Action.ADVANCE_NEXT in action:
+        if action & Action.ADVANCE_NEXT:
             self.skip_to_next_decision_point()
             change = True
 
-        if Action.RAISE in action:
+        if action & Action.RAISE:
             warn(f"Error in instruction {instruction} at time {self.current_time}: {signal.info}")
         
-        if Action.HALT in action:
+        if action & Action.HALT:
             halt = True
 
         return halt, change
