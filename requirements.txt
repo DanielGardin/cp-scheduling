@@ -1,11 +1,10 @@
-docplex==2.28.240
-ortools==9.11.4210
+minizinc==0.10.0
 mypy==1.13.0
 mypy_extensions==1.0.0
+nest_asyncio==1.6.0
+pandas==2.2.3
 seaborn==0.13.2
 setuptools==75.1.0
+tensordict==0.6.2
 tqdm==4.67.0
-numpy>=2.1.2
-pandas>=2.2.3
-torch==2.5.1
-jaxtyping==0.2.36
+gymnasium==1.0.0

@@ -4,8 +4,8 @@ from time import perf_counter
 
 import numpy as np
 
-from cpscheduler.common_envs import JobShopEnv
-from cpscheduler.environment import read_jsp_instance
+from cpscheduler.environment import SchedulingCPEnv, JobShopSetup
+from cpscheduler.instances import read_jsp_instance
 
 
 benchmark_times = {
@@ -47,16 +47,21 @@ def test_speed() -> None:
 
         instance, metadata = read_jsp_instance(instance_path)
 
-        env = JobShopEnv(instance)
+        env = SchedulingCPEnv(JobShopSetup())
+        env.set_instance(instance, jobs='job')
 
         obs, info = env.reset()
 
         # _, action, _, __ = env.get_cp_solution(timelimit=2)
 
-        action = np.argsort(obs['processing_time'])
+        task_order: list[int] = np.argsort(obs['processing_time']).tolist()
+
+        action = [
+            ("submit", task_id) for task_id in task_order
+        ]
 
         tick = perf_counter()
-        obs, reward, terminated, truncated, info = env.step(action, enforce_order=False)
+        obs, reward, terminated, truncated, info = env.step(action)
         measured_time = perf_counter() - tick
 
         speedup_factor = time / measured_time

@@ -1,4 +1,4 @@
-from typing import ClassVar, Optional
+from typing import ClassVar
 
 from textwrap import dedent
 
@@ -7,7 +7,7 @@ from .tasks import Tasks
 
 
 class ScheduleSetup:
-    parallel_machines: ClassVar[bool] = False
+    parallel_machines: ClassVar[bool] = True
 
     tasks: Tasks
 
@@ -29,7 +29,6 @@ class ScheduleSetup:
         Get the number of machines in the setup at runtime. This is useful for setups that
         do not have a fixed number of machines at initialization, for instance Pm.
         """
-
         raise NotImplementedError(
             "The number of machines must be defined in the general setup"
         )
@@ -47,6 +46,7 @@ class ScheduleSetup:
 
     def export_model(self) -> str:
         model = """
+            % (Schedule Setup) Task identical machines processing time
             constraint forall(t in 1..num_tasks)(
                 sum(p in 1..num_parts)(duration[t,p]) = processing_time[t]
             );
@@ -62,6 +62,8 @@ class ScheduleSetup:
 
 
 class SingleMachineSetup(ScheduleSetup):
+    parallel_machines: ClassVar[bool] = False
+
     def __init__(self) -> None:
         super().__init__(1)
 
@@ -69,6 +71,9 @@ class SingleMachineSetup(ScheduleSetup):
         disjunctive_tasks = {0: list(range(len(self.tasks)))}
 
         return DisjunctiveConstraint(disjunctive_tasks),
+
+    def get_machine(self, task_id: int) -> int:
+        return 1
 
     def get_entry(self) -> str:
         return "1"
@@ -89,29 +94,21 @@ class JobShopSetup(ScheduleSetup):
         self.machine_feature = machine_feature
 
     def get_n_machines(self) -> int:
-        return max(self.tasks.data[self.machine_feature], default=0)
+        machines: set[int] = {machine for machine in self.tasks.data[self.machine_feature]}
+        return len(machines)
 
     def get_machine(self, task_id: int) -> int:
         machine: int = self.tasks.data[self.machine_feature][task_id]
         return machine
 
     def setup_constraints(self) -> tuple[Constraint, ...]:
-        disjunctive_tasks: dict[int, list[int]] = {}
-
-        machines: list[int] = self.tasks.data[self.machine_feature]
-        for task_id, machine in enumerate(machines):
-            if machine not in disjunctive_tasks:
-                disjunctive_tasks[machine] = []
-
-            disjunctive_tasks[machine].append(task_id)
-
-        disjunctive_constraint = DisjunctiveConstraint(disjunctive_tasks)
+        disjunctive_constraint = DisjunctiveConstraint(self.machine_feature)
 
         precedence_tasks: dict[int, list[int]] = {}
 
         operations: list[int] = self.tasks.data[self.operation_order]
 
-        for job, job_tasks in self.tasks.jobs.items():
+        for job_tasks in self.tasks.jobs.values():
             ops = sorted(
                 [(operations[task.task_id], task.task_id) for task in job_tasks]
             )

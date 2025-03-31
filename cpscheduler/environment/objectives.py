@@ -17,6 +17,8 @@ class Objective:
         "max": "maximize",
     }
 
+    solve_annotation: ClassVar[str] = "solve :: int_search(start, smallest, indomain_min)"
+
     def __init__(self, direction: Optional[OptimizationDirections] = None) -> None:
         direction = self.default_direction if direction is None else direction
 
@@ -57,7 +59,7 @@ class Makespan(Objective):
             var int: makespan;
             constraint makespan = max(t in 1..num_tasks)(end[t, num_parts]);
 
-            solve {self.direction} makespan;
+            {self.solve_annotation} {self.direction} makespan;
         """
 
         return dedent(model)
@@ -111,7 +113,7 @@ class WeightedCompletionTime(Objective):
             var {types}: weighted_completion_time;
             constraint weighted_completion_time = sum(j in 1..num_jobs)(job_weights[j] * max(t in 1..num_tasks where job[t] = j)(end[t, num_parts]));
 
-            solve {self.direction} weighted_completion_time;
+            {self.solve_annotation} {self.direction} weighted_completion_time;
         """
 
         return dedent(model)
