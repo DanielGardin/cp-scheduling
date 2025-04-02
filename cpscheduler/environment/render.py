@@ -54,7 +54,7 @@ class PlotlyRenderer(Renderer):
 
             for task in tasks:
                 for part in range(task.n_parts):
-                    if not task.is_fixed(part):
+                    if not task.is_fixed():
                         break
 
                     start_times.append(task.get_start(part))

@@ -24,6 +24,6 @@ def env_setup(instance_name: str) -> SchedulingCPEnv:
     )
 
     env.set_objective(Makespan())
-    env.set_instance(instance, jobs='job')
+    env.set_instance(instance, processing_times="processing_time", jobs='job')
 
     return env
