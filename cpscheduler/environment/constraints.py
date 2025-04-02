@@ -3,6 +3,7 @@ from copy import deepcopy
 
 from abc import ABC
 from textwrap import dedent
+import re
 
 from .tasks import Tasks, Status
 from .utils import convert_to_list, topological_sort, binary_search, is_iterable_type, scale_to_int
@@ -14,7 +15,16 @@ class Constraint(ABC):
     interacts with the tasks by limiting when they can be executed, how they are assigned to
     machines, etc.
     """
-    tag: str = ""
+    name: str = ""
+    tag: str  = ""
+
+    def __init__(self, name: Optional[str] = None) -> None:
+        if name is not None and not re.match(r'^[a-zA-Z0-9_]+$', name):
+            raise ValueError(
+                "Constraint name must be alphanumeric and cannot contain spaces or special characters."
+            )
+
+        self.name = name if name else self.__class__.__name__
 
     def set_tasks(self, tasks: Tasks) -> None:
         self.tasks = tasks
@@ -49,7 +59,10 @@ class PrecedenceConstraint(Constraint):
         self,
         precedence: Mapping[int, Iterable[int]],
         no_wait: bool = False,
+        name: Optional[str] = None,
     ):
+        super().__init__(name)
+
         self.precedence = {
             task: convert_to_list(tasks) for task, tasks in precedence.items()
         }
@@ -59,7 +72,7 @@ class PrecedenceConstraint(Constraint):
         self.original_precedence = deepcopy(self.precedence)
 
     @classmethod
-    def from_edges(cls, edges: Iterable[tuple[int, int]], no_wait: bool = False) -> Self:
+    def from_edges(cls, edges: Iterable[tuple[int, int]], no_wait: bool = False, name: Optional[str] = None) -> Self:
         precedence: dict[int, list[int]] = {}
 
         for parent, child in edges:
@@ -68,7 +81,7 @@ class PrecedenceConstraint(Constraint):
 
             precedence[parent].append(child)
 
-        return cls(precedence, no_wait)
+        return cls(precedence, no_wait, name)
 
     def _remove_precedence(self, task: int, child: int) -> None:
         if child in self.precedence[task]:
@@ -120,19 +133,19 @@ class PrecedenceConstraint(Constraint):
 
         model = f"""\
             % (Constraint) Precedence constraint {"no wait" if self.no_wait else ""}
-            int: num_edges;
+            int: num_edges_{self.name};
 
-            array[1..num_edges, 1..2] of 1..num_tasks: edges;
+            array[1..num_edges_{self.name}, 1..2] of 1..num_tasks: edges_{self.name};
 
-            constraint forall(i in 1..num_edges) (
-                end[edges[i, 1], num_parts] {operator} start[edges[i, 2], 1]
+            constraint forall(i in 1..num_edges_{self.name}) (
+                end[edges_{self.name}[i, 1], num_parts] {operator} start[edges_{self.name}[i, 2], 1]
             );
         """
 
         return dedent(model)
 
     def export_data(self) -> str:
-        data = "edges = [|\n"
+        data = f"edges_{self.name} = [|\n"
 
         num_edges = 0
         for task, children in self.original_precedence.items():
@@ -142,7 +155,7 @@ class PrecedenceConstraint(Constraint):
 
         data += "|];"
 
-        return f"num_edges = {num_edges};\n{data}"
+        return f"num_edges_{self.name} = {num_edges};\n{data}"
 
     def get_entry(self) -> str:
         intree = all(len(tasks) <= 1 for tasks in self.precedence.values())
@@ -168,15 +181,17 @@ class PrecedenceConstraint(Constraint):
 
 
 class NoWait(PrecedenceConstraint):
-    def __init__(self, precedence: Mapping[int, Iterable[int]]):
-        super().__init__(precedence, no_wait=True)
+    def __init__(self, precedence: Mapping[int, Iterable[int]], name: Optional[str] = None,):
+        super().__init__(precedence, no_wait=True, name=name)
 
 
 _T = TypeVar("_T")
 class DisjunctiveConstraint(Constraint):
     disjunctive_groups: dict[Any, list[int]]
 
-    def __init__(self, disjunctive_groups: Mapping[_T, Iterable[int]] | str):
+    def __init__(self, disjunctive_groups: Mapping[_T, Iterable[int]] | str, name: Optional[str] = None):
+        super().__init__(name)
+
         if isinstance(disjunctive_groups, str):
             self.disjunctive_groups = {}
             self.tag = disjunctive_groups
@@ -228,12 +243,12 @@ class DisjunctiveConstraint(Constraint):
                     task.set_start_lb(minimum_start_time)
 
     def export_model(self) -> str:
-        model = """\
+        model = f"""\
             % (Constraint) Disjunctive constraint
-            int: num_groups;
-            array[1..num_groups] of set of int: group_tasks;
+            int: num_groups_{self.name};
+            array[1..num_groups_{self.name}] of set of int: group_tasks_{self.name};
 
-            constraint forall(group in group_tasks) (
+            constraint forall(group in group_tasks_{self.name}) (
                 disjunctive([start[t, p] | p in 1..num_parts, t in group],
                             [duration[t, p] | p in 1..num_parts, t in group])
             );
@@ -242,8 +257,8 @@ class DisjunctiveConstraint(Constraint):
         return dedent(model)
 
     def export_data(self) -> str:
-        data = f"num_groups = {len(self.original_disjunctive_groups)};\n"
-        data += "group_tasks = [\n"
+        data = f"num_groups_{self.name} = {len(self.original_disjunctive_groups)};\n"
+        data += f"group_tasks_{self.name} = [\n"
         for tasks in self.original_disjunctive_groups.values():
             data += "    {" + ', '.join([
                 str(task_id + 1) for task_id in tasks
@@ -256,7 +271,9 @@ class DisjunctiveConstraint(Constraint):
 class ReleaseDateConstraint(Constraint):
     release_dates: dict[int, int]
 
-    def __init__(self, release_dates: Mapping[int, int] | str):
+    def __init__(self, release_dates: Mapping[int, int] | str, name: Optional[str] = None):
+        super().__init__(name)
+
         if isinstance(release_dates, str):
             self.release_dates = {}
             self.tag = release_dates
@@ -286,7 +303,9 @@ class ReleaseDateConstraint(Constraint):
 class DeadlineConstraint(Constraint):
     deadlines: dict[int, int]
 
-    def __init__(self, deadlines: Mapping[int, int] | str):
+    def __init__(self, deadlines: Mapping[int, int] | str, name: Optional[str] = None):
+        super().__init__(name)
+
         if isinstance(deadlines, str):
             self.deadlines = {}
             self.tag = deadlines
@@ -319,7 +338,10 @@ class ResourceConstraint(Constraint):
         self,
         capacities: Iterable[float],
         resource_usage: Iterable[Mapping[int, float]] | Iterable[str],
+        name: Optional[str] = None
     ) -> None:
+        super().__init__(name)
+
         self.tags: list[str]
         self.capacities = convert_to_list(capacities)
 
@@ -401,17 +423,17 @@ class ResourceConstraint(Constraint):
     def export_model(self) -> str:
         return dedent(f"""\
             % (Constraint) Resource constraint
-            int: num_resources;
-            array[1..num_resources] of int: capacities;
+            int: num_resources_{self.name};
+            array[1..num_resources_{self.name}] of int: capacities_{self.name}
 
-            array[1..num_resources, 1..num_tasks] of int: resources;
+            array[1..num_resources_{self.name}, 1..num_tasks] of int: resources_{self.name};
 
-            constraint forall(r in 1..num_resources)(
+            constraint forall(r in 1..num_resources_{self.name})(
                 cumulative(
-                    [start[t, p] | t in 1..num_tasks, p in 1..num_parts where resources[r, t] > 0],
-                    [duration[t, p] | t in 1..num_tasks, p in 1..num_parts where resources[r, t] > 0],
-                    [resources[r, t] | t in 1..num_tasks, p in 1..num_parts where resources[r, t] > 0],
-                    capacities[r]
+                    [start[t, p] | t in 1..num_tasks, p in 1..num_parts where resources_{self.name}[r, t] > 0],
+                    [duration[t, p] | t in 1..num_tasks, p in 1..num_parts where resources_{self.name}[r, t] > 0],
+                    [resources_{self.name}[r, t] | t in 1..num_tasks, p in 1..num_parts where resources_{self.name}[r, t] > 0],
+                    capacities_{self.name}[r]
                 )
             );
         """)
@@ -419,8 +441,8 @@ class ResourceConstraint(Constraint):
     def export_data(self) -> str:
         new_line = '\n'
 
-        resources_str = "resources = [|\n"
-        capacities_str = "capacities = ["
+        resources_str = f"resources_{self.name} = [|\n"
+        capacities_str = f"capacities_{self.name} = ["
 
         for i, resource in enumerate(self.resources):
             row = list(resource.values()) + [self.capacities[i]]
@@ -437,13 +459,15 @@ class ResourceConstraint(Constraint):
                 resources_str += new_line
                 capacities_str += ", "
 
-        return f"num_resources = {len(self.resources)};\n" + \
+        return f"num_resources_{self.name} = {len(self.resources)};\n" + \
                 capacities_str + \
                 resources_str
 
 
 class EqualProcessingTimeConstraint(Constraint):
-    def __init__(self, processing_time: int):
+    def __init__(self, processing_time: int, name: Optional[str] = None) -> None:
+        super().__init__(name)
+
         self.processing_time = processing_time
 
 
@@ -475,7 +499,10 @@ class MachineConstraint(Constraint):
     def __init__(
         self,
         machine_constraint: Optional[Iterable[Iterable[int]]] = None,
+        name: Optional[str] = None
     ) -> None:
+        super().__init__(name)
+        
         self.complete = False
         if isinstance(machine_constraint, str):
             self.machine_constraint = []
@@ -524,7 +551,6 @@ class MachineConstraint(Constraint):
             elif end_time > self.machine_free[machine]:
                 self.machine_free[machine] = end_time
 
-        minimum_start_time = min(self.machine_free.values(), default=time)
         for task_id, task in enumerate(self.tasks):
             if task.is_fixed():
                 continue
@@ -541,9 +567,9 @@ class MachineConstraint(Constraint):
 
         return dedent(f"""\
             % (Constraint) Machine Constraint (M_j)
-            array[1..num_tasks] of set of 1..num_machines: possible_machines;
+            array[1..num_tasks] of set of 1..num_machines: possible_machines_{self.name};
                             
             constraint forall(t in 1..num_tasks, p in 1..num_parts) (
-                assignment[t, p] in possible_machines[t]
+                assignment[t, p] in possible_machines_{self.name}[t]
         """)
 

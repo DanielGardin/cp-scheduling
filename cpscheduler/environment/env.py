@@ -72,7 +72,7 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
     def __init__(
         self,
         machine_setup: ScheduleSetup,
-        constraints: Optional[dict[str, Constraint] | Iterable[Constraint]] = None,
+        constraints: Optional[Iterable[Constraint]] = None,
         objective: Optional[Objective] = None,
         instance: Optional[TaskAllowedTypes] = None,
         render_mode: Optional[str] = None,
@@ -97,13 +97,9 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
 
         self.action_space = ActionSpace
 
-        if is_iterable_type(constraints, Constraint):
+        if constraints is not None:
             for constraint in constraints:
                 self.add_constraint(constraint)
-
-        elif is_dict(constraints, str, Constraint):
-            for name, constraint in constraints.items():
-                self.add_constraint(constraint, name)
 
         if objective is not None:
             self.set_objective(objective)
@@ -117,9 +113,14 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
         return f"SchedulingEnv({self.get_entry()}, n_tasks={len(self.tasks)})"
 
     def add_constraint(
-        self, constraint: Constraint, name: Optional[str] = None
+        self, constraint: Constraint
     ) -> None:
-        name = name if name is not None else constraint.__class__.__name__
+        name = constraint.name
+
+        if name in self.constraints:
+            raise ValueError(
+                f"Constraint with name {name} already exists. Please use a different name."
+            )
 
         self.constraints[name] = constraint
 
@@ -167,8 +168,7 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
 
         self.setup.set_tasks(self.tasks)
         for constraint in self.setup.setup_constraints():
-            name = f"_setup_{constraint.__class__.__name__}"
-            self.add_constraint(constraint, name)
+            self.add_constraint(constraint)
 
         for constraint in self.constraints.values():
             constraint.set_tasks(self.tasks)
