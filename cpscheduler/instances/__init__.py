@@ -1,10 +1,11 @@
 __all__ = [
+    'generate_instance',
     # Jobshop instances
     'read_jsp_instance',
     'generate_taillard_instance',
     'generate_demirkol_instance',
-    'generate_known_optimal_instance',
-    'generate_vepsalainen_instance',
+    # 'generate_known_optimal_instance',
+    # 'generate_vepsalainen_instance',
 
     # Resource constrained instances
     'read_rcpsp_instance',
@@ -12,10 +13,11 @@ __all__ = [
 
 from .jobshop import (
     read_jsp_instance,
+    generate_instance,
     generate_taillard_instance,
     generate_demirkol_instance,
-    generate_known_optimal_instance,
-    generate_vepsalainen_instance
+    # generate_known_optimal_instance,
+    # generate_vepsalainen_instance
 )
 
 from .rcpsp import (

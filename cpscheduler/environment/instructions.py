@@ -56,8 +56,8 @@ class Execute(Instruction):
         scheduled_instructions: dict[int, list[Self]],
     ) -> Signal:
         task = tasks[self.task_id]
-        if task.is_available(current_time):
-            task.execute(current_time, self.machine)
+        if task.is_available(current_time, self.machine):
+            task.assign(current_time, self.machine)
 
             return Signal(Action.DONE)
 
@@ -92,8 +92,8 @@ class Submit(Instruction):
         scheduled_instructions: dict[int, list[Self]],
     ) -> Signal:
         task = tasks[self.task_id]
-        if task.is_available(current_time):
-            task.execute(current_time, self.machine)
+        if task.is_available(current_time, self.machine):
+            task.assign(current_time, self.machine)
 
             return Signal(Action.DONE)
 
@@ -126,7 +126,7 @@ class Pause(Instruction):
         status = task.get_status(current_time)
 
         if status == Status.EXECUTING:
-            task.pause(current_time)
+            task.interrupt(current_time)
 
             return Signal(Action.DONE | Action.REEVALUATE)
 

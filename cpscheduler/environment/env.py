@@ -1,4 +1,4 @@
-from typing import Any, Optional, TypeAlias, Iterable, SupportsInt, TypeGuard, Self
+from typing import Any, Optional, TypeAlias, Iterable, SupportsInt, TypeGuard, Mapping
 from numpy.typing import ArrayLike
 from pandas import DataFrame
 
@@ -9,17 +9,17 @@ from warnings import warn
 from gymnasium import Env
 from gymnasium.spaces import Dict, Tuple, Text, Box, OneOf
 
+from .common import MAX_INT, ProcessTimeAllowedTypes
 from .tasks import Tasks, status_str
 from .instructions import Instruction, Signal, parse_instruction, Action
 from .schedule_setup import ScheduleSetup
 from .constraints import Constraint
 from .objectives import Objective
-from .utils import MAX_INT, convert_to_list, is_iterable_type, is_dict, infer_list_space
+from .utils import convert_to_list, is_iterable_type, is_dict, infer_list_space
 
 from .render import Renderer, PlotlyRenderer
 
-TaskAllowedTypes: TypeAlias        = DataFrame | dict[str, ArrayLike]
-ProcessTimeAllowedTypes: TypeAlias = ArrayLike | Iterable[int] | str
+TaskAllowedTypes: TypeAlias = DataFrame | Mapping[str, ArrayLike]
 
 SingleAction: TypeAlias = tuple[str | Instruction, *tuple[int, ...]]
 ActionType: TypeAlias   = SingleAction | Iterable[SingleAction] | None
@@ -71,24 +71,21 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
     # Functions with interaction with the user can be slower.
     def __init__(
         self,
-        machine_setup: Optional[ScheduleSetup] = None,
+        machine_setup: ScheduleSetup,
         constraints: Optional[dict[str, Constraint] | Iterable[Constraint]] = None,
         objective: Optional[Objective] = None,
         instance: Optional[TaskAllowedTypes] = None,
         render_mode: Optional[str] = None,
         *,
-        n_machines: int = 1,
         allow_preemption: bool = False,
-        processing_times: ProcessTimeAllowedTypes = "processing_time",
+        processing_times: ProcessTimeAllowedTypes = None,
         jobs: Optional[Iterable[int] | str] = None,
     ):
-        self.setup = (
-            machine_setup if machine_setup is not None else ScheduleSetup(n_machines)
-        )
         self.allow_preemption = allow_preemption
 
+        self.setup       = machine_setup
         self.constraints = {}
-        self.objective = Objective()
+        self.objective   = Objective()
 
         self.scheduled_instructions = {-1: []}
 
@@ -116,6 +113,9 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
         
         self.render_mode = render_mode
 
+    def __repr__(self) -> str:
+        return f"SchedulingEnv({self.get_entry()}, n_tasks={len(self.tasks)})"
+
     def add_constraint(
         self, constraint: Constraint, name: Optional[str] = None
     ) -> None:
@@ -123,13 +123,19 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
 
         self.constraints[name] = constraint
 
+        if self.loaded:
+            self.constraints[name].set_tasks(self.tasks)
+
     def set_objective(self, objective: Objective) -> None:
         self.objective = objective
+
+        if self.loaded:
+            self.objective.set_tasks(self.tasks)
 
     def set_instance(
         self,
         instance: TaskAllowedTypes,
-        processing_times: ProcessTimeAllowedTypes = "processing_time",
+        processing_times: ProcessTimeAllowedTypes = None,
         jobs: Optional[Iterable[int] | str] = None,
         n_parts: Optional[
             int
@@ -138,23 +144,26 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
         if n_parts is None:
             n_parts = 16 if self.allow_preemption else 1
 
-        features = instance.keys() if isinstance(instance, dict) else instance.columns
+        features = instance.keys() if isinstance(instance, Mapping) else instance.columns
         data = {feature: convert_to_list(instance[feature]) for feature in features}
 
-        if isinstance(processing_times, str):
-            processing_times = data[processing_times]
+        self.tasks = Tasks(data, n_parts)
 
-        assert is_iterable_type(processing_times, SupportsInt)
+        # Check jobs
         if jobs is None:
-            jobs = [i for i, _ in enumerate(processing_times)]
+            jobs = [i for i in range(self.tasks.n_expected_tasks)]
 
         elif isinstance(jobs, str):
             jobs = data[jobs]
 
-        self.tasks = Tasks(data, n_parts)
+        
+        parsed_processing_times: list[dict[int, int]] = self.setup.parse_process_time(
+            data,
+            processing_times
+        )
 
-        for processing_time, job in zip(processing_times, jobs):
-            self.tasks.add_task(int(processing_time), job)
+        for processing_time, job in zip(parsed_processing_times, jobs):
+            self.tasks.add_task(processing_time, job)
 
         self.setup.set_tasks(self.tasks)
         for constraint in self.setup.setup_constraints():
@@ -172,9 +181,6 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
                     low=0, high=len(self.tasks), shape=(len(self.tasks),), dtype=int64
                 ),
                 **{feature: infer_list_space(data[feature]) for feature in data.keys()},
-                "remaining_time": Box(
-                    low=0, high=MAX_INT, shape=(len(self.tasks),), dtype=int64
-                ),
                 "status": Text(max_length=1, charset=frozenset(status_str.values())),
             }
         )
@@ -245,13 +251,13 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
         if strict:
             operation_points = [
                 task.get_start_lb() for task in self.tasks
-                if task.is_awaiting(self.current_time) and task.get_start_lb() > self.current_time
+                if task.is_awaiting() and task.get_start_lb() > self.current_time
             ]
 
         else:
             operation_points = [
                 task.get_start_lb() for task in self.tasks
-                if task.is_awaiting(self.current_time)
+                if task.is_awaiting()
             ]
 
         instruction_times = self.instruction_times(strict)
@@ -291,11 +297,13 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
     def schedule_instruction(
         self, action: str | Instruction, args: tuple[int, ...]
     ) -> None:
-        if not self.setup.parallel_machines and (action == "execute" or action == "submit"):
+        if not self.setup.parallel and (action == "execute" or action == "submit"):
             if len(args) == 2:
                 task, time = args
+
                 args = (task, self.setup.get_machine(task), time)
-            
+
+
             elif len(args) == 1:
                 task, = args
                 args = (task, self.setup.get_machine(task))
@@ -330,7 +338,9 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
             instruction = schedule[i]
 
             signal = instruction.process(
-                self.current_time, self.tasks, self.scheduled_instructions
+                self.current_time,
+                self.tasks,
+                self.scheduled_instructions
             )
 
         action       = signal.action
@@ -344,14 +354,15 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
 
                     halt = self.current_time >= self.tasks.get_time_ub()
                     break
-        
+
         else:
             schedule.pop(i)
-        
+
         if action & Action.REEVALUATE:
             for task in self.tasks:
-                task.set_start_lb(self.current_time)
-    
+                if not task.is_fixed():
+                    task.set_start_lb(self.current_time)
+
         if action & Action.PROPAGATE:
             self.propagate()
             change = True
@@ -472,13 +483,13 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
 
     def get_entry(self) -> str:
         alpha = self.setup.get_entry()
-        beta = ", ".join(
-            [
-                constraint.get_entry()
-                for name, constraint in self.constraints.items()
-                if not name.startswith("_setup_") and constraint.get_entry()
-            ]
-        )
+
+        beta = ", ".join([
+            constraint.get_entry()
+            for name, constraint in self.constraints.items()
+            if not name.startswith("_setup_") and constraint.get_entry()
+        ]) + "prmp" if self.allow_preemption else ""
+
         gamma = self.objective.get_entry()
 
         return f"{alpha} | {beta} | {gamma}"

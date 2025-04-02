@@ -19,7 +19,7 @@ def test_sync_env() -> None:
     def make_env_fn(instance_name: str) -> Callable[[], SchedulingCPEnv]:
         def env_fn() -> SchedulingCPEnv:
             return env_setup(instance_name)
-        
+
         return env_fn
 
     # Observation space is the same
