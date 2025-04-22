@@ -5,7 +5,8 @@ from tqdm import tqdm
 
 from time import perf_counter
 
-from cpscheduler.environment import SchedulingCPEnv, JobShopSetup, read_jsp_instance
+from cpscheduler.environment import SchedulingCPEnv, JobShopSetup
+from cpscheduler.instances import read_jsp_instance
 from cpscheduler.policies.heuristics import ShortestProcessingTime, MostOperationsRemaining, MostWorkRemaining, PriorityDispatchingRule
 
 root = Path(__file__).parent.parent
@@ -53,7 +54,7 @@ for dataset in datasets:
         all_instances.set_description(f"Processing instance {instance_name}")
 
         env = SchedulingCPEnv(JobShopSetup())
-        env.set_instance(instance, jobs='job')
+        env.set_instance(instance, processing_times="processing_time" ,job_ids='job')
 
         heuristic_results: list[float] = [0] * len(column_names)
 

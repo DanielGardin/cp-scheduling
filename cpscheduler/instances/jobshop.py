@@ -1,10 +1,11 @@
 from pathlib import Path
 
-from typing import Any, Optional, Literal, Callable
+from typing import Any, Optional, Callable
 from pandas import DataFrame
 
 import random as rng
 
+from .common import generate_instance
 
 def read_jsp_instance(path: Path | str) -> tuple[DataFrame, dict[str, Any]]:
     """
@@ -71,43 +72,10 @@ def read_jsp_instance(path: Path | str) -> tuple[DataFrame, dict[str, Any]]:
     return instance, metadata
 
 
-def generate_instance(
-    n_jobs: int,
-    n_machines: int,
-    processing_time_dist: Callable[[], int],
-    seed: Optional[int] = None,
-) -> tuple[DataFrame, dict[str, Any]]:
-    rng.seed(seed)
-
-    n_tasks = n_jobs * n_machines
-    instance: dict[str, list[int]] = {
-        "job": [-1] * n_tasks,
-        "operation": [-1] * n_tasks,
-        "machine": [-1] * n_tasks,
-        "processing_time": [-1] * n_tasks,
-    }
-
-    task_id = 0
-    for job_id in range(n_jobs):
-        machine_permutation = list(range(n_machines))
-        rng.shuffle(machine_permutation)
-
-        for operation_id in range(n_machines):
-            instance["job"][task_id]             = job_id
-            instance["operation"][task_id]       = operation_id
-            instance["machine"][task_id]         = machine_permutation[operation_id]
-            instance["processing_time"][task_id] = processing_time_dist()
-
-            task_id += 1
-    
-    metadata = {"n_jobs": n_jobs, "n_machines": n_machines}
-
-    return DataFrame(instance), metadata
-
 
 def generate_taillard_instance(
     n_jobs: int, n_machines: int, seed: Optional[int] = None
-) -> tuple[DataFrame, dict[str, Any]]:
+) -> DataFrame:
     """
     Generates a random instance following the Taillard method [1]. Processing times are randomly generated between 1 and 99 units,
     and the operations are randomly assigned to the machines, with each job having exactly one operation per machine.
@@ -142,16 +110,29 @@ def generate_taillard_instance(
     ----------
     [1] Taillard, É. D. (1993). Benchmarks for basic scheduling problems. European Journal of Operational Research, 64(2), 278-285.
     """
+    instance, _ = generate_instance(
+        n_jobs,
+        n_machines,
+        lambda: rng.randint(1, 100),
+        setup="jobshop",
+        seed=seed
+    )
 
-    return generate_instance(n_jobs, n_machines, lambda: rng.randint(1, 100), seed)
-
+    return instance
 
 # TODO: Reference for the Demirkol instance generation method, p ~ U(1, 200)
 def generate_demirkol_instance(
     n_jobs: int, n_machines: int, seed: Optional[int] = None
-) -> tuple[DataFrame, dict[str, Any]]:
-    return generate_instance(n_jobs, n_machines, lambda: rng.randint(1, 200), seed)
+) -> DataFrame:
+    instance, _ = generate_instance(
+        n_jobs,
+        n_machines,
+        lambda: rng.randint(1, 200),
+        setup="jobshop",
+        seed=seed
+    )
 
+    return instance
 
 # The following instances have to be re-implemented in the new version of the library due to the use of numpy
 

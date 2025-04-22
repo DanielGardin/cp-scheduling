@@ -101,8 +101,8 @@ class SingleMachineSetup(ScheduleSetup):
         return (DisjunctiveConstraint(disjunctive_tasks, name="disjunctive"),)
 
     def export_model(self) -> str:
-        return dedent("""\"
-            % (Schedule Setup) Identical parallel machine processing time
+        return dedent("""\
+            % (Schedule Setup) Single machine
             array[1..num_tasks] of int: processing_time;
 
             constraint forall(t in 1..num_tasks)(
@@ -131,20 +131,24 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
         self.disjunctive = disjunctive
 
     def setup_constraints(self) -> tuple[Constraint, ...]:
-        return (MachineConstraint(name="machine_disjunctive"), ) if self.disjunctive else ()
+        return (MachineConstraint(name="setup_machine_disjunctive"), ) if self.disjunctive else ()
 
     def parse_process_time(
         self,
         data: dict[str, list[Any]],
         process_time: ProcessTimeAllowedTypes,
     ) -> list[dict[int, int]]:
+        self.processing_times: list[int]
+
         if is_iterable_type(process_time, int):
+            self.processing_times = list(process_time)
             return [
                 {machine: p_time for machine in range(self.n_machines)}
                 for p_time in process_time
             ]
 
         if isinstance(process_time, str):
+            self.processing_times = data[process_time]
             return [
                 {machine: p_time for machine in range(self.n_machines)}
                 for p_time in data[process_time]
@@ -155,8 +159,8 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
         )
 
     def export_model(self) -> str:
-        model = dedent("""\"
-            % (Schedule Setup) Identical parallel machine processing time
+        model = dedent("""\
+            % (Schedule Setup) Identical parallel machine
             int: num_machines;
 
             array[1..num_tasks] of int: processing_time;
@@ -172,16 +176,18 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
             constraint cumulatives(
                 [start[t, p] | t in 1..num_tasks, p in 1..num_parts],
                 [duration[t, p] | t in 1..num_tasks, p in 1..num_parts],
-                [1 | t in 1..num_tasks, p in 1..num_parts]
+                [1 | t in 1..num_tasks, p in 1..num_parts],
                 [assignment[t, p] | t in 1..num_tasks, p in 1..num_parts],
-                [1 | m in 1..num_machines]
-            ))
+                [1 | m in 1..num_machines],
+                true
+            );
             """)
         
         return model
 
     def export_data(self) -> str:
-        return f"num_machines = {self.n_machines};\n" 
+        return f"num_machines = {self.n_machines};\n" \
+               f"processing_time = [{', '.join(map(str, self.processing_times))}];\n"
 
     def get_entry(self) -> str:
         return f"P{self.n_machines}" if self.n_machines > 1 else "Pm"
@@ -199,7 +205,7 @@ class UniformParallelMachineSetup(ScheduleSetup):
         self.disjunctive = disjunctive
 
     def setup_constraints(self) -> tuple[Constraint, ...]:
-        return (MachineConstraint(name="machine_disjunctive"), ) if self.disjunctive else ()
+        return (MachineConstraint(name="setup_machine_disjunctive"), ) if self.disjunctive else ()
 
     def parse_process_time(
         self,
@@ -228,8 +234,8 @@ class UniformParallelMachineSetup(ScheduleSetup):
         )
 
     def export_model(self) -> str:
-        model = dedent("""\"
-            % (Schedule Setup) Different speed parallel machine processing time
+        model = dedent("""\
+            % (Schedule Setup) Different speed parallel machine
             int: num_machines;
             array[1..num_machines] of int: speed;
 
@@ -239,9 +245,8 @@ class UniformParallelMachineSetup(ScheduleSetup):
             constraint forall(t in 1..num_tasks)(
                 sum(p in 1..num_parts)(duration[t,p] * speed[assignment[t, p]]) >= processing_time[t]
             );
-
         """)
-    
+
         if self.disjunctive:
             model += dedent("""
             constraint cumulatives(
@@ -252,7 +257,7 @@ class UniformParallelMachineSetup(ScheduleSetup):
                 [1 | m in 1..num_machines]
             ))
         """)
-        
+
         return model
 
     def export_data(self) -> str:
@@ -262,6 +267,20 @@ class UniformParallelMachineSetup(ScheduleSetup):
 
     def get_entry(self) -> str:
         return f"U{self.n_machines}" if self.n_machines > 1 else "Um"
+
+
+# class UnrelatedParallelMachineSetup(ScheduleSetup):
+#     def __init__(
+#         self,
+#         n_machines: int,
+#         disjunctive: bool = True,
+#     ):
+#         super().__init__(n_machines)
+#         self.disjunctive = disjunctive
+    
+#     def setup_constraints(self) -> tuple[Constraint, ...]:
+#         return (MachineConstraint(name="setup_machine_disjunctive"), ) if self.disjunctive else ()
+
 
 class JobShopSetup(ScheduleSetup):
     parallel: ClassVar[bool] = False
@@ -291,7 +310,7 @@ class JobShopSetup(ScheduleSetup):
 
         operations: list[int] = self.tasks.data[self.operation_order]
 
-        for job_tasks in self.tasks.jobs.values():
+        for job_tasks in self.tasks.jobs:
             ops = sorted(
                 [(operations[task.task_id], task.task_id) for task in job_tasks]
             )
@@ -365,7 +384,7 @@ class OpenShopSetup(ScheduleSetup):
     
     def setup_constraints(self) -> tuple[Constraint, ...]:
         task_jobs = {
-            job: [task.task_id for task in tasks] for job, tasks in self.tasks.jobs.items()
+            job: [task.task_id for task in tasks] for job, tasks in enumerate(self.tasks.jobs)
         }
         task_disjunction = DisjunctiveConstraint(task_jobs, name="setup_task_disjunctive")
 

@@ -68,11 +68,7 @@ class Execute(Instruction):
                 info=f"Task {self.task_id} cannot be executed. It is already being executed or completed"
             )
 
-        for fixed_task in tasks:
-            if fixed_task.is_executing(current_time):
-                return Signal(Action.WAIT)
-
-        return Signal(Action.HALT)
+        return Signal(Action.WAIT)
 
 
 class Submit(Instruction):
