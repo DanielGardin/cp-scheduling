@@ -7,7 +7,7 @@ import numpy as np
 
 from gymnasium.vector import SyncVectorEnv, AsyncVectorEnv
 
-from cpscheduler.environment import SchedulingCPEnv
+from cpscheduler.environment import SchedulingEnv
 from cpscheduler.instances.jobshop import generate_taillard_instance
 from cpscheduler.policies.heuristics import ShortestProcessingTime, MostOperationsRemaining, MostWorkRemaining, PriorityDispatchingRule
 
@@ -16,8 +16,8 @@ from common import env_setup
 @pytest.mark.vector
 def test_sync_env() -> None:
 
-    def make_env_fn(instance_name: str) -> Callable[[], SchedulingCPEnv]:
-        def env_fn() -> SchedulingCPEnv:
+    def make_env_fn(instance_name: str) -> Callable[[], SchedulingEnv]:
+        def env_fn() -> SchedulingEnv:
             return env_setup(instance_name)
 
         return env_fn
@@ -59,8 +59,8 @@ def test_sync_env() -> None:
 @pytest.mark.vector
 def test_async_env() -> None:
 
-    def make_env_fn(instance_name: str) -> Callable[[], SchedulingCPEnv]:
-        def env_fn() -> SchedulingCPEnv:
+    def make_env_fn(instance_name: str) -> Callable[[], SchedulingEnv]:
+        def env_fn() -> SchedulingEnv:
             return env_setup(instance_name)
         
         return env_fn
