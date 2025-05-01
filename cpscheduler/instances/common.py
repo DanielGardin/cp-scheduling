@@ -69,3 +69,18 @@ def generate_instance(
 
 
     return instance, job_instance
+
+
+def generate_poisson_releases(
+    n_jobs: int,
+    expected_gap: int,
+    intial_time: int = 0,
+    seed: Optional[int] = None,
+) -> list[int]:
+    rng.seed(seed)
+
+    release_times = [intial_time] * n_jobs
+    for i in range(1, n_jobs):
+        release_times[i] = release_times[i-1] + int(rng.expovariate(expected_gap))
+    
+    return release_times
