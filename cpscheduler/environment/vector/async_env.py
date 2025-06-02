@@ -1,6 +1,4 @@
-from typing import Any, TypeVar, Iterable, Callable, Sequence
-from numpy.typing import NDArray
-from pandas import DataFrame
+from typing import Any, Iterable, Callable, Sequence
 
 import multiprocessing as mp
 from multiprocessing.connection import Connection
