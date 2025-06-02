@@ -113,6 +113,8 @@ def test_for_loop_equivalence(instance_name: str) -> None:
 
     obs, reward, terminated, truncated, info = env.step(spt, enforce_order=False)
 
+    start_times = env.tasks.get_start_lb()
+
     order      = info['executed_actions']
     final_time = info['current_time']
 
@@ -122,3 +124,4 @@ def test_for_loop_equivalence(instance_name: str) -> None:
 
     assert terminated
     assert info['current_time'] == final_time
+    assert env.tasks.get_start_lb() == start_times
