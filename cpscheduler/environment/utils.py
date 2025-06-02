@@ -14,6 +14,7 @@ from collections import deque
 from fractions import Fraction
 from math import lcm
 
+# Reducing upper bounds to avoid numerical issues
 MIN_INT: Final[int] = -(2**24 + 1)
 MAX_INT: Final[int] = 2**24 - 1
 
@@ -122,25 +123,6 @@ def is_dict(
             for key, value in obj.items()
         ]
     )
-
-
-def get_elem_type(obj: Iterable[_Type]) -> type[_Type]:
-    candidate = type(next(iter(obj)))
-
-    for item in obj:
-        if isinstance(item, candidate):
-            continue
-
-        other_type = type(item)
-        if issubclass(candidate, other_type):
-            candidate = other_type
-
-        else:
-            raise TypeError(
-                f"Cannot determine a common type for the elements of the iterable: {candidate} and {other_type}"
-            )
-
-    return candidate
 
 
 @overload

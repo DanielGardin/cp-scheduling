@@ -5,10 +5,11 @@ from abc import ABC
 from textwrap import dedent
 
 from .tasks import Tasks, Status
-from .utils import convert_to_list, topological_sort, binary_search, is_iterable_type
-
+from .utils import convert_to_list, topological_sort, binary_search, is_iterable_type, scale_to_int
 
 class Constraint(ABC):
+    tag: str = ""
+
     def set_tasks(self, tasks: Tasks) -> None:
         self.tasks = tasks
 
@@ -36,7 +37,6 @@ class Constraint(ABC):
         """
 
         return ""
-
 
 class PrecedenceConstraint(Constraint):
     def __init__(
@@ -101,6 +101,7 @@ class PrecedenceConstraint(Constraint):
         operator = "==" if self.no_wait else "<="
 
         model = f"""\
+            % (Constraint) Precedence constraint {"no wait" if self.no_wait else ""}
             set of int: edges;
 
             array[edges] of 1..num_tasks: precedence_tasks;
@@ -171,7 +172,6 @@ class DisjunctiveConstraint(Constraint):
             self.disjunctive_groups = {
                 group: convert_to_list(tasks) for group, tasks in disjunctive_groups.items()
             }
-            self.tag = ""
 
     def set_tasks(self, tasks: Tasks) -> None:
         super().set_tasks(tasks)
@@ -216,6 +216,7 @@ class DisjunctiveConstraint(Constraint):
 
     def export_model(self) -> str:
         model = """\
+            % (Constraint) Disjunctive constraint
             int: num_groups;
             int: num_group_tasks;
 
@@ -261,7 +262,6 @@ class ReleaseDateConstraint(Constraint):
 
         else:
             self.release_dates = {task: date for task, date in release_dates.items()}
-            self.tag = ""
 
     def set_tasks(self, tasks: Tasks) -> None:
         super().set_tasks(tasks)
@@ -318,13 +318,14 @@ class ResourceConstraint(Constraint):
         capacities: Iterable[float],
         resource_usage: Iterable[Mapping[int, float]] | Iterable[str],
     ) -> None:
+        self.tags: list[str]
         self.capacities = convert_to_list(capacities)
 
         if is_iterable_type(resource_usage, str):
             self.resources = [
                 {} for _ in range(len(self.capacities))
             ]
-            self.tags = resource_usage
+            self.tags = convert_to_list(resource_usage)
 
         else:
             assert is_iterable_type(resource_usage, dict)
@@ -394,3 +395,46 @@ class ResourceConstraint(Constraint):
 
                 if task.get_start_lb() < minimum_start_time:
                     task.set_start_lb(minimum_start_time)
+    
+    def export_model(self) -> str:
+        return dedent(f"""\
+            % (Constraint) Resource constraint
+            int: num_resources;
+            array[1..num_resources] of int: capacities;
+
+            array[1..num_resources, 1..num_tasks] of int: resources;
+
+            constraint forall(r in 1..num_resources)(
+                cumulative(
+                    [start[t, p] | t in 1..num_tasks, p in 1..num_parts where resources[r, t] > 0],
+                    [duration[t, p] | t in 1..num_tasks, p in 1..num_parts where resources[r, t] > 0],
+                    [resources[r, t] | t in 1..num_tasks, p in 1..num_parts where resources[r, t] > 0],
+                    capacities[r]
+                )
+            );
+        """)
+
+    def export_data(self) -> str:
+        new_line = '\n'
+
+        resources_str = "resources = [|\n"
+        capacities_str = "capacities = ["
+
+        for i, resource in enumerate(self.resources):
+            row = list(resource.values()) + [self.capacities[i]]
+            int_row = scale_to_int(row)
+
+            resources_str += ', '.join(map(str, int_row[:-1]))+ " |"
+            capacities_str += str(int_row[-1])
+
+            if i == len(self.resources) - 1:
+                resources_str += "];\n"
+                capacities_str += "];\n"
+
+            else:
+                resources_str += new_line
+                capacities_str += ", "
+
+        return f"num_resources = {len(self.resources)};\n" + \
+                capacities_str + \
+                resources_str
