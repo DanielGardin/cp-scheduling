@@ -1,8 +1,14 @@
+"""
+    wrappers.py
+
+    This module defines various wrappers for the scheduling environment to modify
+    the observation and action spaces, as well as to add additional functionality.
+"""
 from typing import Any, TypeVar, Iterable
 
 from gymnasium.spaces import Dict, Tuple, Box, OneOf, Space, Sequence
 
-from gymnasium import ObservationWrapper, ActionWrapper, RewardWrapper, Env
+from gymnasium import ObservationWrapper, ActionWrapper, Env
 
 from .env import ObsType, ActionType
 from .tasks import Tasks
@@ -14,8 +20,11 @@ def reshape_space(space: Space[Any], shape: tuple[int, ...]) -> Space[Any]:
     Reshape the space to the given shape.
     """
     if isinstance(space, Box):
-        return Box(low=space.low.reshape(shape), high=space.high.reshape(shape), dtype=space.dtype) # type: ignore
-
+        return Box(
+            low=space.low.reshape(shape),   # type: ignore
+            high=space.high.reshape(shape), # type: ignore
+            dtype=space.dtype               # type: ignore
+        )
     elif isinstance(space, Dict):
         return Dict({key: reshape_space(value, shape) for key, value in space.spaces.items()})
 
@@ -39,11 +48,12 @@ class TabularObservationWrapper(ObservationWrapper[dict[str, list[Any]], _Act, O
 
         if not env.get_wrapper_attr("loaded"):
             raise ValueError("Environment must be loaded before wrapping.")
-        assert is_iterable_type(env.observation_space, Dict), f"Unexpected env observation space: {env.observation_space}"
+
+        if not is_iterable_type(env.observation_space, Dict):
+            raise ValueError(f"Unexpected env observation space: {env.observation_space}")
 
         task_feature_space, job_feature_space = env.observation_space
         n_tasks = len(env.get_wrapper_attr("tasks"))
-
 
         job_spaces = {
             job_feature: reshape_space(space, (n_tasks,))
@@ -89,7 +99,9 @@ class CPStateWrapper(ObservationWrapper[ObsType, ActionType, ObsType]):
 
         if not env.get_wrapper_attr("loaded"):
             raise ValueError("Environment must be loaded before wrapping.")
-        assert is_iterable_type(env.observation_space, Dict), f"Unexpected env observation space: {env.observation_space}"
+        
+        if not is_iterable_type(env.observation_space, Dict):
+            raise ValueError(f"Unexpected env observation space: {env.observation_space}")
 
         task_feature_space, job_feature_space = env.observation_space
         n_tasks = len(env.get_wrapper_attr("tasks"))

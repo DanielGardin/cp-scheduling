@@ -1,5 +1,5 @@
+"Common types and constants used in the environment module."
 from typing import Final, TypeAlias, Iterable, Mapping
-from pandas import DataFrame
 
 # Reducing upper bounds to avoid numerical issues
 MIN_INT: Final[int] = -(2**24 + 1)

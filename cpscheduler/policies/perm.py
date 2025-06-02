@@ -10,22 +10,32 @@ import math
 class PlackettLucePolicy(nn.Module):
     def __init__(
         self,
-        score_model: Callable[..., Tensor],
+        score_model: Callable[[Tensor], Tensor],
     ):
         super().__init__()
         self.score_model = score_model
     
-    def forward(self, *x: Any) -> Tensor:
-        logits = torch.squeeze(self.score_model(*x))
+    def get_score(self, x: Tensor) -> Tensor:
+        logits = torch.squeeze(self.score_model(x))
 
         return logits - torch.mean(logits, dim=-1, keepdim=True)
 
+    def forward(self, x: Tensor) -> tuple[Tensor, Tensor]:
+        return self.sample(x)
+
+    def greedy(self, x: Tensor) -> Tensor:
+        logits = self.get_score(x)
+
+        permutation = torch.argsort(logits, dim=-1, descending=True)
+
+        return permutation
+
     def sample(
         self,
-        *x: Any,
+        x: Tensor,
         temperature: float = 1.,
     ) -> tuple[Tensor, Tensor]:
-        logits = self(*x)
+        logits = self.get_score(x)
         gumbel_noise = torch.distributions.Gumbel(0, 1).sample(logits.shape).to(logits.device) # type: ignore
 
         perturbed_logits = logits / temperature + gumbel_noise
@@ -36,34 +46,16 @@ class PlackettLucePolicy(nn.Module):
 
         return permutation, log_prob
 
-    def greedy(self, *x: Tensor) -> Tensor:
-        scores = self(*x)
-        permutation = torch.argsort(scores, dim=-1, descending=True)
-
-        return permutation
-
+    def get_action(self, x: Tensor) -> tuple[Tensor, Tensor]:
+        return self.sample(x)
 
     def log_prob(
         self,
-        scores: Tensor,
-        permutations: Tensor
+        x: Tensor,
+        action: Tensor
     ) -> Tensor:
-        """
-        Computes the log probability of a given permutation under the Plackett-Luce model.
-
-        Parameters
-        ----------
-        scores : Tensor
-            The scores for each item in the permutation.
-        permutations : Tensor
-            The permutations to compute the log probability for.
-
-        Returns
-        -------
-        Tensor
-            The log probability of the given permutation.
-        """
-        permuted_scores = scores.gather(1, permutations)
+        scores = self.get_score(x)
+        permuted_scores = scores.gather(1, action)
 
         logcumsum = torch.logcumsumexp(permuted_scores.flip(dims=[1]), dim=1).flip(dims=[1])
 

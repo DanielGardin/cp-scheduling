@@ -1,4 +1,4 @@
-from typing import Any, Optional, Callable, Literal
+from typing import Optional, Callable, Literal
 from pandas import DataFrame
 
 import random as rng

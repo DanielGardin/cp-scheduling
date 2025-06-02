@@ -93,7 +93,7 @@ class PriorityDispatchingRule(ABC):
         priorities = self.get_priority(obs, current_time)
 
         if (
-            (temp is not None and temp <= 0.0) or
+            temp <= 0.0 or
             (target_prob is not None and target_prob >= 1.0)
         ):
             temp = 0.0
@@ -534,7 +534,7 @@ class CostOverTime(PriorityDispatchingRule):
             0
             for weight, proc_time, due_date in zip(weights, processing_time, due_dates)
         ]
-    
+
 class ApparentTardinessCost(PriorityDispatchingRule):
     """
     Modified Apparent Tardiness Cost (ATC) heuristic.

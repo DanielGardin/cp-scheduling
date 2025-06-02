@@ -1,4 +1,4 @@
-from typing import Any, Dict
+from typing import Any
 from torch import Tensor
 from torch import nn
 from torch.optim import Optimizer
@@ -7,36 +7,69 @@ from tensordict import TensorDict
 
 from .base import BaseAlgorithm
 from .buffer import Buffer
-
+from .protocols import Policy
 
 class BehaviorCloning(BaseAlgorithm):
+    """
+    Behavior Cloning algorithm.
+
+    Behavior Cloning is a supervised learning algorithm that learns a policy
+    by mimicking the actions of an expert. It uses a dataset of state-action
+    pairs to train a neural network to predict the action given a state.
+
+    Parameters:
+    ----------
+    states: Tensor
+        The states collected from the expert.
+
+    actions: Tensor
+        The actions taken by the expert.
+
+    loss: nn.Module
+        The loss function used to train the actor.
+        It should take the predicted action, log probability of the action,
+        and the target action as input and return the loss.
+
+    actor: nn.Module
+        The actor network that predicts the action given a state.
+        It should take the state as input and return the predicted action
+        and log probability of the action.
+
+    actor_optimizer: Optimizer
+        The optimizer used to update the actor network.
+        It should be an instance of torch.optim.Optimizer or a subclass of it.
+    """
     def __init__(
             self,
-            data: Buffer,
-            loss: nn.Module,
-            actor: nn.Module,
+            states: Tensor,
+            actions: Tensor,
+            actor: Policy[Tensor, Tensor],
             actor_optimizer: Optimizer,
         ):
-        super().__init__(data)
+
+        buffer = Buffer.from_tensors(
+            state=states,
+            action=actions,
+        )
+
+        super().__init__(buffer)
 
         self.actor = actor
         self.actor_optimizer = actor_optimizer
 
-        self.loss_fn = loss
 
-
-    def train_step(self, batch: TensorDict) -> dict[str, Any]:
-        action, log_prob, _ = self.actor.get_action(batch['state'])
-
+    def update(self, batch: TensorDict) -> dict[str, Any]:
         target_action = batch['action']
-        action        = action.view(target_action.size())
 
-        loss = self.loss_fn(action, log_prob, target_action)
+        loss = - self.actor.log_prob(
+            batch['state'],
+            target_action
+        ).mean()
 
         self.actor_optimizer.zero_grad()
         loss.backward()
         self.actor_optimizer.step()
 
         return {
-            "loss/actor" : loss.item()
+            "loss/actor" : loss
         }
