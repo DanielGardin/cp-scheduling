@@ -23,6 +23,7 @@ InstanceTypes: TypeAlias = DataFrame | Mapping[str, ArrayLike]
 
 SingleAction: TypeAlias = tuple[str | Instruction, *tuple[int, ...]]
 ActionType: TypeAlias   = SingleAction | Iterable[SingleAction] | None
+ObsType: TypeAlias      = tuple[dict[str, list[Any]], dict[str, list[Any]]]
 
 # Define the action space for the environment
 InstructionSpace = Text(max_length=10)
@@ -54,7 +55,6 @@ def prepare_instance(instance: InstanceTypes) -> dict[str, list[Any]]:
             feature: convert_to_list(instance[feature]) for feature in features
         }
 
-ObsType: TypeAlias = tuple[dict[str, list[Any]], dict[str, list[Any]]]
 class SchedulingEnv(Env[ObsType, ActionType]):
     """
     SchedulingEnv is a custom environment for generic scheduling problems. It is designed to be modular
@@ -210,31 +210,19 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
         self.objective.set_tasks(self.tasks)
 
-    
         task_feature_space = {
-            feature: infer_list_space(data[feature]) for feature in data.keys()
+            feature: infer_list_space(values)
+            for feature, values in self.tasks.data.items()
         }
 
-        job_feature_space = (
-            {feature: infer_list_space(job_data[feature]) for feature in job_data.keys()}
-            if job_data is not None
-            else {}
-        )
+        job_feature_space = {
+            feature: infer_list_space(values)
+            for feature, values in self.tasks.jobs_data.items()
+        }
 
         self.observation_space = Tuple([
-            Dict({
-                "task_id": Box(
-                    low=0, high=len(self.tasks), shape=(len(self.tasks),), dtype=int64
-                ),
-                **task_feature_space,
-                "status": Text(max_length=1, charset=frozenset(status_str.values())),
-            }),
-            Dict({
-                "job_id": Box(
-                    low=0, high=len(self.tasks), shape=(len(self.tasks),), dtype=int64
-                ),
-                **job_feature_space,
-            })
+            Dict(task_feature_space),
+            Dict(job_feature_space)
         ])
 
         self.renderer = PlotlyRenderer(self.tasks, self.setup.n_machines)

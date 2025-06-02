@@ -7,6 +7,7 @@ import numpy as np
 
 from datetime import datetime
 
+import torch
 from torch.nn import Module
 from tensordict import TensorDict
 from torch.optim.lr_scheduler import LRScheduler
@@ -68,38 +69,26 @@ class BaseAlgorithm(Module, ABC):
 
     def __init__(self, buffer: Buffer) -> None:
         super().__init__()
+        self.buffer = buffer
 
         self.writer = DummyWriter()
         self.global_step = 0
 
-        self.buffer = buffer
-
 
     @property
     def device(self) -> Device:
-        return next(self.parameters()).device
+        return next(self.parameters()).device # type: ignore
 
+    def _write_logs(self, logs: dict[str, Any], tag: Optional[str] = None) -> None:
+        for key, value in logs.items():
+            if tag: key = f"{tag}/{key}"
+            
+            if isinstance(value, float):
+                self.writer.add_scalar(key, value, self.global_step) # type: ignore
 
-    def on_session_start(
-            self,
-            num_updates: int,
-            steps_per_update: int,
-            batch_size: int
-        ) -> None:
-        pass
-
-    def on_epoch_start(self) -> dict[str, Any]:
-        return {}
-
-    @abstractmethod
-    def update(self, batch: TensorDict) -> dict[str, Any]:
-        pass
-
-    def on_epoch_end(self) -> dict[str, Any]:
-        return {}
-
-    def validate(self) -> dict[str, Any]:
-        return {}
+            elif isinstance(value, MutableSequence):
+                self.writer.add_scalar(key + "/mean", np.mean(value), self.global_step) # type: ignore
+                self.writer.add_scalar(key + "/std", np.std(value), self.global_step) # type: ignore
 
     def begin_experiment(
             self,
@@ -124,17 +113,6 @@ class BaseAlgorithm(Module, ABC):
             )
 
         self.writer = SummaryWriter(log_dir=log_dir) # type: ignore
-
-    def _write_logs(self, logs: dict[str, Any], tag: Optional[str] = None) -> None:
-        for key, value in logs.items():
-            if tag: key = f"{tag}/{key}"
-            
-            if isinstance(value, float):
-                self.writer.add_scalar(key, value, self.global_step) # type: ignore
-
-            elif isinstance(value, MutableSequence):
-                self.writer.add_scalar(key + "/mean", np.mean(value), self.global_step) # type: ignore
-                self.writer.add_scalar(key + "/std", np.std(value), self.global_step) # type: ignore
 
     def learn(
             self,
@@ -180,14 +158,38 @@ class BaseAlgorithm(Module, ABC):
                 end_logs = self.on_epoch_end()
                 self._write_logs(end_logs, tag="end")
 
+                val_logs = {}
                 if validation_freq is not None and update % validation_freq == 0:
-                    val_logs = self.validate()
-                    self._write_logs(val_logs, tag="validation")
+                    with torch.no_grad():
+                        self.eval()
+                        val_logs = self.validate()
+                        self._write_logs(val_logs, tag="validation")
 
-                epoch_log = {**start_logs, **update_logs, **end_logs}
+                epoch_log = {**start_logs, **update_logs, **end_logs, **val_logs}
                 pbar.set_postfix(
                     summary_logs(epoch_log)
                 )
 
             if lr_scheduler is not None:
                 lr_scheduler.step()
+
+    def on_session_start(
+            self,
+            num_updates: int,
+            steps_per_update: int,
+            batch_size: int
+        ) -> None:
+        pass
+
+    def on_epoch_start(self) -> dict[str, Any]:
+        return {}
+
+    @abstractmethod
+    def update(self, batch: TensorDict) -> dict[str, Any]:
+        pass
+
+    def on_epoch_end(self) -> dict[str, Any]:
+        return {}
+
+    def validate(self) -> dict[str, Any]:
+        return {}

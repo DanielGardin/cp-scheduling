@@ -65,16 +65,18 @@ class MLP(nn.Module):
         ]) if layer_norm else None
 
     def forward(self, x: Tensor) -> Tensor:
-        for i, layer in enumerate(self.layers):
+        for i, layer in enumerate(self.layers[:-1]):
             x = layer(x)
 
             if self.batch_norm is not None:
                 x = self.batch_norm[i](x)
             
-            if self.layer_norm is not None:
+            elif self.layer_norm is not None:
                 x = self.layer_norm[i](x)
 
             x = self.activation(x)
             x = self.dropout(x)
+
+        x = self.layers[-1](x)
 
         return x

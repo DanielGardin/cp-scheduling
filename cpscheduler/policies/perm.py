@@ -16,23 +16,23 @@ class PlackettLucePolicy(nn.Module):
         self.score_model = score_model
     
     def forward(self, x: Tensor) -> Tensor:
-        scores = self.score_model(x).squeeze(-1)
+        logits = torch.squeeze(self.score_model(x))
 
-        return scores # type: ignore
+        return logits - torch.mean(logits, dim=-1, keepdim=True)
 
     def sample(
         self,
         x: Tensor,
         temperature: float = 1.,
     ) -> tuple[Tensor, Tensor]:
-        score = self(x)
-        gumbel_noise = torch.distributions.Gumbel(0, 1).sample(score.shape) # type: ignore
+        logits = self(x)
+        gumbel_noise = torch.distributions.Gumbel(0, 1).sample(logits.shape).to(logits.device) # type: ignore
 
-        perturbed_score = score / temperature + gumbel_noise
+        perturbed_logits = logits / temperature + gumbel_noise
 
-        permutation = torch.argsort(perturbed_score, dim=-1, descending=True)
+        permutation = torch.argsort(perturbed_logits, dim=-1, descending=True)
 
-        log_prob = self.log_prob(score, permutation)
+        log_prob = self.log_prob(logits, permutation)
 
         return permutation, log_prob
 
@@ -67,6 +67,6 @@ class PlackettLucePolicy(nn.Module):
 
         logcumsum = torch.logcumsumexp(permuted_scores.flip(dims=[1]), dim=1).flip(dims=[1])
 
-        logits =torch.sum(permuted_scores - logcumsum, dim=1)
+        logits = torch.sum(permuted_scores - logcumsum, dim=1)
 
         return logits

@@ -28,6 +28,7 @@ from typing import Any, Iterator, Optional, NamedTuple, ClassVar, Iterable
 from textwrap import dedent
 
 from .common import MAX_INT, MIN_INT
+from .utils import convert_to_list
 
 class Status:
     AWAITING : ClassVar[int] = 0  # time < start_lb[0] or waiting for a machine
@@ -286,6 +287,7 @@ class Task:
 
     def get_status(self, time: int) -> int:
         # Reverse order because status checkings often occurs in the latest parts
+
         if not self.fixed:
             if len(self.starts) == 0 or time < self.get_start(0):
                 return Status.AWAITING
@@ -374,23 +376,33 @@ class Tasks:
         for processing_time in processing_times:
             self.add_task(processing_time)
 
-        if jobs_ids is None:
-            self.jobs = [[task] for task in self.tasks]
+        jobs_i: list[int] = (
+            data.pop(jobs_ids) if isinstance(jobs_ids, str) else
+            list(jobs_ids) if jobs_ids is not None else
+            list(range(self.n_tasks))
+        )
 
-        else:
-            if isinstance(jobs_ids, str):
-                jobs_ids = data.pop(jobs_ids)
+        n_jobs = max(jobs_i) + 1
+        self.jobs = [[] for _ in range(n_jobs)]
 
-            max_job_id = max(jobs_ids)
-            self.jobs = [[] for _ in range(max_job_id + 1)]
+        for task_id, job_id in enumerate(jobs_i):
+            self.jobs[job_id].append(self.tasks[task_id])
 
-            for task_id, job_id in enumerate(jobs_ids):
-                self.jobs[job_id].append(self.tasks[task_id])
-
-            data['job_id'] = list(jobs_ids)
-
+        data['job_id'] = jobs_i
         self.data      = data
-        self.jobs_data = job_data if job_data is not None else {}
+
+        self.jobs_data = (
+            job_data if job_data is not None else
+            {'job_id': list(range(n_jobs))}
+        )
+
+        if 'job_id' not in self.jobs_data:
+            if isinstance(jobs_ids, str):
+                self.jobs_data['job_id'] = self.jobs_data[jobs_ids]
+                del self.jobs_data[jobs_ids]
+
+            else:
+                self.jobs_data['job_id'] = list(range(n_jobs))
 
     def add_job(
         self,
