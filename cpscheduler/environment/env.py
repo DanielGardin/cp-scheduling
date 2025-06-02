@@ -46,7 +46,7 @@ class SchedulingCPEnv:
     def __init__(
             self,
             instance: DataFrame,
-            duration_feature: str | int
+            duration_feature: str | NDArray[np.integer[Any]]
         ) -> None:
         self.constraints = {}
         self.objective   = Objective()
@@ -54,7 +54,9 @@ class SchedulingCPEnv:
 
         tasks = self.process_dataframe(instance)
 
-        self.tasks = IntervalVars(tasks, tasks[duration_feature], instance.index.to_numpy())
+        duration = tasks[duration_feature] if isinstance(duration_feature, str) else duration_feature
+
+        self.tasks = IntervalVars(tasks, duration.astype(np.int32), instance.index.to_numpy())
 
 
     def process_dataframe(self, df: DataFrame, ignore_index: bool = False) -> NDArray[np.void]:
