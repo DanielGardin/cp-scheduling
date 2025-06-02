@@ -70,6 +70,9 @@ class Task:
         self.status = Status.AWAITING
         self.n_parts = 0
 
+    def __repr__(self) -> str:
+        return f"Task {self.task_id} ({self.processing_time})"
+
 
     def reset(self) -> None:
         self._remaining_time = self.processing_time
@@ -93,7 +96,7 @@ class Task:
         self.n_parts += 1
 
     def get_remaining_time(self, time: int) -> int:
-        if time >= self.start_lbs[-1] + self.durations[-1]:
+        if time >= self.get_end():
             return 0
 
         # Reverse order because status checkings often occurs in the latest parts
@@ -106,10 +109,9 @@ class Task:
                 cumulative_time -= time - self.start_lbs[part]
                 break
 
-            cumulative_time += self.durations[part]
+            cumulative_time -= self.durations[part]
 
         return cumulative_time
-
 
     def is_fixed(self, part: int = -1) -> bool:
         return self.start_lbs[part] == self.start_ubs[part]
@@ -243,6 +245,7 @@ class Tasks:
         )
 
         self.tasks.append(task)
+
         if job not in self.jobs:
             self.jobs[job] = []
 
@@ -285,6 +288,9 @@ class Tasks:
 
         return last_upper_bound
 
+
+    # TODO: Check if function end is better than array end.
+    # TODO: Add search annotations and warm up.
     def export_model(
         self,
     ) -> str:

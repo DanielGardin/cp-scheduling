@@ -1,11 +1,11 @@
-from typing import Mapping, Iterable, TypeVar
+from typing import Any, Mapping, Iterable, TypeVar
 from copy import deepcopy
 
 from abc import ABC
 from textwrap import dedent
 
 from .tasks import Tasks, Status
-from .utils import convert_to_list, topological_sort, binary_search
+from .utils import convert_to_list, topological_sort, binary_search, is_iterable_type
 
 
 class Constraint(ABC):
@@ -159,13 +159,31 @@ class NoWait(PrecedenceConstraint):
 
 
 _T = TypeVar("_T")
-
-
 class DisjunctiveConstraint(Constraint):
-    def __init__(self, disjunctive_groups: Mapping[_T, Iterable[int]]):
-        self.disjunctive_groups = {
-            group: convert_to_list(tasks) for group, tasks in disjunctive_groups.items()
-        }
+    disjunctive_groups: dict[Any, list[int]]
+
+    def __init__(self, disjunctive_groups: Mapping[_T, Iterable[int]] | str):
+        if isinstance(disjunctive_groups, str):
+            self.disjunctive_groups = {}
+            self.tag = disjunctive_groups
+
+        else:
+            self.disjunctive_groups = {
+                group: convert_to_list(tasks) for group, tasks in disjunctive_groups.items()
+            }
+            self.tag = ""
+
+    def set_tasks(self, tasks: Tasks) -> None:
+        super().set_tasks(tasks)
+
+        if self.tag:
+            for task_id in range(len(tasks)):
+                group = tasks.data[self.tag][task_id]
+
+                if group not in self.disjunctive_groups:
+                    self.disjunctive_groups[group] = []
+                
+                self.disjunctive_groups[group].append(task_id)
 
         self.original_disjunctive_groups = deepcopy(self.disjunctive_groups)
 
@@ -176,14 +194,16 @@ class DisjunctiveConstraint(Constraint):
         for group, task_ids in self.disjunctive_groups.items():
             minimum_start_time = time
 
-            for task_id in task_ids:
-                task = self.tasks[task_id]
+            # We go in reverse order to avoid errors when removing tasks
+            for i in range(len(task_ids)-1, -1, -1):
+                task = self.tasks[task_ids[i]]
 
                 if task.is_fixed():
                     minimum_start_time = max(minimum_start_time, task.get_end_lb())
 
                 if task.is_completed(time):
-                    self.disjunctive_groups[group].remove(task_id)
+                    self.disjunctive_groups[group].pop(i)
+
 
             for task_id in self.disjunctive_groups[group]:
                 task = self.tasks[task_id]
@@ -231,10 +251,28 @@ class DisjunctiveConstraint(Constraint):
 
         return dedent(data)
 
-
 class ReleaseDateConstraint(Constraint):
-    def __init__(self, release_dates: Mapping[int, int]):
-        self.release_dates = {task: date for task, date in release_dates.items()}
+    release_dates: dict[int, int]
+
+    def __init__(self, release_dates: Mapping[int, int] | str):
+        if isinstance(release_dates, str):
+            self.release_dates = {}
+            self.tag = release_dates
+
+        else:
+            self.release_dates = {task: date for task, date in release_dates.items()}
+            self.tag = ""
+
+    def set_tasks(self, tasks: Tasks) -> None:
+        super().set_tasks(tasks)
+
+        if self.tag:
+            date: int
+            for task_id in range(len(tasks)):
+                date = tasks.data[self.tag][task_id]
+                self.release_dates[task_id] = date
+
+        self.original_release_dates = deepcopy(self.release_dates)
 
     def reset(self) -> None:
         for task_id, date in self.release_dates.items():
@@ -245,8 +283,25 @@ class ReleaseDateConstraint(Constraint):
 
 
 class DeadlineConstraint(Constraint):
-    def __init__(self, deadlines: Mapping[int, int]):
-        self.deadlines = {task: date for task, date in deadlines.items()}
+    deadlines: dict[int, int]
+
+    def __init__(self, deadlines: Mapping[int, int] | str):
+        if isinstance(deadlines, str):
+            self.deadlines = {}
+            self.tag = deadlines
+
+        else:
+            self.deadlines = {task: date for task, date in deadlines.items()}
+            self.tag = ""
+
+    def set_tasks(self, tasks: Tasks) -> None:
+        super().set_tasks(tasks)
+
+        if self.tag:
+            date: int
+            for task_id in range(len(tasks)):
+                date = tasks.data[self.tag][task_id]
+                self.deadlines[task_id] = date
 
     def reset(self) -> None:
         for task_id, date in self.deadlines.items():
@@ -255,32 +310,54 @@ class DeadlineConstraint(Constraint):
     def get_entry(self) -> str:
         return "d_j"
 
-
 class ResourceConstraint(Constraint):
+    resources: list[dict[int, float]]
+
     def __init__(
         self,
         capacities: Iterable[float],
-        resource_usage: Iterable[Mapping[int, float]],
+        resource_usage: Iterable[Mapping[int, float]] | Iterable[str],
     ) -> None:
         self.capacities = convert_to_list(capacities)
-        self.resources = [
-            {task: usage for task, usage in resources.items()}
-            for resources in resource_usage
-        ]
+
+        if is_iterable_type(resource_usage, str):
+            self.resources = [
+                {} for _ in range(len(self.capacities))
+            ]
+            self.tags = resource_usage
+
+        else:
+            assert is_iterable_type(resource_usage, dict)
+
+            self.resources = [
+                {task: usage for task, usage in resources.items()}
+                for resources in resource_usage
+            ]
+            self.tags = []
+
+    def set_tasks(self, tasks: Tasks) -> None:
+        super().set_tasks(tasks)
+
+        for i, tag in enumerate(self.tags):
+            resource_feature = convert_to_list(tasks.data[tag], float)
+
+            for task_id in range(len(tasks)):
+                resource = resource_feature[task_id]
+
+                self.resources[i][task_id] = resource
 
         self.original_resources = deepcopy(self.resources)
 
     def reset(self) -> None:
         self.resources = deepcopy(self.original_resources)
 
-
     def propagate(self, time: int) -> None:
-        for i, (capacity, task_resources) in enumerate(zip(self.capacities, self.resources)):
-            minimum_start_time = time
+        for i in range(len(self.resources)):
+            task_resources = self.resources[i]
 
             minimum_end_time: list[int] = []
             resource_taken: list[float] = []
-            for task_id in task_resources:
+            for task_id in list(task_resources.keys()):
                 task = self.tasks[task_id]
 
                 if task.is_executing(time):
@@ -289,9 +366,8 @@ class ResourceConstraint(Constraint):
                     minimum_end_time.append(task.get_end_lb())
                     resource_taken.append(resource)
 
-
                 if task.is_completed(time):
-                    del self.resources[i]
+                    task_resources.pop(task_id)
 
             if not resource_taken:
                 continue
@@ -300,7 +376,7 @@ class ResourceConstraint(Constraint):
             minimum_end_time = [minimum_end_time[i] for _, i in argsort]
             available_resources = resource_taken.copy()
 
-            available_resources[-1] = capacity - resource_taken[argsort[-1][1]]
+            available_resources[-1] = self.capacities[i] - resource_taken[argsort[-1][1]]
 
             for i in range(len(minimum_end_time) - 2, -1, -1):
                 available_resources[i] = available_resources[i + 1] - resource_taken[argsort[i + 1][1]]
@@ -314,8 +390,7 @@ class ResourceConstraint(Constraint):
 
                 index = binary_search(available_resources, resource)
 
-                if index > 0:
-                    minimum_start_time = minimum_end_time[index - 1]
+                minimum_start_time = minimum_end_time[index - 1] if index > 0 else time
 
                 if task.get_start_lb() < minimum_start_time:
                     task.set_start_lb(minimum_start_time)
