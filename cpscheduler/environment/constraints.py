@@ -1,5 +1,8 @@
-from typing import Self, Optional, Iterable, Literal
+from typing import Self, Optional, Iterable, Literal, Mapping, Sequence, TypeVar
 from numpy.typing import NDArray
+
+from collections import deque
+from copy import deepcopy
 
 from .variables import IntervalVars, Scalar
 
@@ -7,15 +10,27 @@ import numpy as np
 
 class Constraint:
     def export_constraint(self) -> str:
-        return NotImplemented
-    
+        return ""
+
     def propagate(self) -> None:
+        """
+            Given a state of the tasks, propagate the constraint to ensure the constraint is not violated.
+        """
+        ...
+
+    def reset(self) -> None:
+        """
+            Reset the constraint to its original state and ensure the constraint is not violated
+            in the initial state of the tasks.
+        """
         ...
 
 
 
 class PrecedenceConstraint(Constraint):
-    def __init__(self, interval_var: IntervalVars, precedence_matrix: NDArray[np.bool]) -> None:
+    precedence_list: list[list[int]]
+
+    def __init__(self, interval_var: IntervalVars, precedence_list: Sequence[Sequence[int]]) -> None:
         """
             Add a precedence constraint to the tasks. The precedence matrix is a boolean matrix of
             shape (n_tasks, n_tasks) where a True value at (i, j) indicates that task i must be
@@ -26,12 +41,23 @@ class PrecedenceConstraint(Constraint):
             interval_var: IntervalVars
                 The interval variables representing the tasks.
             
-            precedence_matrix: NDArray[np.bool], shape=(n_tasks, n_tasks)
-                The precedence matrix. Must be a Directed Acyclic Graph (DAG) over the tasks.
+            precedence_list: list[NDArray[np.int32]]
+                A list with n_tasks elements, each one with . Must be a Directed Acyclic Graph (DAG) over the tasks.
         """
-        self.precedence_matrix = precedence_matrix
+        self.precedence_list = [list(adjecent) for adjecent in precedence_list]
+        self.original_precedence_list = deepcopy(self.precedence_list)
 
         self.tasks = interval_var
+
+        self.in_degree  = np.zeros(len(self.tasks), dtype=np.int32)
+        self.out_degree = np.zeros(len(self.tasks), dtype=np.int32)
+
+
+    @classmethod
+    def from_precedence_matrix(cls, interval_var: IntervalVars, precedence_matrix: NDArray[np.bool]) -> Self:
+        precedence_list = [[i for i in np.where(row)[0].tolist()] for row in precedence_matrix]
+
+        return cls(interval_var, precedence_list)
 
 
     @classmethod
@@ -39,27 +65,64 @@ class PrecedenceConstraint(Constraint):
         jobs       = tasks[job_feature]
         operations = tasks[operation_feature]
 
-        precedence_matrix = (operations[:, None] + 1 == operations) & (jobs[:, None] == jobs)
+        precedence_list: list[list[int]] = [[] for _ in range(len(tasks))]
 
-        return cls(tasks, precedence_matrix)
+        for job in np.unique(jobs):
+            job_indices = np.where(jobs == job)[0]
+
+            operations_order = np.argsort(operations[job_indices])
+            job_indices = job_indices[operations_order]
+
+            for i in range(len(job_indices) - 1):
+                precedence_list[job_indices[i]].append(int(job_indices[i+1]))
+
+        return cls(tasks, precedence_list)
+
+
+    def reset(self) -> None:
+        self.precedence_list = deepcopy(self.original_precedence_list)
+
+        self.in_degree[:]  = 0
+        self.out_degree[:] = 0
+        for i, adjecent in enumerate(self.precedence_list):
+            self.out_degree[i] = len(adjecent)
+            self.in_degree[[*adjecent]] += 1
+
+
+        self.propagate()
+
 
 
     def add_precedence(self, task1: Scalar, task2: Scalar, operation: Literal[">", "<", ">>", "<<"]) -> None:
         if len(operation) == 2:
             raise NotImplementedError("No support for direct precedence yet.")
 
+        index1: int
+        index2: int
+
         index1, index2 = self.tasks.get_indices([task1, task2])
 
         if operation == '<':
             index1, index2 = index2, index1
 
-        self.precedence_matrix[index1, index2] = True
+        if index2 not in self.precedence_list[index1]:
+            self.precedence_list[index1].append(index2)
+
+            self.in_degree[index2]  += 1
+            self.out_degree[index1] += 1
 
 
     def remove_precedence(self, task1: Scalar, task2: Scalar) -> None:
-        index1, index2 = self.tasks.get_indices([task1, task2])
+        index1: int
+        index2: int
 
-        self.precedence_matrix[index1, index2] = False
+        index1, index2 = self.tasks.get_indices([task1, task2]).tolist()
+
+        if index2 in self.precedence_list[index1]:
+            self.precedence_list[index1].remove(index2)
+
+            self.in_degree[index2]  -= 1
+            self.out_degree[index1] -= 1
 
 
     def export_constraint(self) -> str:
@@ -67,7 +130,7 @@ class PrecedenceConstraint(Constraint):
 
         constraints = [
             f"endBeforeStart({names[i]}, {names[j]});"
-            for i, j in zip(*np.where(self.precedence_matrix))
+            for i in range(len(self.tasks)) for j in self.precedence_list[i]
         ]
 
         return "\n".join(constraints)
@@ -76,38 +139,40 @@ class PrecedenceConstraint(Constraint):
     # TODO: Add support for fixing tasks without the supposition of fixed tasks being in the past.
     # e.g. fixing a task to the future without addressing previous tasks.
     def propagate(self) -> None:
-        adjecency_matrix = self.precedence_matrix.copy()
+        vertices: list[int] = np.where((self.in_degree == 0) & (self.out_degree > 0))[0].tolist()
 
-        # If a task is fixed, then t_precedent > t_fixed is secured.
-        adjecency_matrix[:, self.tasks.is_fixed()] = False
+        queue = deque(vertices)
 
-        in_degree  = np.sum(adjecency_matrix, axis=0)
-        out_degree = np.sum(adjecency_matrix, axis=1)
+        in_degree = self.in_degree.copy()
 
-        initial_vertices = np.where((in_degree == 0) & (out_degree > 0))[0]
-
-        queue = list(initial_vertices)
+        is_fixed = self.tasks.is_fixed()
 
         while queue:
-            vertex = queue.pop(0)
+            vertex = queue.popleft()
 
             end_time = self.tasks.end_lb[vertex]
 
-            adjecent_mask = adjecency_matrix[vertex]
-            reduce_mask   = adjecent_mask & (self.tasks.start_lb < end_time)
+            neighbors = self.precedence_list[vertex]
 
-            self.tasks.set_start_bounds('lb')[reduce_mask] = end_time
+            self.tasks.to_propagate[neighbors] |= self.tasks.start_lb[neighbors] < end_time
 
-            in_degree[adjecent_mask] -= 1
+            self.tasks.set_start_bounds('lb')[neighbors] = np.maximum(self.tasks.start_lb[neighbors], end_time)
 
-            queue.extend(np.where((in_degree == 0) & adjecent_mask)[0])
+            in_degree[neighbors] -= 1
 
+            for neighbor in neighbors:
+                if is_fixed[neighbor]: self.remove_precedence(vertex, neighbor)
+
+                if in_degree[neighbor] == 0:
+                    queue.append(neighbor)
 
 
 class NonOverlapConstraint(Constraint):
+    non_overlaping_groups: dict[str, list[int]]
+
     NAME = "NonOverlap_$1"
 
-    def __init__(self, interval_var: IntervalVars, non_overlaping_groups: NDArray[np.bool], group_ids: Optional[Iterable[Scalar]] = None):
+    def __init__(self, interval_var: IntervalVars, non_overlaping_groups: Mapping[str, Sequence[int]]):
         """
             Add a non-overlapping constraint to the tasks. The non-overlapping matrix is a boolean matrix of
             shape (n_tasks, n_groups) where a True value at (i, j) indicates that a task i is in group j, and
@@ -121,81 +186,75 @@ class NonOverlapConstraint(Constraint):
             non_overlaping_groups: NDArray[np.bool], shape=(n_tasks, n_groups)
                 The non-overlapping matrix. Each row represents a task and each column a group.
         """
-        n_tasks, n_groups = non_overlaping_groups.shape
+        self.non_overlaping_groups = {
+            group_id: list(indices) for group_id, indices in non_overlaping_groups.items()
+        }
 
-        if n_tasks != len(interval_var):
-            raise ValueError("The number of tasks must be equal to the number of rows in the non-overlapping matrix.")
-
-        self.non_overlaping_groups = non_overlaping_groups
         self.tasks = interval_var
-
-        if group_ids is None:
-            group_ids = [i for i in range(n_groups)]
-
-        self.group_ids = list(group_ids)
 
 
     @property
     def n_groups(self) -> int:
-        return len(self.group_ids)
+        return len(self.non_overlaping_groups)
 
 
     @classmethod
     def jobshop_non_overlap(cls, tasks: IntervalVars, machine_feature: str) -> Self:
         machines = tasks[machine_feature]
 
-        non_overlaping_groups = (machines[:, None] == np.unique(machines))
+        non_overlaping_groups: dict[str, list[int]] = {
+            str(machine): np.where(machines == machine)[0].tolist() for machine in np.unique(machines)
+        }
 
         return cls(tasks, non_overlaping_groups)
 
 
-    def add_group(self, tasks_: Iterable[Scalar] | NDArray[np.bool]) -> None:
-        if isinstance(tasks_, np.ndarray) and tasks_.dtype == np.bool:
-            indices = tasks_
-        
-        else:
-            indices = self.tasks.get_indices(tasks_)
+    def add_group(self, tasks: Iterable[Scalar], group_id: Optional[str] = None) -> None:
+        indices = self.tasks.get_indices(tasks)
             
+        if group_id is None:
+            group_id = f"{len(self.non_overlaping_groups)}"
 
-        self.non_overlaping_groups = np.concatenate([self.non_overlaping_groups, np.zeros((len(self.tasks), len(indices)), dtype=np.bool)], axis=1)
-
-        self.non_overlaping_groups[indices, -1] = True
+        self.non_overlaping_groups[group_id] = indices.tolist()
 
 
-    def remove_group(self, group_id: Scalar) -> None:
-        i = self.group_ids.index(group_id)
-        self.group_ids.pop(i)
-
-        self.non_overlaping_groups = np.delete(self.non_overlaping_groups, i, axis=1)
+    def remove_group(self, group_id: str) -> None:
+        del self.non_overlaping_groups[group_id]
 
 
     def export_constraint(self) -> str:
         names = np.asarray(self.tasks.names)
 
         constraints = [
-            f"{self.NAME.replace('$1', str(group_id))} = sequenceVar([{', '.join(names[self.non_overlaping_groups[:, i]])}]);\n"
+            f"{self.NAME.replace('$1', str(group_id))} = sequenceVar([{', '.join(names[indices])}]);\n"
             f"noOverlap({self.NAME.replace('$1', str(group_id))});"
-            for i, group_id in enumerate(self.group_ids)
+            for group_id, indices in self.non_overlaping_groups.items()
         ]
 
         return "\n".join(constraints)
 
     # TODO: Add support for fixing tasks without the supposition of fixed tasks being in the past.
     def propagate(self) -> None:
-        groups = self.non_overlaping_groups.copy()
-
+        to_propagate = self.tasks.to_propagate
         is_fixed = self.tasks.is_fixed()
 
-        masked_end_lb = np.where(groups & is_fixed[:, None], self.tasks.end_lb[:, None], 0)
+        propagate = to_propagate & is_fixed
 
-        max_fixed_end_lb = np.max(masked_end_lb, axis=0)
+        if not np.any(propagate):
+            return
 
-        masked_end_lb = np.where(groups & ~is_fixed[:, None], max_fixed_end_lb, 0)
+        masked_fixed_end_lb = np.where(propagate, self.tasks.end_lb, 0)
 
-        max_end_lb = np.max(masked_end_lb, axis=1)
+        for indices in self.non_overlaping_groups.values():
+            if not np.any(propagate[indices]): continue
 
-        self.tasks.set_start_bounds('lb')[:] = np.maximum(self.tasks.start_lb, max_end_lb)
+            group_max_end_lb = np.max(masked_fixed_end_lb[indices])
 
+            free_indices = [index for index in indices if not is_fixed[index]]
+
+            self.tasks.to_propagate[free_indices] |= self.tasks.start_lb[free_indices] < group_max_end_lb
+
+            self.tasks.set_start_bounds('lb')[free_indices] = np.maximum(self.tasks.start_lb[free_indices], group_max_end_lb)
 
 
 class ReleaseTimesConstraint(Constraint):
@@ -221,25 +280,17 @@ class ReleaseTimesConstraint(Constraint):
         return cls(tasks, tasks[release_time_feature])
 
 
+    def reset(self) -> None:
+        mask = self.release_times > 0
+
+        self.tasks.set_start_bounds('lb')[mask] = np.maximum(self.tasks.start_lb[mask], self.release_times[mask])
+
+
     def set_release_time(self, task: Scalar, release_time: int) -> None:
         index = self.tasks.get_indices(task)
 
         self.release_times[index] = release_time
 
-
-    def export_constraint(self) -> str:
-        names = self.tasks.names
-
-        return "\n".join([
-            f"startOf({name}) >= {release_time};"
-            for name, release_time in zip(names, self.release_times) if release_time > 0
-        ])
-
-
-    def propagate(self) -> None:
-        mask = self.release_times > 0
-
-        self.tasks.set_start_bounds('lb')[mask] = np.maximum(self.tasks.start_lb[mask], self.release_times[mask])
 
 
 class DueDatesConstraint(Constraint):
@@ -269,25 +320,16 @@ class DueDatesConstraint(Constraint):
         return cls(tasks, tasks[due_date_feature])
     
 
+    def reset(self) -> None:
+        mask = self.due_dates > 0
+
+        self.tasks.set_end_bounds('ub')[mask] = np.minimum(self.tasks.end_ub[mask], self.due_dates[mask])
+
+
     def set_due_date(self, task: Scalar, due_date: int) -> None:
         index = self.tasks.get_indices(task)
 
         self.due_dates[index] = due_date
-    
-
-    def export_constraint(self) -> str:
-        names = self.tasks.names
-
-        return "\n".join([
-            f"endOf({name}) <= {due_date};"
-            for name, due_date in zip(names, self.due_dates) if due_date > 0
-        ])
-
-
-    def propagate(self) -> None:
-        mask = self.due_dates > 0
-
-        self.tasks.set_end_bounds('ub')[mask] = np.minimum(self.tasks.end_ub[mask], self.due_dates[mask])
 
 
 
