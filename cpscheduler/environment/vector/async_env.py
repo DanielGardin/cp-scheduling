@@ -12,8 +12,6 @@ import numpy as np
 from ..env import Env
 from .common import step_with_autoreset, get_attribute, info_union
 
-_Obs  = TypeVar('_Obs')
-_Action = TypeVar('_Action')
 
 class AsyncVectorEnv:
     parent_conns: tuple[Connection, ...]
@@ -21,7 +19,7 @@ class AsyncVectorEnv:
 
     def __init__(
             self,
-            env_fns: Iterable[Callable[[], Env[_Obs, _Action]]],
+            env_fns: Iterable[Callable[[], Env]],
             copy      : bool = False,
             auto_reset: bool = True,
             daemon    : bool = True,
@@ -67,11 +65,11 @@ class AsyncVectorEnv:
         return obs, info_union(infos)
 
 
-    def step(self, actions: Iterable[_Action], *args: Any, **kwargs: Any) -> tuple[list[Any], list[float], list[bool], list[bool], dict[str, Any]]:
+    def step(self, actions: Iterable[Any], *args: Any, **kwargs: Any) -> tuple[list[Any], list[float], list[bool], list[bool], dict[str, Any]]:
         if (isinstance(actions, Sequence) and len(actions) != self.n_envs) or sum(1 for _ in actions) != self.n_envs:
             raise ValueError(f'Number of actions does not match number of environments ({self.n_envs})')
 
-        
+
         for conn, action in zip(self.parent_conns, actions):
             conn.send(('step', (action, args, kwargs)))
 
@@ -90,22 +88,22 @@ class AsyncVectorEnv:
     def render(self) -> None:
         for conn in self.parent_conns:
             conn.send(('render', ()))
-        
+
         [conn.recv() for conn in self.parent_conns]
 
-    
+
     def close(self) -> None:
         for conn in self.parent_conns:
             conn.send(('close', ()))
 
         for conn in self.parent_conns:
             conn.close()
-        
+
         for process in self.processes:
             process.join()
 
 
-    def call(self, name: str, *args: Any, **kwargs: Any) -> Any:
+    def call(self, name: str, *args: Any, **kwargs: Any) -> tuple[Any, ...]:
         for conn in self.parent_conns:
             conn.send(('call', (name, args, kwargs)))
 
@@ -113,13 +111,13 @@ class AsyncVectorEnv:
 
         self.handle_errors(results, successes)
 
-        return results
+        return tuple(map(list, zip(*results)))
 
 
     def _worker(
             self,
             conn: Connection,
-            env_fn: Callable[[], Env[_Obs, _Action]],
+            env_fn: Callable[[], Env],
             auto_reset: bool
         ) -> None:
         env = env_fn()

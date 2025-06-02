@@ -1,8 +1,6 @@
 from typing import Any, Callable
 from pandas import DataFrame
 
-from pathlib import Path
-
 import pytest
 
 import numpy as np
@@ -11,7 +9,7 @@ from cpscheduler.common_envs import JobShopEnv
 from cpscheduler.environment.instances import generate_taillard_instance
 
 from cpscheduler.policies.heuristics import ShortestProcessingTime, MostOperationsRemaining, MostWorkRemaining
-from cpscheduler.environment.vector import SyncVectorEnv, AsyncVectorEnv
+from cpscheduler.environment.vector import SyncVectorEnv, AsyncVectorEnv, RayVectorEnv, VectorEnv
 
 def make_jsp_env(
         instance_generator: Callable[..., tuple[DataFrame, dict[str, Any]]],
@@ -28,8 +26,8 @@ pdrs = [
 ]
 
 @pytest.mark.vector
-@pytest.mark.parametrize('env_cls', [AsyncVectorEnv, SyncVectorEnv])
-def test_sync_env(env_cls: type[AsyncVectorEnv] | type[SyncVectorEnv]) -> None:
+@pytest.mark.parametrize('env_cls', [AsyncVectorEnv, SyncVectorEnv, RayVectorEnv])
+def test_sync_env(env_cls: type[VectorEnv]) -> None:
     env_fns = [
         make_jsp_env(
             generate_taillard_instance,

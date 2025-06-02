@@ -1,12 +1,12 @@
 from typing import Any, Sequence
 
-from ..env import Env, _Obs, _Action
+from ..env import Env
 
 def step_with_autoreset(
-        env: Env[_Obs, _Action],
-        action: _Action,
+        env: Env,
+        action: Any,
         *args: Any, **kwargs: Any
-    ) -> tuple[_Obs, float, bool, bool, dict[str, Any]]:
+    ) -> tuple[Any, float, bool, bool, dict[str, Any]]:
     obs, reward, terminated, truncated, info = env.step(action, *args, **kwargs)
 
     if terminated:
@@ -28,12 +28,12 @@ def step_with_autoreset(
     return obs, reward, terminated, truncated, info
 
 
-def get_attribute(env: Env[_Obs, _Action], name: str, *args: Any, **kwargs: Any) -> Any:
+def get_attribute(env: Env, name: str, *args: Any, **kwargs: Any) -> Any:
     attr = getattr(env, name)
 
     if not callable(attr):
         return attr
-    
+
     return attr(*args, **kwargs)
 
 

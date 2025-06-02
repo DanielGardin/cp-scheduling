@@ -24,18 +24,15 @@ class _Bound:
         return repr(self._array + self._modifier)
 
     def __setitem__(self, indices: Selector, value: NDArray[np.int32] | int) -> None:
-        if isinstance(self._modifier, int):
-            self._array[indices] = value - self._modifier
-            return
+        adjustment = self._modifier if isinstance(self._modifier, int) else self._modifier[indices]
 
-        self._array[indices] = value - self._modifier[indices]
+        self._array[indices] = value - adjustment
 
 
     def __getitem__(self, indices: Selector) -> NDArray[np.int32]:
-        if isinstance(self._modifier, int):
-            return self._array[indices] + self._modifier
+        adjustment = self._modifier if isinstance(self._modifier, int) else self._modifier[indices]
 
-        return self._array[indices] + self._modifier[indices]
+        return self._array[indices] + adjustment
 
 
 
@@ -137,7 +134,7 @@ class IntervalVars:
     @property
     def start_lb(self) -> _Bound:
         return _Bound(self._start_lb)
-    
+
     @property
     def start_ub(self) -> _Bound:
         return _Bound(self._start_ub)
@@ -151,7 +148,7 @@ class IntervalVars:
         return _Bound(self._start_ub, self.durations)
 
 
-    def __getitem__(self, feature: str) -> NDArray[Any]:
+    def __getitem__(self, feature: str | list[str]) -> NDArray[Any]:
         return self.features[feature]
 
 
@@ -178,7 +175,7 @@ class IntervalVars:
         ----------
         time: Optional[int], default=None
             The current time. If None, the current time is infered by the fixed tasks.
-        
+
         """
         if time is None:
             return ~self.is_fixed()
