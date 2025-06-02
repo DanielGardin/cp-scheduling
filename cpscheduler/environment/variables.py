@@ -11,8 +11,8 @@ Selector = int | slice | NDArray[np.integer[Any]] | NDArray[np.bool] | Sequence[
 
 AVAILABLE_SOLVERS = Literal['cplex', 'ortools']
 
-MIN_INT: Final[int] = -2 ** 31 + 1
-MAX_INT: Final[int] =  2 ** 31 - 1
+MIN_INT: Final[int] = -(2 ** 31 - 1)
+MAX_INT: Final[int] =   2 ** 31 - 1
 
 
 class _Bound:
@@ -44,7 +44,7 @@ def export_single_variable_cplex(name: str, size: int, lb: int, ub: int) -> str:
 
     if lb == ub:
         rep += f"startOf({name}) == {lb};"
-    
+
     else:
         rep += f"startOf({name}) >= {lb};\n"
         rep += f"startOf({name}) <= {ub};"
@@ -95,7 +95,7 @@ class IntervalVars:
 
         durations: NDArray[np.int32], shape=(n_tasks,)
             The duration of each task.
-        
+
         task_ids: Optional[Iterable[Scalar]], default=None
             The ids of the tasks. If not provided, the ids will be the range of the number of tasks.
         """
@@ -243,7 +243,7 @@ class IntervalVars:
     def get_indices(self, indices: Scalar | Iterable[Scalar]) -> NDArray[np.int32]:
         if isinstance(indices, Scalar):
             return np.array(self._indices[indices], dtype=np.int32)
-        
+
         return np.array([self._indices[index] for index in indices], dtype=np.int32)
 
 
@@ -254,7 +254,7 @@ class IntervalVars:
             variables = [
                 export_single_variable_cplex(name, int(duration), int(lb), int(ub)) for name, duration, lb, ub in zip(names, self.durations, self._start_lb, self._start_ub)
             ]
-        
+
         else:
             variables = [
                 export_single_variable_ortools(name, int(duration), int(lb), int(ub)) for name, duration, lb, ub in zip(names, self.durations, self._start_lb, self._start_ub)
@@ -265,22 +265,22 @@ class IntervalVars:
 
 
     def get_state(self, current_time: int) -> NDArray[np.void]:
-        buffer = np.zeros(len(self.features), dtype=np.dtypes.StrDType(9))
-        remaining_time = np.zeros_like(self.durations)
 
         is_awaiting  = self.is_awaiting()
         is_executing = self.is_executing(current_time)
         is_finished  = self.is_finished(current_time)
-
         is_available = self.is_available(current_time)
 
-        remaining_time[is_executing] = self.end_lb[is_executing] - current_time
-        remaining_time[is_awaiting]  = self.durations[is_awaiting]
+        buffer = np.zeros(len(self.features), dtype=np.dtypes.StrDType(9))
 
         buffer[is_awaiting]  = 'awaiting'
         buffer[is_executing] = 'executing'
         buffer[is_finished]  = 'finished'
         buffer[is_available] = 'available'
+
+        remaining_time = np.zeros_like(self.durations)
+        remaining_time[is_executing] = self.end_lb[is_executing] - current_time
+        remaining_time[is_awaiting]  = self.durations[is_awaiting]
 
         state = rf.append_fields(
             self.features.copy(),

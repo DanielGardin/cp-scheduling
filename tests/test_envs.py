@@ -17,6 +17,7 @@ TEST_INSTANCES = [
     # "kopt_ops10000_m100_1"
 ]
 
+@pytest.mark.env
 @pytest.mark.parametrize("instance_name", TEST_INSTANCES)
 def test_env(instance_name: str) -> None:
     path = Path(__file__).parent.parent / f"instances/jobshop/{instance_name}.txt"
@@ -56,6 +57,7 @@ def test_env(instance_name: str) -> None:
     assert new_info['current_time'] == min(100, env.tasks.durations[0])
 
 
+@pytest.mark.env
 @pytest.mark.parametrize("instance_name", TEST_INSTANCES)
 def test_not_enforce_order(instance_name: str) -> None:
     path = Path(__file__).parent.parent / f"instances/jobshop/{instance_name}.txt"

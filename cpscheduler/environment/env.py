@@ -1,4 +1,4 @@
-from typing import Any, Optional, Final, Never, ClassVar, overload, Literal
+from typing import Any, Optional, Final, Never, ClassVar, TypeVar, runtime_checkable, Protocol
 from numpy.typing import NDArray
 from pandas import DataFrame
 
@@ -15,10 +15,22 @@ from .variables import IntervalVars, Scalar, AVAILABLE_SOLVERS
 MIN_INT: Final[int] = -2 ** 31 + 1
 MAX_INT: Final[int] =  2 ** 31 - 1
 
+_Obs = TypeVar('_Obs', covariant=True)
+_Action = TypeVar('_Action', contravariant=True)
+
+@runtime_checkable
+class Env(Protocol[_Obs, _Action]):
+    def reset(self) -> tuple[_Obs, dict[str, Any]]: ...
+
+    def step(self, action: _Action, *args: Any, **kwargs: Any) -> tuple[_Obs, float, bool, bool, dict[str, Any]]: ...
+
+    def render(self) -> None: ...
 
 @mypyc_attr(allow_interpreted_subclasses=True)
 class SchedulingCPEnv:
-    render_mode: ClassVar[list[str]] = ['gantt']
+    metadata: ClassVar[dict[str, Any]] = {
+        'render_modes': ['gantt']
+    }
 
     constraints : dict[str, Constraint]
     objective   : Objective
@@ -30,7 +42,6 @@ class SchedulingCPEnv:
     current_task    : int
 
     tasks: IntervalVars
-
 
     def __init__(
             self,
@@ -62,8 +73,6 @@ class SchedulingCPEnv:
 
 
     def set_objective(self, objective: Objective, minimize: bool = True, name: Optional[str] = None) -> None:
-        if name is None: name = objective.__class__.__name__
-
         self.objective = objective
         self.minimize  = minimize
 
@@ -246,19 +255,19 @@ class SchedulingCPEnv:
 
     def step(
             self,
-            actions: Optional[NDArray[np.generic]]       = None,
+            action: Optional[NDArray[np.generic]]       = None,
             time_skip: Optional[int]                     = None,
             extend: bool                                 = False,
             enforce_order: bool                          = True
         ) -> tuple[NDArray[np.void], float, bool, bool, dict[str, Any]]:
 
         self.current_task = 0
-        if actions is not None:
+        if action is not None:
             if extend:
-                self.scheduled_action = np.concatenate([self.scheduled_action, actions])
+                self.scheduled_action = np.concatenate([self.scheduled_action, action])
             
             else:
-                self.scheduled_action = actions.copy()
+                self.scheduled_action = action.copy()
 
         previous_objective = self.objective.get_current()
 
@@ -320,7 +329,13 @@ class SchedulingCPEnv:
             available_schedule = available_mask[task_ids]
 
             if not np.any(available_schedule):
-                to_schedule = self.tasks.is_awaiting()
+                executing_tasks = self.tasks.is_executing(self.current_time)
+
+                if not np.any(executing_tasks):
+                    self.current_time = time_limit
+                    return True
+
+                to_schedule = task_ids[self.tasks.is_awaiting()[task_ids]]
 
                 self.current_time = np.min(self.tasks.start_lb[to_schedule], initial=time_limit).item()
 

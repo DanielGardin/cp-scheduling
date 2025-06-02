@@ -39,6 +39,7 @@ heuristics = {
     "MWKR" : MostWorkRemaining()
 }
 
+@pytest.mark.heuristics
 @pytest.mark.parametrize("instance_no", pdr_expected_results)
 def test_pdr(instance_no: int) -> None:
     path = Path(__file__).parent.parent / f"instances/jobshop/ta{instance_no:02d}.txt"
