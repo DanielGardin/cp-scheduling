@@ -51,5 +51,7 @@ class SyncVectorEnv(VectorEnv[_Obs, _Act]):
             env.render()
 
 
-    def call(self, name: str, *args :Any, **kwargs: Any) -> tuple[Any, ...]:
-        return tuple([get_attribute(env, name, *args, **kwargs) for env in self.envs])
+    def call(self, name: str, *args :Any, **kwargs: Any) -> tuple[list[Any], ...]:
+        results = [get_attribute(env, name, *args, **kwargs) for env in self.envs]
+
+        return tuple(map(list, zip(*results)))
