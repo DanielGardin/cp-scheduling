@@ -132,7 +132,7 @@ class AsyncVectorEnv(VectorEnv[_Obs, _Act]):
         self.status = EnvStatus.CLOSED
 
 
-    def call(self, name: str, *args: Any, **kwargs: Any) -> tuple[Any, ...]:
+    def call(self, name: str, *args: Any, **kwargs: Any) -> tuple[list[Any], ...]:
         for conn in self.parent_conns:
             conn.send(('call', (name, args, kwargs)))
 

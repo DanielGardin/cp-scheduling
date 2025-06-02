@@ -71,8 +71,11 @@ def is_iterable_type(obj: Any, dtype: type[_T]) -> TypeGuard[Iterable[_T]]:
     bool
         Whether the object is an iterable containing elements of the specified type.
     """
+    try:
+        return isinstance(obj, Iterable) and all([isinstance(item, dtype) for item in obj])
 
-    return isinstance(obj, Iterable) and all([isinstance(item, dtype) for item in obj])
+    except Exception: # If __iter__ is implemented but iterating raises an exception
+        return False
 
 
 @overload
