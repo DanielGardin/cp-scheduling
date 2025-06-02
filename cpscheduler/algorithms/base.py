@@ -41,8 +41,12 @@ class DummyWriter(SummaryWriter):
 
 
 class Logs:
-    def __init__(self) -> None:
+    def __init__(self, initial_logs: Logs | dict[str, list[float]] | None = None, initial_tag: Optional[str] = None) -> None:
         self.logs: dict[str, list[float]] = {}
+
+        if initial_logs is not None:
+            self.extend(initial_logs, initial_tag)
+
 
     def log(
             self,
@@ -81,7 +85,7 @@ class Logs:
                 self.logs[key] = []
 
             self.logs[key].extend(values)
-        
+
         return self
 
 

@@ -265,13 +265,45 @@ class SchedulingCPEnv:
         return [task for task in range(len(self.tasks)) if self.tasks.is_fixed(task)]
 
 
-    def set_minimum_time(
+    def advance_to(
             self,
-            time_options: list[int],
+            time: int,
             time_limit: int
         ) -> None:
-        best_time         = min(time_options + [time_limit])
-        self.current_time = max(self.current_time, best_time)
+        self.current_time = max(self.current_time, min(time, time_limit))
+
+
+    def next_decision_point(
+            self,
+            time_limit: int
+        ) -> None:
+        awaiting_tasks = self.get_awaiting_tasks()
+
+        if awaiting_tasks:
+            next_time = min(self.tasks.get_start_lb(awaiting_tasks))
+
+        else:
+            next_time = max(self.tasks.get_end_lb())
+
+        self.advance_to(next_time, time_limit)
+
+
+    def advance_to_next_time(
+            self,
+            time_limit: int
+        ) -> None:
+        awaiting_tasks = self.get_awaiting_tasks()
+
+        if awaiting_tasks:
+            next_time = min([
+                self.tasks.get_start_lb(task) for task in awaiting_tasks
+                if self.tasks.get_start_lb(task) > self.current_time
+            ])
+
+        else:
+            next_time = max(self.tasks.get_end_lb())
+
+        self.advance_to(next_time, time_limit)
 
 
     def update_state(self) -> None:
@@ -325,15 +357,7 @@ class SchedulingCPEnv:
 
     def one_action(self, enforce_order: bool, time_limit: int) -> bool:
         if self.current_task >= len(self.scheduled_actions):
-            executing_tasks = self.get_executing_tasks()
-
-            if executing_tasks:
-                self.set_minimum_time(self.tasks.get_end_lb(executing_tasks), time_limit)
-
-            else:
-                # Maybe checking in the scheduled actions is enough
-                awaiting_tasks = self.get_available_tasks()
-                self.set_minimum_time(self.tasks.get_start_lb(awaiting_tasks), time_limit)
+            self.advance_to_next_time(time_limit)
 
             return True
 
@@ -341,35 +365,25 @@ class SchedulingCPEnv:
             task = self.scheduled_actions[self.current_task]
 
             if not self.tasks.is_available(task, self.current_time):
-                executing_tasks = self.get_executing_tasks()
-
-                if not executing_tasks or self.current_time >= time_limit:
+                if not self.get_executing_tasks() or self.current_time == time_limit:
                     return True
 
-                self.set_minimum_time(self.tasks.get_end_lb(executing_tasks), time_limit)
+                self.advance_to_next_time(time_limit)
 
                 return False
 
-
         else: # not enforce_order
-            available_schedule = [
-                (pos, task) for pos, task in enumerate(self.scheduled_actions[self.current_task:])
-                if self.tasks.is_available(task, self.current_time)
-            ]
+            for pos, task in enumerate(self.scheduled_actions[self.current_task:]):
+                if self.tasks.is_available(task, self.current_time):
+                    break
 
-            if not available_schedule:
-                executing_tasks = self.get_executing_tasks()
-
-                if not executing_tasks:
-                    self.current_time = time_limit
+            else: # no available task
+                if not self.get_executing_tasks() or self.current_time == time_limit:
                     return True
 
-                awaiting_tasks = self.get_awaiting_tasks()
-                self.set_minimum_time(self.tasks.get_start_lb(awaiting_tasks), time_limit)
+                self.advance_to_next_time(time_limit)
 
-                return self.current_time >= time_limit
-
-            pos, task = available_schedule[0]
+                return False
 
             if pos != 0:
                 task_place = self.current_task + pos
@@ -377,17 +391,10 @@ class SchedulingCPEnv:
                 self.scheduled_actions[self.current_task+1:task_place+1] = self.scheduled_actions[self.current_task:task_place]
                 self.scheduled_actions[self.current_task] = task
 
-
         self.tasks.fix_start(task, self.current_time)
         self.current_task += 1
 
-        # Maybe checking in the scheduled actions is enough
-        awaiting_tasks = self.get_awaiting_tasks()
-        if awaiting_tasks:
-            self.set_minimum_time(self.tasks.get_start_lb(awaiting_tasks), time_limit)
-
-        else:
-            self.current_time = max(self.tasks.get_end_lb() + [self.current_time])
+        self.next_decision_point(time_limit)
 
         return self.current_task >= len(self.scheduled_actions)
 
