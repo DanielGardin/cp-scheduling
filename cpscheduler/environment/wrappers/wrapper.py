@@ -1,4 +1,4 @@
-from typing import Any, TypeVar, Callable, Concatenate, ParamSpec
+from typing import Any, TypeVar, Callable, Concatenate, ParamSpec, SupportsFloat
 from types import MethodType
 
 from ..env import Env
@@ -17,7 +17,7 @@ def wrap_obs(
     original_step = env.step
     original_reset = env.reset
 
-    def new_step(self: _Env, action: Any, *args: Any, **kwargs: Any) -> tuple[_Obs, float, bool, bool, dict[str, Any]]:
+    def new_step(self: _Env, action: Any, *args: Any, **kwargs: Any) -> tuple[_Obs, SupportsFloat, bool, bool, dict[str, Any]]:
         obs, reward, terminated, truncated, info = original_step(action, *args, **kwargs)
 
         return post_processor(obs, *p_args, **p_kwargs), reward, terminated, truncated, info
@@ -42,7 +42,7 @@ def wrap_action(
     ) -> _Env:
     original_step = env.step
 
-    def new_step(self: _Env, action: _Act, *args: Any, **kwargs: Any) -> tuple[Any, float, bool, bool, dict[str, Any]]:
+    def new_step(self: _Env, action: _Act, *args: Any, **kwargs: Any) -> tuple[Any, SupportsFloat, bool, bool, dict[str, Any]]:
         new_action = pre_processor(action, *p_args, **p_kwargs)
         return original_step(new_action, *args, **kwargs)
 
