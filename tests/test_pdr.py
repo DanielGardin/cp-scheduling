@@ -2,7 +2,7 @@ import pytest
 
 from common import env_setup
 
-from cpscheduler.policies.heuristics import ShortestProcessingTime, MostOperationsRemaining, MostWorkRemaining, PriorityDispatchingRule
+from cpscheduler.heuristics import ShortestProcessingTime, MostOperationsRemaining, MostWorkRemaining, PriorityDispatchingRule
 
 pdr_expected_results = {
     # 15x15

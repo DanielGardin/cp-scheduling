@@ -1,3 +1,8 @@
+"""
+    utils.py
+
+    This module provides utility functions for the environment and other modules.
+"""
 from typing import (
     Any,
     TypeVar,
@@ -8,34 +13,32 @@ from typing import (
     Sequence,
 )
 
-import numpy as np
 from collections import deque
 from fractions import Fraction
 from math import lcm
 
-from .common import MAX_INT, MIN_INT
+import numpy as np
+from gymnasium import spaces
 
+from .common import MAX_INT, MIN_INT
 
 _S = TypeVar("_S")
 _T = TypeVar("_T", bound=Any)
-
 @overload
 def convert_to_list(array: Any, dtype: type[_T]) -> list[_T]: ...
-
 
 @overload
 def convert_to_list(array: Iterable[_S], dtype: None = None) -> list[_S]: ...
 
-
 @overload
 def convert_to_list(array: Any, dtype: None = None) -> list[Any]: ...
-
 
 def convert_to_list(
     array: Iterable[Any], dtype: Optional[type[_T]] = None
 ) -> list[Any]:
     """
-    Convert an iterable to a list. If a dtype is provided, the elements of the list will be casted to that type.
+    Convert an iterable to a list. If a dtype is provided, the elements of the list will be casted
+    to that type.
 
     Parameters
     ----------
@@ -64,11 +67,7 @@ def convert_to_list(
     except TypeError:
         return [array] if dtype is None else [dtype(array)]
 
-
-_Type = TypeVar("_Type", bound=object)
-
-
-def is_iterable_type(obj: Any, dtype: type[_Type]) -> TypeGuard[Iterable[_Type]]:
+def is_iterable_type(obj: Iterable[Any] | Any, dtype: type[_T]) -> TypeGuard[Iterable[_T]]:
     """
     Returns whether the object is an iterable containing elements of the specified type.
 
@@ -86,20 +85,16 @@ def is_iterable_type(obj: Any, dtype: type[_Type]) -> TypeGuard[Iterable[_Type]]
         Whether the object is an iterable containing elements of the specified type.
     """
     try:
-        return isinstance(obj, Iterable) and all(
-            [isinstance(item, dtype) for item in obj]
-        )
+        return all([isinstance(item, dtype) for item in obj])
 
-    except Exception:  # If __iter__ is implemented but iterating raises an exception
+    except Exception:
         return False
 
 
 _K = TypeVar("_K")
 _V = TypeVar("_V")
-
-
 def is_dict(
-    obj: Any, keys_type: type[_K], values_type: type[_V]
+    obj: dict[Any, Any] | Any, keys_type: type[_K], values_type: type[_V]
 ) -> TypeGuard[dict[_K, _V]]:
     """
     Returns whether the object is a dictionary.
@@ -114,12 +109,14 @@ def is_dict(
     bool
         Whether the object is a dictionary.
     """
-    return isinstance(obj, dict) and all(
-        [
-            isinstance(key, keys_type) and isinstance(value, values_type)
-            for key, value in obj.items()
-        ]
-    )
+    try:
+        return all([
+                isinstance(key, keys_type) and isinstance(value, values_type)
+                for key, value in obj.items()
+        ])
+
+    except Exception:
+        return False
 
 
 def topological_sort(precedence_map: dict[int, list[int]], n_tasks: int) -> list[int]:
@@ -210,12 +207,8 @@ def binary_search(
 
     return left
 
-
-
-from gymnasium import spaces
-
-
 def infer_list_space(array: list[_T]) -> spaces.Space[Any]:
+    "Infer the Gymnasium space for a list based on its elements."
     n = len(array)
 
     if is_iterable_type(array, bool):
@@ -234,6 +227,7 @@ def infer_list_space(array: list[_T]) -> spaces.Space[Any]:
 
 
 def scale_to_int(float_list: list[float], scale_factor: float = 1000.0) -> list[int]:
+    "Scale a list of floats to integers using a common denominator."
     fractions = [Fraction(value).limit_denominator() for value in float_list]
 
     denominators = [fraction.denominator for fraction in fractions]

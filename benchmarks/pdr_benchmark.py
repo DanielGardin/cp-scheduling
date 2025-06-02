@@ -7,7 +7,7 @@ from time import perf_counter
 
 from cpscheduler.environment import SchedulingEnv, JobShopSetup
 from cpscheduler.instances import read_jsp_instance
-from cpscheduler.policies.heuristics import ShortestProcessingTime, MostOperationsRemaining, MostWorkRemaining, PriorityDispatchingRule
+from cpscheduler.heuristics import ShortestProcessingTime, MostOperationsRemaining, MostWorkRemaining, PriorityDispatchingRule
 
 root = Path(__file__).parent.parent
 

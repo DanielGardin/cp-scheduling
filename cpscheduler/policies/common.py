@@ -11,8 +11,8 @@ def layer_init(layer: nn.Module, gain: float = 1, bias_const: float = 0.0) -> nn
     torch.nn.init.orthogonal_(layer.weight, gain) # type: ignore
 
     if hasattr(layer, "bias") and layer.bias is not None:
-        torch.nn.init.constant_(layer.bias, bias_const)
-    
+        torch.nn.init.constant_(layer.bias, bias_const) # type: ignore
+
     return layer
 
 
@@ -65,16 +65,43 @@ class MLP(nn.Module):
         ]) if layer_norm else None
 
     def forward(self, x: Tensor) -> Tensor:
-        for i, layer in enumerate(self.layers):
+        for i, layer in enumerate(self.layers[:-1]):
             x = layer(x)
 
             if self.batch_norm is not None:
                 x = self.batch_norm[i](x)
             
-            if self.layer_norm is not None:
+            elif self.layer_norm is not None:
                 x = self.layer_norm[i](x)
 
             x = self.activation(x)
             x = self.dropout(x)
 
+        x = self.layers[-1](x)
+
         return x
+    
+
+class TransformerEncoder(nn.Module):
+    def __init__(
+            self,
+            input_dim: int,
+            hidden_dim: int = 128,
+            num_heads: int = 4,
+            num_layers: int = 2
+        ):
+        super().__init__()
+        self.encoder_layer = nn.TransformerEncoderLayer(
+            d_model=input_dim,
+            nhead=num_heads,
+            dim_feedforward=hidden_dim,
+            batch_first=True
+        )
+        
+        self.transformer = nn.TransformerEncoder(self.encoder_layer, num_layers=num_layers)
+        self.output = nn.Linear(input_dim, 1)
+
+    def forward(self, x: Tensor) -> Tensor:
+        # x: (batch_size, num_items, feature_dim)
+        x = self.transformer(x)
+        return self.output(x).squeeze(-1)

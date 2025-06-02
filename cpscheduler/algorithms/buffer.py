@@ -1,4 +1,4 @@
-from typing import Any, Mapping, Optional, Iterable, Never, Union, Literal
+from typing import Any, Mapping, Optional, Iterable, Never, Union, Literal, Self
 from torch.types import Device, Tensor
 
 import torch
@@ -35,6 +35,23 @@ class Buffer:
 
         self.initialized = False
         self.clear()
+
+
+    @classmethod
+    def from_tensors(
+        cls,
+        /,
+        **kwargs: Tensor,
+    ) -> Self:
+        buffer_size = max(x.shape[0] for x in kwargs.values())
+        buffer_shapes = {key: value.shape[1:] for key, value in kwargs.items()}
+        device = kwargs[list(kwargs.keys())[0]].device
+
+
+        buffer = cls(buffer_size, buffer_shapes, device)
+        buffer.add(**kwargs)
+
+        return buffer
 
 
     def __len__(self) -> int:
@@ -168,23 +185,26 @@ class Buffer:
         idxs = torch.randperm(self.current_size)
         batch: TensorDict
 
-        i = 0
-        for i in range(0, self.current_size - batch_size + 1, batch_size):
-            batch = self.buffer[idxs[i:i+batch_size]]
+        ptr_start = 0
+
+        while ptr_start + batch_size < self.current_size:
+            batch = self.buffer[idxs[ptr_start:ptr_start + batch_size]]
 
             if device is not None and device != self.device:
                 batch = batch.to(device)
 
             yield self._apply_norm(batch)
 
+            ptr_start += batch_size
+        
         # Yield the (potentially incomplete) last batch
-        batch = self.buffer[idxs[i:self.current_size]]
+        if ptr_start < self.current_size:
+            batch = self.buffer[idxs[ptr_start:self.current_size]]
 
-        if device is not None and device != self.device:
-            batch = batch.to(device)
+            if device is not None and device != self.device:
+                batch = batch.to(device)
 
-        yield self._apply_norm(batch)
-
+            yield self._apply_norm(batch)
 
     def __getitem__(self, idx: str) -> Tensor:
         return self.buffer[idx][:self.current_size] # type: ignore

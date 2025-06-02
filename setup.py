@@ -20,7 +20,7 @@ compiling_dirs = [
 
 
 compiling_files = [
-    'cpscheduler/policies/heuristics/pdr_heuristics.py',
+    'cpscheduler/heuristics/pdr_heuristics.py',
 ]
 for dir in compiling_dirs:
     compiling_files.extend([

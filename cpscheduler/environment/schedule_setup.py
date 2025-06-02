@@ -1,15 +1,27 @@
+"""
+    schedule_setup.py
+
+    This module defines the ScheduleSetup class and its subclasses for different scheduling setups.
+    It provides a framework for creating various scheduling environments, such as single machine,
+    identical parallel machines, uniform parallel machines, job shop, and open shop setups.
+"""
 from typing import Any, ClassVar, Iterable
 
-from textwrap import dedent
+from abc import ABC, abstractmethod
+
+from mypy_extensions import mypyc_attr
 
 from .common import ProcessTimeAllowedTypes
 from .tasks import Tasks
 from .constraints import Constraint, DisjunctiveConstraint, PrecedenceConstraint, MachineConstraint
 from .utils import is_iterable_type, convert_to_list
 
-from abc import ABC, abstractmethod
-
+@mypyc_attr(allow_interpreted_subclasses=True)
 class ScheduleSetup(ABC):
+    """
+        Base class for scheduling setups. It defines the common interface for all scheduling setups
+        and provides methods to parse process times, set tasks, and setup constraints.
+    """
     tasks: Tasks
     parallel: ClassVar[bool] = True
 
@@ -17,14 +29,6 @@ class ScheduleSetup(ABC):
         self,
         n_machines: int = -1,
     ):
-        """
-            Generic class for scheduling setups. Create a machine environment with a specific number
-            of machines.
-        
-        Parameters:
-        n_machines (int): Number of machines in the environment.
-        """
-
         self.n_machines = n_machines
 
     @abstractmethod
@@ -34,48 +38,49 @@ class ScheduleSetup(ABC):
         process_time: ProcessTimeAllowedTypes,
     ) -> list[dict[int, int]]:
         """
-            Parse the process time of the tasks. The process time can be a list of dictionaries, a
-            dictionary of lists, or a pandas DataFrame. The function will return a list of dictionaries
-            with the machine as key and the process time as value.
-        
+        Parse the process time of the tasks. The process time can be a list of dictionaries, a
+        dictionary of lists, or a pandas DataFrame. The function will return a list of dictionaries
+        with the machine as key and the process time as value.
+
         Parameters:
         data (dict): Dictionary containing the data of the tasks.
         process_time (ProcessTimeAllowedTypes): Process time of the tasks.
-        
+
         Returns:
-        list[dict[int, int]]: List of dictionaries with the machine as key and the process time as value.
+        list[dict[int, int]]: List of dictionaries with the machine as key and the process time
+        as value.
         """
-        ...
 
     def set_tasks(self, tasks: Tasks) -> None:
+        "Make the setup aware of the tasks it is applied to."
         self.tasks = tasks
 
     def setup_constraints(self) -> tuple[Constraint, ...]:
+        "Build the constraint for that setup."
         return ()
 
     def get_machine(self, task_id: int) -> int:
+        "Get the default machine for a given task."
         raise ValueError(
             f"The {self.__class__.__name__} setup does not have a default machine assignment."
         )
 
-    @abstractmethod
-    def export_model(self) -> str:
-        ...
-
-    def export_data(self) -> str:
-        return ""
-
     def get_entry(self) -> str:
+        "Produce the α entry for the constraint."
         return ""
 
 
 class SingleMachineSetup(ScheduleSetup):
+    """
+    Single Machine Scheduling Setup.
+
+    This setup is used for scheduling tasks on a single machine.
+    """
     parallel: ClassVar[bool] = False
 
     def __init__(self, disjunctive: bool = True) -> None:
         super().__init__(1)
         self.disjunctive = disjunctive
-        
 
     def parse_process_time(
         self,
@@ -84,10 +89,10 @@ class SingleMachineSetup(ScheduleSetup):
     ) -> list[dict[int, int]]:
         if is_iterable_type(process_time, int):
             return [{0: p_time} for p_time in process_time]
-    
+
         if isinstance(process_time, str):
             return [{0: p_time} for p_time in data[process_time]]
-    
+
         raise ValueError(
             "Cannot parse the process time. Please provide an iterable of integers or a string."
         )
@@ -100,20 +105,6 @@ class SingleMachineSetup(ScheduleSetup):
 
         return (DisjunctiveConstraint(disjunctive_tasks, name="disjunctive"),)
 
-    def export_model(self) -> str:
-        return dedent("""\
-            % (Schedule Setup) Single machine
-            array[1..num_tasks] of int: processing_time;
-
-            constraint forall(t in 1..num_tasks)(
-                sum(p in 1..num_parts)(duration[t,p]) = processing_time[t]
-            );
-        """)
-
-    def export_data(self) -> str:
-        p_times = [task.processing_times[0] for task in self.tasks]
-        return f"processing_time = [{', '.join(map(str, p_times))}];\n"
-
     def get_machine(self, task_id: int) -> int:
         return 0
 
@@ -122,6 +113,11 @@ class SingleMachineSetup(ScheduleSetup):
 
 
 class IdenticalParallelMachineSetup(ScheduleSetup):
+    """
+    Identical Parallel Machine Scheduling Setup.
+
+    This setup is used for scheduling tasks on multiple machines using the same processing time.
+    """
     def __init__(
         self,
         n_machines: int,
@@ -138,17 +134,13 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
         data: dict[str, list[Any]],
         process_time: ProcessTimeAllowedTypes,
     ) -> list[dict[int, int]]:
-        self.processing_times: list[int]
-
         if is_iterable_type(process_time, int):
-            self.processing_times = list(process_time)
             return [
                 {machine: p_time for machine in range(self.n_machines)}
                 for p_time in process_time
             ]
 
         if isinstance(process_time, str):
-            self.processing_times = data[process_time]
             return [
                 {machine: p_time for machine in range(self.n_machines)}
                 for p_time in data[process_time]
@@ -158,42 +150,15 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
             "Cannot parse the process time. Please provide an iterable of integers or a string."
         )
 
-    def export_model(self) -> str:
-        model = dedent("""\
-            % (Schedule Setup) Identical parallel machine
-            int: num_machines;
-
-            array[1..num_tasks] of int: processing_time;
-            array[1..num_tasks, 1..num_parts] of var 1..num_machines: assignment;
-
-            constraint forall(t in 1..num_tasks)(
-                sum(p in 1..num_parts)(duration[t,p]) = processing_time[t]
-            );
-        """)
-    
-        if self.disjunctive:
-            model += dedent("""
-            constraint cumulatives(
-                [start[t, p] | t in 1..num_tasks, p in 1..num_parts],
-                [duration[t, p] | t in 1..num_tasks, p in 1..num_parts],
-                [1 | t in 1..num_tasks, p in 1..num_parts],
-                [assignment[t, p] | t in 1..num_tasks, p in 1..num_parts],
-                [1 | m in 1..num_machines],
-                true
-            );
-            """)
-        
-        return model
-
-    def export_data(self) -> str:
-        return f"num_machines = {self.n_machines};\n" \
-               f"processing_time = [{', '.join(map(str, self.processing_times))}];\n"
-
     def get_entry(self) -> str:
         return f"P{self.n_machines}" if self.n_machines > 1 else "Pm"
 
-# Untested
 class UniformParallelMachineSetup(ScheduleSetup):
+    """
+    Uniform Parallel Machine Scheduling Setup.
+
+    This setup is used for scheduling tasks on multiple machines with different speeds.
+    """
     def __init__(
         self,
         n_machines: int,
@@ -212,18 +177,13 @@ class UniformParallelMachineSetup(ScheduleSetup):
         data: dict[str, list[Any]],
         process_time: ProcessTimeAllowedTypes,
     ) -> list[dict[int, int]]:
-        self.processing_times: list[int]
         if is_iterable_type(process_time, int):
-            self.processing_times = list(process_time)
-
             return [
                 {machine: p_time // self.speed[machine] for machine in range(self.n_machines)}
                 for p_time in process_time
             ]
 
         if isinstance(process_time, str):
-            self.processing_times = data[process_time]
-
             return [
                 {machine: p_time // self.speed[machine] for machine in range(self.n_machines)}
                 for p_time in data[process_time]
@@ -233,41 +193,8 @@ class UniformParallelMachineSetup(ScheduleSetup):
             "Cannot parse the process time. Please provide an iterable of integers or a string."
         )
 
-    def export_model(self) -> str:
-        model = dedent("""\
-            % (Schedule Setup) Different speed parallel machine
-            int: num_machines;
-            array[1..num_machines] of int: speed;
-
-            array[1..num_tasks] of int: processing_time;
-            array[1..num_tasks, 1..num_parts] of var 1..num_machines: assignment;
-
-            constraint forall(t in 1..num_tasks)(
-                sum(p in 1..num_parts)(duration[t,p] * speed[assignment[t, p]]) >= processing_time[t]
-            );
-        """)
-
-        if self.disjunctive:
-            model += dedent("""
-            constraint cumulatives(
-                [start[t, p] | t in 1..num_tasks, p in 1..num_parts],
-                [duration[t, p] | t in 1..num_tasks, p in 1..num_parts],
-                [1 | t in 1..num_tasks, p in 1..num_parts]
-                [assignment[t, p] | t in 1..num_tasks, p in 1..num_parts],
-                [1 | m in 1..num_machines]
-            ))
-        """)
-
-        return model
-
-    def export_data(self) -> str:
-        return f"num_machines = {self.n_machines};\n" \
-               f"speed = [{', '.join(map(str, self.speed))}];\n" \
-               f"processing_time = [{', '.join(map(str, self.processing_times))}];\n"
-
     def get_entry(self) -> str:
         return f"U{self.n_machines}" if self.n_machines > 1 else "Um"
-
 
 # class UnrelatedParallelMachineSetup(ScheduleSetup):
 #     def __init__(
@@ -277,12 +204,17 @@ class UniformParallelMachineSetup(ScheduleSetup):
 #     ):
 #         super().__init__(n_machines)
 #         self.disjunctive = disjunctive
-    
+
 #     def setup_constraints(self) -> tuple[Constraint, ...]:
 #         return (MachineConstraint(name="setup_machine_disjunctive"), ) if self.disjunctive else ()
 
-
 class JobShopSetup(ScheduleSetup):
+    """
+    Job Shop Scheduling Setup.
+
+    This setup is used for scheduling tasks in a job shop environment where each task has a specific
+    operation order and is assigned to a specific machine.
+    """
     parallel: ClassVar[bool] = False
 
     def __init__(
@@ -334,37 +266,27 @@ class JobShopSetup(ScheduleSetup):
                 {machine: p_time}
                 for machine, p_time in zip(data[self.machine_feature], process_time)
             ]
-    
+
         if isinstance(process_time, str):
             return [
                 {machine: p_time}
                 for machine, p_time in zip(data[self.machine_feature], data[process_time])
             ]
-    
+
         raise ValueError(
             "Cannot parse the process time. Please provide an iterable of integers or a string."
         )
 
-    def export_model(self) -> str:
-        return dedent("""\
-            % (Schedule Setup) Job shop processing time
-            array[1..num_tasks] of int: processing_time;
-                      
-            constraint forall(t in 1..num_tasks)(
-                sum(p in 1..num_parts)(duration[t,p]) = processing_time[t]
-            );
-        """)
-
-    def export_data(self) -> str:
-        p_times = [next(iter(task.processing_times.values())) for task in self.tasks]
-        return f"processing_time = [{', '.join(map(str, p_times))}];\n"
-
-
     def get_entry(self) -> str:
         return f"J{self.n_machines}" if self.n_machines > 1 else "Jm"
 
-
 class OpenShopSetup(ScheduleSetup):
+    """
+    Open Shop Scheduling Setup.
+
+    This setup is used for scheduling tasks in an open shop environment where each task can be
+    processed on any machine, and the order of operations is not fixed.
+    """
     parallel: ClassVar[bool] = False
 
     def __init__(
@@ -377,11 +299,11 @@ class OpenShopSetup(ScheduleSetup):
 
         self.machine_feature = machine_feature
         self.disjunctive = disjunctive
-    
+
     def get_machine(self, task_id: int) -> int:
         machine: int = self.tasks.data[self.machine_feature][task_id]
         return machine
-    
+
     def setup_constraints(self) -> tuple[Constraint, ...]:
         task_jobs = {
             job: [task.task_id for task in tasks] for job, tasks in enumerate(self.tasks.jobs)
@@ -391,7 +313,10 @@ class OpenShopSetup(ScheduleSetup):
         if not self.disjunctive:
             return (task_disjunction,)
 
-        machine_disjunction = DisjunctiveConstraint(self.machine_feature, name='setup_machine_disjunctive')
+        machine_disjunction = DisjunctiveConstraint(
+            self.machine_feature,
+            name="setup_machine_disjunctive"
+        )
 
         return (task_disjunction, machine_disjunction)
 
@@ -405,31 +330,16 @@ class OpenShopSetup(ScheduleSetup):
                 {machine: p_time}
                 for machine, p_time in zip(data[self.machine_feature], process_time)
             ]
-    
+
         if isinstance(process_time, str):
             return [
                 {machine: p_time}
                 for machine, p_time in zip(data[self.machine_feature], data[process_time])
             ]
-    
+
         raise ValueError(
             "Cannot parse the process time. Please provide an iterable of integers or a string."
         )
-    
-    def export_model(self) -> str:
-        return dedent("""\
-            % (Schedule Setup) Open shop processing time
-            array[1..num_tasks] of int: processing_time;
-                      
-            constraint forall(t in 1..num_tasks)(
-                sum(p in 1..num_parts)(duration[t,p]) = processing_time[t]
-            );
-        """)
-    
-    def export_data(self) -> str:
-        p_times = [next(iter(task.processing_times.values())) for task in self.tasks]
-        return f"processing_time = [{', '.join(map(str, p_times))}];\n"
-    
+
     def get_entry(self) -> str:
         return f"O{self.n_machines}" if self.n_machines > 1 else "Om"
-    
