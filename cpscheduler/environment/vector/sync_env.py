@@ -1,14 +1,16 @@
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, TypeVar, SupportsFloat
 
 from copy import deepcopy
 
 from ..env import Env
 from .common import step_with_autoreset, get_attribute, info_union
 
+
+_Env = TypeVar('_Env', bound=Env)
 class SyncVectorEnv:
     def __init__(
             self,
-            env_fns: Iterable[Callable[[], Env]],
+            env_fns: Iterable[Callable[[], _Env]],
             copy: bool = False,
             auto_reset: bool = True,
         ):
@@ -30,7 +32,7 @@ class SyncVectorEnv:
         return obs, info_union(infos)
 
 
-    def step(self, actions: Iterable[Any], *args: Any, **kwargs: Any) -> tuple[list[Any], list[float], list[bool], list[bool], dict[str, Any]]:
+    def step(self, actions: Iterable[Any], *args: Any, **kwargs: Any) -> tuple[list[Any], list[SupportsFloat], list[bool], list[bool], dict[str, Any]]:
         if self.auto_reset:
             obs, rewards, terminated, truncated, infos = map(
                 list, zip(*[step_with_autoreset(env, action, *args, **kwargs) for env, action in zip(self.envs, actions)])
