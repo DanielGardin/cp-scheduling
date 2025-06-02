@@ -16,9 +16,11 @@ class JobShopEnv(SchedulingCPEnv):
         self.add_constraint(
             PrecedenceConstraint.jobshop_precedence(self.tasks, job_feature, operation_feature)
         )
+
         self.add_constraint(
             NonOverlapConstraint.jobshop_non_overlap(self.tasks, machine_feature)
         )
+
         self.add_objective(
             Makespan(self.tasks)
         )

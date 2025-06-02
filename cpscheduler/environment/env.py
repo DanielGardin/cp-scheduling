@@ -1,20 +1,24 @@
-from typing import Any, Optional, Final, Never, Iterable
+from typing import Any, Optional, Final, Never, Iterable, ClassVar
 from numpy.typing import NDArray
 from pandas import DataFrame
 
 from mypy_extensions import mypyc_attr
 
 import numpy as np
+import numpy.lib.recfunctions as rf
 
 from .constraints import Constraint
 from .objectives import Objective
 from .variables import IntervalVars, Scalar
+
 
 MIN_INT: Final[int] = -2 ** 31 + 1
 MAX_INT: Final[int] =  2 ** 31 - 1
 
 @mypyc_attr(allow_interpreted_subclasses=True)
 class SchedulingCPEnv:
+    render_mode: ClassVar[list[str]] = ['gantt']
+
     constraints : dict[str, Constraint]
     objectives  : dict[str, Objective]
 
@@ -37,7 +41,7 @@ class SchedulingCPEnv:
 
         tasks = self.process_dataframe(instance)
 
-        self.tasks = IntervalVars(tasks, tasks[duration_feature])
+        self.tasks = IntervalVars(tasks, tasks[duration_feature], instance.index.to_numpy())
 
         self.dataframe_obs = dataframe_obs
 
@@ -84,7 +88,7 @@ class SchedulingCPEnv:
         model.set_parameters(TimeLimit=timelimit)
         model.import_model_string(self.export_model())
 
-        result: CpoSolveResult = model.solve(LogVerbosity="Quiet")
+        result: CpoSolveResult = model.solve(LogVerbosity="Quiet") # type: ignore
 
         if result is None:
             raise Exception("No solution found")
@@ -93,7 +97,7 @@ class SchedulingCPEnv:
             raise Exception("No solution found")
 
         start_times = np.array([
-            result.get_var_solution(name).start for name in self.tasks.names
+            result.get_var_solution(name).start for name in self.tasks.names # type: ignore
         ], dtype=np.int32)
 
         objective_values = np.asarray(result.get_objective_values(), dtype=np.int32)
@@ -109,7 +113,7 @@ class SchedulingCPEnv:
 
 
     def is_terminal(self) -> bool:
-        return bool(self.tasks.is_fixed().all() and (self.current_time >= self.tasks.end_lb).all())
+        return bool(self.tasks.is_fixed().all() and (self.current_time >= self.tasks.end_lb[:]).all())
 
 
     def is_truncated(self) -> bool:
@@ -120,17 +124,35 @@ class SchedulingCPEnv:
         obs = self.tasks.get_state(self.current_time)
 
         if self.dataframe_obs:
-            return DataFrame(obs, index=self.tasks.ids)
+            df = DataFrame(obs, index=self.tasks.ids)
+            df.index = df.index.rename("task_id")
 
-        return obs
+            return df
+
+        indexed_obs = rf.append_fields(
+            obs,
+            'task_id',
+            self.tasks.ids,
+            usemask=False
+        )
+
+        fields = obs.dtype.names
+
+        if fields is None:
+            return rf.unstructured_to_structured(self.tasks.ids)
+
+        indexed_obs = indexed_obs[['task_id', *fields]]
+
+        return np.asarray(indexed_obs)
 
 
     def _get_info(self) -> dict[str, Any]:
         return {
-            'n_queries': self.n_queries,
-            'current_time': self.current_time,
-            'executed_actions': self.scheduled_action[:self.current_task],
-            'scheduled_actions': self.scheduled_action[self.current_task:],
+            'n_queries'         : self.n_queries,
+            'current_time'      : self.current_time,
+            'executed_actions'  : self.scheduled_action[:self.current_task],
+            'scheduled_actions' : self.scheduled_action[self.current_task:],
+            'objectives'        : self.get_objective_values()
         }
 
 
@@ -182,7 +204,7 @@ class SchedulingCPEnv:
 
     def available_actions(self) -> NDArray[np.generic]:
         is_fixed = self.tasks.is_fixed()
-        mask = np.less_equal(self.tasks.start_lb, self.current_time) & ~is_fixed
+        mask = np.less_equal(self.tasks.start_lb[:], self.current_time) & ~is_fixed
 
         available: NDArray[np.generic] = self.tasks.ids[mask]
 
@@ -236,6 +258,7 @@ class SchedulingCPEnv:
         self.scheduled_action = self.scheduled_action[self.current_task:]
 
         return obs, reward, terminated, truncated, info
+
 
 
     def one_action(self, enforce_order: bool, time_limit: int) -> bool:
@@ -300,10 +323,65 @@ class SchedulingCPEnv:
             self.current_time = int(next_task_start)
 
         else:
-            self.current_time = int(np.max(self.tasks.end_lb))
+            self.current_time = int(np.max(self.tasks.end_lb[:]))
 
         return False
 
 
-    def render(self, mode: str = 'human') -> None:
+    def render_gantt(
+            self,
+            bin_feature: Optional[str] = None,
+            group_feature: Optional[str] = None,
+            palette: str = 'cubehelix',
+            bar_width: float = 0.8
+        ) -> None:
+        """
+            Render a Gantt chart of the scheduled operations.
+
+        """
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+
+        fig, ax = plt.subplots(figsize=(12, 6))
+
+        is_fixed = self.tasks.is_fixed()
+
+        start_times = self.tasks.start_lb[is_fixed]
+        durations   = self.tasks.durations[is_fixed]
+
+        bins   = self.tasks[bin_feature][is_fixed]   if   bin_feature is not None else np.zeros(len(start_times), dtype=np.int32)
+        groups = self.tasks[group_feature][is_fixed] if group_feature is not None else np.zeros(len(start_times), dtype=np.int32)
+
+        n_bins   = len(np.unique(self.tasks[bin_feature]))   if   bin_feature is not None else 1
+        n_groups = len(np.unique(self.tasks[group_feature])) if group_feature is not None else 1
+        colors = np.array(sns.color_palette(palette, n_colors=n_groups))
+
+        ax.barh(
+            y         = bins,
+            width     = durations,
+            left      = start_times,
+            color     = colors[groups],
+            edgecolor = 'white',
+            height    = bar_width,
+            label     = self.tasks.ids[is_fixed]
+        )
+
+        ax.set_yticks(np.arange(n_bins))
+        ax.set_ylim(n_bins - bar_width/2, bar_width/2 - 1)
+        ax.set_ylabel(group_feature if group_feature is not None else 'Task bins')
+
+        ax.set_xlim(0, max(self.current_time/0.95, 1))
+        ax.set_xlabel('Time')
+
+        ax.set_title('Gantt Chart of Scheduled Tasks')
+
+        ax.legend(loc='upper right', title='Gantt Chart')
+
+        ax.grid(True)
+        plt.show()
+
+
+    def render(
+            self,
+        ) -> None:
         ...

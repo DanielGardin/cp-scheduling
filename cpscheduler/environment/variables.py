@@ -1,16 +1,18 @@
+from __future__ import annotations
+
 from typing import Literal, Optional, Iterable, Final, Any, Sequence
 from numpy.typing import NDArray
 
 import numpy as np
-import numpy.lib.recfunctions as snp
+import numpy.lib.recfunctions as rf
 
 Scalar = int | float | complex | str | np.generic
-Selector = int | slice | NDArray[np.int_] | NDArray[np.bool] | Sequence[int]
+Selector = int | slice | NDArray[np.integer[Any]] | NDArray[np.bool] | Sequence[int]
 
 MIN_INT: Final[int] = -2 ** 31 + 1
 MAX_INT: Final[int] =  2 ** 31 - 1
 
-class _SelectorBound():
+class _Bound:
     def __init__(self, array: NDArray[np.int32], modifier: int | NDArray[np.int32] = 0) -> None:
         self._array    = array
         self._modifier = modifier
@@ -19,15 +21,19 @@ class _SelectorBound():
         return repr(self._array)
 
     def __setitem__(self, indices: Selector, value: NDArray[np.int32] | int) -> None:
-        modifier: int | NDArray[np.int32]
-
         if isinstance(self._modifier, int):
-            modifier = self._modifier
+            self._array[indices] = value - self._modifier
+            return
 
-        else:
-            modifier = self._modifier[indices]
+        self._array[indices] = value - self._modifier[indices]
 
-        self._array[indices] = value - modifier
+
+    def __getitem__(self, indices: Selector) -> NDArray[np.int32]:
+        if isinstance(self._modifier, int):
+            return self._array[indices] + self._modifier
+
+        return self._array[indices] + self._modifier[indices]
+
 
 
 def export_single_variable(name: str, size: int, lb: int, ub: int) -> str:
@@ -46,8 +52,8 @@ def export_single_variable(name: str, size: int, lb: int, ub: int) -> str:
 class IntervalVars:
     tasks:     NDArray[np.void]
     durations: NDArray[np.int32]
-    start_lb:  NDArray[np.int32]
-    start_ub:  NDArray[np.int32]
+    _start_lb:  NDArray[np.int32]
+    _start_ub:  NDArray[np.int32]
 
     ids: NDArray[np.generic]
     _indices: dict[Scalar, int]
@@ -85,8 +91,8 @@ class IntervalVars:
         self.features = tasks
         self.durations = np.asarray(durations, dtype=np.int32)
 
-        self.start_lb = np.zeros(len(tasks), dtype=np.int32)
-        self.start_ub = np.full(len(tasks), MAX_INT, dtype=np.int32)
+        self._start_lb = np.zeros(len(tasks), dtype=np.int32)
+        self._start_ub = np.full(len(tasks), MAX_INT, dtype=np.int32)
 
         if task_ids is None:
             task_ids = range(len(tasks))
@@ -115,25 +121,20 @@ class IntervalVars:
         return [self.NAME.replace("$1", str(task_id)) for task_id in self._indices]
 
     @property
-    def end_lb(self) -> NDArray[np.int32]:
-        return self.start_lb + self.durations
+    def start_lb(self) -> _Bound:
+        return _Bound(self._start_lb)
+    
+    @property
+    def start_ub(self) -> _Bound:
+        return _Bound(self._start_ub)
 
     @property
-    def end_ub(self) -> NDArray[np.int32]:
-        return self.start_ub + self.durations
+    def end_lb(self) -> _Bound:
+        return _Bound(self._start_lb, self.durations)
 
-
-    def set_start_bounds(self, bound: Literal['lb', 'lower', 'ub', 'upper']) -> _SelectorBound:
-        array_bound = self.start_lb if bound in ('lb', 'lower') else self.start_ub
-
-        return _SelectorBound(array_bound)
-
-
-    def set_end_bounds(self, bound: Literal['lb', 'lower', 'ub', 'upper']) -> _SelectorBound:
-        array_bound = self.start_lb if bound in ('lb', 'lower') else self.start_ub
-
-
-        return _SelectorBound(array_bound, self.durations)
+    @property
+    def end_ub(self) -> _Bound:
+        return _Bound(self._start_ub, self.durations)
 
 
     def __getitem__(self, feature: str) -> NDArray[Any]:
@@ -150,13 +151,15 @@ class IntervalVars:
 
 
     def is_fixed(self) -> NDArray[np.bool]:
-        return np.equal(self.start_lb, self.start_ub)
+        fixed: NDArray[np.bool] = self.start_lb[:] == self.start_ub[:]
+
+        return fixed
 
     
     def is_executing(self, time: int) -> NDArray[np.bool]:
         return self.is_fixed() & \
-            (self.start_lb <= time) & \
-            (time < self.end_lb)
+            (self.start_lb[:] <= time) & \
+            (time < self.end_lb[:])
 
 
 
@@ -164,8 +167,8 @@ class IntervalVars:
         self.features = np.zeros((0,), dtype=self.features.dtype)
         self.durations = np.zeros((0,), dtype=self.durations.dtype)
 
-        self.start_lb = np.zeros((0,), dtype=self.start_lb.dtype)
-        self.start_ub = np.zeros((0,), dtype=self.start_ub.dtype)
+        self._start_lb = np.zeros((0,), dtype=self._start_lb.dtype)
+        self._start_ub = np.zeros((0,), dtype=self._start_ub.dtype)
 
         self._indices = {}
 
@@ -187,8 +190,8 @@ class IntervalVars:
         self.features = np.concatenate([self.features, tasks])
         self.durations = np.concatenate([self.durations, durations])
 
-        self.start_lb = np.concatenate([self.start_lb, np.zeros(len(tasks), dtype=np.int32)])
-        self.start_ub = np.concatenate([self.start_ub, np.full(len(tasks), MAX_INT, dtype=np.int32)])
+        self._start_lb = np.concatenate([self._start_lb, np.zeros(len(tasks), dtype=np.int32)])
+        self._start_ub = np.concatenate([self._start_ub, np.full(len(tasks), MAX_INT, dtype=np.int32)])
 
         self.to_propagate = np.concatenate([self.to_propagate, np.ones(len(tasks), dtype=np.bool)])
 
@@ -211,7 +214,7 @@ class IntervalVars:
         names = self.names
 
         variables = [
-            export_single_variable(name, int(duration), int(lb), int(ub)) for name, duration, lb, ub in zip(names, self.durations, self.start_lb, self.start_ub)
+            export_single_variable(name, int(duration), int(lb), int(ub)) for name, duration, lb, ub in zip(names, self.durations, self._start_lb, self._start_ub)
         ]
 
         return '\n'.join(variables)
@@ -232,8 +235,8 @@ class IntervalVars:
         buffer[is_fixed & ~is_executing] = 'finished'
 
 
-        state = snp.append_fields(
-            self.features,
+        state = rf.append_fields(
+            self.features.copy(),
             ('remaining_time', 'buffer'),
             (remaining_time, buffer),
             usemask=False

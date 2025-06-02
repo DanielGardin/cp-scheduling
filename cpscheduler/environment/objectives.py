@@ -24,7 +24,7 @@ class Makespan(Objective):
 
 
     def get_current(self) -> int:
-        return int(np.max(self.tasks.end_lb))
+        return int(np.max(self.tasks.end_lb[self.tasks.is_fixed()], initial=0))
 
 
 class TotalWeigthedCompletionTime(Objective):
@@ -40,4 +40,6 @@ class TotalWeigthedCompletionTime(Objective):
 
 
     def get_current(self) -> int:
-        return int(np.sum(self.weights * self.tasks.end_lb))
+        is_fixed = self.tasks.is_fixed()
+
+        return int(np.sum(self.weights[is_fixed] * self.tasks.end_lb[is_fixed], initial=0))
