@@ -28,6 +28,7 @@ class Env(Protocol):
 
     def render(self) -> None: ...
 
+
 @mypyc_attr(allow_interpreted_subclasses=True)
 class SchedulingCPEnv:
     metadata: ClassVar[dict[str, Any]] = {
@@ -199,15 +200,6 @@ class SchedulingCPEnv:
         return start_times, task_order, objective_values, is_optimal
 
 
-
-    def is_terminal(self) -> bool:
-        return bool(self.tasks.is_fixed().all() and (self.current_time >= self.tasks.end_lb[:]).all())
-
-
-    def is_truncated(self) -> bool:
-        return False
-
-
     def _get_obs(self) -> NDArray[np.void]:
         obs = self.tasks.get_state(self.current_time)
 
@@ -226,6 +218,18 @@ class SchedulingCPEnv:
         indexed_obs = indexed_obs[['task_id', *fields]]
 
         return np.asarray(indexed_obs)
+
+
+    def _get_reward(self, previous_objective: float) -> float:
+        return (self.objective.get_current(self.current_time) - previous_objective) * (-1 if self.minimize else 1)
+
+
+    def is_terminal(self) -> bool:
+        return bool(self.tasks.is_fixed().all() and (self.current_time >= self.tasks.end_lb[:]).all())
+
+
+    def is_truncated(self) -> bool:
+        return False
 
 
     def _get_info(self) -> dict[str, Any]:
@@ -299,6 +303,7 @@ class SchedulingCPEnv:
         self.tasks.to_propagate[:] = False
 
 
+
     def step(
             self,
             action: Optional[ArrayLike] = None,
@@ -326,12 +331,16 @@ class SchedulingCPEnv:
         time_limit = self.current_time + time_skip if time_skip is not None else MAX_INT
 
         while not (stop or terminated or truncated):
-            stop       = self.one_action(enforce_order, time_limit)
+            stop = self.one_action(enforce_order, time_limit)
+
+            self.update_state()
+
             terminated = self.is_terminal()
             truncated  = self.is_truncated()
 
+
         obs    = self._get_obs()
-        reward = (self.objective.get_current(self.current_time) - previous_objective) * (-1 if self.minimize else 1)
+        reward = self._get_reward(previous_objective)
         info   = self._get_info()
 
         self.scheduled_action = self.scheduled_action[self.current_task:]
@@ -398,8 +407,6 @@ class SchedulingCPEnv:
 
         self.tasks.fix_start(task, self.current_time)
         self.current_task += 1
-
-        self.update_state()
 
         to_schedule = self.tasks.is_awaiting()
 
