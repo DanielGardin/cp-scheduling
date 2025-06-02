@@ -1,7 +1,7 @@
 from .constraints import PrecedenceConstraint, NonOverlapConstraint, ReleaseTimesConstraint, \
     DueDatesConstraint
 
-from .objectives import Makespan, TotalWeigthedCompletionTime
+from .objectives import Makespan, ClientWeightedCompletionTime
 
 from .variables import IntervalVars
 
@@ -11,6 +11,7 @@ from .instances import read_instance
 
 
 __all__ = [
+    "IntervalVars",
     "SchedulingCPEnv",
     "read_instance",
     "PrecedenceConstraint",
@@ -18,6 +19,5 @@ __all__ = [
     "ReleaseTimesConstraint",
     "DueDatesConstraint",
     "Makespan",
-    "TotalWeigthedCompletionTime",
-    "IntervalVars"
+    "ClientWeightedCompletionTime",
 ]

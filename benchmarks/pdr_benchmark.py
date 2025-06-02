@@ -20,7 +20,7 @@ heuristics = {
 
 datasets = {
     "taillard"     : "ta",
-    "dermikol"     : "dmu",
+    "demirkol"     : "dmu",
     "lawrence"     : "la",
     "applegate"    : "orb",
     "storer"       : "swv",
