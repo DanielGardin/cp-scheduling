@@ -83,7 +83,6 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         
         allow_preemption: bool, optional, default=False
             Whether to allow preemption in the scheduling process. If True, tasks can be interrupted and resumed later.
-    
 
     """
     metadata: dict[str, Any] = {
@@ -211,19 +210,30 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
         self.objective.set_tasks(self.tasks)
 
+    
+        task_feature_space = {
+            feature: infer_list_space(data[feature]) for feature in data.keys()
+        }
+
+        job_feature_space = (
+            {feature: infer_list_space(job_data[feature]) for feature in job_data.keys()}
+            if job_data is not None
+            else {}
+        )
+
         self.observation_space = Tuple([
             Dict({
                 "task_id": Box(
                     low=0, high=len(self.tasks), shape=(len(self.tasks),), dtype=int64
                 ),
-                **{feature: infer_list_space(data[feature]) for feature in data.keys()},
+                **task_feature_space,
                 "status": Text(max_length=1, charset=frozenset(status_str.values())),
             }),
             Dict({
                 "job_id": Box(
                     low=0, high=len(self.tasks), shape=(len(self.tasks),), dtype=int64
                 ),
-                **{feature: infer_list_space(data[feature]) for feature in data.keys()},
+                **job_feature_space,
             })
         ])
 

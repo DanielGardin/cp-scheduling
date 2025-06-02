@@ -273,7 +273,11 @@ class DisjunctiveConstraint(Constraint):
 class ReleaseDateConstraint(Constraint):
     release_dates: dict[int, int]
 
-    def __init__(self, release_dates: Mapping[int, int] | str, name: Optional[str] = None):
+    def __init__(
+            self,
+            release_dates: Mapping[int, int] | str = 'release_time',
+            name: Optional[str] = None
+        ):
         super().__init__(name)
 
         if isinstance(release_dates, str):
@@ -305,7 +309,11 @@ class ReleaseDateConstraint(Constraint):
 class DeadlineConstraint(Constraint):
     deadlines: dict[int, int]
 
-    def __init__(self, deadlines: Mapping[int, int] | str, name: Optional[str] = None):
+    def __init__(
+            self,
+            deadlines: Mapping[int, int] | str = 'due_dates',
+            name: Optional[str] = None
+        ):
         super().__init__(name)
 
         if isinstance(deadlines, str):

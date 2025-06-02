@@ -21,13 +21,11 @@ compiling_dirs = [
 
 compiling_files = [
     'cpscheduler/policies/heuristics/pdr_heuristics.py',
-
 ]
 for dir in compiling_dirs:
     compiling_files.extend([
         str(file) for file in Path(dir).rglob('*.py') if file.name not in excluding_files
     ])
-
 
 
 setup(

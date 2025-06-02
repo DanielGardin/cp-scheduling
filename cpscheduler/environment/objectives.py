@@ -131,7 +131,7 @@ class WeightedCompletionTime(Objective):
 
     def __init__(
         self,
-        job_weights: Iterable[float] | str,
+        job_weights: Iterable[float] | str = 'weight',
     ):
         if isinstance(job_weights, str):
             self.tags['job_weights'] = job_weights
@@ -190,7 +190,7 @@ class MaximumLateness(Objective):
     """
     def __init__(
         self,
-        due_dates: Iterable[int] | str,
+        due_dates: Iterable[int] | str = 'due_date',
     ):
         if isinstance(due_dates, str):
             self.tags['due_dates'] = due_dates
@@ -242,7 +242,7 @@ class TotalTardiness(Objective):
     """
     def __init__(
         self,
-        due_dates: Iterable[int] | str,
+        due_dates: Iterable[int] | str = 'due_date',
     ):
         if isinstance(due_dates, str):
             self.tags['due_dates'] = due_dates
@@ -273,8 +273,8 @@ class WeightedTardiness(Objective):
     """
     def __init__(
         self,
-        due_dates: Iterable[int] | str,
-        job_weights: Iterable[float] | str,
+        due_dates: Iterable[int] | str = 'due_date',
+        job_weights: Iterable[float] | str = 'weight',
     ):
         if isinstance(due_dates, str):
             self.tags['due_dates'] = due_dates
@@ -349,7 +349,7 @@ class TotalEarliness(Objective):
     """
     def __init__(
         self,
-        due_dates: Iterable[int] | str,
+        due_dates: Iterable[int] | str = 'due_date',
     ):
         if isinstance(due_dates, str):
             self.tags['due_dates'] = due_dates
@@ -380,8 +380,8 @@ class WeightedEarliness(Objective):
     """
     def __init__(
         self,
-        due_dates: Iterable[int] | str,
-        job_weights: Iterable[float] | str,
+        due_dates: Iterable[int] | str = 'due_date',
+        job_weights: Iterable[float] | str = 'weight',
     ):
         if isinstance(due_dates, str):
             self.tags['due_dates'] = due_dates
@@ -427,7 +427,7 @@ class TotalTardyJobs(Objective):
     """
     def __init__(
         self,
-        due_dates: Iterable[int] | str,
+        due_dates: Iterable[int] | str = 'due_date',
     ):
         if isinstance(due_dates, str):
             self.tags['due_dates'] = due_dates
@@ -457,8 +457,8 @@ class WeightedTardyJobs(Objective):
     """
     def __init__(
         self,
-        due_dates: Iterable[int] | str,
-        job_weights: Iterable[float] | str,
+        due_dates: Iterable[int] | str = 'due_date',
+        job_weights: Iterable[float] | str = 'weight',
     ):
         if isinstance(due_dates, str):
             self.tags['due_dates'] = due_dates
@@ -504,7 +504,7 @@ class TotalFlowTime(Objective):
     """
     def __init__(
         self,
-        release_times: Iterable[int] | str,
+        release_times: Iterable[int] | str = 'release_time',
     ):
         if isinstance(release_times, str):
             self.tags['release_times'] = release_times

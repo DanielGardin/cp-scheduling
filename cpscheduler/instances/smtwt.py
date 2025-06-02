@@ -53,16 +53,18 @@ def read_smtwt_instance(path: Path | str) -> tuple[DataFrame, dict[str, Any]]:
         
         metadata = {}
 
+        f.readline() # Skip the "---" line
+
         while True:
             metadata_line = f.readline()
 
             if not metadata_line:
                 break
 
-            key, value = metadata_line.split(":")
+            key, value = metadata_line.split(": ")
 
             metadata[key.strip()] = value.strip()
-        
+
     return DataFrame(data), metadata
 
 def generate_chu_instance(
