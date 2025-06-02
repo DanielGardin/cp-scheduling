@@ -196,6 +196,10 @@ class IntervalVars:
         return self.is_fixed() & (time >= self.end_lb[:])
 
 
+    def is_available(self, time: int) -> NDArray[np.bool]:
+        return ~self.is_fixed() & (self.start_lb[:] <= time)
+
+
     def clear_tasks(self) -> None:
         self.features = np.zeros((0,), dtype=self.features.dtype)
         self.durations = np.zeros((0,), dtype=self.durations.dtype)
@@ -264,16 +268,19 @@ class IntervalVars:
         buffer = np.zeros(len(self.features), dtype=np.dtypes.StrDType(9))
         remaining_time = np.zeros_like(self.durations)
 
-        is_fixed     = self.is_fixed()
+        is_awaiting  = self.is_awaiting()
         is_executing = self.is_executing(current_time)
+        is_finished  = self.is_finished(current_time)
+
+        is_available = self.is_available(current_time)
 
         remaining_time[is_executing] = self.end_lb[is_executing] - current_time
-        remaining_time[~is_fixed]    = self.durations[~is_fixed]
+        remaining_time[is_awaiting]  = self.durations[is_awaiting]
 
-        buffer[~is_fixed]    = 'awaiting'
+        buffer[is_awaiting]  = 'awaiting'
         buffer[is_executing] = 'executing'
-        buffer[is_fixed & ~is_executing] = 'finished'
-
+        buffer[is_finished]  = 'finished'
+        buffer[is_available] = 'available'
 
         state = rf.append_fields(
             self.features.copy(),

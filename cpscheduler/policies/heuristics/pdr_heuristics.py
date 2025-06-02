@@ -1,12 +1,15 @@
-from typing import overload
+from typing import Any
 from numpy.typing import NDArray
 from pandas import DataFrame
 
 import numpy as np
 import pandas as pd
 
+from mypy_extensions import mypyc_attr
+
 from ...utils import dataframe_to_structured
 
+@mypyc_attr(allow_interpreted_subclasses=True)
 class PriorityDispatchingRule:
     """
     Abstract class for Priority Dispatching Rule-based policies. To implement one, inherit from this class and implement
@@ -92,51 +95,67 @@ class MostWorkRemaining(PriorityDispatchingRule):
             self,
             job_label: str       = 'job',
             operation_label: str = 'operation',
-            processing_time: str = 'processing_time'
+            processing_time_label: str = 'processing_time'
         ):
-        self.job = job_label
-        self.operation = operation_label
-        self.processing_time = processing_time
+        self.job_label             = job_label
+        self.operation_label       = operation_label
+        self.processing_time_label = processing_time_label
 
 
     def priority_rule(self, obs: NDArray[np.void]) -> NDArray[np.float32]:
         priority_values = np.zeros(len(obs), dtype=np.float32)
 
-        sorted_indices = np.argsort(obs, order=[self.job, self.operation])
+        sorted_indices = np.argsort(obs, order=[self.job_label, self.operation_label])
         sorted_data    = obs[sorted_indices]
 
-        for job in np.unique(obs[self.job]):
-            mask = sorted_data[self.job] == job
+        for job in np.unique(obs[self.job_label]):
+            mask = sorted_data[self.job_label] == job
 
             original_indices = sorted_indices[mask]
-            processing_times = sorted_data[self.processing_time][mask]
+            processing_times = sorted_data[self.processing_time_label][mask]
 
             priority_values[original_indices] = np.cumsum(processing_times[::-1])[::-1]
 
         return priority_values
 
 
-class ClientPriority(PriorityDispatchingRule):
+class EarliestDueDate(PriorityDispatchingRule):
     """
-    Client Priority heuristic.
+    Earliest Due Date (EDD) heuristic.
 
-    This heuristic selects the job with the highest priority as the next job to be scheduled.
+    This heuristic selects the job with the earliest due date as the next job to be scheduled.
     """
     def __init__(
             self,
-            job_label: str = 'job',
-            client_label: str = 'client',
-            priority_map: dict[np.generic, float] = {}
+            due_date_label: str = 'due_date'
         ):
-        self.job    = job_label
-        self.client = client_label
-
-        self.priority_map = priority_map
+        self.due_date_label = due_date_label
 
 
     def priority_rule(self, obs: NDArray[np.void]) -> NDArray[np.float32]:
-        priotity_values = [
-            self.priority_map.get(client, 0.) for client in obs[self.client]
-        ]
+        return -obs[self.due_date_label]
 
-        return np.array(priotity_values, dtype=np.float32)
+
+class WeightedShortestProcessingTime(PriorityDispatchingRule):
+    """
+    Weighted Shortest Processing Time (WSPT) heuristic.
+
+    This heuristic selects the job with the shortest processing time as the next job to be scheduled, but the processing
+    time is weighted by a given factor.
+    """
+    def __init__(
+            self,
+            job_weight: NDArray[np.floating[Any]],
+            processing_time_label: str = 'processing_time',
+            job_label: str = 'job',
+        ):
+        self.processing_time = processing_time_label
+        self.job_label       = job_label
+
+        self.job_weight = job_weight
+
+
+    def priority_rule(self, obs: NDArray[np.void]) -> NDArray[np.float32]:
+        priority_values: NDArray[np.float32] = (self.job_weight[obs[self.job_label]] / obs[self.processing_time]).astype(np.float32)
+
+        return priority_values

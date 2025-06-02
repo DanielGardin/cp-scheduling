@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any, Optional, Literal
 from numpy.typing import NDArray
 from pandas import DataFrame
 
@@ -62,7 +62,8 @@ def generate_taillard_instance(
         seed: Optional[int] = None
     ) -> tuple[DataFrame, dict[str, Any]]:
     """
-    Generates a random instance following the Taillard format [1].
+    Generates a random instance following the Taillard method [1]. Processing times are randomly generated between 1 and 99 units,
+    and the operations are randomly assigned to the machines, with each job having exactly one operation per machine.
 
     Parameters
     ----------
@@ -115,7 +116,7 @@ def generate_taillard_instance(
 
     return instance, metadata
 
-
+# TODO: Reference for the Demirkol instance generation method, p ~ U(1, 200)
 def generate_demirkol_instance(
         n_jobs: int,
         n_machines: int,
@@ -255,10 +256,103 @@ def generate_known_optimal_instance(
     instance = instance.sort_values(['job', 'operation']).reset_index(drop=True)
 
     metadata = {
-        'n_ops': n_ops,
-        'n_machines': n_machines,
+        'n_jobs'          : new_job_id,
+        'n_machines'      : n_machines,
         'optimal_makespan': optimal_makespan
     }
 
     return instance, metadata
     
+
+
+def generate_vepsalainen_instance(
+        n_jobs: int,
+        n_machines: int,
+        mean_processing_time: int = 15,
+        processing_time_range: int = 10,
+        shop_type: Literal['uniform', 'proportionate', 'bottleneck'] = 'uniform',
+        due_date_type: Literal['loose', 'tight'] = 'loose',
+        utilization_level: float = 1.,
+        seed: Optional[int] = None
+    ) -> tuple[DataFrame, DataFrame, dict[str, Any]]:
+    rng = np.random.default_rng(seed)
+
+    average_total_job_time = mean_processing_time * (n_machines + 1)/2
+
+    arrival_rate = utilization_level * n_machines / average_total_job_time
+
+    inter_arrival_times = rng.exponential(1/arrival_rate, size=n_jobs)
+    arrival_times = np.cumsum(inter_arrival_times, dtype=int)
+
+    num_operations = rng.integers(1, n_machines, size=n_jobs)
+    total_operations = num_operations.sum()
+
+    operation_id = np.concatenate([
+        np.arange(n_ops) for n_ops in num_operations
+    ])
+
+    job_id = np.concatenate([
+        np.full(n_ops, job) for job, n_ops in enumerate(num_operations)
+    ])
+
+    machines = np.concatenate([
+        rng.permutation(n_machines)[:n_ops] for n_ops in num_operations
+    ])
+
+    min_processing_time = mean_processing_time - processing_time_range
+    max_processing_time = mean_processing_time + processing_time_range
+
+    if shop_type == 'proportionate':
+        sizes = rng.integers(min_processing_time, max_processing_time, size=n_jobs)
+        processing_times = np.concatenate([
+            rng.integers(0.33 * size, 1.67 * size, size=n_ops) for size, n_ops in zip(sizes, num_operations)
+        ])
+
+    else:
+        sizes = np.full(n_jobs, 15)
+        processing_times = rng.integers(min_processing_time, max_processing_time, total_operations)
+
+    # The bottleneck is not quite the same as the original paper. The original paper had the machines affected
+    # by different rates: (0.7, O.8, 0.9, 1.0, 1.0, 1.0, 1.0, 1.1, 1.2, 1.2), however due to the variable
+    # number of machines in this implementation, we decided to make the bottleneck effect more pronounced, affecting
+    # 66% of the machines, with 33% being faster and 33% being slower.
+    if shop_type == 'bottleneck':
+        bottleneck_machines = rng.choice(n_machines, int(0.66 * n_machines), replace=False)
+
+        faster_machines = bottleneck_machines[:int(0.33 * n_machines)]
+        slower_machines = bottleneck_machines[int(0.33 * n_machines):]
+
+        processing_times[machines == faster_machines] *= 0.7 # 30% faster
+        processing_times[machines == slower_machines] *= 1.2 # 20% slower
+
+        processing_times = processing_times.astype(int)
+
+    job_weights = rng.integers(1, 2*sizes)
+
+    if due_date_type == 'tight':
+        flow_allowance = rng.integers(0, 6*int(average_total_job_time), n_jobs)
+
+    else:
+        flow_allowance = rng.integers(0, 12*int(average_total_job_time), n_jobs)
+
+    due_dates = arrival_times + flow_allowance
+
+    instance = DataFrame({
+        'job': job_id,
+        'operation': operation_id,
+        'machine': machines,
+        'processing_time': processing_times,
+    })
+
+    job_information = DataFrame({
+        'arrival_time': arrival_times,
+        'due_date': due_dates,
+        'weight': job_weights,
+    })
+
+    metadata = {
+        'n_jobs': n_jobs,
+        'n_machines': n_machines,
+    }
+
+    return instance, job_information, metadata

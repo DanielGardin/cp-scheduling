@@ -77,15 +77,14 @@ class Makespan(Objective):
 
 
 
-class ClientWeightedCompletionTime(Objective):
+class WeightedCompletionTime(Objective):
     is_parameterized = True
 
     def __init__(
             self,
             interval_var: IntervalVars,
-            client_weights: NDArray[np.float32],
-            job_client: NDArray[np.integer[Any]],
             job_feature: str | NDArray[np.integer[Any]],
+            job_weights: NDArray[np.float32],
         ):
         """
         Objective function that aims to minimize the weighted completion time of each client.
@@ -95,16 +94,13 @@ class ClientWeightedCompletionTime(Objective):
         ----------
         interval_var : IntervalVars
             The interval variables that represent the tasks to be scheduled.
-
-        client_weights : NDArray[float]
-            The weights of each client.
-        
-        job_client : NDArray[int]
-            The client associated with each job.
         
         job_feature : str | NDArray[int]
             The feature of each job that will be used to calculate the completion time.
             If a string is passed, it is assumed that the feature is a column of the interval variable.
+
+        job_weights : NDArray[float]
+            The weight of each job.
 
         """
 
@@ -112,13 +108,9 @@ class ClientWeightedCompletionTime(Objective):
 
         self.job_op: NDArray[np.integer[Any]] = self.tasks[job_feature] if isinstance(job_feature, str) else job_feature
 
-        self.n_jobs    = len(job_client)
-        self.n_clients = len(client_weights)
+        self.n_jobs    = len(job_weights)
 
-        self.client_weights = client_weights
-        self.job_client     = job_client
-
-
+        self.job_weights = job_weights
 
 
     def export_objective(self, minimize: bool = True, solver: AVAILABLE_SOLVERS = 'cplex') -> str:
@@ -131,7 +123,7 @@ class ClientWeightedCompletionTime(Objective):
         ends: list[list[str]] = [[] for _ in range(self.n_jobs)]
         job: int
 
-        for name, job in zip(names, self.job_op):
+        for name, job in zip(names, self.job_op.tolist()):
             if solver == 'cplex':
                 job_end = f"endOf({name})"
             
@@ -151,7 +143,7 @@ class ClientWeightedCompletionTime(Objective):
 
 
         weighted_completion_times = ' + '.join([
-            f"{weight} * job{job}_completion" for job, weight in enumerate(self.client_weights[self.job_client])
+            f"{weight} * job{job}_completion" for job, weight in enumerate(self.job_weights)
         ])
 
         if solver == 'cplex':
@@ -169,10 +161,10 @@ class ClientWeightedCompletionTime(Objective):
         for end, job in zip(self.tasks.end_lb[is_fixed], self.job_op[is_fixed]):
             max_end[job] = max(max_end[job], end)
 
-        current_objective_value = float(np.sum(self.client_weights[self.job_client] * max_end))
+        current_objective_value = float(np.sum(self.job_weights * max_end))
 
         return current_objective_value
 
 
-    def set_parameters(self, client_weights: NDArray[np.float32]) -> None:
-        self.client_weights = client_weights
+    def set_parameters(self, job_weights: NDArray[np.float32]) -> None:
+        self.job_weights = job_weights
