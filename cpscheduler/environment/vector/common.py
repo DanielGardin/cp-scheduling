@@ -53,6 +53,9 @@ class VectorEnv(Protocol[_SingleObs, _SingleAct]):
 
     def call(self, name: str, *args: Any, **kwargs: Any) -> tuple[Any, ...]: ...
 
+    def close(self) -> None:
+        return
+
 
 def get_attribute(env: Env[_Obs, _Act], name: str, *args: Any, **kwargs: Any) -> Any:
     attr = getattr(env, name)
