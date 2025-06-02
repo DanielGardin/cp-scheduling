@@ -1,4 +1,4 @@
-from typing import Any, Iterable, Callable, Sequence
+from typing import Any, Iterable, Callable, Sequence, SupportsFloat
 
 import multiprocessing as mp
 from multiprocessing.connection import Connection
@@ -6,9 +6,15 @@ from multiprocessing.connection import Connection
 from copy import deepcopy
 
 import numpy as np
+from enum import Enum
 
 from ..env import Env
 from .common import step_with_autoreset, get_attribute, info_union
+
+class EnvStatus(Enum):
+    READY = 0
+    RUNNING = 1
+    CLOSED = 2
 
 
 class AsyncVectorEnv:
@@ -38,13 +44,33 @@ class AsyncVectorEnv:
             for child_conn, env_fn in zip(self.child_conns, env_fns)
         ]
 
+        self.status = EnvStatus.READY
+
         for process in self.processes:
             process.start()
 
+        self.status = EnvStatus.RUNNING
 
-    def handle_errors(self, results: Any, successes: tuple[bool, ...]) -> None:
+
+    # TODO: fix this to handle multiple errors
+    def handle_errors(
+            self,
+            origin: str,
+            results: Sequence[Exception],
+            successes: tuple[bool, ...],
+        ) -> None:
+
         if not all(successes):
-            raise ValueError(f'Error in reset: {results}')
+            import traceback
+
+            envs_with_errors = [i for i, success in enumerate(successes) if not success]
+
+            exception_group = ExceptionGroup(
+                f"Error during {origin} in {len(envs_with_errors)} environments out of {self.n_envs}:\n",
+                [results[i] for i in envs_with_errors]
+            )
+
+            raise exception_group from results[envs_with_errors[0]]
 
 
     def reset(self) -> tuple[list[Any], dict[str, Any]]:
@@ -53,7 +79,7 @@ class AsyncVectorEnv:
 
         results, successes = zip(*[conn.recv() for conn in self.parent_conns])
 
-        self.handle_errors(results, successes)
+        self.handle_errors('reset', results, successes)
 
         obs, infos = map(list, zip(*results))
 
@@ -63,8 +89,8 @@ class AsyncVectorEnv:
         return obs, info_union(infos)
 
 
-    def step(self, actions: Iterable[Any], *args: Any, **kwargs: Any) -> tuple[list[Any], list[float], list[bool], list[bool], dict[str, Any]]:
-        if (isinstance(actions, Sequence) and len(actions) != self.n_envs) or sum(1 for _ in actions) != self.n_envs:
+    def step(self, actions: Iterable[Any], *args: Any, **kwargs: Any) -> tuple[list[Any], list[SupportsFloat], list[bool], list[bool], dict[str, Any]]:
+        if sum(1 for _ in actions) != self.n_envs:
             raise ValueError(f'Number of actions does not match number of environments ({self.n_envs})')
 
 
@@ -73,7 +99,7 @@ class AsyncVectorEnv:
 
         results, successes = zip(*[conn.recv() for conn in self.parent_conns])
 
-        self.handle_errors(results, successes)
+        self.handle_errors('step', results, successes)
 
         obs, rewards, terminated, truncated, infos = map(list, zip(*results))
 
@@ -91,6 +117,9 @@ class AsyncVectorEnv:
 
 
     def close(self) -> None:
+        if self.status == EnvStatus.CLOSED:
+            return
+
         for conn in self.parent_conns:
             conn.send(('close', ()))
 
@@ -100,6 +129,8 @@ class AsyncVectorEnv:
         for process in self.processes:
             process.join()
 
+        self.status = EnvStatus.CLOSED
+
 
     def call(self, name: str, *args: Any, **kwargs: Any) -> tuple[Any, ...]:
         for conn in self.parent_conns:
@@ -107,7 +138,7 @@ class AsyncVectorEnv:
 
         results, successes = zip(*[conn.recv() for conn in self.parent_conns])
 
-        self.handle_errors(results, successes)
+        self.handle_errors(name, results, successes)
 
         return tuple(map(list, zip(*results)))
 
@@ -157,6 +188,7 @@ class AsyncVectorEnv:
                         if name in ["reset", "step", "close", "render"]:
                             raise ValueError(f'Trying to call function `{name}` with `call`, use `{name}` directly instead.')
 
+
                         result = get_attribute(env, name, *args, **kwargs)
 
                         conn.send((result, True))
@@ -167,3 +199,7 @@ class AsyncVectorEnv:
 
         except Exception as e:
             conn.send((e, False))
+        
+
+    def __del__(self) -> None:
+        self.close()
