@@ -25,10 +25,7 @@ in the environment, change with caution.
 
 from typing import Any, Iterator, Optional, NamedTuple, ClassVar, Iterable
 
-from textwrap import dedent
-
 from .common import MAX_INT, MIN_INT
-from .utils import convert_to_list
 
 class Status:
     AWAITING : ClassVar[int] = 0  # time < start_lb[0] or waiting for a machine
@@ -223,7 +220,6 @@ class Task:
                 ub=self.start_bounds[machine].ub,
             )
 
-
     def set_end_ub(self, time: int, machine: int = -1) -> None:
         if machine != -1:
             self.start_bounds[machine] = Bounds(
@@ -260,7 +256,6 @@ class Task:
                 lb=bound,
                 ub=bound
             )
-
 
     def interrupt(self, time: int) -> None:
         if self.n_parts == 0:
@@ -347,6 +342,7 @@ class Task:
             buffer = "available"
 
         return buffer
+
 
 class Tasks:
     "Container class for the tasks in the scheduling environment."
@@ -472,82 +468,3 @@ class Tasks:
                 upper = max(upper, task.get_start_ub())
 
         return upper
-
-
-    # TODO: Check if function end is better than array end.
-    # TODO: Add search annotations and warm up.
-    def export_model(
-        self,
-    ) -> str:
-        model = """\
-            include "globals.mzn";
-
-            int: horizon;
-            int: num_tasks;
-            int: num_parts;
-            int: num_jobs;
-
-            array[1..num_tasks] of 0..horizon: start_lb;
-            array[1..num_tasks] of 0..horizon: start_ub;
-            array[1..num_jobs] of set of 1..num_tasks: job;
-
-            array[1..num_tasks, 1..num_parts] of var 0..horizon: start;
-            array[1..num_tasks, 1..num_parts] of var 0..horizon: duration;
-            array[1..num_tasks, 1..num_parts] of var 0..horizon: end;
-
-            constraint forall(t in 1..num_tasks) (
-                start_lb[t] <= start[t, 1] /\\ start[t, 1] <= start_ub[t]
-            );
-
-            constraint forall(t in 1..num_tasks, p in 1..num_parts) (
-                start[t, p] + duration[t, p] = end[t, p]
-            );
-        """
-
-        if self.n_parts > 1:
-            model += """\
-            constraint forall(t in 1..num_tasks, p in 2..num_parts)(
-                end[t, p-1] < start[t, p]
-            );
-
-            constraint forall(t in 1..num_tasks, p in 2..num_parts)(
-                (duration[t, p-1] = 0) -> (duration[t, p] = 0)
-            );
-            """
-
-        return dedent(model)
-
-    def export_data(
-        self,
-    ) -> str:
-        start_lbs: list[str] = []
-        start_ubs: list[str] = []
-        for task in self.tasks:
-            if task.fixed:
-                start = str(task.get_start(0))
-
-                start_lbs.append(start)
-                start_ubs.append(start)
-
-            else:
-                start_lbs.append(str(task.get_start_lb()))
-                start_ubs.append(str(task.get_start_ub()))
-
-
-        data = dedent(f"""
-            horizon = {self.get_time_ub()};
-            num_tasks = {self.n_tasks};
-            num_parts = {self.n_parts};
-            num_jobs = {len(self.jobs)};
-
-
-            start_lb  = [{', '.join([lb for lb in start_lbs])}];
-            start_ub  = [{', '.join([ub for ub in start_ubs])}];
-        """)
-
-        data += "job = [\n"
-        for job_tasks in self.jobs:
-            data += "    {" + ", ".join([str(task.task_id+1) for task in job_tasks]) + "},\n"           
-        data += "];\n"
-
-        return data

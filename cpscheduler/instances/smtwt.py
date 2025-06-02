@@ -90,6 +90,6 @@ def generate_chu_instance(
     instance["due_date"] = (
         instance["release_time"] + instance["processing_time"] +
         [rng.randint(0, max_slack_time) for _ in range(n_jobs)]
-    )
+    ).to_numpy()
 
     return instance

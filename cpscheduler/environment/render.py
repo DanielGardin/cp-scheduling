@@ -12,6 +12,9 @@ from abc import ABC, abstractmethod
 
 from .tasks import Tasks
 
+from mypy_extensions import mypyc_attr
+
+@mypyc_attr(allow_interpreted_subclasses=True)
 class Renderer(ABC):
     def __init__(
             self,

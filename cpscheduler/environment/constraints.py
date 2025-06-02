@@ -8,6 +8,9 @@ import re
 from .tasks import Tasks, Status
 from .utils import convert_to_list, topological_sort, binary_search, is_iterable_type, scale_to_int
 
+from mypy_extensions import mypyc_attr
+
+@mypyc_attr(allow_interpreted_subclasses=True)
 class Constraint(ABC):
     """
     Base class for all constraints in the scheduling environment.
@@ -42,18 +45,11 @@ class Constraint(ABC):
         """
         pass
 
-    def export_model(self) -> str:
-        return ""
-
-    def export_data(self) -> str:
-        return ""
-
     def get_entry(self) -> str:
         """
         Produce the β entry for the constraint.
         """
         return ""
-
 
 class PrecedenceConstraint(Constraint):
     def __init__(
@@ -127,22 +123,6 @@ class PrecedenceConstraint(Constraint):
             # Check if the potential removed precedences caused the current task to be removed
             if task_id == self.topological_order[ptr]:
                 ptr += 1
-
-    def export_model(self) -> str:
-        operator = "==" if self.no_wait else "<="
-
-        model = f"""\
-            % (Constraint) Precedence constraint {"no wait" if self.no_wait else ""}
-            int: num_edges_{self.name};
-
-            array[1..num_edges_{self.name}, 1..2] of 1..num_tasks: edges_{self.name};
-
-            constraint forall(i in 1..num_edges_{self.name}) (
-                end[edges_{self.name}[i, 1], num_parts] {operator} start[edges_{self.name}[i, 2], 1]
-            );
-        """
-
-        return dedent(model)
 
     def export_data(self) -> str:
         data = f"edges_{self.name} = [|\n"
@@ -243,20 +223,6 @@ class DisjunctiveConstraint(Constraint):
 
                 if task.get_start_lb() < minimum_start_time:
                     task.set_start_lb(minimum_start_time)
-
-    def export_model(self) -> str:
-        model = f"""\
-            % (Constraint) Disjunctive constraint
-            int: num_groups_{self.name};
-            array[1..num_groups_{self.name}] of set of int: group_tasks_{self.name};
-
-            constraint forall(group in group_tasks_{self.name}) (
-                disjunctive([start[t, p] | p in 1..num_parts, t in group],
-                            [duration[t, p] | p in 1..num_parts, t in group])
-            );
-        """
-
-        return dedent(model)
 
     def export_data(self) -> str:
         data = f"num_groups_{self.name} = {len(self.original_disjunctive_groups)};\n"
@@ -426,24 +392,6 @@ class ResourceConstraint(Constraint):
 
                 if task.get_start_lb() < minimum_start_time:
                     task.set_start_lb(minimum_start_time)
-    
-    def export_model(self) -> str:
-        return dedent(f"""\
-            % (Constraint) Resource constraint
-            int: num_resources_{self.name};
-            array[1..num_resources_{self.name}] of int: capacities_{self.name}
-
-            array[1..num_resources_{self.name}, 1..num_tasks] of int: resources_{self.name};
-
-            constraint forall(r in 1..num_resources_{self.name})(
-                cumulative(
-                    [start[t, p] | t in 1..num_tasks, p in 1..num_parts where resources_{self.name}[r, t] > 0],
-                    [duration[t, p] | t in 1..num_tasks, p in 1..num_parts where resources_{self.name}[r, t] > 0],
-                    [resources_{self.name}[r, t] | t in 1..num_tasks, p in 1..num_parts where resources_{self.name}[r, t] > 0],
-                    capacities_{self.name}[r]
-                )
-            );
-        """)
 
     def export_data(self) -> str:
         new_line = '\n'
@@ -551,18 +499,6 @@ class MachineConstraint(Constraint):
 
                 if task.get_start_lb(machine) < self.machine_free[machine]:
                     task.set_start_lb(self.machine_free[machine], machine)
-
-    def export_model(self) -> str:
-        if self.complete or self.max_M_j == 1:
-            return ""
-
-        return dedent(f"""\
-            % (Constraint) Machine Constraint (M_j)
-            array[1..num_tasks] of set of 1..num_machines: possible_machines_{self.name};
-                            
-            constraint forall(t in 1..num_tasks, p in 1..num_parts) (
-                assignment[t, p] in possible_machines_{self.name}[t]
-        """)
 
 class SetupConstraint(Constraint):
     """

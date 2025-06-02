@@ -4,6 +4,8 @@ from dataclasses import dataclass
 
 from .tasks import Tasks, Status
 
+from mypy_extensions import mypyc_attr
+
 # Flags are not supported by mypyc
 class Action:
     SKIPPED: Final[int]      = 1 # Tell the scheduler the instruction was skiped
@@ -24,6 +26,7 @@ class Signal:
     param: int = 0
     info: str = ""
 
+@mypyc_attr(allow_interpreted_subclasses=True)
 class Instruction:
     name: ClassVar[str]
 

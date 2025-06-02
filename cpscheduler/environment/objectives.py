@@ -5,6 +5,9 @@ from textwrap import dedent
 from .tasks import Tasks
 from .utils import convert_to_list, scale_to_int
 
+from mypy_extensions import mypyc_attr
+
+@mypyc_attr(allow_interpreted_subclasses=True)
 class Objective:
     default_minimize: bool = True
     objective_name: ClassVar[str] = "objective"
@@ -181,7 +184,7 @@ class WeightedCompletionTime(Objective):
     #     return dedent(model)
 
     def get_entry(self) -> str:
-        return "Σ w_j C_j"
+        return "Σw_jC_j"
 
 class MaximumLateness(Objective):
     """

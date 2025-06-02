@@ -19,6 +19,7 @@ import logging
 import tqdm
 
 from .buffer import Buffer
+from .utils import set_seed
 
 
 logging.basicConfig(level=logging.INFO,
@@ -121,9 +122,13 @@ class BaseAlgorithm(Module, ABC):
             batch_size: int,
             validation_freq: Optional[int] = 1,
             lr_scheduler: Optional[LRScheduler] = None,
+            seed: Optional[int] = None
         ) -> None:
         if isinstance(self.writer, DummyWriter):
             logger.info("Calling learn before begin_experiment, no logging will be done and no weights will be saved.")
+
+        if seed is not None:
+            set_seed(seed)
 
         self.on_session_start(num_updates, steps_per_update, batch_size)
 
@@ -137,7 +142,14 @@ class BaseAlgorithm(Module, ABC):
             update_logs.clear()
 
             n_steps = steps_per_update * ceildiv(len(self.buffer), batch_size)
-            with tqdm.tqdm(total=n_steps, unit=" steps", dynamic_ncols=True, ncols=300) as pbar:
+            with tqdm.tqdm(
+                total=n_steps,
+                unit=" steps",
+                dynamic_ncols=True,
+                ncols=300,
+                leave=validation_freq is not None and update % validation_freq == 0
+            ) as pbar:
+
                 pbar.set_description(f"Epoch {update}/{num_updates}")
 
                 for _ in range(steps_per_update):
@@ -165,10 +177,10 @@ class BaseAlgorithm(Module, ABC):
                         val_logs = self.validate()
                         self._write_logs(val_logs, tag="validation")
 
-                epoch_log = {**start_logs, **update_logs, **end_logs, **val_logs}
-                pbar.set_postfix(
-                    summary_logs(epoch_log)
-                )
+                    epoch_log = {**start_logs, **update_logs, **end_logs, **val_logs}
+                    pbar.set_postfix(
+                        summary_logs(epoch_log)
+                    )
 
             if lr_scheduler is not None:
                 lr_scheduler.step()
