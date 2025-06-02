@@ -28,9 +28,11 @@ from .variables import IntervalVars
 
 from .env import SchedulingCPEnv
 
-from .vector import SyncVectorEnv, AsyncVectorEnv, RayVectorEnv, VectorEnv, Env
+from .vector import SyncVectorEnv, AsyncVectorEnv, RayVectorEnv
 
 from .instances import read_jsp_instance
+
+from .protocols import Env, VectorEnv, WrappedEnv
 
 known_envs: dict[str, type[SchedulingCPEnv]] = {}
 

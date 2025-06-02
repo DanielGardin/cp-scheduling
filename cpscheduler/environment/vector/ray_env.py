@@ -3,7 +3,8 @@ from typing import Any, TypeVar, Iterable, Callable, Sequence, SupportsFloat
 import ray
 from copy import deepcopy
 
-from .common import Env, VectorEnv, step_with_autoreset, get_attribute, info_union
+from .common import step_with_autoreset, get_attribute, info_union
+from ..protocols import Env, VectorEnv
 
 
 _Obs = TypeVar('_Obs')
