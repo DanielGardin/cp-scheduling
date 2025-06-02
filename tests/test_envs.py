@@ -160,7 +160,7 @@ def test_pause(instance_name: str) -> None:
 
 @pytest.mark.env
 def test_resource_constrained() -> None:
-    instance, _ = generate_taillard_instance(4, 1, seed=42)
+    instance, _ = generate_taillard_instance(4, 1, seed=0)
 
     resource_constraint = ResourceConstraint([3.], [{
         0: 1.,

@@ -1,4 +1,4 @@
-from typing import Any, Optional, TypeAlias, Iterable, SupportsInt, TypeGuard, Literal
+from typing import Any, Optional, TypeAlias, Iterable, SupportsInt, TypeGuard, Self
 from numpy.typing import ArrayLike
 from pandas import DataFrame
 
@@ -62,7 +62,8 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
     scheduled_instructions: dict[int, list[Instruction]]
     current_time: int
     query_times: list[int]
-
+    
+    loaded: bool
     advancing_to: int
 
     renderer: Renderer
@@ -94,6 +95,7 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
         self.current_time = 0
         self.query_times  = []
 
+        self.loaded = False
         self.advancing_to = 0
 
         self.action_space = ActionSpace
@@ -113,10 +115,6 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
             self.set_instance(instance, processing_times=processing_times, jobs=jobs)
         
         self.render_mode = render_mode
-
-    def load_configuration(self, config: dict[str, Any]) -> None:
-        # TODO: Implement the loading of the configuration
-        pass
 
     def add_constraint(
         self, constraint: Constraint, name: Optional[str] = None
@@ -182,6 +180,7 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
         )
 
         self.renderer = PlotlyRenderer(self.tasks, self.setup.n_machines)
+        self.loaded = True
 
     def get_state(self) -> dict[str, list[Any]]:
         return self.tasks.get_state(self.current_time)
@@ -209,6 +208,9 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
         self, *, seed: Optional[int] = None, options: dict[str, Any] | None = None
     ) -> tuple[dict[str, list[Any]], dict[str, Any]]:
         super().reset(seed=seed)
+
+        if not self.loaded:
+            raise ValueError("Environment not loaded. Please set an instance first.")
 
         self.scheduled_instructions.clear()
         self.scheduled_instructions[-1] = []
@@ -387,7 +389,7 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
                 self.scheduled_instructions.pop(self.current_time)
 
         elif self.current_time < self.advancing_to:
-            self.propagate() 
+            self.propagate()
             self.advance_to_next_instruction()
             halt, change = False, True
 

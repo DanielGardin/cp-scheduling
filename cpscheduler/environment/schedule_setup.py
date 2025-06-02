@@ -46,6 +46,7 @@ class ScheduleSetup:
 
     def export_model(self) -> str:
         model = """
+            % (Schedule Setup) Task identical machines processing time
             constraint forall(t in 1..num_tasks)(
                 sum(p in 1..num_parts)(duration[t,p]) = processing_time[t]
             );
@@ -107,7 +108,7 @@ class JobShopSetup(ScheduleSetup):
 
         operations: list[int] = self.tasks.data[self.operation_order]
 
-        for job, job_tasks in self.tasks.jobs.items():
+        for job_tasks in self.tasks.jobs.values():
             ops = sorted(
                 [(operations[task.task_id], task.task_id) for task in job_tasks]
             )

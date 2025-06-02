@@ -1,6 +1,5 @@
 from typing import Self, ClassVar, Final
 
-from enum import Enum
 from dataclasses import dataclass
 
 from .tasks import Tasks, Status
@@ -18,8 +17,6 @@ class Action:
     DONE: Final[int]  = PROPAGATE | ADVANCE
     ERROR :Final[int] = RAISE | HALT
     WAIT: Final[int]  = SKIPPED | PROPAGATE | ADVANCE_NEXT
-
-
 
 @dataclass
 class Signal:
