@@ -1,11 +1,11 @@
+from typing import Literal
 from pathlib import Path
 
 import pytest
 
 import numpy as np
 
-from cpscheduler.environment import SchedulingCPEnv, PrecedenceConstraint, NonOverlapConstraint, Makespan
-from cpscheduler.utils import read_instance
+from cpscheduler.environment import SchedulingCPEnv, PrecedenceConstraint, NonOverlapConstraint, Makespan, read_instance
 
 
 TEST_INSTANCES = [
@@ -14,12 +14,19 @@ TEST_INSTANCES = [
     "orb01",
     "swv12",
     "ta20",
-    "tai_j10_m10_1"
+    "lta_j10_m10_1",
+    # "kopt_ops10000_m100_1"
+]
+
+SOLVERS = [
+    "cplex",
+    "ortools",
 ]
 
 @pytest.mark.parametrize("instance_name", TEST_INSTANCES)
-def test_cp_solution(instance_name: str) -> None:
-    path = Path(__file__).parent.parent / f"instances/{instance_name}.txt"
+@pytest.mark.parametrize("cp_solver", SOLVERS)
+def test_cp_solution(instance_name: str, cp_solver: Literal['cplex', 'ortools']) -> None:
+    path = Path(__file__).parent.parent / f"instances/jobshop/{instance_name}.txt"
 
     instance, _ = read_instance(path)
 
@@ -39,7 +46,7 @@ def test_cp_solution(instance_name: str) -> None:
 
     env.reset()
 
-    order, objective_value, is_optimal = env.get_cp_solution(timelimit=0.5)
+    starts, order, objective_value, is_optimal = env.get_cp_solution(timelimit=1, solver=cp_solver)
 
     obs, reward, terminated, truncated, info = env.step(order, time_skip=None)
 
@@ -47,13 +54,15 @@ def test_cp_solution(instance_name: str) -> None:
     assert (obs['remaining_time'] == 0).all()
     assert reward < 0
     assert terminated
-    assert info['current_time'] == objective_value
+    # OR-tools do not guarantee a compressed solution, allowing for a simulated time
+    # smaller than the computed objective value.
+    assert info['current_time'] <= objective_value
 
 
 
 @pytest.mark.parametrize("instance_name", TEST_INSTANCES)
 def test_partial_cp_solution(instance_name: str) -> None:
-    path = Path(__file__).parent.parent / f"instances/{instance_name}.txt"
+    path = Path(__file__).parent.parent / f"instances/jobshop/{instance_name}.txt"
 
     instance, _ = read_instance(path)
 
@@ -81,7 +90,7 @@ def test_partial_cp_solution(instance_name: str) -> None:
     assert info['current_time'] == time_skip
     assert not terminated
 
-    order, objective_value, is_optimal = env.get_cp_solution(timelimit=.5)
+    starts, order, objective_value, is_optimal = env.get_cp_solution(timelimit=1)
 
     assert (np.sort(order) == env.tasks.ids[obs['buffer'] == 'awaiting']).all()
 

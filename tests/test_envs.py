@@ -4,8 +4,7 @@ import pytest
 
 import numpy as np
 
-from cpscheduler.environment import SchedulingCPEnv, PrecedenceConstraint, NonOverlapConstraint, Makespan
-from cpscheduler.utils import read_instance
+from cpscheduler.environment import SchedulingCPEnv, PrecedenceConstraint, NonOverlapConstraint, Makespan, read_instance
 
 
 TEST_INSTANCES = [
@@ -14,12 +13,13 @@ TEST_INSTANCES = [
     "orb01",
     "swv12",
     "ta20",
-    "tai_j10_m10_1"
+    "lta_j10_m10_1",
+    # "kopt_ops10000_m100_1"
 ]
 
 @pytest.mark.parametrize("instance_name", TEST_INSTANCES)
 def test_env(instance_name: str) -> None:
-    path = Path(__file__).parent.parent / f"instances/{instance_name}.txt"
+    path = Path(__file__).parent.parent / f"instances/jobshop/{instance_name}.txt"
 
     instance, _ = read_instance(path)
 
@@ -61,7 +61,7 @@ def test_env(instance_name: str) -> None:
 
 @pytest.mark.parametrize("instance_name", TEST_INSTANCES)
 def test_not_enforce_order(instance_name: str) -> None:
-    path = Path(__file__).parent.parent / f"instances/{instance_name}.txt"
+    path = Path(__file__).parent.parent / f"instances/jobshop/{instance_name}.txt"
 
     instance, _ = read_instance(path)
 
