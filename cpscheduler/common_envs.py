@@ -1,4 +1,4 @@
-from typing import Sequence, Iterable
+from typing import Any, Sequence, Iterable
 from pandas import DataFrame
 
 from .environment.constraints import PrecedenceConstraint, NonOverlapConstraint, ResourceCapacityConstraint
@@ -30,6 +30,18 @@ class JobShopEnv(SchedulingCPEnv):
         self.set_objective(
             Makespan
         )
+
+
+    def _get_info(self) -> dict[str, Any]:
+        original_info = super()._get_info()
+
+        total_executed_time = sum(self.tasks.get_duration(self.get_fixed_tasks()))
+
+        return {
+            **original_info,
+            'speedup':  total_executed_time / self.current_time if self.current_time > 0 else 0
+        }
+
 
     def render(self) -> None:
         return self.render_gantt(
@@ -91,8 +103,6 @@ class CustomerJobShopEnv(SchedulingCPEnv):
             NonOverlapConstraint.jobshop_non_overlap,
             machine_feature
         )
-
-
 
         self.set_objective(
             WeightedCompletionTime
