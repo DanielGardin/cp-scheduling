@@ -176,16 +176,16 @@ class PrecedenceConstraint(Constraint):
         while queue:
             vertex = queue.popleft()
 
-            neighbors = self.precedence_list[vertex]
+            children = self.precedence_list[vertex]
 
-            if neighbors:
+            if children:
                 topological_order.append(vertex)
 
-            for neighbor in neighbors:
-                in_degree[neighbor] -= 1
+            for child in children:
+                in_degree[child] -= 1
 
-                if in_degree[neighbor] == 0:
-                    queue.append(neighbor)
+                if in_degree[child] == 0:
+                    queue.append(child)
         return topological_order
 
 
@@ -196,16 +196,23 @@ class PrecedenceConstraint(Constraint):
         is_fixed = self.tasks.is_fixed()
 
         for vertex in self.sorted_tasks:
-            end_time = self.tasks.end_lb[vertex]
+            if self.in_degree[vertex] == 0 and not is_fixed[vertex] and self.tasks.start_lb[vertex] < time:
+                self.tasks.to_propagate[vertex] = True
+                self.tasks.start_lb[vertex] = time
 
-            neighbors = self.precedence_list[vertex]
+            end_time = max(self.tasks.end_lb[vertex].item(), time)
 
-            for neighbor in neighbors:
-                if self.tasks.start_lb[neighbor] < end_time:
-                    self.tasks.to_propagate[neighbor] = True
-                    self.tasks.start_lb[neighbor] = end_time
+            children = self.precedence_list[vertex]
 
-                if is_fixed[neighbor]: self.remove_precedence(vertex, neighbor)
+            for child in children:
+                if is_fixed[child]:
+                    self.remove_precedence(vertex, child)
+                    continue
+
+                if self.tasks.start_lb[child] < end_time:
+                    self.tasks.to_propagate[child] = True
+                    self.tasks.start_lb[child] = end_time
+
 
 
 class NonOverlapConstraint(Constraint):
@@ -286,12 +293,12 @@ class NonOverlapConstraint(Constraint):
         if not np.any(propagate):
             return
 
-        masked_fixed_end_lb = np.where(propagate, self.tasks.end_lb[:], time)
+        masked_fixed_end_lb: NDArray[np.int32] = np.where(propagate, self.tasks.end_lb[:], time)
 
         for indices in self.non_overlaping_groups.values():
             if not np.any(propagate[indices]): continue
 
-            group_max_end_lb = np.max(masked_fixed_end_lb[indices])
+            group_max_end_lb = np.max(masked_fixed_end_lb[indices]).item()
 
             free_indices = [index for index in indices if not is_fixed[index]]
 
