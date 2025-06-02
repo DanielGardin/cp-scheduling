@@ -1,0 +1,1 @@
+find . -name "*.so" -type f -delete

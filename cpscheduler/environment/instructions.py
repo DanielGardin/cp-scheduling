@@ -20,8 +20,9 @@ class Signal(Enum):
         return self in (Signal.Pending, Signal.Error)
 
 
-SignalInfo   = Optional[str | int]
-Instructions = ['execute', 'submit', 'pause', 'complete', 'advance', 'query', 'clear']
+SignalInfo = Optional[str | int]
+Instructions = ["execute", "submit", "pause", "complete", "advance", "query", "clear"]
+
 
 class Instruction:
     name: ClassVar[str]

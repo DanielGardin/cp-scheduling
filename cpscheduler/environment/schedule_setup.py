@@ -8,26 +8,34 @@ from .tasks import Tasks
 
 class ScheduleSetup:
     parallel_machines: ClassVar[bool] = False
-    n_machines: int
 
     tasks: Tasks
 
     def __init__(
         self,
-        n_machines: Optional[int] = None,
+        n_machines: int = -1,
     ):
-        self.n_machines = -1 if n_machines is None else n_machines
+        self._machines = n_machines
+
+    @property
+    def n_machines(self) -> int:
+        if self._machines <= 0:
+            return self.get_n_machines()
+
+        return self._machines
 
     def get_n_machines(self) -> int:
+        """
+        Get the number of machines in the setup at runtime. This is useful for setups that
+        do not have a fixed number of machines at initialization, for instance Pm.
+        """
+
         raise NotImplementedError(
             "The number of machines must be defined in the general setup"
         )
 
     def set_tasks(self, tasks: Tasks) -> None:
         self.tasks = tasks
-
-        if self.n_machines == -1:
-            self.n_machines = self.get_n_machines()
 
     def setup_constraints(self) -> tuple[Constraint, ...]:
         return ()
@@ -49,16 +57,33 @@ class ScheduleSetup:
     def export_data(self) -> str:
         return ""
 
+    def get_entry(self) -> str:
+        return ""
+
+
+class SingleMachineSetup(ScheduleSetup):
+    def __init__(self) -> None:
+        super().__init__(1)
+
+    def setup_constraints(self) -> tuple[Constraint, ...]:
+        disjunctive_tasks = {0: list(range(len(self.tasks)))}
+
+        return DisjunctiveConstraint(disjunctive_tasks),
+
+    def get_entry(self) -> str:
+        return "1"
+
 
 class JobShopSetup(ScheduleSetup):
     parallel_machines: ClassVar[bool] = False
 
     def __init__(
         self,
+        n_machines: int = -1,
         operation_order: str = "operation",
         machine_feature: str = "machine",
     ):
-        super().__init__()
+        super().__init__(n_machines)
 
         self.operation_order = operation_order
         self.machine_feature = machine_feature
@@ -97,3 +122,6 @@ class JobShopSetup(ScheduleSetup):
         precedence_constraint = PrecedenceConstraint(precedence_tasks)
 
         return disjunctive_constraint, precedence_constraint
+
+    def get_entry(self) -> str:
+        return f"J{self.n_machines}" if self._machines > 1 else "Jm"

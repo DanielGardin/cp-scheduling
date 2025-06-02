@@ -32,9 +32,9 @@ from .utils import MAX_INT
 
 class Status(Enum):
     AWAITING  = 0  # time < start_lb[0] or waiting for a machine
-    EXECUTING = 1  # start_lb[i] <               = time < start_lb[i] + duration[i] for some i
-    PAUSED    = 2  # start_lb[i] + duration[i] < = time < start_lb[i+1] for some i
-    COMPLETED = 3  # time >                      = start_lb[-1] + duration[-1]
+    EXECUTING = 1  # start_lb[i] <= time < start_lb[i] + duration[i] for some i
+    PAUSED    = 2  # start_lb[i] + duration[i] <= time < start_lb[i+1] for some i
+    COMPLETED = 3  # time >= start_lb[-1] + duration[-1]
     UNKNOWN   = 4  # unknown status
 
 
@@ -66,13 +66,13 @@ class Task:
         self.durations   = []
         self.assignments = []
 
-        self.remaining_time = processing_time
+        self._remaining_time = processing_time
         self.status = Status.AWAITING
         self.n_parts = 0
 
 
     def reset(self) -> None:
-        self.remaining_time = self.processing_time
+        self._remaining_time = self.processing_time
         self.status = Status.AWAITING
 
         self.n_parts = 0
@@ -92,6 +92,25 @@ class Task:
 
         self.n_parts += 1
 
+    def get_remaining_time(self, time: int) -> int:
+        if time >= self.start_lbs[-1] + self.durations[-1]:
+            return 0
+
+        # Reverse order because status checkings often occurs in the latest parts
+        cumulative_time = self.processing_time
+        for part in range(self.n_parts):
+            if time < self.get_start(part):
+                break
+
+            if self.get_start(part) <= time < self.get_end(part):
+                cumulative_time -= time - self.start_lbs[part]
+                break
+
+            cumulative_time += self.durations[part]
+
+        return cumulative_time
+
+
     def is_fixed(self, part: int = -1) -> bool:
         return self.start_lbs[part] == self.start_ubs[part]
 
@@ -108,10 +127,10 @@ class Task:
         return self.start_ubs[-1]
 
     def get_end_lb(self) -> int:
-        return min(self.start_lbs[-1] + self.remaining_time, MAX_INT)
+        return min(self.start_lbs[-1] + self._remaining_time, MAX_INT)
 
     def get_end_ub(self) -> int:
-        return min(self.start_ubs[-1] + self.remaining_time, MAX_INT)
+        return min(self.start_ubs[-1] + self._remaining_time, MAX_INT)
 
     def set_start_lb(self, time: int) -> None:
         self.start_lbs[-1] = time
@@ -120,31 +139,30 @@ class Task:
         self.start_ubs[-1] = time
 
     def set_end_lb(self, time: int) -> None:
-        self.start_lbs[-1] = time - self.remaining_time
+        self.start_lbs[-1] = time - self._remaining_time
 
     def set_end_ub(self, time: int) -> None:
-        self.start_ubs[-1] = time - self.remaining_time
+        self.start_ubs[-1] = time - self._remaining_time
 
     def execute(self, time: int, machine: int) -> None:
         self.start_lbs[-1] = time
         self.start_ubs[-1] = time
         self.assignments[-1] = machine
-        self.durations[-1] = self.remaining_time
+        self.durations[-1] = self._remaining_time
 
     def pause(self, time: int) -> None:
-        duration = min(self.remaining_time, time - self.start_lbs[-1])
+        duration = max(0, min(time - self.start_lbs[-1], self._remaining_time))
         self.durations[-1] = duration
 
-        self.remaining_time -= duration
-
-        if self.remaining_time > 0:
+        self._remaining_time -= duration
+        if self._remaining_time > 0:
             self._new_part(time)
 
     def get_status(self, time: int) -> Status:
-        if time < self.start_lbs[0]:
+        if time < self.get_start():
             return Status.AWAITING
 
-        if time >= self.start_lbs[-1] + self.durations[-1]:
+        if time >= self.get_end():
             return Status.COMPLETED
 
         # Reverse order because status checkings often occurs in the latest parts
@@ -258,7 +276,7 @@ class Tasks:
         return {
             "task_id": list(range(self.n_tasks)),
             **self.data,
-            "remaining_time": [task.remaining_time for task in self.tasks],
+            "remaining_time": [task.get_remaining_time(current_time) for task in self.tasks],
             "status": status,
         }
 
@@ -276,10 +294,12 @@ class Tasks:
             int: horizon;
             int: num_tasks;
             int: num_parts;
+            int: num_jobs;
 
-            array[1..num_tasks] of int: processing_time;
-            array[1..num_tasks] of int: start_lb;
-            array[1..num_tasks] of int: start_ub;
+            array[1..num_tasks] of 0..horizon:  processing_time;
+            array[1..num_tasks] of 0..horizon:  start_lb;
+            array[1..num_tasks] of 0..horizon:  start_ub;
+            array[1..num_tasks] of 1..num_jobs: job; 
 
             array[1..num_tasks, 1..num_parts] of var 0..horizon: start;
             array[1..num_tasks, 1..num_parts] of var 0..horizon: duration;
@@ -310,14 +330,23 @@ class Tasks:
     def export_data(
         self,
     ) -> str:
+        task_to_job = [-1 for _ in range(self.n_tasks)]
+
+        for job, tasks in self.jobs.items():
+            for task in tasks:
+                task_to_job[task.task_id] = job + 1
+
+
         data = f"""
             horizon = {self.get_time_ub()};
             num_tasks = {self.n_tasks};
             num_parts = {self.n_parts};
+            num_jobs = {len(self.jobs)};
 
             processing_time = [{', '.join([str(task.processing_time) for task in self.tasks])}];
             start_lb  = [{', '.join([str(task.get_start_lb()) for task in self.tasks])}];
             start_ub  = [{', '.join([str(task.get_start_ub()) for task in self.tasks])}];
+            job = {task_to_job};
         """
 
         return dedent(data)

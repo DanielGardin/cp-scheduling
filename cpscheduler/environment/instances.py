@@ -113,9 +113,7 @@ def read_rcpsp_instance(path: Path | str) -> tuple[DataFrame, dict[str, Any]]:
         f.readline()
 
         durations = [0 for _ in range(n_tasks)]
-        resource_demands = [
-            [0 for _ in range(n_tasks)] for _ in range(n_resources)
-        ]
+        resource_demands = [[0 for _ in range(n_tasks)] for _ in range(n_resources)]
 
         precedence_tasks: dict[int, list[int]] = {}
 
@@ -136,7 +134,10 @@ def read_rcpsp_instance(path: Path | str) -> tuple[DataFrame, dict[str, Any]]:
         instance = DataFrame(
             {
                 "duration": durations,
-                **{f"resource_{resource_id}": resource_demands[resource_id] for resource_id in range(n_resources)},
+                **{
+                    f"resource_{resource_id}": resource_demands[resource_id]
+                    for resource_id in range(n_resources)
+                },
             }
         )
 
