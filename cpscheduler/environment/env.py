@@ -271,6 +271,14 @@ class SchedulingCPEnv:
         return None
 
 
+    def set_minimum_time(
+            self,
+            time_options: NDArray[Any],
+            time_limit: int
+        ) -> None:
+        self.current_time = max(np.min(time_options, initial=time_limit).item(), self.current_time)
+
+
     # TODO: Implement a SAT-CP algorithm for dealing with constraint propagations
     def update_state(self) -> None:
         original = self.tasks.to_propagate.copy()
@@ -301,7 +309,7 @@ class SchedulingCPEnv:
 
         self.current_task = 0
         if action is not None:
-            action = np.asarray(action, dtype=self.tasks.index_dtype)
+            action = np.atleast_1d(action).astype(self.tasks.index_dtype)
 
             if extend:
                 self.scheduled_action = np.concatenate([self.scheduled_action, action])
@@ -339,7 +347,7 @@ class SchedulingCPEnv:
 
                 return True
 
-            self.current_time = np.min(self.tasks.end_lb[executing_tasks], initial=time_limit).item()
+            self.set_minimum_time(self.tasks.end_lb[executing_tasks], time_limit)
 
             return True
 
@@ -357,7 +365,7 @@ class SchedulingCPEnv:
                 if not np.any(executing_tasks) or self.current_time >= time_limit:
                     return True
 
-                self.current_time = np.min(self.tasks.end_lb[executing_tasks], initial=time_limit).item()
+                self.set_minimum_time(self.tasks.end_lb[executing_tasks], time_limit)
 
                 return False
 
@@ -375,7 +383,7 @@ class SchedulingCPEnv:
 
                 to_schedule = task_ids[self.tasks.is_awaiting()[task_ids]]
 
-                self.current_time = np.min(self.tasks.start_lb[to_schedule], initial=time_limit).item()
+                self.set_minimum_time(self.tasks.start_lb[to_schedule], time_limit)
 
                 return self.current_time >= time_limit
 
@@ -396,12 +404,12 @@ class SchedulingCPEnv:
         to_schedule = self.tasks.is_awaiting()
 
         if np.any(to_schedule):
-            self.current_time = np.min(self.tasks.start_lb[to_schedule], initial=time_limit).item()
+            self.set_minimum_time(self.tasks.start_lb[to_schedule], time_limit)
 
         else:
-            self.current_time = int(np.max(self.tasks.end_lb[:]))
+            self.current_time = int(np.max(self.tasks.end_lb[:], initial=self.current_time))
 
-        return False
+        return self.current_task >= len(self.scheduled_action)
 
 
     def render_gantt(
