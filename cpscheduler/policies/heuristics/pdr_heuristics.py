@@ -1,4 +1,6 @@
-from typing import Any, Sequence
+from typing import Any, Iterable, Mapping
+
+from ...environment.utils import convert_to_list
 
 from mypy_extensions import mypyc_attr
 
@@ -21,15 +23,19 @@ class PriorityDispatchingRule:
         raise NotImplementedError
 
 
-    def __call__(self, obs: dict[str, list[Any]]) -> list[int]:
-        priority_values = self.priority_rule(obs)
+    def __call__(self, obs: Mapping[str, Iterable[Any]]) -> list[tuple[str, int]]:
+        obs_ = {key: convert_to_list(value) for key, value in obs.items()}
 
-        priorities = [(priority, i) for i, priority in enumerate(priority_values)]
+        priority_values     = self.priority_rule(obs_)
+        task_ids: list[int] = obs_['task_id']
 
-        # Maximizing the priority values and breaking ties by selecting the task with the lowest index.
-        tasks_order = [obs['task_id'][i] for _, i in sorted(priorities, key=lambda x: (-x[0], x[1]))]
+        priorities = sorted([(-priority, task_id) for task_id, priority in zip(task_ids, priority_values)])
 
-        return tasks_order
+        action = [
+            ("submit", task_id) for _, task_id in priorities
+        ]
+
+        return action
 
 
 class ShortestProcessingTime(PriorityDispatchingRule):
