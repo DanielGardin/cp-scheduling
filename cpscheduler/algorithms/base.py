@@ -1,21 +1,19 @@
-from __future__ import annotations
-
-from typing import Any, Optional, Mapping, Self
+from typing import Any, Optional, MutableSequence
 from torch.types import Device
 
 from pathlib import Path
 
-import torch
-import torch.nn as nn
 import numpy as np
 
 from datetime import datetime
 
+from torch.nn import Module
 from tensordict import TensorDict
 from torch.optim.lr_scheduler import LRScheduler
 from torch.utils.tensorboard.writer import SummaryWriter # type: ignore
 
 from abc import ABC, abstractmethod
+
 import logging
 import tqdm
 
@@ -40,82 +38,32 @@ class DummyWriter(SummaryWriter):
         return lambda *args, **kwargs: None
 
 
-class Logs:
-    def __init__(self, initial_logs: Logs | dict[str, list[float]] | None = None, initial_tag: Optional[str] = None) -> None:
-        self.logs: dict[str, list[float]] = {}
+def summary_logs(logs: dict[str, Any]) -> dict[str, str]:
+    summary: dict[str, str] = {}
 
-        if initial_logs is not None:
-            self.extend(initial_logs, initial_tag)
+    for key, value in logs.items():
+        if isinstance(value, float):
+            summary[key] = f"{value:.4f}"
 
+        elif isinstance(value, MutableSequence):
+            summary[key] = f"{np.mean(value):.4f} ± {np.std(value):.4f}" if np.std(value) > 0 else f"{np.mean(value):.4f}"
 
-    def log(
-            self,
-            log_info: Mapping[str, float] | Logs,
-            tag: Optional[str] = None
-        ) -> Self:
-        if isinstance(log_info, Logs):
-            self.extend(log_info, tag)
+    return summary
 
 
-        else:
-            for key, value in log_info.items():
-                if tag: key = f"{tag}/{key}"
+def extend_logs(logs: dict[str, list[Any]], new_logs: dict[str, Any]) -> None:
+    for key, value in new_logs.items():
+        if key not in logs:
+            logs[key] = []
 
-                if key not in self.logs:
-                    self.logs[key] = []
+        if isinstance(value, float):
+            logs[key].append(value)
 
-                self.logs[key].append(value)
-
-        return self
-
-
-
-    def extend(
-            self,
-            logs: Logs | dict[str, list[float]],
-            tag: Optional[str] = None
-        ) -> Self:
-        if isinstance(logs, Logs):
-            logs = logs.logs
-
-        for key, values in logs.items():
-            if tag: key = f"{tag}/{key}"
-
-            if key not in self.logs:
-                self.logs[key] = []
-
-            self.logs[key].extend(values)
-
-        return self
+        elif isinstance(value, MutableSequence):
+            logs[key].extend(value)
 
 
-    def mean_log(self) -> dict[str, Any]:
-        return {
-            key: np.nanmean(values) for key, values in self.logs.items()
-        }
-
-
-    def std_log(self) -> dict[str, Any]:
-        return {
-            key: np.nanstd(values) for key, values in self.logs.items()
-        }
-
-
-    def clear(self) -> None:
-        self.logs.clear()
-
-
-    def _write(self, writer: SummaryWriter, global_step: int) -> None:
-        for key, values in self.logs.items():
-            writer.add_scalar(key, np.mean(values), global_step)
-    
-
-    def _summary(self) -> dict[str, str]:
-        return {
-            key: f"{np.mean(values):.4f} ± {np.std(values):.4f}" if np.std(values) > 0 else f"{np.mean(values):.4f}" for key, values in self.logs.items()
-        }
-
-class BaseAlgorithm(nn.Module, ABC):
+class BaseAlgorithm(Module, ABC):
     def __init__(self, buffer: Buffer) -> None:
         super().__init__()
 
@@ -130,7 +78,16 @@ class BaseAlgorithm(nn.Module, ABC):
         return next(self.parameters()).device
 
 
-    def on_epoch_start(self) -> dict[str, Any] | Logs:
+    def on_session_start(
+            self,
+            num_updates: int,
+            steps_per_update: int,
+            batch_size: int
+        ) -> None:
+        pass
+
+
+    def on_epoch_start(self) -> dict[str, Any]:
         return {}
 
 
@@ -139,11 +96,11 @@ class BaseAlgorithm(nn.Module, ABC):
         pass
 
 
-    def on_epoch_end(self) -> dict[str, Any] | Logs:
+    def on_epoch_end(self) -> dict[str, Any]:
         return {}
-    
 
-    def validate(self) -> dict[str, Any] | Logs:
+
+    def validate(self) -> dict[str, Any]:
         return {}
 
 
@@ -172,27 +129,17 @@ class BaseAlgorithm(nn.Module, ABC):
         self.writer = SummaryWriter(log_dir=log_dir)
 
 
-    def _write_logs(self, logs: dict[str, Any] | Logs) -> None:
-        if isinstance(logs, Logs):
-            for key, value in logs.logs.items():
-                self.writer.add_scalar(f"{key}/mean", np.mean(value), self.global_step)
-                std = np.std(value)
-
-                if std > 0:
-                    self.writer.add_scalar(f"{key}/std", std, self.global_step)
-
-        else:
-            for key, value in logs.items():
+    def _write_logs(self, logs: dict[str, Any], tag: Optional[str] = None) -> None:
+        for key, value in logs.items():
+            if tag: key = f"{tag}/{key}"
+            
+            if isinstance(value, float):
                 self.writer.add_scalar(key, value, self.global_step)
 
+            elif isinstance(value, MutableSequence):
+                self.writer.add_scalar(key + "/mean", np.mean(value), self.global_step)
+                self.writer.add_scalar(key + "/std", np.std(value), self.global_step)
 
-    def on_session_start(
-            self,
-            num_updates: int,
-            steps_per_update: int,
-            batch_size: int
-        ) -> None:
-        pass
 
     def learn(
             self,
@@ -207,14 +154,14 @@ class BaseAlgorithm(nn.Module, ABC):
 
         self.on_session_start(num_updates, steps_per_update, batch_size)
 
-        logs = Logs()
+        update_logs: dict[str, list[Any]] = {}
         for update in range(1, num_updates+1):
             self.train()
-            logs.clear()
 
             start_logs = self.on_epoch_start()
-            logs.log(start_logs, tag="start")
-            self._write_logs(start_logs)
+            self._write_logs(start_logs, tag="start")
+
+            update_logs.clear()
 
             n_steps = steps_per_update * ceildiv(len(self.buffer), batch_size)
             with tqdm.tqdm(total=n_steps, unit=" steps", dynamic_ncols=True, ncols=300) as pbar:
@@ -224,29 +171,29 @@ class BaseAlgorithm(nn.Module, ABC):
                     for batch in self.buffer.loader(batch_size, self.device):
                         train_logs = self.update(batch)
 
-                        logs.log(train_logs, tag="update")
-                        pbar.set_postfix(train_logs)
+                        pbar.set_postfix(
+                            summary_logs(train_logs)
+                        )
                         pbar.update()
+
+                        extend_logs(update_logs, train_logs)
 
                         self.global_step += 1
 
                     # Only the last step should be written
-                    self._write_logs(logs)
+                    self._write_logs(update_logs, tag="update")
 
                 end_logs = self.on_epoch_end()
-                logs.log(end_logs, tag="end")
-                self._write_logs(end_logs)
+                self._write_logs(end_logs, tag="end")
 
                 if validation_freq is not None and update % validation_freq == 0:
                     val_logs = self.validate()
-                    logs.log(val_logs, tag="validation")
-                    self._write_logs(val_logs)
+                    self._write_logs(val_logs, tag="validation")
 
+                epoch_log = {**start_logs, **update_logs, **end_logs}
                 pbar.set_postfix(
-                    logs._summary()
+                    summary_logs(epoch_log)
                 )
 
             if lr_scheduler is not None:
                 lr_scheduler.step()
-
-

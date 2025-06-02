@@ -4,8 +4,8 @@ import pytest
 
 import numpy as np
 
-from cpscheduler.environment import SchedulingCPEnv, PrecedenceConstraint, NonOverlapConstraint, Makespan, read_jsp_instance
-
+from cpscheduler.environment import read_jsp_instance
+from cpscheduler.common_envs import JobShopEnv
 
 TEST_INSTANCES = [
     "dmu04",
@@ -23,19 +23,7 @@ def test_env(instance_name: str) -> None:
 
     instance, _ = read_jsp_instance(path)
 
-    env = SchedulingCPEnv(instance, "processing_time")
-
-    env.add_constraint(
-        PrecedenceConstraint.jobshop_precedence(env.tasks, 'job', 'operation')
-    )
-
-    env.add_constraint(
-        NonOverlapConstraint.jobshop_non_overlap(env.tasks, 'machine')
-    )
-
-    env.set_objective(
-        Makespan(env.tasks)
-    )
+    env = JobShopEnv(instance)
 
     env.reset()
 
@@ -63,19 +51,7 @@ def test_not_enforce_order(instance_name: str) -> None:
 
     instance, _ = read_jsp_instance(path)
 
-    env = SchedulingCPEnv(instance, "processing_time")
-
-    env.add_constraint(
-        PrecedenceConstraint.jobshop_precedence(env.tasks, 'job', 'operation')
-    )
-
-    env.add_constraint(
-        NonOverlapConstraint.jobshop_non_overlap(env.tasks, 'machine')
-    )
-
-    env.set_objective(
-        Makespan(env.tasks)
-    )
+    env = JobShopEnv(instance)
 
     obs, info = env.reset()
     spt = np.argsort(obs['processing_time'])
@@ -92,19 +68,7 @@ def test_for_loop_equivalence(instance_name: str) -> None:
 
     instance, _ = read_jsp_instance(path)
 
-    env = SchedulingCPEnv(instance, "processing_time")
-
-    env.add_constraint(
-        PrecedenceConstraint.jobshop_precedence(env.tasks, 'job', 'operation')
-    )
-
-    env.add_constraint(
-        NonOverlapConstraint.jobshop_non_overlap(env.tasks, 'machine')
-    )
-
-    env.set_objective(
-        Makespan(env.tasks)
-    )
+    env = JobShopEnv(instance)
 
     env.reset()
 
@@ -117,7 +81,6 @@ def test_for_loop_equivalence(instance_name: str) -> None:
 
     order      = info['executed_actions']
     final_time = info['current_time']
-
 
     for action in order:
         obs, reward, terminated, truncated, info = env.step(action, enforce_order=False)
