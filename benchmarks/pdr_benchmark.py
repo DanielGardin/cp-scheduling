@@ -54,7 +54,7 @@ for dataset in datasets:
 
         all_instances.set_description(f"Processing instance {instance_name}")
 
-        env = JobShopEnv(instance, 'processing_time', dataframe_obs=True)
+        env = JobShopEnv(instance, 'processing_time')
 
         heuristic_results: list[float] = [0] * len(column_names)
 
