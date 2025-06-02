@@ -12,13 +12,10 @@ import numpy as np
 from ..env import Env
 from .common import step_with_autoreset, get_attribute, info_union
 
-_Obs  = TypeVar('_Obs')
-_Action = TypeVar('_Action')
-
 class SyncVectorEnv:
     def __init__(
             self,
-            env_fns: Iterable[Callable[[], Env[_Obs, _Action]]],
+            env_fns: Iterable[Callable[[], Env]],
             copy: bool = False,
             auto_reset: bool = True,
         ):
@@ -38,7 +35,7 @@ class SyncVectorEnv:
             obs = deepcopy(obs)
 
         return obs, info_union(infos)
-    
+
 
     def step(self, actions: Iterable[Any], *args: Any, **kwargs: Any) -> tuple[list[Any], list[float], list[bool], list[bool], dict[str, Any]]:
         if self.auto_reset:
@@ -52,13 +49,12 @@ class SyncVectorEnv:
             )
 
         return obs, rewards, terminated, truncated, info_union(infos)
-    
+
 
     def render(self) -> None:
         for env in self.envs:
             env.render()
 
 
-    def call(self, name: str, *args :Any, **kwargs: Any) -> list[Any]:
-        return [get_attribute(env, name, *args, **kwargs) for env in self.envs]
-
+    def call(self, name: str, *args :Any, **kwargs: Any) -> tuple[Any, ...]:
+        return tuple([get_attribute(env, name, *args, **kwargs) for env in self.envs])
