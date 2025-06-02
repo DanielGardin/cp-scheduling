@@ -1,15 +1,13 @@
-from typing import Any, Iterable, Callable, Sequence, SupportsFloat
+from typing import Any, Iterable, Callable, Sequence, SupportsFloat, TypeVar
 
 import multiprocessing as mp
 from multiprocessing.connection import Connection
 
 from copy import deepcopy
 
-import numpy as np
 from enum import Enum
 
-from ..env import Env
-from .common import step_with_autoreset, get_attribute, info_union
+from .common import Env, VectorEnv, step_with_autoreset, get_attribute, info_union
 
 class EnvStatus(Enum):
     READY = 0
@@ -17,13 +15,15 @@ class EnvStatus(Enum):
     CLOSED = 2
 
 
-class AsyncVectorEnv:
+_Obs = TypeVar('_Obs')
+_Act = TypeVar('_Act')
+class AsyncVectorEnv(VectorEnv[_Obs, _Act]):
     parent_conns: tuple[Connection, ...]
     child_conns:  tuple[Connection, ...]
 
     def __init__(
             self,
-            env_fns: Iterable[Callable[[], Env]],
+            env_fns: Iterable[Callable[[], Env[_Obs, _Act]]],
             copy      : bool = False,
             auto_reset: bool = True,
             daemon    : bool = True,
@@ -73,7 +73,7 @@ class AsyncVectorEnv:
             raise exception_group from results[envs_with_errors[0]]
 
 
-    def reset(self) -> tuple[list[Any], dict[str, Any]]:
+    def reset(self) -> tuple[list[_Obs], dict[str, Any]]:
         for conn in self.parent_conns:
             conn.send(('reset', ()))
 
@@ -89,7 +89,7 @@ class AsyncVectorEnv:
         return obs, info_union(infos)
 
 
-    def step(self, actions: Iterable[Any], *args: Any, **kwargs: Any) -> tuple[list[Any], list[SupportsFloat], list[bool], list[bool], dict[str, Any]]:
+    def step(self, actions: Iterable[_Act], *args: Any, **kwargs: Any) -> tuple[list[_Obs], list[SupportsFloat], list[bool], list[bool], dict[str, Any]]:
         if sum(1 for _ in actions) != self.n_envs:
             raise ValueError(f'Number of actions does not match number of environments ({self.n_envs})')
 
@@ -146,7 +146,7 @@ class AsyncVectorEnv:
     def _worker(
             self,
             conn: Connection,
-            env_fn: Callable[[], Env],
+            env_fn: Callable[[], Env[_Obs, _Act]],
             auto_reset: bool
         ) -> None:
         env = env_fn()

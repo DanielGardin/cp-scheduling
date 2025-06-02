@@ -2,15 +2,15 @@ from typing import Any, Callable, Iterable, TypeVar, SupportsFloat
 
 from copy import deepcopy
 
-from ..env import Env
-from .common import step_with_autoreset, get_attribute, info_union
+from .common import Env, VectorEnv, step_with_autoreset, get_attribute, info_union
 
 
-_Env = TypeVar('_Env', bound=Env)
-class SyncVectorEnv:
+_Obs = TypeVar('_Obs')
+_Act = TypeVar('_Act')
+class SyncVectorEnv(VectorEnv[_Obs, _Act]):
     def __init__(
             self,
-            env_fns: Iterable[Callable[[], _Env]],
+            env_fns: Iterable[Callable[[], Env[_Obs, _Act]]],
             copy: bool = False,
             auto_reset: bool = True,
         ):
@@ -23,7 +23,7 @@ class SyncVectorEnv:
         self.n_envs = len(self.envs)
 
 
-    def reset(self) -> tuple[list[Any], dict[str, Any]]:
+    def reset(self) -> tuple[list[_Obs], dict[str, Any]]:
         obs, infos = map(list, zip(*[env.reset() for env in self.envs]))
 
         if self.copy:
@@ -32,7 +32,7 @@ class SyncVectorEnv:
         return obs, info_union(infos)
 
 
-    def step(self, actions: Iterable[Any], *args: Any, **kwargs: Any) -> tuple[list[Any], list[SupportsFloat], list[bool], list[bool], dict[str, Any]]:
+    def step(self, actions: Iterable[_Act], *args: Any, **kwargs: Any) -> tuple[list[_Obs], list[SupportsFloat], list[bool], list[bool], dict[str, Any]]:
         if self.auto_reset:
             obs, rewards, terminated, truncated, infos = map(
                 list, zip(*[step_with_autoreset(env, action, *args, **kwargs) for env, action in zip(self.envs, actions)])
