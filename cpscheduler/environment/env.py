@@ -1,4 +1,4 @@
-from typing import Any, Optional, Never, ClassVar, TypeVar, TypeAlias, Callable, Concatenate, SupportsFloat, Iterable
+from typing import Any, Optional, Never, ClassVar, TypeVar, TypeAlias, Callable, Concatenate, SupportsFloat, Iterable, SupportsInt
 from pandas import DataFrame
 
 from warnings import warn
@@ -281,26 +281,22 @@ class SchedulingCPEnv:
     
     def step(
             self,
-            action: Optional[Iterable[int] | int] = None,
+            action: Optional[Iterable[SupportsInt] | SupportsInt] = None,
             time_skip: Optional[int]    = None,
             extend: bool                = False,
             enforce_order: bool         = True
         ) -> tuple[dict[str, Any], float, bool, bool, dict[str, Any]]:
-        self.current_task = 0
         if action is not None:
             if not extend:
                 self.scheduled_actions.clear()
 
-            if isinstance(action, (int, float, str)):
-                self.scheduled_actions.append(action)
+            next_actions = convert_to_list(action, int)
 
-            else:
-                action = convert_to_list(action)
-                self.scheduled_actions.extend(action)
-
+            self.scheduled_actions.extend(next_actions)
 
         previous_objective = self.objective.get_current(self.current_time)
 
+        self.current_task = 0
         self.n_queries += 1
 
         stop       = False

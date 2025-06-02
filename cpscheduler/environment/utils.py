@@ -11,11 +11,15 @@ MAX_INT: Final[int] =   2 ** 31 - 1
 _S = TypeVar('_S')
 _T = TypeVar('_T', bound=Any)
 @overload
-def convert_to_list(array: Iterable[_S], dtype: type[_T]) -> list[_T]:
+def convert_to_list(array: Any, dtype: type[_T]) -> list[_T]:
     ...
 
 @overload
 def convert_to_list(array: Iterable[_S], dtype: None = None) -> list[_S]:
+    ...
+
+@overload
+def convert_to_list(array: Any, dtype: None = None) -> list[Any]:
     ...
 
 def convert_to_list(array: Iterable[Any], dtype: Optional[type[_T]] = None) -> list[Any]:
@@ -37,12 +41,17 @@ def convert_to_list(array: Iterable[Any], dtype: Optional[type[_T]] = None) -> l
     """
 
     if hasattr(array, "tolist"):
-        array =  getattr(array, "tolist")()
+        array = getattr(array, "tolist")()
 
-    if dtype is None:
-        return [item for item in array]
+    try:
+        if dtype is None:
+            return list(array)
 
-    return [dtype(item) for item in array]
+        return [dtype(item) for item in array]
+
+    # If the iterable is not a collection, it will raise a TypeError
+    except TypeError:
+        return [array] if dtype is None else [dtype(array)]
 
 
 def is_iterable_type(obj: Any, dtype: type[_T]) -> TypeGuard[Iterable[_T]]:
@@ -63,7 +72,7 @@ def is_iterable_type(obj: Any, dtype: type[_T]) -> TypeGuard[Iterable[_T]]:
         Whether the object is an iterable containing elements of the specified type.
     """
 
-    return isinstance(obj, Iterable) and all(isinstance(item, dtype) for item in obj)
+    return isinstance(obj, Iterable) and all([isinstance(item, dtype) for item in obj])
 
 
 @overload
@@ -140,8 +149,8 @@ def topological_sort(
 
 
 def binary_search(
-        array: list[_T],
-        target: _T,
+        array: list[float],
+        target: float,
         left: int = 0,
         right: int = -1,
     ) -> int:
