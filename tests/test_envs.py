@@ -14,7 +14,6 @@ TEST_INSTANCES = [
     "swv12",
     "ta20",
     "lta_j10_m10_1",
-    # "kopt_ops10000_m100_1"
 ]
 
 @pytest.mark.env
@@ -84,3 +83,42 @@ def test_not_enforce_order(instance_name: str) -> None:
     obs, reward, terminated, truncated, info = env.step(spt, time_skip=None, enforce_order=False)
 
     assert terminated
+
+
+@pytest.mark.env
+@pytest.mark.parametrize("instance_name", TEST_INSTANCES)
+def test_for_loop_equivalence(instance_name: str) -> None:
+    path = Path(__file__).parent.parent / f"instances/jobshop/{instance_name}.txt"
+
+    instance, _ = read_jsp_instance(path)
+
+    env = SchedulingCPEnv(instance, "processing_time")
+
+    env.add_constraint(
+        PrecedenceConstraint.jobshop_precedence(env.tasks, 'job', 'operation')
+    )
+
+    env.add_constraint(
+        NonOverlapConstraint.jobshop_non_overlap(env.tasks, 'machine')
+    )
+
+    env.set_objective(
+        Makespan(env.tasks)
+    )
+
+    env.reset()
+
+    obs, info = env.reset()
+    spt = np.argsort(obs['processing_time'])
+
+    obs, reward, terminated, truncated, info = env.step(spt, enforce_order=False)
+
+    order      = info['executed_actions']
+    final_time = info['current_time']
+
+
+    for action in order:
+        obs, reward, terminated, truncated, info = env.step(action, enforce_order=False)
+
+    assert terminated
+    assert info['current_time'] == final_time

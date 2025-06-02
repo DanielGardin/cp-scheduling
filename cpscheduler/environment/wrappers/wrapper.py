@@ -9,7 +9,7 @@ _P = ParamSpec('_P')
 class WrappedEnv(Env[_WrappedObs, _WrappedAct], ABC):
     def __init__(
             self,
-            env: Env[Any, Any],
+            env: Env,
             *p_args: Any, **p_kwargs: Any
         ):
         self.env = env
