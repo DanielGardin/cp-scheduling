@@ -1,6 +1,7 @@
-from .pdr_heuristics import ShortestProcessingTime, MostOperationsRemaining, MostWorkRemaining, EarliestDueDate, WeightedShortestProcessingTime
+from .pdr_heuristics import PriorityDispatchingRule, ShortestProcessingTime, MostOperationsRemaining, MostWorkRemaining, EarliestDueDate, WeightedShortestProcessingTime
 
 __all__ = [
+    'PriorityDispatchingRule',
     'ShortestProcessingTime',
     'MostOperationsRemaining',
     'MostWorkRemaining',

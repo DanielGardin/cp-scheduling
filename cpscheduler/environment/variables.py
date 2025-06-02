@@ -1,40 +1,6 @@
-from __future__ import annotations
+from typing import Any, Optional, overload, Iterable
 
-from typing import Literal, Optional, Iterable, Final, Any, Sequence
-from numpy.typing import NDArray
-
-import numpy as np
-import numpy.lib.recfunctions as rf
-
-Scalar = int | float | complex | str | np.generic
-Selector = int | slice | NDArray[np.integer[Any]] | NDArray[np.bool] | Sequence[int]
-
-AVAILABLE_SOLVERS = Literal['cplex', 'ortools']
-
-MIN_INT: Final[int] = -(2 ** 31 - 1)
-MAX_INT: Final[int] =   2 ** 31 - 1
-
-
-class _Bound:
-    def __init__(self, array: NDArray[np.int32], modifier: int | NDArray[np.int32] = 0) -> None:
-        self._array    = array
-        self._modifier = modifier
-
-    def __repr__(self) -> str:
-        return repr(self._array + self._modifier)
-
-    def __setitem__(self, indices: Selector, value: NDArray[np.int32] | int) -> None:
-        adjustment = self._modifier if isinstance(self._modifier, int) else self._modifier[indices]
-
-        self._array[indices] = value - adjustment
-
-
-    def __getitem__(self, indices: Selector) -> NDArray[np.int32]:
-        adjustment = self._modifier if isinstance(self._modifier, int) else self._modifier[indices]
-
-        return self._array[indices] + adjustment
-
-
+from .utils import MAX_INT, AVAILABLE_SOLVERS, invert, convert_to_list
 
 def export_single_variable_cplex(name: str, size: int, lb: int, ub: int) -> str:
     rep = f"{name} = intervalVar(size={size});\n"
@@ -59,24 +25,21 @@ def export_single_variable_ortools(name: str, size: int, lb: int, ub: int) -> st
 
     return rep
 
+
 class IntervalVars:
-    tasks:     NDArray[np.void]
-    durations: NDArray[np.int32]
-    _start_lb:  NDArray[np.int32]
-    _start_ub:  NDArray[np.int32]
+    tasks:      dict[str, list[Any]]
+    durations:  list[int]
+    _start_lb:  list[int]
+    _start_ub:  list[int]
 
-    ids: NDArray[np.generic]
-    _indices: dict[Scalar, int]
+    _to_propagate: list[bool]
 
-    to_propagate: NDArray[np.bool]
-
-    NAME= r"IntervalVars_$1"
+    NAME= r"IntervalVars"
 
     def __init__(
             self,
-            tasks: NDArray[np.void],
-            durations: NDArray[np.int32],
-            task_ids: Optional[Iterable[Scalar]] = None,
+            tasks: dict[str, list[Any]],
+            durations: list[int],
         ) -> None:
         """
         Initialize the IntervalVars object. Each task is represented by a numpy void type and
@@ -92,198 +55,401 @@ class IntervalVars:
 
         durations: NDArray[np.int32], shape=(n_tasks,)
             The duration of each task.
-
-        task_ids: Optional[Iterable[Scalar]], default=None
-            The ids of the tasks. If not provided, the ids will be the range of the number of tasks.
         """
+        self.durations = durations
 
+        if any([len(feat) != len(self.durations) for feat in tasks.values()]):
+            raise ValueError("All features must have the same length as the number of tasks.")
 
         self.features = tasks
-        self.durations = np.asarray(durations, dtype=np.int32)
 
-        self._start_lb = np.zeros(len(tasks), dtype=np.int32)
-        self._start_ub = np.full(len(tasks), MAX_INT, dtype=np.int32)
+        self.n_tasks = len(self.durations)
 
-        if task_ids is None:
-            task_ids = range(len(tasks))
-
-        self._indices = {task_id: i for i, task_id in enumerate(task_ids)}
-        self.ids  = np.asarray(list(self._indices.keys()))
-
-        self.to_propagate = np.ones(len(tasks), dtype=np.bool)
-
+        self._start_lb     = [0]       * self.n_tasks
+        self._start_ub     = [MAX_INT] * self.n_tasks
+        self._to_propagate = [True]    * self.n_tasks
 
     def __len__(self) -> int:
-        return len(self.features)
-
-    @property
-    def dtype(self) -> np.dtype[np.void]:
-        return self.features.dtype
+        return self.n_tasks
 
 
-    @property
-    def index_dtype(self) -> np.dtype[np.generic]:
-        return self.ids.dtype
+    @overload
+    def get_var_name(self, tasks: int) -> str:
+        ...
+
+    @overload
+    def get_var_name(self, tasks: Optional[Iterable[int]] = None) -> list[str]:
+        ...
 
 
-    @property
-    def names(self) -> list[str]:
-        return [self.NAME.replace("$1", str(task_id)) for task_id in self._indices]
+    def get_var_name(self, tasks: Optional[int | Iterable[int]] = None) -> str | list[str]:
+        if isinstance(tasks, int):
+            return f"{self.NAME}_{tasks}"
+
+        if tasks is None:
+            tasks = range(self.n_tasks)
+
+        return [f"{self.NAME}_{task_id}" for task_id in tasks]
 
 
-    @property
-    def start_lb(self) -> _Bound:
-        return _Bound(self._start_lb)
-
-    @property
-    def start_ub(self) -> _Bound:
-        return _Bound(self._start_ub)
-
-    @property
-    def end_lb(self) -> _Bound:
-        return _Bound(self._start_lb, self.durations)
-
-    @property
-    def end_ub(self) -> _Bound:
-        return _Bound(self._start_ub, self.durations)
-
-
-    def __getitem__(self, feature: str | list[str]) -> NDArray[Any]:
+    def __getitem__(self, feature: str) -> list[Any]:
         return self.features[feature]
 
 
-    def fix_start(self, tasks: Scalar | Iterable[Scalar], value: int) -> None:
-        indices = self.get_indices(tasks)
+    @overload
+    def get_features(self, tasks: int) -> dict[str, Any]:
+        ...
 
-        self.start_lb[indices] = value
-        self.start_ub[indices] = value
-
-        self.to_propagate[indices] = True
-
-
-    def is_fixed(self) -> NDArray[np.bool]:
-        fixed: NDArray[np.bool] = self.start_lb[:] == self.start_ub[:]
-
-        return fixed
+    @overload
+    def get_features(self, tasks: Optional[Iterable[int]] = None) -> dict[str, list[Any]]:
+        ...
 
 
-    def is_awaiting(self, time: Optional[int] = None) -> NDArray[np.bool]:
-        """
-        Return a boolean array indicating whether the task in that position is waiting for execution or not.
+    def get_features(self, tasks: Optional[int | Iterable[int]] = None) -> dict[str, Any | list[Any]]:
+        if isinstance(tasks, int):
+            return {feature: self.features[feature][tasks] for feature in self.features}
 
-        Parameters:
-        ----------
-        time: Optional[int], default=None
-            The current time. If None, the current time is infered by the fixed tasks.
+        if tasks is None:
+            tasks = range(self.n_tasks)
 
-        """
+        return {feature: [self.features[feature][task] for task in tasks] for feature in self.features}
+
+
+    def fix_start(self, tasks: int | Iterable[int], value: int) -> None:
+        if isinstance(tasks, int):
+            tasks = [tasks]
+
+        for task in tasks:
+            self._start_lb[task]     = value
+            self._start_ub[task]     = value
+            self._to_propagate[task] = True
+
+
+    def fix_end(self, tasks: int | Iterable[int], value: int) -> None:
+        indices = tasks
+
+        if isinstance(indices, int):
+            indices = [indices]
+
+        for task in indices:
+            self._start_lb[task] = value - self.durations[task]
+            self._start_ub[task] = value - self.durations[task]
+            self._to_propagate[task] = True
+
+
+    def set_start_lb(self, tasks: int | Iterable[int], value: int) -> None:
+        if isinstance(tasks, int):
+            tasks = [tasks]
+
+        for task in tasks:
+            if value > self._start_lb[task] and not self.is_fixed(task):
+                self._start_lb[task]     = value
+                self._to_propagate[task] = True
+
+
+    def set_start_ub(self, tasks: int | Iterable[int], value: int) -> None:
+        if isinstance(tasks, int):
+            tasks = [tasks]
+
+        for task in tasks:
+            if value < self._start_ub[task] and not self.is_fixed(task):
+                self._start_ub[task]     = value
+                self._to_propagate[task] = True
+
+
+    def set_end_lb(self, tasks: int | Iterable[int], value: int) -> None:
+        if isinstance(tasks, int):
+            tasks = [tasks]
+
+        for task in tasks:
+            if value > self._start_lb[task] and not self.is_fixed(task):
+                self._start_lb[task]    = value - self.durations[task]
+                self._to_propagate[task] = True
+
+
+    def set_end_ub(self, tasks: int | Iterable[int], value: int) -> None:
+        if isinstance(tasks, int):
+            tasks = [tasks]
+
+        for task in tasks:
+            if value < self._start_ub[task] and not self.is_fixed(task):
+                self._start_lb[task]    = value - self.durations[task]
+                self._to_propagate[task] = True
+
+
+    @overload
+    def get_duration(self, tasks: int) -> int:
+        ...
+
+    @overload
+    def get_duration(self, tasks: Optional[Iterable[int]] = None) -> list[int]:
+        ...
+
+    def get_duration(self, tasks: Optional[int | Iterable[int]] = None) -> int | list[int]:
+        if isinstance(tasks, int):
+            return self.durations[tasks]
+
+        if tasks is None:
+            tasks = range(self.n_tasks)
+
+        return [self.durations[task] for task in tasks]
+
+
+    @overload
+    def get_start_lb(self, tasks: int) -> int:
+        ...
+
+    @overload
+    def get_start_lb(self, tasks: Optional[Iterable[int]] = None) -> list[int]:
+        ...
+
+    def get_start_lb(self, tasks: Optional[int | Iterable[int]] = None) -> int | list[int]:
+        if isinstance(tasks, int):
+            return self._start_lb[tasks]
+
+        if tasks is None:
+            tasks = range(self.n_tasks)
+
+        return [self._start_lb[task] for task in tasks]
+
+
+    @overload
+    def get_start_ub(self, tasks: int) -> int:
+        ...
+
+    @overload
+    def get_start_ub(self, tasks: Optional[Iterable[int]] = None) -> list[int]:
+        ...
+
+    def get_start_ub(self, tasks: Optional[int | Iterable[int]] = None) -> int | list[int]:
+        if isinstance(tasks, int):
+            return self._start_ub[tasks]
+
+        if tasks is None:
+            tasks = range(self.n_tasks)
+
+        return [self._start_ub[task] for task in tasks]
+
+
+    @overload
+    def get_end_lb(self, tasks: int) -> int:
+        ...
+
+    @overload
+    def get_end_lb(self, tasks: Optional[Iterable[int]] = None) -> list[int]:
+        ...
+
+    def get_end_lb(self, tasks: Optional[int | Iterable[int]] = None) -> int | list[int]:
+        if isinstance(tasks, int):
+            return min(self._start_lb[tasks] + self.durations[tasks], MAX_INT)
+
+        if tasks is None:
+            tasks = range(self.n_tasks)
+
+        return [min(self._start_lb[index] + self.durations[index], MAX_INT) for index in tasks]
+
+
+    @overload
+    def get_end_ub(self, tasks: int) -> int:
+        ...
+
+    @overload
+    def get_end_ub(self, tasks: Optional[Iterable[int]] = None) -> list[int]:
+        ...
+
+    def get_end_ub(self, tasks: Optional[int | Iterable[int]] = None) -> int | list[int]:
+        if isinstance(tasks, int):
+            return min(self._start_ub[tasks] + self.durations[tasks], MAX_INT)
+
+        if tasks is None:
+            tasks = range(self.n_tasks)
+
+        return [min(self._start_ub[index] + self.durations[index], MAX_INT) for index in tasks]
+
+
+    @overload
+    def is_fixed(self, tasks: int) -> bool:
+        ...
+
+    @overload
+    def is_fixed(self, tasks: Optional[Iterable[int]] = None) -> list[bool]:
+        ...
+
+    def is_fixed(self, tasks: Optional[int | Iterable[int]] = None) -> bool | list[bool]:
+        if isinstance(tasks, int):
+            return self._start_lb[tasks] == self._start_ub[tasks]
+
+        if tasks is None:
+            tasks = range(self.n_tasks)
+
+        return [self._start_lb[index] == self._start_ub[index] for index in tasks]
+
+
+    @overload
+    def is_awaiting(self, tasks: int, time: Optional[int] = None) -> bool:
+        ...
+
+    @overload
+    def is_awaiting(self, tasks: Iterable[int], time: Optional[int] = None) -> list[bool]:
+        ...
+
+    def is_awaiting(self, tasks: int | Iterable[int], time: Optional[int] = None) -> bool | list[bool]:
         if time is None:
-            return ~self.is_fixed()
+            return invert(self.is_fixed(tasks))
 
-        return ~self.is_fixed() | (time < self.start_lb[:])
+        if isinstance(tasks, int):
+            return not self.is_fixed(tasks) or time < self.get_start_lb(tasks)
 
+        is_fixed_list = self.is_fixed(tasks)
+        starts        = self.get_start_lb(tasks)
 
-    def is_executing(self, time: int) -> NDArray[np.bool]:
-        return self.is_fixed() & \
-            (self.start_lb[:] <= time) & \
-            (time < self.end_lb[:])
-
-
-    def is_finished(self, time: int) -> NDArray[np.bool]:
-        return self.is_fixed() & (time >= self.end_lb[:])
+        return [not is_fixed or time < start for is_fixed, start in zip(is_fixed_list, starts)]
 
 
-    def is_available(self, time: int) -> NDArray[np.bool]:
-        return ~self.is_fixed() & (self.start_lb[:] <= time)
+    @overload
+    def is_executing(self, tasks: int, time: int) -> bool:
+        ...
+
+    @overload
+    def is_executing(self, tasks: Iterable[int], time: int) -> list[bool]:
+        ...
+
+    def is_executing(self, tasks: int | Iterable[int], time: int) -> bool | list[bool]:
+        if isinstance(tasks, int):
+            return self.is_fixed(tasks) and self.get_start_lb(tasks) <= time and (time < self.get_end_lb(tasks))
+
+        is_fixed_list = self.is_fixed(tasks)
+        starts        = self.get_start_lb(tasks)
+        ends          = self.get_end_lb(tasks)
+
+        return [is_fixed and start <= time and time < end for is_fixed, start, end in zip(is_fixed_list, starts, ends)]
 
 
-    def clear_tasks(self) -> None:
-        self.features = np.zeros((0,), dtype=self.features.dtype)
-        self.durations = np.zeros((0,), dtype=self.durations.dtype)
+    @overload
+    def is_finished(self, tasks: int, time: int) -> bool:
+        ...
 
-        self._start_lb = np.zeros((0,), dtype=self._start_lb.dtype)
-        self._start_ub = np.zeros((0,), dtype=self._start_ub.dtype)
+    @overload
+    def is_finished(self, tasks: Iterable[int], time: int) -> list[bool]:
+        ...
 
-        self._indices = {}
+    def is_finished(self, tasks: int | Iterable[int], time: int) -> bool | list[bool]:
+        if isinstance(tasks, int):
+            return self.is_fixed(tasks) and self.get_end_lb(tasks) <= time
 
-        self.to_propagate = np.zeros((0,), dtype=self.to_propagate.dtype)
+        is_fixed_list = self.is_fixed(tasks)
+        ends          = self.get_end_lb(tasks)
+
+        return [is_fixed and end < time for is_fixed, end in zip(is_fixed_list, ends)]
+
+
+    @overload
+    def is_available(self, tasks: int, time: int) -> bool:
+        ...
+
+    @overload
+    def is_available(self, tasks: Iterable[int], time: int) -> list[bool]:
+        ...
+
+    def is_available(self, tasks: int | Iterable[int], time: int) -> bool | list[bool]:
+        if isinstance(tasks, int):
+            return not self.is_fixed(tasks) and self.get_start_lb(tasks) <= time
+
+        is_fixed  = self.is_fixed(tasks)
+        start_lbs = self.get_start_lb(tasks)
+
+        return [not is_fixed and start_lb <= time for is_fixed, start_lb in zip(is_fixed, start_lbs)]
+
+
+    @overload
+    def to_propagate(self, tasks: int) -> bool:
+        ...
+
+    @overload
+    def to_propagate(self, tasks: Optional[Iterable[int]] = None) -> list[bool]:
+        ...
+
+    def to_propagate(self, tasks: Optional[int | Iterable[int]] = None) -> bool | list[bool]:
+        if isinstance(tasks, int):
+            return self._to_propagate[tasks]
+
+        if tasks is None:
+            tasks = range(self.n_tasks)
+
+        return [self._to_propagate[index] for index in tasks]
 
 
     def add_tasks(
             self,
-            tasks: NDArray[np.void],
-            durations: NDArray[np.int32],
-            task_ids: Optional[Iterable[Scalar]] = None
+            tasks: dict[str, list[int]],
+            durations: Iterable[int],
+            task_ids: Optional[Iterable[int]] = None
         ) -> None:
+        for feature in tasks:
+            self.features[feature].extend(tasks[feature])
 
-        if task_ids is None:
-            task_ids = range(len(self.features), len(self.features) + len(tasks))
+        self.durations.extend(durations)
 
-        self._indices.update({task_id: i for i, task_id in enumerate(task_ids)})
+        n_new_tasks = len(self.durations) - self.n_tasks
 
-        self.features = np.concatenate([self.features, tasks])
-        self.durations = np.concatenate([self.durations, durations])
+        self._start_lb.extend([0] * n_new_tasks)
+        self._start_ub.extend([MAX_INT] * n_new_tasks)
+        self._to_propagate.extend([True] * n_new_tasks)
 
-        self._start_lb = np.concatenate([self._start_lb, np.zeros(len(tasks), dtype=np.int32)])
-        self._start_ub = np.concatenate([self._start_ub, np.full(len(tasks), MAX_INT, dtype=np.int32)])
-
-        self.to_propagate = np.concatenate([self.to_propagate, np.ones(len(tasks), dtype=np.bool)])
+        self.n_tasks = len(self.durations)
 
 
     def reset_state(self) -> None:
-        self.start_lb[:] = 0
-        self.start_ub[:] = MAX_INT
-
-        self.to_propagate[:] = True
-
-
-    def get_indices(self, indices: Scalar | Iterable[Scalar]) -> NDArray[np.int32]:
-        if isinstance(indices, Scalar):
-            return np.array(self._indices[indices], dtype=np.int32)
-
-        return np.array([self._indices[index] for index in indices], dtype=np.int32)
+        for index in range(len(self._start_lb)):
+            self._start_lb[index] = 0
+            self._start_ub[index] = MAX_INT
+            self._to_propagate[index] = True
 
 
     def export_variables(self, solver: AVAILABLE_SOLVERS = 'cplex') -> str:
-        names = self.names
+        names = self.get_var_name()
 
         if solver == 'cplex':
             variables = [
-                export_single_variable_cplex(name, int(duration), int(lb), int(ub)) for name, duration, lb, ub in zip(names, self.durations, self._start_lb, self._start_ub)
+                export_single_variable_cplex(name, duration, lb, ub) for name, duration, lb, ub in zip(names, self.durations, self._start_lb, self._start_ub)
             ]
 
         else:
             variables = [
-                export_single_variable_ortools(name, int(duration), int(lb), int(ub)) for name, duration, lb, ub in zip(names, self.durations, self._start_lb, self._start_ub)
+                export_single_variable_ortools(name, duration, lb, ub) for name, duration, lb, ub in zip(names, self.durations, self._start_lb, self._start_ub)
             ]
 
 
         return '\n'.join(variables)
 
 
-    def get_state(self, current_time: int) -> NDArray[np.void]:
+    def get_buffer(self, task: int, current_time: int) -> str:
+        if self.is_available(task, current_time):
+            return 'available'
 
-        is_awaiting  = self.is_awaiting()
-        is_executing = self.is_executing(current_time)
-        is_finished  = self.is_finished(current_time)
-        is_available = self.is_available(current_time)
+        if self.is_awaiting(task, current_time):
+            return 'awaiting'
 
-        buffer = np.zeros(len(self.features), dtype=np.dtypes.StrDType(9))
+        if self.is_finished(task, current_time):
+            return 'finished'
 
-        buffer[is_awaiting]  = 'awaiting'
-        buffer[is_executing] = 'executing'
-        buffer[is_finished]  = 'finished'
-        buffer[is_available] = 'available'
+        if self.is_executing(task, current_time):
+            return 'executing'
 
-        remaining_time = np.zeros_like(self.durations)
-        remaining_time[is_executing] = self.end_lb[is_executing] - current_time
-        remaining_time[is_awaiting]  = self.durations[is_awaiting]
+        return 'unknown'
 
-        state = rf.append_fields(
-            self.features.copy(),
-            ('remaining_time', 'buffer'),
-            (remaining_time, buffer),
-            usemask=False
-        )
 
-        return np.asarray(state)
+    def get_state(self, current_time: int) -> dict[str, Any]:
+        buffer = [self.get_buffer(task, current_time) for task in range(self.n_tasks)]
+
+        remaining_time = [
+            min(max(end - current_time, 0), duration)
+            for end, duration in zip(self.get_end_lb(), self.durations)
+        ]
+
+        return {
+            'task_id': convert_to_list(range(self.n_tasks)),
+            **self.features,
+            'remaining_time': remaining_time,
+            'buffer': buffer,
+        }
