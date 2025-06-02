@@ -4,7 +4,7 @@ import pytest
 
 import numpy as np
 
-from cpscheduler.environment import SchedulingCPEnv, PrecedenceConstraint, NonOverlapConstraint, Makespan, read_instance
+from cpscheduler.environment import SchedulingCPEnv, PrecedenceConstraint, NonOverlapConstraint, Makespan, read_jsp_instance
 
 
 TEST_INSTANCES = [
@@ -22,7 +22,7 @@ TEST_INSTANCES = [
 def test_env(instance_name: str) -> None:
     path = Path(__file__).parent.parent / f"instances/jobshop/{instance_name}.txt"
 
-    instance, _ = read_instance(path)
+    instance, _ = read_jsp_instance(path)
 
     env = SchedulingCPEnv(instance, "processing_time")
 
@@ -62,7 +62,7 @@ def test_env(instance_name: str) -> None:
 def test_not_enforce_order(instance_name: str) -> None:
     path = Path(__file__).parent.parent / f"instances/jobshop/{instance_name}.txt"
 
-    instance, _ = read_instance(path)
+    instance, _ = read_jsp_instance(path)
 
     env = SchedulingCPEnv(instance, "processing_time")
 

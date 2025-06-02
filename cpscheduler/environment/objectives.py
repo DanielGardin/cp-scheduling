@@ -7,7 +7,6 @@ import numpy as np
 
 from collections import defaultdict
 
-
 class Objective:
     is_parameterized: ClassVar[bool] = False
 
@@ -20,19 +19,19 @@ class Objective:
         minimize : bool
             Whether the objective function should be minimized or maximized. The default can vary depending
             on the objective function.
-        
+
         solver : 'cplex', 'ortools'
             The solver to which the objective function will be exported. The default is 'cplex'.
 
         """
         return ""
 
-    def get_current(self) -> float:
+    def get_current(self, time: int) -> float:
         """
         Get the current value of the objective function. This is useful for checking the performance of the
         scheduling algorithm along the episode.
         """
-        return NotImplemented
+        return 0
 
     def set_parameters(self, *args: Any, **kwargs: Any) -> None:
         """
@@ -49,7 +48,7 @@ class Makespan(Objective):
         Parameters
         ----------
         interval_var : IntervalVars
-            The interval variables that represent the tasks to be scheduled.        
+            The interval variables that represent the tasks to be scheduled.
         """
 
         self.tasks = interval_var
@@ -64,15 +63,14 @@ class Makespan(Objective):
             ends = [f"endOf({name})" for name in names]
 
             return f"makespan = max([{', '.join(ends)}]);\n{objective_type}(makespan);"
-        
+
         else:
             makespan = f'makespan = model.NewIntVar(0, {MAX_INT}, "makespan")'
             ends = [f"{name}_end" for name in names]
 
             return f"{makespan}\nmodel.AddMaxEquality(makespan, [{', '.join(ends)}])\nmodel.{objective_type}(makespan)"
 
-
-    def get_current(self) -> int:
+    def get_current(self, time: int) -> int:
         return int(np.max(self.tasks.end_lb[self.tasks.is_fixed()], initial=0))
 
 
@@ -94,7 +92,7 @@ class WeightedCompletionTime(Objective):
         ----------
         interval_var : IntervalVars
             The interval variables that represent the tasks to be scheduled.
-        
+
         job_feature : str | NDArray[int]
             The feature of each job that will be used to calculate the completion time.
             If a string is passed, it is assumed that the feature is a column of the interval variable.
@@ -126,7 +124,7 @@ class WeightedCompletionTime(Objective):
         for name, job in zip(names, self.job_op.tolist()):
             if solver == 'cplex':
                 job_end = f"endOf({name})"
-            
+
             else:
                 job_end = f"{name}_end"
 
@@ -148,12 +146,12 @@ class WeightedCompletionTime(Objective):
 
         if solver == 'cplex':
             return rep + f"{objective_type}({weighted_completion_times});"
-    
+
         else:
             return rep + f"model.{objective_type}({weighted_completion_times})"
 
 
-    def get_current(self) -> float:
+    def get_current(self, time: int) -> float:
         is_fixed = self.tasks.is_fixed()
 
         max_end = [0 for _ in range(self.n_jobs)]
