@@ -33,4 +33,4 @@ def read_instance(path: Path | str) -> tuple[DataFrame, dict[str, Any]]:
 
 # TODO: Implement a function for generating random taillard instances [1] and Known-optimal instances [2].
 # [1] Taillard, É. D. (1993). Benchmarks for basic scheduling problems. European Journal of Operational Research, 64(2), 278-285.
-# [2] Da Col
+# [2] Da Col, G., & Teppan, E. C. (2022). Industrial-size job shop scheduling with constraint programming. Operations Research Perspectives, 9, 100249.

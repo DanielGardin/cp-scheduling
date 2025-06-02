@@ -1,13 +1,14 @@
+from typing import Any
 from pathlib import Path
 
 import pandas as pd
 from tqdm import tqdm
 
-from cpscheduler.common_envs import JobShopEnv
-from cpscheduler.policies.heuristics import ShortestProcessingTime, MostOperationsRemaining, MostWorkRemaining
-from cpscheduler.utils import read_instance
+from time import perf_counter
 
-import re
+from cpscheduler.common_envs import JobShopEnv
+from cpscheduler.environment import read_instance
+from cpscheduler.policies.heuristics import ShortestProcessingTime, MostOperationsRemaining, MostWorkRemaining
 
 root = Path(__file__).parent.parent
 
@@ -17,37 +18,66 @@ heuristics = {
     "MWKR" : MostWorkRemaining()
 }
 
+datasets = {
+    "taillard"     : "ta",
+    "dermikol"     : "dmu",
+    "lawrence"     : "la",
+    "applegate"    : "orb",
+    "storer"       : "swv",
+    "yamada"       : "yn",
+    "large-TA"     : "lta",
+    "known optimal": "kopt",
+}
 
-columns = ['n_jobs', 'n_machines', *list(heuristics)]
-
-results = pd.DataFrame(columns=columns)
-
+index_names = ['dataset', 'size', 'name']
+column_names = [(heuristic_name, metric) for heuristic_name in heuristics.keys() for metric in ('makespan', 'time')]
 
 
-all_instances = tqdm(sorted([
-    path for path in (root / 'instances').glob('ta*.txt') if re.search(r'ta[0-9]+', path.stem)
-]))
+data: list[list[float]] = []
+indices: list[tuple[str, tuple[int, int], str]] = []
 
+for dataset in datasets:
+    dataset_code = datasets[dataset]
 
-for instance_path in all_instances:
-    instance, metadata = read_instance(instance_path)
+    all_instances = tqdm(sorted([
+        path for path in (root / 'instances/jobshop').glob(f'{dataset_code}*.txt')
+    ]))
 
-    instance_name = instance_path.stem
+    if not all_instances:
+        continue
 
-    all_instances.set_description(f"Processing instance {instance_name}")
+    for instance_path in all_instances:
+        instance, metadata = read_instance(instance_path)
 
-    env = JobShopEnv(instance, 'processing_time', dataframe_obs=True)
+        instance_size = (int(metadata['n_jobs']), int(metadata['n_machines']))
+        instance_name = instance_path.stem
 
-    heuristic_results = [metadata['n_jobs'], metadata['n_machines']] + [0] * len(heuristics)
+        all_instances.set_description(f"Processing instance {instance_name}")
 
-    for i, heuristic in enumerate(heuristics.values()):
-        obs, info = env.reset()
+        env = JobShopEnv(instance, 'processing_time', dataframe_obs=True)
 
-        action = heuristic(obs)
-        obs, reward, terminated, truncated, info = env.step(action, enforce_order=False)
+        heuristic_results: list[float] = [0] * len(column_names)
 
-        heuristic_results[2+i] = info['current_time']
+        for i, heuristic in enumerate(heuristics.values()):
+            tick = perf_counter()
 
-    results.loc[instance_name] = heuristic_results
+            obs, info = env.reset()
+            action = heuristic(obs)
+            obs, reward, terminated, truncated, info = env.step(action, enforce_order=False)
+            tock = perf_counter()
 
-results.to_csv(root / 'benchmarks' / 'taillard_benchmark.csv')
+            heuristic_results[2*i:2*(i+1)] = (info['current_time'], tock - tick)
+
+        indices.append((dataset, instance_size, instance_name))
+        data.append(heuristic_results)
+
+    dict_data = {
+        'index'      : indices,
+        'columns'    : column_names,
+        'data'       : data,
+        'index_names': index_names,
+        'column_names': ['heuristic', 'metric']
+    }
+
+    results = pd.DataFrame.from_dict(dict_data, orient='tight')
+    results.to_csv(root / 'benchmarks' / 'pdr_benchmark.csv')

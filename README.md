@@ -1,0 +1,3 @@
+## Constraint Programming Environment for Learning Scheduling Dispatch Rules
+
+This repository provides a comprehensive environment for applying constraint programming techniques to scheduling problems. It focuses on the learning and optimization of priority dispatch rules, enabling the development and testing of intelligent heuristics for dynamic scheduling scenarios. Designed for researchers and practitioners, the framework supports customization, benchmarking, and integration with machine learning approaches to enhance scheduling performance.
