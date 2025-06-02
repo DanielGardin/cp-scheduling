@@ -180,7 +180,6 @@ class BaseAlgorithm(Module, ABC):
 
                         self.global_step += 1
 
-                    # Only the last step should be written
                     self._write_logs(update_logs, tag="update")
 
                 end_logs = self.on_epoch_end()

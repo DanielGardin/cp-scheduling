@@ -5,7 +5,6 @@ import random
 import numpy as np
 
 import torch
-import torch.nn as nn
 import torch.optim as optim
 
 from cpscheduler.algorithms.end2end import End2End
@@ -37,12 +36,37 @@ argparser.add_argument('--vector-env', type=str, default='async', help='Type of 
 argparser.add_argument('--n-future-tasks', type=int, default=3, help='Number of future tasks to consider')
 argparser.add_argument('--clip-coef', type=float, default=0.2, help='PPO clip coefficient')
 argparser.add_argument('--seed', type=int, default=42, help='Random seed')
-argparser.add_argument('--cuda', action='store_true', help='Use CUDA')
+argparser.add_argument('--cuda', type=int, nargs='?', const=True, default=False, help='Use CUDA. If a number is passed, it is used as the device index')
 
 argparser.add_argument('--name', type=str, default='experiment', help='Name of the experiment')
 argparser.add_argument('--wandb', action='store_true', help='Use wandb for logging')
 
 args = argparser.parse_args()
+
+config = {
+    'agent': {
+        'model_dim': args.d,
+        'layers': args.layers,
+        'heads': args.heads,
+        'dropout': args.dropout,
+    },
+    'training': {
+        'batch_size': args.batch_size,
+        'epochs': args.epochs,
+        'update_steps': args.update_steps,
+        'lr': args.lr,
+        'clip_coef': args.clip_coef,
+    },
+    'environment': {
+        'n_jobs': args.n_jobs,
+        'n_machines': args.n_machines,
+        'n_envs': args.n_envs,
+        'n_future_tasks': args.n_future_tasks,
+    },
+    'seed': args.seed,
+    'cuda': args.cuda,
+}
+
 
 
 if args.seed is not None:
@@ -52,14 +76,17 @@ if args.seed is not None:
     torch.backends.cudnn.deterministic = True
 
 
-device = 'cuda' if args.cuda and torch.cuda.is_available() else 'cpu'
+device = 'cpu'
+if torch.cuda.is_available() and args.cuda is not False:
+    device = "cuda" if args.cuda is True else f"cuda:{args.cuda}"
+
 
 actor = End2EndActor(
     args.d, args.heads, args.layers, args.dropout
 ).to(device)
 
-optimizer = optim.Adam(actor.parameters(), lr=args.lr)
 
+optimizer = optim.Adam(actor.parameters(), lr=args.lr)
 
 def make_env() -> End2EndStateWrapper:
     instance, metadata = generate_taillard_instance(args.n_jobs, args.n_machines)
@@ -82,6 +109,7 @@ algorithm.begin_experiment(
     args.name,
     root / 'logs',
     args.wandb,
+    config
 )
 
 try:
