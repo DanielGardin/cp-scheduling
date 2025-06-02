@@ -18,7 +18,7 @@ class _Bound:
         self._modifier = modifier
 
     def __repr__(self) -> str:
-        return repr(self._array)
+        return repr(self._array + self._modifier)
 
     def __setitem__(self, indices: Selector, value: NDArray[np.int32] | int) -> None:
         if isinstance(self._modifier, int):
@@ -155,12 +155,19 @@ class IntervalVars:
 
         return fixed
 
-    
+
+    def is_awaiting(self) -> NDArray[np.bool]:
+        return ~self.is_fixed()   
+
+
     def is_executing(self, time: int) -> NDArray[np.bool]:
         return self.is_fixed() & \
             (self.start_lb[:] <= time) & \
             (time < self.end_lb[:])
 
+
+    def is_finished(self, time: int) -> NDArray[np.bool]:
+        return self.is_fixed() & (time >= self.end_lb[:])
 
 
     def clear_tasks(self) -> None:

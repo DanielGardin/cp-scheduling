@@ -13,7 +13,7 @@ TEST_INSTANCES = [
     "la10",
     "orb01",
     "swv12",
-    "ta07",
+    "ta20",
     "tai_j10_m10_1"
 ]
 
@@ -39,7 +39,7 @@ def test_cp_solution(instance_name: str) -> None:
 
     env.reset()
 
-    order, objective_value, is_optimal = env.get_cp_solution(timelimit=1)
+    order, objective_value, is_optimal = env.get_cp_solution(timelimit=0.5)
 
     obs, reward, terminated, truncated, info = env.step(order, time_skip=None)
 
@@ -81,7 +81,7 @@ def test_partial_cp_solution(instance_name: str) -> None:
     assert info['current_time'] == time_skip
     assert not terminated
 
-    order, objective_value, is_optimal = env.get_cp_solution(timelimit=1)
+    order, objective_value, is_optimal = env.get_cp_solution(timelimit=.5)
 
     assert (np.sort(order) == env.tasks.ids[obs['buffer'] == 'awaiting']).all()
 
