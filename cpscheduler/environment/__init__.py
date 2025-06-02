@@ -4,6 +4,7 @@ __all__ = [
     # Alpha setups
     "JobShopSetup",
     "SingleMachineSetup",
+    "IdenticalParallelMachineSetup",
 
     # Beta constraints
     "PrecedenceConstraint",
@@ -11,6 +12,7 @@ __all__ = [
     "ReleaseDateConstraint",
     "DeadlineConstraint",
     "ResourceConstraint",
+    "EqualProcessingTimeConstraint",
 
     # Gamma objectives
     "Makespan",
@@ -21,7 +23,8 @@ from .env import SchedulingCPEnv
 
 from .schedule_setup import (
     JobShopSetup,
-    SingleMachineSetup
+    SingleMachineSetup,
+    IdenticalParallelMachineSetup,
 )
 
 from .constraints import (
@@ -30,6 +33,7 @@ from .constraints import (
     ReleaseDateConstraint,
     DeadlineConstraint,
     ResourceConstraint,
+    EqualProcessingTimeConstraint,
 )
 
 from .objectives import (

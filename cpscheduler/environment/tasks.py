@@ -23,19 +23,18 @@ We do not reccomend customizing this module, as it's tightly coupled with the ot
 in the environment, change with caution.
 """
 
-from typing import Any, Iterator
+from typing import Any, Iterator, Optional, NamedTuple, ClassVar
 
 from textwrap import dedent
-from enum import Enum
 
-from .utils import MAX_INT
+from .common import MAX_INT, MIN_INT
 
-class Status(Enum):
-    AWAITING  = 0  # time < start_lb[0] or waiting for a machine
-    EXECUTING = 1  # start_lb[i] <= time < start_lb[i] + duration[i] for some i
-    PAUSED    = 2  # start_lb[i] + duration[i] <= time < start_lb[i+1] for some i
-    COMPLETED = 3  # time >= start_lb[-1] + duration[-1]
-    UNKNOWN   = 4  # unknown status
+class Status:
+    AWAITING : ClassVar[int] = 0  # time < start_lb[0] or waiting for a machine
+    EXECUTING: ClassVar[int] = 1  # start_lb[i] <               = time < start_lb[i] + duration[i] for some i
+    PAUSED   : ClassVar[int] = 2  # start_lb[i] + duration[i] < = time < start_lb[i+1] for some i
+    COMPLETED: ClassVar[int] = 3  # time >                      = start_lb[-1] + duration[-1]
+    UNKNOWN  : ClassVar[int] = 4  # unknown status
 
 
 status_str = {
@@ -46,145 +45,252 @@ status_str = {
     Status.UNKNOWN  : "unknown",
 }
 
+def ceil_div(a: int, b: int) -> int:
+    return -(-a // b)
+
+class Bounds(NamedTuple):
+    lb: int = 0
+    ub: int = MAX_INT
+
 
 class Task:
-    start_lbs  : list[int]
-    start_ubs  : list[int]
+    processing_times: dict[int, int]
+
+    starts     : list[int]
     durations  : list[int]
     assignments: list[int]
+
+    start_bounds: dict[int, Bounds]
 
     def __init__(
         self,
         task_id: int,
-        processing_time: int,
+        processing_times: dict[int, int],
     ) -> None:
         self.task_id = task_id
-        self.processing_time = processing_time
+        self.processing_times = processing_times
 
-        self.start_lbs   = []
-        self.start_ubs   = []
+        self.starts      = []
         self.durations   = []
         self.assignments = []
 
-        self._remaining_time = processing_time
-        self.status = Status.AWAITING
+        self.start_bounds = {
+            machine: Bounds() for machine in processing_times
+        }
+
+        self._remaining_times = self.processing_times.copy()
+
+        self.fixed   = False
         self.n_parts = 0
 
     def __repr__(self) -> str:
-        return f"Task {self.task_id} ({self.processing_time})"
+        return ""
 
 
     def reset(self) -> None:
-        self._remaining_time = self.processing_time
-        self.status = Status.AWAITING
-
+        self._remaining_time = self.processing_times.copy()
+    
+        self.fixed   = False
         self.n_parts = 0
 
-        self.start_lbs.clear()
-        self.start_ubs.clear()
+        self.starts.clear()
         self.durations.clear()
         self.assignments.clear()
 
         self._new_part(0)
 
     def _new_part(self, time: int) -> None:
-        self.start_lbs.append(time)
-        self.start_ubs.append(MAX_INT)
-        self.durations.append(MAX_INT)
-        self.assignments.append(-1)
+        for machine in self.processing_times:
+            self.start_bounds[machine] = Bounds(
+                lb=time,
+            )
 
-        self.n_parts += 1
-
-    def get_remaining_time(self, time: int) -> int:
-        if time >= self.get_end():
-            return 0
-
-        # Reverse order because status checkings often occurs in the latest parts
-        cumulative_time = self.processing_time
-        for part in range(self.n_parts):
-            if time < self.get_start(part):
-                break
-
-            if self.get_start(part) <= time < self.get_end(part):
-                cumulative_time -= time - self.start_lbs[part]
-                break
-
-            cumulative_time -= self.durations[part]
-
-        return cumulative_time
-
-    def is_fixed(self, part: int = -1) -> bool:
-        return self.start_lbs[part] == self.start_ubs[part]
+    def is_fixed(self) -> bool:
+        return self.fixed
 
     def get_start(self, part: int = 0) -> int:
-        return self.start_lbs[part] if self.is_fixed(part) else MAX_INT
+        return self.starts[part]
 
     def get_end(self, part: int = -1) -> int:
-        return min(self.start_lbs[part] + self.durations[part], MAX_INT)
+        return min(self.starts[part] + self.durations[part], MAX_INT)
 
-    def get_start_lb(self) -> int:
-        return self.start_lbs[-1]
+    def get_duration(self, part: int = -1) -> int:
+        return self.durations[part]
 
-    def get_start_ub(self) -> int:
-        return self.start_ubs[-1]
+    def get_assignment(self, part: int = -1) -> int:
+        return self.assignments[part]
 
-    def get_end_lb(self) -> int:
-        return min(self.start_lbs[-1] + self._remaining_time, MAX_INT)
+    def get_start_lb(self, machine: int = -1) -> int:
+        if machine != -1:
+            return self.start_bounds[machine].lb
 
-    def get_end_ub(self) -> int:
-        return min(self.start_ubs[-1] + self._remaining_time, MAX_INT)
+        return min(self.start_bounds[machine].lb for machine in self.processing_times)
 
-    def set_start_lb(self, time: int) -> None:
-        self.start_lbs[-1] = time
+    def get_start_ub(self, machine: int = -1) -> int:
+        if machine != -1:
+            return self.start_bounds[machine].ub
 
-    def set_start_ub(self, time: int) -> None:
-        self.start_ubs[-1] = time
+        return min(self.start_bounds[machine].ub for machine in self.processing_times)
 
-    def set_end_lb(self, time: int) -> None:
-        self.start_lbs[-1] = time - self._remaining_time
+    def get_end_lb(self, machine: int = -1) -> int:
+        if machine != -1:
+            return self.start_bounds[machine].lb + self._remaining_times[machine]
 
-    def set_end_ub(self, time: int) -> None:
-        self.start_ubs[-1] = time - self._remaining_time
+        return min(
+            self.start_bounds[machine].lb + self._remaining_times[machine]
+            for machine in self.processing_times
+        )
 
-    def execute(self, time: int, machine: int) -> None:
-        self.start_lbs[-1] = time
-        self.start_ubs[-1] = time
-        self.assignments[-1] = machine
-        self.durations[-1] = self._remaining_time
+    def get_end_ub(self, machine: int = -1) -> int:
+        if machine != -1:
+            return self.start_bounds[machine].ub + self._remaining_times[machine]
 
-    def pause(self, time: int) -> None:
-        duration = max(0, min(time - self.start_lbs[-1], self._remaining_time))
-        self.durations[-1] = duration
+        return min(
+            self.start_bounds[machine].ub + self._remaining_times[machine]
+            for machine in self.processing_times
+        )
 
-        self._remaining_time -= duration
-        if self._remaining_time > 0:
-            self._new_part(time)
+    def set_start_lb(self, time: int, machine: int = -1) -> None:
+        if machine != -1:
+            self.start_bounds[machine] = Bounds(
+                lb=time,
+                ub=self.start_bounds[machine].ub,
+            )
+            return
 
-    def get_status(self, time: int) -> Status:
-        if time < self.get_start():
+        for machine in self.start_bounds:
+            self.start_bounds[machine] = Bounds(
+                lb=time,
+                ub=self.start_bounds[machine].ub,
+            )
+
+    def set_start_ub(self, time: int, machine: int = -1) -> None:
+        if machine != -1:
+            self.start_bounds[machine] = Bounds(
+                lb=self.start_bounds[machine].lb,
+                ub=time,
+            )
+            return
+
+        for machine in self.start_bounds:
+            self.start_bounds[machine] = Bounds(
+                lb=self.start_bounds[machine].lb,
+                ub=time,
+            )
+
+    def set_end_lb(self, time: int, machine: int = -1) -> None:
+        if machine != -1:
+            self.start_bounds[machine] = Bounds(
+                lb=time - self._remaining_times[machine],
+                ub=self.start_bounds[machine].ub,
+            )
+            return
+
+        for machine in self.start_bounds:
+            self.start_bounds[machine] = Bounds(
+                lb=time - self._remaining_times[machine],
+                ub=self.start_bounds[machine].ub,
+            )
+
+
+    def set_end_ub(self, time: int, machine: int = -1) -> None:
+        if machine != -1:
+            self.start_bounds[machine] = Bounds(
+                lb=self.start_bounds[machine].lb,
+                ub=time - self._remaining_times[machine],
+            )
+            return
+
+        for machine in self.start_bounds:
+            self.start_bounds[machine] = Bounds(
+                lb=self.start_bounds[machine].lb,
+                ub=time - self._remaining_times[machine],
+            )
+
+    def get_remaining_time(self, time: int) -> int:
+        return max(0, min((self.durations[-1] - time + self.starts[-1]), self.durations[-1]))
+
+
+    def assign(
+            self,
+            start: int,
+            machine: int,
+        ) -> None:
+        self.n_parts += 1
+
+        self.starts.append(start)
+        self.durations.append(self._remaining_times[machine])
+        self.assignments.append(machine)
+
+        self.fixed = True
+        for other_machine in self.processing_times:
+            bound = start if other_machine == machine else MIN_INT
+
+            self.start_bounds[other_machine] = Bounds(
+                lb=bound,
+                ub=bound
+            )
+
+
+    def interrupt(self, time: int) -> None:
+        if self.n_parts == 0:
+            raise ValueError(
+                f"Task {self.task_id} has not been started yet. Cannot interrupt."
+            )
+
+        previous_time  = self.durations[-1]
+        remaining_time = self.get_remaining_time(time)
+
+        if remaining_time == 0:
+            return
+
+        self.durations[-1] -= remaining_time
+
+        for machine in self.processing_times:
+            self._remaining_times[machine] = ceil_div(
+                remaining_time * self.processing_times[machine],
+                previous_time
+            )
+
+        self.fixed = False
+        self._new_part(time)
+
+    def get_status(self, time: int) -> int:
+        # Reverse order because status checkings often occurs in the latest parts
+        if not self.fixed:
+            if len(self.starts) == 0 or time < self.get_start(0):
+                return Status.AWAITING
+
+            return Status.PAUSED
+
+        for part in range(self.n_parts - 1, -1, -1):
+            if part > 0 and self.get_end(part - 1) <= time < self.get_start(part):
+                return Status.PAUSED
+
+            if self.get_start(part) <= time < self.get_end(part):
+                return Status.EXECUTING
+        
+        # If it's not paused, but also it's not fixed, it must be awaiting
+        if not self.fixed:
             return Status.AWAITING
 
         if time >= self.get_end():
             return Status.COMPLETED
 
-        # Reverse order because status checkings often occurs in the latest parts
-        for part in range(self.n_parts - 1, -1, -1):
-            if part > 0 and self.get_end(part - 1) <= time < self.get_start(part):
-                return Status.PAUSED
-
-            if self.start_lbs[part] <= time < self.start_ubs[part]:
-                return Status.AWAITING
-
-            if self.get_start(part) <= time < self.get_end(part):
-                return Status.EXECUTING
-
         return Status.UNKNOWN
 
-    def is_available(self, time: int) -> bool:
-        return self.start_lbs[-1] <= time < self.start_ubs[-1]
+    def is_available(self, time: int, machine: int = -1) -> bool:
+        if machine != -1:
+            return self.start_bounds[machine].lb <= time < self.start_bounds[machine].ub
 
-    def is_awaiting(self, time: int) -> bool:
-        return time < self.start_lbs[0] or self.is_available(time)
+        for machine in self.start_bounds:
+            if self.start_bounds[machine].lb <= time < self.start_bounds[machine].ub:
+                return True
+
+        return False
+
+    def is_awaiting(self) -> bool:
+        return not self.fixed
 
     def is_executing(self, time: int) -> bool:
         for part in range(self.n_parts - 1, -1, -1):
@@ -201,7 +307,7 @@ class Task:
         return False
 
     def is_completed(self, time: int) -> bool:
-        return time >= self.start_lbs[-1] + self.durations[-1]
+        return self.fixed and time >= self.get_end()
 
     def get_buffer(self, time: int) -> str:
         buffer = status_str[self.get_status(time)]
@@ -222,7 +328,7 @@ class Tasks:
 
     def __init__(
         self,
-        data: dict[str, list[Any]],
+        data: Optional[dict[str, list[Any]]] = None,
         n_parts: int = 1,  # if we allow preemption, we must define a maximum number of splits
     ):
         self.n_parts = n_parts
@@ -231,25 +337,57 @@ class Tasks:
         self.jobs = {}
 
         self.n_tasks = 0
-        self.data = data
+
+        self.data = data if data is not None else {}
+
+        self.n_expected_tasks = 0
+        for key, features in self.data.items():
+            if self.n_expected_tasks == 0 and len(features) > 0:
+                self.n_expected_tasks = len(features)
+            
+            if len(features) != self.n_expected_tasks:
+                raise ValueError(
+                    f"Feature {key} has {len(features)} tasks, expected {self.n_expected_tasks}"
+                )
+
+
+    def handle_data(self, data: dict[str, Any]) -> None:
+        if self.n_expected_tasks > self.n_tasks:
+            raise ValueError(
+                f"Unexpected new data, {self.n_expected_tasks - self.n_parts} tasks waiting to be loaded."
+            )
+    
+        elif self.n_expected_tasks == self.n_tasks:
+            self.n_expected_tasks += 1
+
+        for key, value in data.items():
+            if key not in self.data:
+                self.data[key] = []
+
+            self.data[key].append(value)
 
     def add_task(
         self,
-        processing_time: int,
+        processing_times: dict[int, int],
         job: int,
+        data: Optional[dict[str, Any]] = None,
     ) -> None:
         task_id = self.n_tasks
-        task = Task(
-            task_id,
-            processing_time,
-        )
-
-        self.tasks.append(task)
+        task = Task(task_id, processing_times)
 
         if job not in self.jobs:
             self.jobs[job] = []
 
+        self.tasks.append(task)
         self.jobs[job].append(task)
+
+        if data is not None:
+            self.handle_data(data)
+
+        elif self.n_expected_tasks <= self.n_tasks:
+            raise ValueError(
+                f"Expected new data from this task. Check if the data is correctly loaded."
+            )
 
         self.n_tasks += 1
 
@@ -279,7 +417,6 @@ class Tasks:
         return {
             "task_id": list(range(self.n_tasks)),
             **self.data,
-            "remaining_time": [task.get_remaining_time(current_time) for task in self.tasks],
             "status": status,
         }
 
@@ -302,10 +439,9 @@ class Tasks:
             int: num_parts;
             int: num_jobs;
 
-            array[1..num_tasks] of 0..horizon:  processing_time;
             array[1..num_tasks] of 0..horizon:  start_lb;
             array[1..num_tasks] of 0..horizon:  start_ub;
-            array[1..num_tasks] of 1..num_jobs: job; 
+            array[1..num_jobs] of set of 1..num_tasks: job;
 
             array[1..num_tasks, 1..num_parts] of var 0..horizon: start;
             array[1..num_tasks, 1..num_parts] of var 0..horizon: duration;
@@ -336,23 +472,19 @@ class Tasks:
     def export_data(
         self,
     ) -> str:
-        task_to_job = [-1 for _ in range(self.n_tasks)]
-
-        for job, tasks in self.jobs.items():
-            for task in tasks:
-                task_to_job[task.task_id] = job + 1
-
-
-        data = f"""
+        data = dedent(f"""
             horizon = {self.get_time_ub()};
             num_tasks = {self.n_tasks};
             num_parts = {self.n_parts};
             num_jobs = {len(self.jobs)};
 
-            processing_time = [{', '.join([str(task.processing_time) for task in self.tasks])}];
             start_lb  = [{', '.join([str(task.get_start_lb()) for task in self.tasks])}];
             start_ub  = [{', '.join([str(task.get_start_ub()) for task in self.tasks])}];
-            job = {task_to_job};
-        """
+        """)
 
-        return dedent(data)
+        data += "job = [\n"
+        for job_tasks in self.jobs.values():
+            data += "    {" + ", ".join([str(task.task_id+1) for task in job_tasks]) + "},\n"           
+        data += "];\n"
+
+        return data

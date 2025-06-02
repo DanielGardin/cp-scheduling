@@ -1,4 +1,4 @@
-from typing import Any, Mapping, Iterable, TypeVar
+from typing import Any, Mapping, Iterable, TypeVar, Optional, Self
 from copy import deepcopy
 
 from abc import ABC
@@ -8,6 +8,12 @@ from .tasks import Tasks, Status
 from .utils import convert_to_list, topological_sort, binary_search, is_iterable_type, scale_to_int
 
 class Constraint(ABC):
+    """
+    Base class for all constraints in the scheduling environment.
+    This class provides a common interface for any piece in the scheduling environment that
+    interacts with the tasks by limiting when they can be executed, how they are assigned to
+    machines, etc.
+    """
     tag: str = ""
 
     def set_tasks(self, tasks: Tasks) -> None:
@@ -35,8 +41,8 @@ class Constraint(ABC):
         """
         Produce the β entry for the constraint.
         """
-
         return ""
+
 
 class PrecedenceConstraint(Constraint):
     def __init__(
@@ -51,6 +57,18 @@ class PrecedenceConstraint(Constraint):
         self.no_wait = no_wait
 
         self.original_precedence = deepcopy(self.precedence)
+
+    @classmethod
+    def from_edges(cls, edges: Iterable[tuple[int, int]], no_wait: bool = False) -> Self:
+        precedence: dict[int, list[int]] = {}
+
+        for parent, child in edges:
+            if parent not in precedence:
+                precedence[parent] = []
+
+            precedence[parent].append(child)
+
+        return cls(precedence, no_wait)
 
     def _remove_precedence(self, task: int, child: int) -> None:
         if child in self.precedence[task]:
@@ -102,34 +120,29 @@ class PrecedenceConstraint(Constraint):
 
         model = f"""\
             % (Constraint) Precedence constraint {"no wait" if self.no_wait else ""}
-            set of int: edges;
+            int: num_edges;
 
-            array[edges] of 1..num_tasks: precedence_tasks;
-            array[edges] of 1..num_tasks: child_tasks;
+            array[1..num_edges, 1..2] of 1..num_tasks: edges;
 
-            constraint forall(e in edges) (
-                end[precedence_tasks[e], num_parts] {operator} start[child_tasks[e], 1]
+            constraint forall(i in 1..num_edges) (
+                end[edges[i, 1], num_parts] {operator} start[edges[i, 2], 1]
             );
         """
 
         return dedent(model)
 
     def export_data(self) -> str:
-        precedence_tasks: list[str] = []
-        child_tasks: list[str] = []
+        data = "edges = [|\n"
 
+        num_edges = 0
         for task, children in self.original_precedence.items():
             for child in children:
-                precedence_tasks.append(str(task + 1))
-                child_tasks.append(str(child + 1))
+                data += f"{task+1}, {child+1} |\n"
+                num_edges += 1
 
-        data = f"""\
-            edges = 1..{len(precedence_tasks)};
-            precedence_tasks = [{', '.join(precedence_tasks)}];
-            child_tasks = [{', '.join(child_tasks)}];
-        """
+        data += "|];"
 
-        return dedent(data)
+        return f"num_edges = {num_edges};\n{data}"
 
     def get_entry(self) -> str:
         intree = all(len(tasks) <= 1 for tasks in self.precedence.values())
@@ -218,39 +231,27 @@ class DisjunctiveConstraint(Constraint):
         model = """\
             % (Constraint) Disjunctive constraint
             int: num_groups;
-            int: num_group_tasks;
+            array[1..num_groups] of set of int: group_tasks;
 
-            array[1..num_group_tasks] of 1..num_tasks: group_task;
-            array[1..num_group_tasks] of 1..num_groups: group;
-
-            constraint forall(g in 1..num_groups) (
-                disjunctive([start[group_task[i], 1] | p in 1..num_parts, i in 1..num_group_tasks where group[i] == g],
-                            [duration[group_task[i], 1] | p in 1..num_parts, i in 1..num_group_tasks where group[i] == g])
+            constraint forall(group in group_tasks) (
+                disjunctive([start[t, p] | p in 1..num_parts, t in group],
+                            [duration[t, p] | p in 1..num_parts, t in group])
             );
         """
 
         return dedent(model)
 
     def export_data(self) -> str:
-        group_tasks: list[str] = []
-        groups: list[str] = []
-
-        for i, tasks in enumerate(self.original_disjunctive_groups.values(), start=1):
-            n_tasks = len(tasks)
-
-            group_tasks.extend([str(task + 1) for task in tasks])
-            groups.extend([str(i)] * n_tasks)
-
-        data = f"""\
-            num_groups = {len(self.original_disjunctive_groups)};
-            num_group_tasks = {len(group_tasks)};
-        
-
-            group_task = [{', '.join(group_tasks)}];
-            group = [{', '.join(groups)}];
-        """
+        data = f"num_groups = {len(self.original_disjunctive_groups)};\n"
+        data += "group_tasks = [\n"
+        for tasks in self.original_disjunctive_groups.values():
+            data += "    {" + ', '.join([
+                str(task_id + 1) for task_id in tasks
+            ]) + "},\n"
+        data += "];\n"
 
         return dedent(data)
+
 
 class ReleaseDateConstraint(Constraint):
     release_dates: dict[int, int]
@@ -309,6 +310,7 @@ class DeadlineConstraint(Constraint):
 
     def get_entry(self) -> str:
         return "d_j"
+
 
 class ResourceConstraint(Constraint):
     resources: list[dict[int, float]]
@@ -438,3 +440,110 @@ class ResourceConstraint(Constraint):
         return f"num_resources = {len(self.resources)};\n" + \
                 capacities_str + \
                 resources_str
+
+
+class EqualProcessingTimeConstraint(Constraint):
+    def __init__(self, processing_time: int):
+        self.processing_time = processing_time
+
+
+    def set_tasks(self, tasks: Tasks) -> None:
+        super().set_tasks(tasks)
+
+        for task in self.tasks:
+            for machine in task.processing_times:
+                task.processing_times[machine] = self.processing_time
+
+    def get_entry(self) -> str:
+        return f"p_j={self.processing_time}"
+
+
+class MachineConstraint(Constraint):
+    """
+    General Parallel machine constraint, differs from DisjunctiveConstraint as the disjunctive
+    constraint have groups with predefined tasks, while the machine constraint defines its groups
+    based on the machine assignment of the tasks.
+
+    Arguments:
+        machine_constraint: A list of lists of machine ids, each sublist representing the set of
+            machines that the corresponding task can be assigned to. The length of the outer list
+            should be equal to the number of tasks. Finally, if None is provided, then every task can be
+            processed on every machine.
+    """
+    machine_constraint: list[list[int]]
+
+    def __init__(
+        self,
+        machine_constraint: Optional[Iterable[Iterable[int]]] = None,
+    ) -> None:
+        self.complete = False
+        if isinstance(machine_constraint, str):
+            self.machine_constraint = []
+            self.tag = machine_constraint
+
+        elif machine_constraint is None:
+            self.machine_constraint = []
+            self.complete = True
+
+        else:
+            assert is_iterable_type(machine_constraint, list)
+
+            self.machine_constraint = [
+                convert_to_list(tasks) for tasks in machine_constraint
+            ]
+
+        # Time when the machine is going to be freed
+        self.machine_free: dict[int, int] = {}
+
+    @property
+    def max_M_j(self) -> int:
+        return max(len(tasks) for tasks in self.machine_constraint)
+
+    def set_tasks(self, tasks: Tasks) -> None:
+        super().set_tasks(tasks)
+
+        if self.tag:
+            for task_id in range(len(tasks)):
+                machine: int = tasks.data[self.tag][task_id]
+                self.machine_constraint.append([machine])
+
+    def reset(self) -> None:
+        self.machine_free.clear()
+
+    def propagate(self, time: int) -> None:
+        for task in self.tasks:
+            if not task.is_fixed():
+                continue
+
+            machine = task.get_assignment()
+            end_time = task.get_end_lb()
+
+            if machine not in self.machine_free:
+                self.machine_free[machine] = time
+
+            elif end_time > self.machine_free[machine]:
+                self.machine_free[machine] = end_time
+
+        minimum_start_time = min(self.machine_free.values(), default=time)
+        for task_id, task in enumerate(self.tasks):
+            if task.is_fixed():
+                continue
+
+            machines = task.start_bounds if self.complete else self.machine_constraint[task_id]
+
+            for machine in machines:
+                if task.get_start_lb(machine) < self.machine_free[machine]:
+                    task.set_start_lb(self.machine_free[machine])
+
+    def export_model(self) -> str:
+        if self.max_M_j == 1 or self.complete:
+            return ""
+
+        return dedent(f"""\
+            % (Constraint) Machine Constraint (M_j)
+            array[1..num_tasks] of set of 1..num_machines: possible_machines;
+                            
+            constraint forall(t in 1..num_tasks, p in 1..num_parts) (
+                assignment[t, p] in possible_machines[t]
+        """)
+

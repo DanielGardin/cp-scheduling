@@ -1,7 +1,6 @@
 from typing import (
     Any,
     TypeVar,
-    Final,
     Optional,
     overload,
     Iterable,
@@ -14,13 +13,11 @@ from collections import deque
 from fractions import Fraction
 from math import lcm
 
-# Reducing upper bounds to avoid numerical issues
-MIN_INT: Final[int] = -(2**24 + 1)
-MAX_INT: Final[int] = 2**24 - 1
+from .common import MAX_INT, MIN_INT
+
 
 _S = TypeVar("_S")
 _T = TypeVar("_T", bound=Any)
-
 
 @overload
 def convert_to_list(array: Any, dtype: type[_T]) -> list[_T]: ...
