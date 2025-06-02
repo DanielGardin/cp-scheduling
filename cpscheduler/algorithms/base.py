@@ -64,6 +64,8 @@ def extend_logs(logs: dict[str, list[Any]], new_logs: dict[str, Any]) -> None:
 
 
 class BaseAlgorithm(Module, ABC):
+    writer: SummaryWriter
+
     def __init__(self, buffer: Buffer) -> None:
         super().__init__()
 
@@ -86,23 +88,18 @@ class BaseAlgorithm(Module, ABC):
         ) -> None:
         pass
 
-
     def on_epoch_start(self) -> dict[str, Any]:
         return {}
-
 
     @abstractmethod
     def update(self, batch: TensorDict) -> dict[str, Any]:
         pass
 
-
     def on_epoch_end(self) -> dict[str, Any]:
         return {}
 
-
     def validate(self) -> dict[str, Any]:
         return {}
-
 
     def begin_experiment(
             self,
@@ -126,20 +123,18 @@ class BaseAlgorithm(Module, ABC):
                 sync_tensorboard=True
             )
 
-        self.writer = SummaryWriter(log_dir=log_dir)
-
+        self.writer = SummaryWriter(log_dir=log_dir) # type: ignore
 
     def _write_logs(self, logs: dict[str, Any], tag: Optional[str] = None) -> None:
         for key, value in logs.items():
             if tag: key = f"{tag}/{key}"
             
             if isinstance(value, float):
-                self.writer.add_scalar(key, value, self.global_step)
+                self.writer.add_scalar(key, value, self.global_step) # type: ignore
 
             elif isinstance(value, MutableSequence):
-                self.writer.add_scalar(key + "/mean", np.mean(value), self.global_step)
-                self.writer.add_scalar(key + "/std", np.std(value), self.global_step)
-
+                self.writer.add_scalar(key + "/mean", np.mean(value), self.global_step) # type: ignore
+                self.writer.add_scalar(key + "/std", np.std(value), self.global_step) # type: ignore
 
     def learn(
             self,

@@ -4,7 +4,7 @@ from time import perf_counter
 
 import numpy as np
 
-from cpscheduler.environment import SchedulingCPEnv, JobShopSetup
+from cpscheduler.environment import SchedulingEnv, JobShopSetup
 from cpscheduler.instances import read_jsp_instance
 
 
@@ -47,7 +47,7 @@ def test_speed() -> None:
 
         instance, metadata = read_jsp_instance(instance_path)
 
-        env = SchedulingCPEnv(JobShopSetup())
+        env = SchedulingEnv(JobShopSetup())
         env.set_instance(instance, job_ids='job', processing_times='processing_time')
 
         (tasks, jobs), info = env.reset()

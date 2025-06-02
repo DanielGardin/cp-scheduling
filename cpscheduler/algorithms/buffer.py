@@ -187,5 +187,4 @@ class Buffer:
 
 
     def __getitem__(self, idx: str) -> Tensor:
-        return self.buffer[idx][:self.current_size]
-
+        return self.buffer[idx][:self.current_size] # type: ignore

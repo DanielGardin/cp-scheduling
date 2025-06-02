@@ -1,5 +1,6 @@
 __all__ = [
     'PriorityDispatchingRule',
+    'RandomPriority',
     'ShortestProcessingTime',
     'MostOperationsRemaining',
     'MostWorkRemaining',
@@ -9,12 +10,14 @@ __all__ = [
     'MinimumSlackTime',
     'FirstInFirstOut',
     'CostOverTime',
+    'CriticalRatio',
     'ApparentTardinessCost',
     'TrafficPriority',
 ]
 
 from .pdr_heuristics import (
     PriorityDispatchingRule,
+    RandomPriority,
     ShortestProcessingTime,
     MostOperationsRemaining,
     MostWorkRemaining,
@@ -24,6 +27,7 @@ from .pdr_heuristics import (
     MinimumSlackTime,
     FirstInFirstOut,
     CostOverTime,
+    CriticalRatio,
     ApparentTardinessCost,
     TrafficPriority,
 )
