@@ -392,6 +392,8 @@ class ResourceCapacityConstraint(Constraint):
 
             executing_tasks = [task for task in tasks if self.tasks.is_executing(task, time)]
 
+            if not executing_tasks: continue
+
             sorted_liberation = sorted([(self.tasks.get_end_lb(task), task) for task in executing_tasks])
 
             resources = self._available_resources(
@@ -416,7 +418,7 @@ class ResourceCapacityConstraint(Constraint):
     def export_constraint(self, solver: AVAILABLE_SOLVERS = 'cplex') -> str:
         if solver == 'cplex':
             pulses = [
-                [f"pulse({self.tasks.get_var_name(task)}, {resource[task]})"
+                [f"pulse({self.tasks.get_var_name(task)}, {resource[task]:g})"
                 for task in range(len(self.tasks)) if resource[task] > 0] for resource in self.resource_taken
             ]
 
@@ -426,7 +428,7 @@ class ResourceCapacityConstraint(Constraint):
             ]
 
             capacity_constraints = [
-                f"resource_{i}_use <= {capacity};"
+                f"resource_{i}_use <= {capacity:g};" # g is the trick to export integers when using floats
                 for i, capacity in enumerate(self.resource_capacity)
             ]
 
@@ -444,7 +446,7 @@ class ResourceCapacityConstraint(Constraint):
             ]
 
             capacity_constraints = [
-                f"model.AddCumulative([{', '.join(tasks[i])}], {resources[i]}, {self.resource_capacity[i]})"
+                f"model.AddCumulative([{', '.join(tasks[i])}], {resources[i]}, {self.resource_capacity[i]:g})"
                 for i in range(len(self.resource_taken)) 
             ]
 
