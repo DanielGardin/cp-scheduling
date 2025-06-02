@@ -1,9 +1,10 @@
 __all__ = [
-    "SchedulingCPEnv",
+    "SchedulingEnv",
 
     # Alpha setups
     "SingleMachineSetup",
     "IdenticalParallelMachineSetup",
+    "UniformParallelMachineSetup",
     "JobShopSetup",
     "OpenShopSetup",
 
@@ -14,6 +15,7 @@ __all__ = [
     "DeadlineConstraint",
     "ResourceConstraint",
     "MachineConstraint",
+    "SetupConstraint",
 
     # Gamma objectives
     "ComposedObjective",
@@ -27,13 +29,15 @@ __all__ = [
     "WeightedEarliness",
     "TotalTardyJobs",
     "WeightedTardyJobs",
+    "TotalFlowTime",
 ]
 
-from .env import SchedulingCPEnv
+from .env import SchedulingEnv
 
 from .schedule_setup import (
     SingleMachineSetup,
     IdenticalParallelMachineSetup,
+    UniformParallelMachineSetup,
     JobShopSetup,
     OpenShopSetup
 )
@@ -45,6 +49,7 @@ from .constraints import (
     DeadlineConstraint,
     ResourceConstraint,
     MachineConstraint,
+    SetupConstraint,
 
 )
 
@@ -60,4 +65,5 @@ from .objectives import (
     WeightedEarliness,
     TotalTardyJobs,
     WeightedTardyJobs,
+    TotalFlowTime
 )

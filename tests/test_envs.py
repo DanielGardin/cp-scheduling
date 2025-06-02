@@ -1,7 +1,7 @@
 import pytest
 
 from cpscheduler.instances import generate_taillard_instance
-from cpscheduler.environment import SchedulingCPEnv, ResourceConstraint, SingleMachineSetup
+from cpscheduler.environment import SchedulingEnv, ResourceConstraint, SingleMachineSetup
 
 from common import env_setup, TEST_INSTANCES
 
@@ -164,7 +164,7 @@ def test_resource_constrained() -> None:
         3: 3.,
     }])
 
-    env = SchedulingCPEnv(
+    env = SchedulingEnv(
         SingleMachineSetup(disjunctive=False),
         [resource_constraint],
     )
