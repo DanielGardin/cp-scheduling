@@ -1,38 +1,39 @@
+__all__ = [
+    'Env',
+    "IntervalVars",
+    "SchedulingCPEnv",
+    "AsyncVectorEnv",
+    "RayVectorEnv",
+    "read_jsp_instance",
+    "PrecedenceConstraint",
+    "NonOverlapConstraint",
+    # "ReleaseTimesConstraint",
+    # "DueDatesConstraint",
+    "Makespan",
+    # "WeightedCompletionTime",
+    "VectorEnv",
+]
+
 from typing import Any, Optional, overload, Sequence, Literal, Callable
 from numpy.typing import NDArray
 from pandas import DataFrame
 
 import numpy as np
 
-from .constraints import Constraint, PrecedenceConstraint, NonOverlapConstraint, ReleaseTimesConstraint, \
-    DueDatesConstraint
+from .constraints import Constraint, PrecedenceConstraint, NonOverlapConstraint#, ReleaseTimesConstraint, \
+   # DueDatesConstraint
 
-from .objectives import Objective, Makespan, WeightedCompletionTime
+from .objectives import Objective, Makespan#, WeightedCompletionTime
 
 from .variables import IntervalVars
 
-from .env import SchedulingCPEnv, Env
+from .env import SchedulingCPEnv
 
-from .vector import SyncVectorEnv, AsyncVectorEnv, RayVectorEnv, VectorEnv
+from .vector import SyncVectorEnv, AsyncVectorEnv, RayVectorEnv, VectorEnv, Env
 
 from .instances import read_jsp_instance
 
-
-__all__ = [
-    "IntervalVars",
-    "SchedulingCPEnv",
-    "read_jsp_instance",
-    "PrecedenceConstraint",
-    "NonOverlapConstraint",
-    "ReleaseTimesConstraint",
-    "DueDatesConstraint",
-    "Makespan",
-    "WeightedCompletionTime",
-    "Env"
-]
-
 known_envs: dict[str, type[SchedulingCPEnv]] = {}
-
 
 def register_env(env: type[SchedulingCPEnv], name: Optional[str] = None) -> None:
     if name is None:
@@ -52,7 +53,7 @@ def make_env(
         vector_env: Literal['sync'] = 'sync',
         auto_reset: bool = True,
         *args: Any, **kwargs: Any,
-    ) -> SyncVectorEnv: ...
+    ) -> SyncVectorEnv[Any, Any]: ...
 
 @overload
 def make_env(
@@ -63,7 +64,7 @@ def make_env(
         vector_env: Literal['async'],
         auto_reset: bool = True,
         *args: Any, **kwargs: Any,
-    ) -> AsyncVectorEnv: ...
+    ) -> AsyncVectorEnv[Any, Any]: ...
 
 @overload
 def make_env(
@@ -74,7 +75,7 @@ def make_env(
         vector_env: Literal['ray'],
         auto_reset: bool = True,
         *args: Any, **kwargs: Any,
-    ) -> RayVectorEnv: ...
+    ) -> RayVectorEnv[Any, Any]: ...
 
 
 @overload
@@ -96,7 +97,7 @@ def make_env(
         vector_env: Literal['sync', 'async', 'ray'] = 'sync',
         auto_reset: bool = True,
         *args: Any, **kwargs: Any,
-    ) -> SchedulingCPEnv | VectorEnv:
+    ) -> SchedulingCPEnv | VectorEnv[Any, Any]:
     if name not in known_envs:
         raise ValueError(f'Environment {name} not registered.')
     

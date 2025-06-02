@@ -1,22 +1,16 @@
-from typing import Any, Optional, Literal, overload, Callable, Sequence
-from numpy.typing import NDArray, ArrayLike
+from typing import Sequence, Iterable
 from pandas import DataFrame
-
-import numpy as np
-
-from copy import deepcopy
-
 
 from .environment.constraints import PrecedenceConstraint, NonOverlapConstraint, ResourceCapacityConstraint
 from .environment.objectives import Makespan
-from .environment import register_env, SchedulingCPEnv
+from .environment import SchedulingCPEnv
 
 
 class JobShopEnv(SchedulingCPEnv):
     def __init__(
             self,
             instance: DataFrame,
-            duration: str | ArrayLike = 'processing_time',
+            duration: str | Iterable[int] = 'processing_time',
             job_feature: str = 'job',
             operation_feature: str = 'operation',
             machine_feature: str = 'machine'
@@ -40,13 +34,14 @@ class JobShopEnv(SchedulingCPEnv):
             'job',
         )
 
+
 class ResourceConstraintEnv(SchedulingCPEnv):
     def __init__(
             self,
             instance: DataFrame,
-            capacity: ArrayLike,
+            capacity: Iterable[float],
             precedence: Sequence[Sequence[int]],
-            duration: str | NDArray[np.int32] = 'processing_time',
+            duration: str | Iterable[int] = 'processing_time',
             resource_features: str | list[str] = 'resource',
 
         ) -> None:
@@ -59,6 +54,7 @@ class ResourceConstraintEnv(SchedulingCPEnv):
 
         self.add_constraint(
             ResourceCapacityConstraint,
+            capacity=capacity,
         )
 
         self.set_objective(
