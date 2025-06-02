@@ -45,7 +45,7 @@ def test_pdr(instance_no: int) -> None:
 
     instance, _ = read_instance(path)
 
-    env = JobShopEnv(instance, dataframe_obs=False)
+    env = JobShopEnv(instance)
 
     result = {}
 

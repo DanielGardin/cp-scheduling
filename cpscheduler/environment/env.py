@@ -1,4 +1,4 @@
-from typing import Any, Optional, Final, Never, ClassVar
+from typing import Any, Optional, Final, Never, ClassVar, overload, Literal
 from numpy.typing import NDArray
 from pandas import DataFrame
 
@@ -64,8 +64,7 @@ class SchedulingCPEnv:
     def __init__(
             self,
             instance: DataFrame,
-            duration_feature: str | int,
-            dataframe_obs: bool = False
+            duration_feature: str | int
         ) -> None:
         self.constraints = {}
         self.objectives  = {}
@@ -74,8 +73,6 @@ class SchedulingCPEnv:
         tasks = self.process_dataframe(instance)
 
         self.tasks = IntervalVars(tasks, tasks[duration_feature], instance.index.to_numpy())
-
-        self.dataframe_obs = dataframe_obs
 
 
     def process_dataframe(self, df: DataFrame, ignore_index: bool = False) -> NDArray[np.void]:
@@ -191,14 +188,8 @@ class SchedulingCPEnv:
         return False
 
 
-    def _get_obs(self) -> NDArray[np.void] | DataFrame:
+    def _get_obs(self) -> NDArray[np.void]:
         obs = self.tasks.get_state(self.current_time)
-
-        if self.dataframe_obs:
-            df = DataFrame(obs, index=self.tasks.ids)
-            df.index = df.index.rename("task_id")
-
-            return df
 
         indexed_obs = rf.append_fields(
             obs,
@@ -210,7 +201,7 @@ class SchedulingCPEnv:
         fields = obs.dtype.names
 
         if fields is None:
-            return rf.unstructured_to_structured(self.tasks.ids)
+            return np.asarray(rf.unstructured_to_structured(self.tasks.ids))
 
         indexed_obs = indexed_obs[['task_id', *fields]]
 
@@ -235,7 +226,7 @@ class SchedulingCPEnv:
         return info
 
 
-    def reset(self) -> tuple[NDArray[np.void] | DataFrame, dict[str, Any]]:
+    def reset(self) -> tuple[NDArray[np.void], dict[str, Any]]:
         self.current_time = 0
         self.current_task = 0
         self.scheduled_action = np.array([], dtype=self.tasks.index_dtype)
