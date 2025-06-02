@@ -1,4 +1,4 @@
-import tomllib  # Use tomli if using Python < 3.11
+import tomllib
 from setuptools import setup
 from mypyc.build import mypycify
 
