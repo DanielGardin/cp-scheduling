@@ -183,8 +183,7 @@ class PrecedenceConstraint(Constraint):
         return topological_order
 
 
-    # TODO: Add support for fixing tasks without the supposition of fixed tasks being in the past.
-    # e.g. fixing a task to the future without addressing previous tasks.
+    # TODO: Add support for propagating only necessary tasks. Use some Sat-CP algorithm.
     # TODO: Implement a depth limit optimization as we do not need to propagate constraint too far
     # into the future.
     def propagate(self) -> None:
