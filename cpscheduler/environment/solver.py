@@ -4,6 +4,8 @@ from datetime import timedelta
 
 from minizinc import Result, Instance, Solver, Model, Status
 
+from .env import SchedulingCPEnv
+
 TimeUnits = Literal['s', 'm', 'h', 'd']
 
 def resolve_timeout(
@@ -31,7 +33,7 @@ def resolve_timeout(
 class MinizincSolver:
     def __init__(
             self,
-            model_str: str,
+            env: SchedulingCPEnv,
             solver_tag: str = "cp",
             timeout: Optional[int] = None,
             timeout_unit: TimeUnits = 's',
@@ -41,14 +43,18 @@ class MinizincSolver:
             free_search: bool = False,
             random_seed: Optional[int] = None,
     ):
-        self.model_str = model_str
+        self.env = env
         self.solver_tag = solver_tag
         self.timeout = resolve_timeout(timeout, timeout_unit)
         self.n_processors = n_processors
         self.optimisation_level = optimisation_level
         self.free_search = free_search
         self.random_seed = random_seed
-    
+
+
+    @property
+    def model_str(self) -> str:
+        return '\n'.join(self.env.export())
 
     async def solve_async(
             self,
