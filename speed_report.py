@@ -48,13 +48,13 @@ def test_speed() -> None:
         instance, metadata = read_jsp_instance(instance_path)
 
         env = SchedulingCPEnv(JobShopSetup())
-        env.set_instance(instance, jobs='job')
+        env.set_instance(instance, job_ids='job', processing_times='processing_time')
 
-        obs, info = env.reset()
+        (tasks, jobs), info = env.reset()
 
         # _, action, _, __ = env.get_cp_solution(timelimit=2)
 
-        task_order: list[int] = np.argsort(obs['processing_time']).tolist()
+        task_order: list[int] = np.argsort(tasks['processing_time']).tolist()
 
         action = [
             ("submit", task_id) for task_id in task_order
