@@ -5,13 +5,12 @@ from tqdm import tqdm
 
 from time import perf_counter
 
-from cpscheduler.common_envs import JobShopEnv
-from cpscheduler.environment import read_jsp_instance
-from cpscheduler.policies.heuristics import ShortestProcessingTime, MostOperationsRemaining, MostWorkRemaining
+from cpscheduler.environment import SchedulingCPEnv, JobShopSetup, read_jsp_instance
+from cpscheduler.policies.heuristics import ShortestProcessingTime, MostOperationsRemaining, MostWorkRemaining, PriorityDispatchingRule
 
 root = Path(__file__).parent.parent
 
-heuristics = {
+heuristics: dict[str, PriorityDispatchingRule] = {
     "SPT"  : ShortestProcessingTime(),
     "MOPNR": MostOperationsRemaining(),
     "MWKR" : MostWorkRemaining()
@@ -53,7 +52,8 @@ for dataset in datasets:
 
         all_instances.set_description(f"Processing instance {instance_name}")
 
-        env = JobShopEnv(instance, 'processing_time')
+        env = SchedulingCPEnv(JobShopSetup())
+        env.set_instance(instance, jobs='job')
 
         heuristic_results: list[float] = [0] * len(column_names)
 
@@ -62,7 +62,7 @@ for dataset in datasets:
 
             obs, info = env.reset()
             action = heuristic(obs)
-            obs, reward, terminated, truncated, info = env.step(action, enforce_order=False)
+            obs, reward, terminated, truncated, info = env.step(action)
             tock = perf_counter()
 
             heuristic_results[2*i:2*(i+1)] = (info['current_time'], tock - tick)

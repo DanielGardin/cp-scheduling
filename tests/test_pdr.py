@@ -1,14 +1,12 @@
-from pathlib import Path
-
 import pytest
 
-from cpscheduler.common_envs import JobShopEnv
-from cpscheduler.environment import read_jsp_instance
+from common import env_setup
 
-from cpscheduler.policies.heuristics import ShortestProcessingTime, MostOperationsRemaining, MostWorkRemaining
+from cpscheduler.policies.heuristics import ShortestProcessingTime, MostOperationsRemaining, MostWorkRemaining, PriorityDispatchingRule
 
 pdr_expected_results = {
     # 15x15
+    1:  [1462, 1438, 1491],
     5:  [1618, 1448, 1494],
     10: [1697, 1582, 1534],
     # 20x15
@@ -31,7 +29,7 @@ pdr_expected_results = {
     80: [5848, 5707, 5505],
 }
 
-heuristics = {
+heuristics: dict[str, PriorityDispatchingRule] = {
     "SPT"  : ShortestProcessingTime(),
     "MOPNR": MostOperationsRemaining(),
     "MWKR" : MostWorkRemaining()
@@ -40,11 +38,7 @@ heuristics = {
 @pytest.mark.heuristics
 @pytest.mark.parametrize("instance_no", pdr_expected_results)
 def test_pdr(instance_no: int) -> None:
-    path = Path(__file__).parent.parent / f"instances/jobshop/ta{instance_no:02d}.txt"
-
-    instance, _ = read_jsp_instance(path)
-
-    env = JobShopEnv(instance)
+    env = env_setup(f"ta{instance_no:02d}")
 
     result = {}
 
@@ -52,9 +46,10 @@ def test_pdr(instance_no: int) -> None:
         obs, info = env.reset()
 
         action = heuristic(obs)
-        obs, reward, terminated, truncated, info = env.step(action, enforce_order=False)
+        obs, reward, terminated, truncated, info = env.step(action)
 
         result[name] = info['current_time']
+        assert terminated
 
     assert result == {
         name: pdr_expected_results[instance_no][i] for i, name in enumerate(heuristics)
