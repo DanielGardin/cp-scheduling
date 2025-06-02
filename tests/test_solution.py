@@ -3,7 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from cpscheduler.environment import SchedulingCPEnv, PrecedenceConstraint, NonOverlapConstraint, Makespan, read_jsp_instance
+from cpscheduler.environment import read_jsp_instance
+from cpscheduler.common_envs import JobShopEnv
 
 
 TEST_INSTANCES = [
@@ -27,19 +28,7 @@ def test_cp_solution(instance_name: str, cp_solver: Literal['cplex', 'ortools'])
 
     instance, _ = read_jsp_instance(path)
 
-    env = SchedulingCPEnv(instance, "processing_time")
-
-    env.add_constraint(
-        PrecedenceConstraint.jobshop_precedence(env.tasks, 'job', 'operation')
-    )
-
-    env.add_constraint(
-        NonOverlapConstraint.jobshop_non_overlap(env.tasks, 'machine')
-    )
-
-    env.set_objective(
-        Makespan(env.tasks)
-    )
+    env = JobShopEnv(instance)
 
     env.reset()
 
@@ -61,19 +50,7 @@ def test_partial_cp_solution(instance_name: str) -> None:
 
     instance, _ = read_jsp_instance(path)
 
-    env = SchedulingCPEnv(instance, "processing_time")
-
-    env.add_constraint(
-        PrecedenceConstraint.jobshop_precedence(env.tasks, 'job', 'operation')
-    )
-
-    env.add_constraint(
-        NonOverlapConstraint.jobshop_non_overlap(env.tasks, 'machine')
-    )
-
-    env.set_objective(
-        Makespan(env.tasks)
-    )
+    env = JobShopEnv(instance)
 
     obs, info = env.reset()
     spt = sorted(obs['processing_time'], reverse=True)

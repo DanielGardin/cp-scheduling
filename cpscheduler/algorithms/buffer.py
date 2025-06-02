@@ -116,6 +116,7 @@ class Buffer:
             self,
             keys: Optional[Iterable[str]] = None,
             kind: Literal['minmax', 'standard'] = 'minmax',
+            eps: float = 1e-6
         ) -> None:
 
         if keys is None:
@@ -139,9 +140,8 @@ class Buffer:
                 shift = self[key].mean(dim=0)
                 scale = self[key].std(dim=0)
 
-
-            if torch.any(scale == 0):
-                raise ValueError(f"Normalization scale for key {key} is zero. Does the data have constant values?")
+            # If the scale is zero, then there's no variation
+            scale[scale == 0] = eps
 
             self.norm[key] = (shift, scale)
 
