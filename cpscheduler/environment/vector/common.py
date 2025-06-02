@@ -1,15 +1,9 @@
 from typing import Any, Sequence, SupportsFloat, TypeVar, Protocol, Iterable, Callable, runtime_checkable
 
-_Obs = TypeVar('_Obs', covariant=True)
-_Act = TypeVar('_Act', contravariant=True)
-@runtime_checkable
-class Env(Protocol[_Obs, _Act]):
-    def reset(self) -> tuple[_Obs, dict[str, Any]]: ...
+from ..protocols import Env
 
-    def step(self, action: _Act, *args: Any, **kwargs: Any) -> tuple[_Obs, SupportsFloat, bool, bool, dict[str, Any]]: ...
-
-    def render(self) -> Any: ...
-
+_Obs = TypeVar('_Obs')
+_Act = TypeVar('_Act')
 def step_with_autoreset(
         env: Env[_Obs, _Act],
         action: _Act,
@@ -34,27 +28,6 @@ def step_with_autoreset(
         truncated = False
 
     return obs, reward, terminated, truncated, info
-
-
-_SingleObs = TypeVar('_SingleObs')
-_SingleAct = TypeVar('_SingleAct', contravariant=True)
-class VectorEnv(Protocol[_SingleObs, _SingleAct]):
-    def __init__(
-            self,
-            env_fns: Iterable[Callable[[], Env[_SingleObs, _SingleAct]]],
-            *args: Any, **kwargs: Any
-        ) -> None: ...
-
-    def reset(self) -> tuple[list[_SingleObs], dict[str, Any]]: ...
-
-    def step(self, actions: Iterable[_SingleAct], *args: Any, **kwargs: Any) -> tuple[list[_SingleObs], list[SupportsFloat], list[bool], list[bool], dict[str, Any]]: ...
-
-    def render(self) -> None: ...
-
-    def call(self, name: str, *args: Any, **kwargs: Any) -> tuple[list[Any], ...]: ...
-
-    def close(self) -> None:
-        return
 
 
 def get_attribute(env: Env[_Obs, _Act], name: str, *args: Any, **kwargs: Any) -> Any:

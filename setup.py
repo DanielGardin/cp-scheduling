@@ -8,9 +8,16 @@ from mypyc.build import mypycify
 with open('pyproject.toml', 'rb') as f:
     project_info = tomllib.load(f)['project']
 
-compiling_files = [
-    str(path) for path in Path('cpscheduler/environment').glob('*.py') if path.name != '__init__.py'
+
+excluding_files = [
+    '__init__.py',
+    'protocols.py',
 ]
+
+compiling_files = [
+    str(path) for path in Path('cpscheduler/environment').glob('*.py') if path.name not in excluding_files
+]
+
 
 setup(
     name=project_info['name'],

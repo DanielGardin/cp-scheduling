@@ -7,7 +7,8 @@ from copy import deepcopy
 
 from enum import Enum
 
-from .common import Env, VectorEnv, step_with_autoreset, get_attribute, info_union
+from .common import step_with_autoreset, get_attribute, info_union
+from ..protocols import Env, VectorEnv
 
 class EnvStatus(Enum):
     READY = 0
