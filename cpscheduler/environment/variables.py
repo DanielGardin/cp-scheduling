@@ -1,11 +1,11 @@
-from typing import Literal, Optional, Iterable, Final, Any
+from typing import Literal, Optional, Iterable, Final, Any, Sequence
 from numpy.typing import NDArray
 
 import numpy as np
 import numpy.lib.recfunctions as snp
 
 Scalar = int | float | complex | str | np.generic
-Selector = int | slice | NDArray[np.int_] | NDArray[np.bool]
+Selector = int | slice | NDArray[np.int_] | NDArray[np.bool] | Sequence[int]
 
 MIN_INT: Final[int] = -2 ** 31 + 1
 MAX_INT: Final[int] =  2 ** 31 - 1
@@ -52,6 +52,8 @@ class IntervalVars:
     ids: NDArray[np.generic]
     _indices: dict[Scalar, int]
 
+    to_propagate: NDArray[np.bool]
+
     NAME= r"IntervalVars_$1"
 
     def __init__(
@@ -91,6 +93,9 @@ class IntervalVars:
 
         self._indices = {task_id: i for i, task_id in enumerate(task_ids)}
         self.ids  = np.asarray(list(self._indices.keys()))
+
+        self.to_propagate = np.ones(len(tasks), dtype=np.bool)
+
 
     def __len__(self) -> int:
         return len(self.features)
@@ -141,6 +146,8 @@ class IntervalVars:
         self.start_lb[indices] = value
         self.start_ub[indices] = value
 
+        self.to_propagate[indices] = True
+
 
     def is_fixed(self) -> NDArray[np.bool]:
         return np.equal(self.start_lb, self.start_ub)
@@ -162,6 +169,8 @@ class IntervalVars:
 
         self._indices = {}
 
+        self.to_propagate = np.zeros((0,), dtype=self.to_propagate.dtype)
+
 
     def add_tasks(
             self,
@@ -181,10 +190,14 @@ class IntervalVars:
         self.start_lb = np.concatenate([self.start_lb, np.zeros(len(tasks), dtype=np.int32)])
         self.start_ub = np.concatenate([self.start_ub, np.full(len(tasks), MAX_INT, dtype=np.int32)])
 
+        self.to_propagate = np.concatenate([self.to_propagate, np.ones(len(tasks), dtype=np.bool)])
+
 
     def reset_state(self) -> None:
-        self.start_lb = np.zeros(len(self.features), dtype=np.int32)
-        self.start_ub = np.full(len(self.features), MAX_INT, dtype=np.int32)
+        self.start_lb[:] = 0
+        self.start_ub[:] = MAX_INT
+
+        self.to_propagate[:] = True
 
 
     def get_indices(self, indices: Scalar | Iterable[Scalar]) -> NDArray[np.int32]:
@@ -198,7 +211,7 @@ class IntervalVars:
         names = self.names
 
         variables = [
-            export_single_variable(name, duration, lb, ub) for name, duration, lb, ub in zip(names, self.durations, self.start_lb, self.start_ub)
+            export_single_variable(name, int(duration), int(lb), int(ub)) for name, duration, lb, ub in zip(names, self.durations, self.start_lb, self.start_ub)
         ]
 
         return '\n'.join(variables)
@@ -210,7 +223,6 @@ class IntervalVars:
 
         is_fixed     = self.is_fixed()
         is_executing = self.is_executing(current_time)
-
 
         remaining_time[is_executing] = self.end_lb[is_executing] - current_time
         remaining_time[~is_fixed]    = self.durations[~is_fixed]
