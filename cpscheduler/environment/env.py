@@ -55,9 +55,9 @@ def prepare_instance(instance: InstanceTypes) -> dict[str, list[Any]]:
         }
 
 ObsType: TypeAlias = tuple[dict[str, list[Any]], dict[str, list[Any]]]
-class SchedulingCPEnv(Env[ObsType, ActionType]):
+class SchedulingEnv(Env[ObsType, ActionType]):
     """
-    SchedulingCPEnv is a custom environment for generic scheduling problems. It is designed to be modular
+    SchedulingEnv is a custom environment for generic scheduling problems. It is designed to be modular
     and extensible, allowing users to define their own scheduling problems by specifying the machine setup,
     constraints, objectives, and instances.
 
