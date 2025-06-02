@@ -32,10 +32,10 @@ def test_sync_env() -> None:
         make_env_fn(instance_name)() for instance_name in [f"ta{i:02d}" for i in range(1, 11)]
     ]
 
-    sync_obs, sync_info = sync_env.reset() # type: ignore
+    (sync_obs, _), sync_info = sync_env.reset()
 
     for i, env in enumerate(envs):
-        single_obs, single_info = env.reset()
+        (single_obs, _), single_info = env.reset()
     
         assert all([np.all(single_obs[feat] == sync_obs[feat][i]) for feat in single_obs])
 
@@ -45,10 +45,10 @@ def test_sync_env() -> None:
         pdr({feat: sync_obs[feat][i] for feat in sync_obs}) for i in range(len(envs))
     ]
 
-    final_obss, final_rewards, final_terminated, final_truncated, final_infos = sync_env.step(actions) # type: ignore
+    (final_obss, _), final_rewards, final_terminated, final_truncated, final_infos = sync_env.step(actions) # type: ignore
 
     for i in range(len(envs)):
-        single_new_obs, single_reward, single_terminated, single_truncated, single_new_info = envs[i].step(actions[i])
+        (single_new_obs, _), single_reward, single_terminated, single_truncated, single_new_info = envs[i].step(actions[i])
 
         assert all([np.all(single_new_obs[feat] == final_obss[feat][i]) for feat in single_new_obs])
         assert final_rewards[i] == single_reward

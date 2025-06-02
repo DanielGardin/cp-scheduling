@@ -46,7 +46,7 @@ class PlotlyRenderer(Renderer):
         palette = cc.glasbey_dark[:len(self.tasks.jobs)]
         template = "Task %{customdata[0]} [%{customdata[1]}]:<br>Start (duration): %{customdata[2]} (%{customdata[3]})<br>Machine: %{y}<extra></extra>"
 
-        for job, tasks in self.tasks.jobs.items():
+        for job, tasks in enumerate(self.tasks.jobs):
             start_times.clear()
             durations.clear()
             machines.clear()

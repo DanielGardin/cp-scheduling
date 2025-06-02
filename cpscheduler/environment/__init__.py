@@ -13,11 +13,20 @@ __all__ = [
     "ReleaseDateConstraint",
     "DeadlineConstraint",
     "ResourceConstraint",
-    "EqualProcessingTimeConstraint",
+    "MachineConstraint",
 
     # Gamma objectives
+    "ComposedObjective",
     "Makespan",
+    "TotalCompletionTime",
     "WeightedCompletionTime",
+    "MaximumLateness",
+    "TotalTardiness",
+    "WeightedTardiness",
+    "TotalEarliness",
+    "WeightedEarliness",
+    "TotalTardyJobs",
+    "WeightedTardyJobs",
 ]
 
 from .env import SchedulingCPEnv
@@ -35,10 +44,20 @@ from .constraints import (
     ReleaseDateConstraint,
     DeadlineConstraint,
     ResourceConstraint,
-    EqualProcessingTimeConstraint,
+    MachineConstraint,
+
 )
 
 from .objectives import (
+    ComposedObjective,
     Makespan,
-    WeightedCompletionTime
+    TotalCompletionTime,
+    WeightedCompletionTime,
+    MaximumLateness,
+    TotalTardiness,
+    WeightedTardiness,
+    TotalEarliness,
+    WeightedEarliness,
+    TotalTardyJobs,
+    WeightedTardyJobs,
 )

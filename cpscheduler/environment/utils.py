@@ -122,35 +122,6 @@ def is_dict(
     )
 
 
-@overload
-def invert(boolean: bool) -> bool: ...
-
-
-@overload
-def invert(boolean: list[bool]) -> list[bool]: ...
-
-
-def invert(boolean: bool | list[bool]) -> bool | list[bool]:
-    """
-    Invert a boolean value or a list of boolean values.
-
-    Parameters
-    ----------
-    boolean: bool or list[bool]
-        The boolean value or list of boolean values to be inverted.
-
-    Returns
-    -------
-    bool or list[bool]
-        The inverted boolean value or list of boolean values.
-    """
-
-    if isinstance(boolean, bool):
-        return not boolean
-
-    return [not value for value in boolean]
-
-
 def topological_sort(precedence_map: dict[int, list[int]], n_tasks: int) -> list[int]:
     """
     Perform a topological sort on a directed acyclic graph.
@@ -238,6 +209,7 @@ def binary_search(
             right = mid - 1
 
     return left
+
 
 
 from gymnasium import spaces

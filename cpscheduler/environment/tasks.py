@@ -23,7 +23,7 @@ We do not reccomend customizing this module, as it's tightly coupled with the ot
 in the environment, change with caution.
 """
 
-from typing import Any, Iterator, Optional, NamedTuple, ClassVar
+from typing import Any, Iterator, Optional, NamedTuple, ClassVar, Iterable
 
 from textwrap import dedent
 
@@ -54,6 +54,22 @@ class Bounds(NamedTuple):
 
 
 class Task:
+    """
+    Minimal unit of work that can be scheduled. The task does not know anything about the
+    environment, it only knows about its own state and the processing times for each machine.
+
+    The task is defined by:
+        - task_id: unique identifier for the task, usually its position in the list of tasks
+        - processing_times: time required to complete the task
+        - job: job id for the task
+        - start_bounds: lower and upper bounds for the starting time of the task
+        - durations: time required to complete the task
+        - assignments: machine assigned to the task
+
+    The environment has complete information about every task and orchestrates the scheduling
+    process by modifying the task state.
+    The task can be split into multiple parts, each with its own starting time and duration.    
+    """
     processing_times: dict[int, int]
 
     starts     : list[int]
@@ -65,7 +81,7 @@ class Task:
     def __init__(
         self,
         task_id: int,
-        processing_times: dict[int, int],
+        processing_times: dict[int, int]
     ) -> None:
         self.task_id = task_id
         self.processing_times = processing_times
@@ -84,8 +100,22 @@ class Task:
         self.n_parts = 0
 
     def __repr__(self) -> str:
-        return ""
+        representation =  f"Task(id={self.task_id}"
 
+        allocation_times = [
+            f"[{self.starts[i]}, {self.starts[i] + self.durations[i]}] @ {self.assignments[i]}"
+            for i in range(self.n_parts)
+        ]
+
+        if allocation_times:
+            representation += f", {', '.join(allocation_times)}"
+        
+        else:
+            representation += ", []"
+
+        representation += ")"
+
+        return representation
 
     def reset(self) -> None:
         self._remaining_time = self.processing_times.copy()
@@ -210,7 +240,6 @@ class Task:
     def get_remaining_time(self, time: int) -> int:
         return max(0, min((self.durations[-1] - time + self.starts[-1]), self.durations[-1]))
 
-
     def assign(
             self,
             start: int,
@@ -263,19 +292,19 @@ class Task:
 
             return Status.PAUSED
 
+        if time >= self.get_end():
+            return Status.COMPLETED
+
         for part in range(self.n_parts - 1, -1, -1):
             if part > 0 and self.get_end(part - 1) <= time < self.get_start(part):
                 return Status.PAUSED
 
             if self.get_start(part) <= time < self.get_end(part):
                 return Status.EXECUTING
-        
-        # If it's not paused, but also it's not fixed, it must be awaiting
-        if not self.fixed:
+
+        if time < self.get_start():
             return Status.AWAITING
 
-        if time >= self.get_end():
-            return Status.COMPLETED
 
         return Status.UNKNOWN
 
@@ -292,10 +321,10 @@ class Task:
     def is_awaiting(self) -> bool:
         return not self.fixed
 
-    def is_executing(self, time: int) -> bool:
+    def is_executing(self, time: int, machine: int = -1) -> bool:
         for part in range(self.n_parts - 1, -1, -1):
             if self.get_start(part) <= time < self.get_end(part):
-                return True
+                return machine == -1 or self.get_assignment(part) == machine
 
         return False
 
@@ -317,78 +346,71 @@ class Task:
 
         return buffer
 
-
 class Tasks:
+    "Container class for the tasks in the scheduling environment."
     n_tasks: int
     n_parts: int
 
-    data: dict[str, list[Any]]
     tasks: list[Task]
-    jobs: dict[int, list[Task]]
+    jobs: list[list[Task]]
+
+    data     : dict[str, list[Any]]
+    jobs_data: dict[str, list[Any]]
 
     def __init__(
         self,
-        data: Optional[dict[str, list[Any]]] = None,
-        n_parts: int = 1,  # if we allow preemption, we must define a maximum number of splits
+        data            : dict[str, list[Any]],
+        processing_times: list[dict[int, int]],
+        jobs_ids        : Optional[Iterable[int] | str] = None,
+        job_data        : Optional[dict[str, list[Any]]] = None,
+        n_parts: int = 1,
     ):
         self.n_parts = n_parts
-        self.tasks = []
 
-        self.jobs = {}
+        self.tasks = []
+        self.jobs  = []
 
         self.n_tasks = 0
+        for processing_time in processing_times:
+            self.add_task(processing_time)
 
-        self.data = data if data is not None else {}
+        if jobs_ids is None:
+            self.jobs = [[task] for task in self.tasks]
 
-        self.n_expected_tasks = 0
-        for key, features in self.data.items():
-            if self.n_expected_tasks == 0 and len(features) > 0:
-                self.n_expected_tasks = len(features)
-            
-            if len(features) != self.n_expected_tasks:
-                raise ValueError(
-                    f"Feature {key} has {len(features)} tasks, expected {self.n_expected_tasks}"
-                )
+        else:
+            if isinstance(jobs_ids, str):
+                jobs_ids = data.pop(jobs_ids)
 
+            max_job_id = max(jobs_ids)
+            self.jobs = [[] for _ in range(max_job_id + 1)]
 
-    def handle_data(self, data: dict[str, Any]) -> None:
-        if self.n_expected_tasks > self.n_tasks:
-            raise ValueError(
-                f"Unexpected new data, {self.n_expected_tasks - self.n_parts} tasks waiting to be loaded."
-            )
-    
-        elif self.n_expected_tasks == self.n_tasks:
-            self.n_expected_tasks += 1
+            for task_id, job_id in enumerate(jobs_ids):
+                self.jobs[job_id].append(self.tasks[task_id])
 
-        for key, value in data.items():
-            if key not in self.data:
-                self.data[key] = []
+            data['job_id'] = list(jobs_ids)
 
-            self.data[key].append(value)
+        self.data      = data
+        self.jobs_data = job_data if job_data is not None else {}
+
+    def add_job(
+        self,
+        task_ids: list[int]
+    ) -> None:
+        tasks: list[Task] = []
+        for task_id in task_ids:
+            task = self.tasks[task_id]
+            tasks.append(task)
+
+        self.jobs.append(tasks)
 
     def add_task(
         self,
-        processing_times: dict[int, int],
-        job: int,
-        data: Optional[dict[str, Any]] = None,
+        processing_times: dict[int, int]
     ) -> None:
         task_id = self.n_tasks
         task = Task(task_id, processing_times)
 
-        if job not in self.jobs:
-            self.jobs[job] = []
-
         self.tasks.append(task)
-        self.jobs[job].append(task)
-
-        if data is not None:
-            self.handle_data(data)
-
-        elif self.n_expected_tasks <= self.n_tasks:
-            raise ValueError(
-                f"Expected new data from this task. Check if the data is correctly loaded."
-            )
-
         self.n_tasks += 1
 
     def reset(self) -> None:
@@ -411,19 +433,33 @@ class Tasks:
     def get_job_tasks(self, job: int) -> list[Task]:
         return self.jobs[job]
 
-    def get_state(self, current_time: int) -> dict[str, list[Any]]:
+    def get_state(self, current_time: int) -> tuple[dict[str, list[Any]], dict[str, list[Any]]]:
         status = [task.get_buffer(current_time) for task in self.tasks]
 
-        return {
+        task_state = {
             "task_id": list(range(self.n_tasks)),
             **self.data,
             "status": status,
         }
 
-    def get_time_ub(self) -> int:
-        last_upper_bound = max(task.get_end_ub() for task in self.tasks)
+        job_state = {
+            "job_id": list(range(len(self.jobs))),
+            **self.jobs_data,
+        }
 
-        return last_upper_bound
+        return task_state, job_state
+
+    def get_time_ub(self) -> int:
+        upper = 0
+
+        for task in self.tasks:
+            if task.fixed:
+                upper = max(upper, task.get_end())
+
+            else:
+                upper = max(upper, task.get_start_ub())
+
+        return upper
 
 
     # TODO: Check if function end is better than array end.
@@ -439,8 +475,8 @@ class Tasks:
             int: num_parts;
             int: num_jobs;
 
-            array[1..num_tasks] of 0..horizon:  start_lb;
-            array[1..num_tasks] of 0..horizon:  start_ub;
+            array[1..num_tasks] of 0..horizon: start_lb;
+            array[1..num_tasks] of 0..horizon: start_ub;
             array[1..num_jobs] of set of 1..num_tasks: job;
 
             array[1..num_tasks, 1..num_parts] of var 0..horizon: start;
@@ -472,18 +508,33 @@ class Tasks:
     def export_data(
         self,
     ) -> str:
+        start_lbs: list[str] = []
+        start_ubs: list[str] = []
+        for task in self.tasks:
+            if task.fixed:
+                start = str(task.get_start(0))
+
+                start_lbs.append(start)
+                start_ubs.append(start)
+
+            else:
+                start_lbs.append(str(task.get_start_lb()))
+                start_ubs.append(str(task.get_start_ub()))
+
+
         data = dedent(f"""
             horizon = {self.get_time_ub()};
             num_tasks = {self.n_tasks};
             num_parts = {self.n_parts};
             num_jobs = {len(self.jobs)};
 
-            start_lb  = [{', '.join([str(task.get_start_lb()) for task in self.tasks])}];
-            start_ub  = [{', '.join([str(task.get_start_ub()) for task in self.tasks])}];
+
+            start_lb  = [{', '.join([lb for lb in start_lbs])}];
+            start_ub  = [{', '.join([ub for ub in start_ubs])}];
         """)
 
         data += "job = [\n"
-        for job_tasks in self.jobs.values():
+        for job_tasks in self.jobs:
             data += "    {" + ", ".join([str(task.task_id+1) for task in job_tasks]) + "},\n"           
         data += "];\n"
 
