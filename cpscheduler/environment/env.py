@@ -15,35 +15,6 @@ from .variables import IntervalVars, Scalar, AVAILABLE_SOLVERS
 MIN_INT: Final[int] = -2 ** 31 + 1
 MAX_INT: Final[int] =  2 ** 31 - 1
 
-def binary_search(element: Any, array: NDArray[Any]) -> bool:
-    left, right = 0, len(array) - 1
-
-    while left <= right:
-        mid = (left + right) // 2
-
-        if array[mid] == element:
-            return True
-
-        if array[mid] < element:
-            left = mid + 1
-
-        else:
-            right = mid - 1
-
-    return False
-
-
-def isin_sorted(array: NDArray[Any], query: NDArray[Any]) -> NDArray[np.bool]:
-    if len(array) == 0:
-        return np.zeros(len(query), dtype=np.bool)
-
-    indices = np.searchsorted(array, query)
-
-    indices = np.clip(indices, 0, len(array) - 1)
-
-    mask: NDArray[np.bool] = array[indices] == query
-
-    return mask
 
 @mypyc_attr(allow_interpreted_subclasses=True)
 class SchedulingCPEnv:
@@ -90,7 +61,7 @@ class SchedulingCPEnv:
         self.constraints[name] = constraint
 
 
-    def add_objective(self, objective: Objective, minimize: bool = True, name: Optional[str] = None) -> None:
+    def set_objective(self, objective: Objective, minimize: bool = True, name: Optional[str] = None) -> None:
         if name is None: name = objective.__class__.__name__
 
         self.objective = objective
@@ -214,8 +185,7 @@ class SchedulingCPEnv:
             'current_time'      : self.current_time,
             'executed_actions'  : self.scheduled_action[:self.current_task],
             'scheduled_actions' : self.scheduled_action[self.current_task:],
-            'objective_value'   : self.objective.get_current(),
-            'available_mask'    : self.available_mask()
+            'objective_value'   : self.objective.get_current()
         }
 
         if not self.is_terminal(): return info
@@ -244,7 +214,6 @@ class SchedulingCPEnv:
         return self._get_obs(), self._get_info()
 
 
-    # TODO: Implement this method
     def check_env(self) -> None | Never:
         """
             Check if the constraints and objectives are consistent with the tasks.
@@ -273,13 +242,6 @@ class SchedulingCPEnv:
                 constraint.propagate()
 
         self.tasks.to_propagate[:] = False
-
-
-    def available_mask(self) -> NDArray[np.bool]:
-        is_fixed = self.tasks.is_fixed()
-        mask = np.less_equal(self.tasks.start_lb[:], self.current_time) & ~is_fixed
-
-        return mask
 
 
     def step(
@@ -337,7 +299,7 @@ class SchedulingCPEnv:
 
         task: Scalar
 
-        available_mask = self.available_mask()
+        available_mask = self.tasks.is_available(self.current_time)
         if enforce_order:
             task = self.scheduled_action[self.current_task]
             task_id = self.tasks.get_indices(task)

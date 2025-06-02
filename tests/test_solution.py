@@ -40,7 +40,7 @@ def test_cp_solution(instance_name: str, cp_solver: Literal['cplex', 'ortools'])
         NonOverlapConstraint.jobshop_non_overlap(env.tasks, 'machine')
     )
 
-    env.add_objective(
+    env.set_objective(
         Makespan(env.tasks)
     )
 
@@ -76,7 +76,7 @@ def test_partial_cp_solution(instance_name: str) -> None:
         NonOverlapConstraint.jobshop_non_overlap(env.tasks, 'machine')
     )
 
-    env.add_objective(
+    env.set_objective(
         Makespan(env.tasks)
     )
 

@@ -1,7 +1,7 @@
 from .constraints import PrecedenceConstraint, NonOverlapConstraint, ReleaseTimesConstraint, \
     DueDatesConstraint
 
-from .objectives import Makespan, ClientWeightedCompletionTime
+from .objectives import Makespan, WeightedCompletionTime
 
 from .variables import IntervalVars
 
@@ -19,5 +19,5 @@ __all__ = [
     "ReleaseTimesConstraint",
     "DueDatesConstraint",
     "Makespan",
-    "ClientWeightedCompletionTime",
+    "WeightedCompletionTime",
 ]
