@@ -7,9 +7,12 @@ from .variables import IntervalVars
 
 from .env import SchedulingCPEnv
 
+from .instances import read_instance
+
 
 __all__ = [
     "SchedulingCPEnv",
+    "read_instance",
     "PrecedenceConstraint",
     "NonOverlapConstraint",
     "ReleaseTimesConstraint",

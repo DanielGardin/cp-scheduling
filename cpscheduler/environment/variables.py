@@ -9,8 +9,11 @@ import numpy.lib.recfunctions as rf
 Scalar = int | float | complex | str | np.generic
 Selector = int | slice | NDArray[np.integer[Any]] | NDArray[np.bool] | Sequence[int]
 
+AVAILABLE_SOLVERS = Literal['cplex', 'ortools']
+
 MIN_INT: Final[int] = -2 ** 31 + 1
 MAX_INT: Final[int] =  2 ** 31 - 1
+
 
 class _Bound:
     def __init__(self, array: NDArray[np.int32], modifier: int | NDArray[np.int32] = 0) -> None:
@@ -36,7 +39,7 @@ class _Bound:
 
 
 
-def export_single_variable(name: str, size: int, lb: int, ub: int) -> str:
+def export_single_variable_cplex(name: str, size: int, lb: int, ub: int) -> str:
     rep = f"{name} = intervalVar(size={size});\n"
 
     if lb == ub:
@@ -48,6 +51,16 @@ def export_single_variable(name: str, size: int, lb: int, ub: int) -> str:
 
     return rep
 
+
+def export_single_variable_ortools(name: str, size: int, lb: int, ub: int) -> str:
+    rep = f"{name}_start = model.NewIntVar({lb}, {ub}, '{name}_start')\n"
+
+    end_ub = MAX_INT if ub == MAX_INT else ub + size
+    rep += f"{name}_end = model.NewIntVar({lb + size}, {end_ub}, '{name}_end')\n"
+
+    rep += f"{name} = model.NewIntervalVar({name}_start, {size}, {name}_end, '{name}')"
+
+    return rep
 
 class IntervalVars:
     tasks:     NDArray[np.void]
@@ -119,6 +132,7 @@ class IntervalVars:
     @property
     def names(self) -> list[str]:
         return [self.NAME.replace("$1", str(task_id)) for task_id in self._indices]
+
 
     @property
     def start_lb(self) -> _Bound:
@@ -217,12 +231,19 @@ class IntervalVars:
         return np.array([self._indices[index] for index in indices], dtype=np.int32)
 
 
-    def export_variables(self) -> str:
+    def export_variables(self, solver: AVAILABLE_SOLVERS = 'cplex') -> str:
         names = self.names
 
-        variables = [
-            export_single_variable(name, int(duration), int(lb), int(ub)) for name, duration, lb, ub in zip(names, self.durations, self._start_lb, self._start_ub)
-        ]
+        if solver == 'cplex':
+            variables = [
+                export_single_variable_cplex(name, int(duration), int(lb), int(ub)) for name, duration, lb, ub in zip(names, self.durations, self._start_lb, self._start_ub)
+            ]
+        
+        else:
+            variables = [
+                export_single_variable_ortools(name, int(duration), int(lb), int(ub)) for name, duration, lb, ub in zip(names, self.durations, self._start_lb, self._start_ub)
+            ]
+
 
         return '\n'.join(variables)
 

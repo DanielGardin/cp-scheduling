@@ -4,13 +4,14 @@ from numpy.typing import NDArray
 from collections import deque
 from copy import deepcopy
 
-from .variables import IntervalVars, Scalar, MAX_INT
+from .variables import IntervalVars, Scalar, MAX_INT, AVAILABLE_SOLVERS
 
 import numpy as np
 
 class Constraint:
-    def export_constraint(self) -> str:
+    def export_constraint(self, solver: AVAILABLE_SOLVERS = 'cplex') -> str:
         return ""
+
 
     def propagate(self) -> None:
         """
@@ -28,8 +29,6 @@ class Constraint:
 
 
 class PrecedenceConstraint(Constraint):
-    precedence_list: list[list[int]]
-
     def __init__(self, interval_var: IntervalVars, precedence_list: Sequence[Sequence[int]]) -> None:
         """
             Add a precedence constraint to the tasks. The precedence matrix is a boolean matrix of
@@ -79,6 +78,7 @@ class PrecedenceConstraint(Constraint):
                 precedence_list[job_indices[i]].append(int(job_indices[i+1]))
 
         return cls(tasks, precedence_list)
+
 
     def reset(self) -> None:
         self.precedence_list = deepcopy(self.original_precedence_list)
@@ -139,13 +139,20 @@ class PrecedenceConstraint(Constraint):
                 self.sorted_tasks.remove(index1)
 
 
-    def export_constraint(self) -> str:
+    def export_constraint(self, solver: AVAILABLE_SOLVERS = 'cplex') -> str:
         names = self.tasks.names
 
-        constraints = [
-            f"endBeforeStart({names[i]}, {names[j]});"
-            for i in range(len(self.tasks)) for j in self.precedence_list[i]
-        ]
+        if solver == 'cplex':
+            constraints = [
+                f"endBeforeStart({names[i]}, {names[j]});"
+                for i in range(len(self.tasks)) for j in self.precedence_list[i]
+            ]
+
+        else:
+            constraints = [
+                f"model.Add({names[i]}_end <= {names[j]}_start)"
+                for i in range(len(self.tasks)) for j in self.precedence_list[i]
+            ]
 
         return "\n".join(constraints)
 
@@ -178,10 +185,15 @@ class PrecedenceConstraint(Constraint):
 
     # TODO: Add support for fixing tasks without the supposition of fixed tasks being in the past.
     # e.g. fixing a task to the future without addressing previous tasks.
+    # TODO: Implement a depth limit optimization as we do not need to propagate constraint too far
+    # into the future.
     def propagate(self) -> None:
         is_fixed = self.tasks.is_fixed()
 
         for vertex in self.sorted_tasks:
+            # if not self.tasks.to_propagate[vertex]:
+            #     continue
+
             end_time = self.tasks.end_lb[vertex]
 
             neighbors = self.precedence_list[vertex]
@@ -249,16 +261,24 @@ class NonOverlapConstraint(Constraint):
         del self.non_overlaping_groups[group_id]
 
 
-    def export_constraint(self) -> str:
+    def export_constraint(self, solver: AVAILABLE_SOLVERS = 'cplex') -> str:
         names = np.asarray(self.tasks.names)
 
-        constraints = [
-            f"{self.NAME.replace('$1', str(group_id))} = sequenceVar([{', '.join(names[indices])}]);\n"
-            f"noOverlap({self.NAME.replace('$1', str(group_id))});"
-            for group_id, indices in self.non_overlaping_groups.items()
-        ]
+        if solver == 'cplex':
+            constraints = [
+                f"{self.NAME.replace('$1', str(group_id))} = sequenceVar([{', '.join(names[indices])}]);\n"
+                f"noOverlap({self.NAME.replace('$1', str(group_id))});"
+                for group_id, indices in self.non_overlaping_groups.items()
+            ]
+        
+        else:
+            constraints = [
+                f"model.AddNoOverlap([{', '.join(names[indices])}]);"
+                for indices in self.non_overlaping_groups.values()
+            ]
 
         return "\n".join(constraints)
+
 
     # TODO: Add support for fixing tasks without the supposition of fixed tasks being in the past.
     def propagate(self) -> None:
@@ -393,12 +413,3 @@ class SetupTimeConstraint:
 
         self.setup_times[index1, index2] = setup_time
 
-
-    def export_constraint(self) -> str:
-        names = self.tasks.names
-
-        # This is not right because setup times do not imply precedence.
-        return "\n".join([
-            f"endBeforeStart({names[i]}, {names[j]}, {setup_time});"
-            for i, j, setup_time in zip(*np.where(self.setup_times > 0), self.setup_times[self.setup_times > 0])
-        ])

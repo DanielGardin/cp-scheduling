@@ -21,6 +21,7 @@ setup(
         "cpscheduler/environment/objectives.py",
         "cpscheduler/environment/constraints.py",
         "cpscheduler/environment/env.py",
+        "cpscheduler/environment/instances.py",
     ]),
     classifiers=[
         'Programming Language :: Python :: 3.11',
