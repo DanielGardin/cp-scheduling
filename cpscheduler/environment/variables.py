@@ -439,7 +439,7 @@ class IntervalVars:
         return 'unknown'
 
 
-    def get_state(self, current_time: int) -> dict[str, Any]:
+    def get_state(self, current_time: int) -> dict[str, list[Any]]:
         buffer = [self.get_buffer(task, current_time) for task in range(self.n_tasks)]
 
         remaining_time = [
