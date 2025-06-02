@@ -170,8 +170,20 @@ class IntervalVars:
         return fixed
 
 
-    def is_awaiting(self) -> NDArray[np.bool]:
-        return ~self.is_fixed()   
+    def is_awaiting(self, time: Optional[int] = None) -> NDArray[np.bool]:
+        """
+        Return a boolean array indicating whether the task in that position is waiting for execution or not.
+
+        Parameters:
+        ----------
+        time: Optional[int], default=None
+            The current time. If None, the current time is infered by the fixed tasks.
+        
+        """
+        if time is None:
+            return ~self.is_fixed()
+
+        return ~self.is_fixed() | (time < self.start_lb[:])
 
 
     def is_executing(self, time: int) -> NDArray[np.bool]:
