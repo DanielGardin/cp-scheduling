@@ -20,6 +20,12 @@ class JobShopEnv(SchedulingCPEnv):
             NonOverlapConstraint.jobshop_non_overlap(self.tasks, machine_feature)
         )
 
-        self.add_objective(
+        self.set_objective(
             Makespan(self.tasks)
+        )
+    
+    def render(self) -> None:
+        return self.render_gantt(
+            'machine',
+            'job',
         )
