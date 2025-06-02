@@ -21,7 +21,7 @@ TEST_INSTANCES = [
 def test_env(instance_name: str) -> None:
     path = Path(__file__).parent.parent / f"instances/{instance_name}.txt"
 
-    instance = read_instance(path)
+    instance, _ = read_instance(path)
 
     env = SchedulingCPEnv(instance, "processing_time")
 
@@ -63,7 +63,7 @@ def test_env(instance_name: str) -> None:
 def test_not_enforce_order(instance_name: str) -> None:
     path = Path(__file__).parent.parent / f"instances/{instance_name}.txt"
 
-    instance = read_instance(path)
+    instance, _ = read_instance(path)
 
     env = SchedulingCPEnv(instance, "processing_time")
 

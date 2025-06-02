@@ -20,3 +20,12 @@ classifiers = [
 
 [tool.setuptools]
 packages = ["cpscheduler"]
+
+[tool.mypy]
+python_version = "3.11"
+plugins = ["numpy.typing.mypy_plugin"]
+strict = true
+pretty = true
+ignore_missing_imports = true
+disallow_untyped_defs = true
+warn_unused_ignores = false

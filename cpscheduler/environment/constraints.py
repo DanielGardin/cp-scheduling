@@ -4,7 +4,7 @@ from numpy.typing import NDArray
 from collections import deque
 from copy import deepcopy
 
-from .variables import IntervalVars, Scalar
+from .variables import IntervalVars, Scalar, MAX_INT
 
 import numpy as np
 
@@ -52,6 +52,8 @@ class PrecedenceConstraint(Constraint):
         self.in_degree  = np.zeros(len(self.tasks), dtype=np.int32)
         self.out_degree = np.zeros(len(self.tasks), dtype=np.int32)
 
+        self.sorted_tasks: list[int] = []
+
 
     @classmethod
     def from_precedence_matrix(cls, interval_var: IntervalVars, precedence_matrix: NDArray[np.bool]) -> Self:
@@ -78,7 +80,6 @@ class PrecedenceConstraint(Constraint):
 
         return cls(tasks, precedence_list)
 
-
     def reset(self) -> None:
         self.precedence_list = deepcopy(self.original_precedence_list)
 
@@ -88,11 +89,12 @@ class PrecedenceConstraint(Constraint):
             self.out_degree[i] = len(adjecent)
             self.in_degree[[*adjecent]] += 1
 
+        self.sorted_tasks = self._topological_sort()
 
         self.propagate()
 
 
-
+    # Untested feature, use with caution.
     def add_precedence(self, task1: Scalar, task2: Scalar, operation: Literal[">", "<", ">>", "<<"]) -> None:
         if len(operation) == 2:
             raise NotImplementedError("No support for direct precedence yet.")
@@ -108,8 +110,16 @@ class PrecedenceConstraint(Constraint):
         if index2 not in self.precedence_list[index1]:
             self.precedence_list[index1].append(index2)
 
-            self.in_degree[index2]  += 1
             self.out_degree[index1] += 1
+            self.in_degree[index2]  += 1
+
+            if self.sorted_tasks:
+                pos1 = self.sorted_tasks.index(index1) if index1 in self.sorted_tasks else len(self.sorted_tasks)
+                pos2 = self.sorted_tasks.index(index2) if index2 in self.sorted_tasks else MAX_INT
+
+                if pos1 > pos2:
+                    self.sorted_tasks = self._topological_sort()
+
 
 
     def remove_precedence(self, task1: Scalar, task2: Scalar) -> None:
@@ -121,8 +131,12 @@ class PrecedenceConstraint(Constraint):
         if index2 in self.precedence_list[index1]:
             self.precedence_list[index1].remove(index2)
 
-            self.in_degree[index2]  -= 1
             self.out_degree[index1] -= 1
+            self.in_degree[index2]  -= 1
+        
+            # We do not need to propagate leaf nodes further.
+            if self.sorted_tasks and self.out_degree[index1] == 0:
+                self.sorted_tasks.remove(index1)
 
 
     def export_constraint(self) -> str:
@@ -136,35 +150,48 @@ class PrecedenceConstraint(Constraint):
         return "\n".join(constraints)
 
 
-    # TODO: Add support for fixing tasks without the supposition of fixed tasks being in the past.
-    # e.g. fixing a task to the future without addressing previous tasks.
-    def propagate(self) -> None:
-        vertices: list[int] = np.where((self.in_degree == 0) & (self.out_degree > 0))[0].tolist()
-
-        queue = deque(vertices)
-
+    def _topological_sort(self) -> list[int]:
         in_degree = self.in_degree.copy()
 
-        is_fixed = self.tasks.is_fixed()
+        vertices = [i for i, degree in enumerate(in_degree) if degree == 0]
+
+        queue: deque[int] = deque(vertices)
+
+        topological_order = []
 
         while queue:
             vertex = queue.popleft()
 
+            neighbors = self.precedence_list[vertex]
+
+            if neighbors:
+                topological_order.append(vertex)
+
+            for neighbor in neighbors:
+                in_degree[neighbor] -= 1
+
+                if in_degree[neighbor] == 0:
+                    queue.append(neighbor)
+        
+        return topological_order
+
+
+    # TODO: Add support for fixing tasks without the supposition of fixed tasks being in the past.
+    # e.g. fixing a task to the future without addressing previous tasks.
+    def propagate(self) -> None:
+        is_fixed = self.tasks.is_fixed()
+
+        for vertex in self.sorted_tasks:
             end_time = self.tasks.end_lb[vertex]
 
             neighbors = self.precedence_list[vertex]
 
-            self.tasks.to_propagate[neighbors] |= self.tasks.start_lb[neighbors] < end_time
-
-            self.tasks.set_start_bounds('lb')[neighbors] = np.maximum(self.tasks.start_lb[neighbors], end_time)
-
-            in_degree[neighbors] -= 1
-
             for neighbor in neighbors:
-                if is_fixed[neighbor]: self.remove_precedence(vertex, neighbor)
+                if self.tasks.start_lb[neighbor] < end_time:
+                    self.tasks.to_propagate[neighbor] = True
+                    self.tasks.start_lb[neighbor] = end_time
 
-                if in_degree[neighbor] == 0:
-                    queue.append(neighbor)
+                if is_fixed[neighbor]: self.remove_precedence(vertex, neighbor)
 
 
 class NonOverlapConstraint(Constraint):
@@ -243,7 +270,7 @@ class NonOverlapConstraint(Constraint):
         if not np.any(propagate):
             return
 
-        masked_fixed_end_lb = np.where(propagate, self.tasks.end_lb, 0)
+        masked_fixed_end_lb = np.where(propagate, self.tasks.end_lb[:], 0)
 
         for indices in self.non_overlaping_groups.values():
             if not np.any(propagate[indices]): continue
@@ -254,7 +281,7 @@ class NonOverlapConstraint(Constraint):
 
             self.tasks.to_propagate[free_indices] |= self.tasks.start_lb[free_indices] < group_max_end_lb
 
-            self.tasks.set_start_bounds('lb')[free_indices] = np.maximum(self.tasks.start_lb[free_indices], group_max_end_lb)
+            self.tasks.start_lb[free_indices] = np.maximum(self.tasks.start_lb[free_indices], group_max_end_lb)
 
 
 class ReleaseTimesConstraint(Constraint):
@@ -283,7 +310,7 @@ class ReleaseTimesConstraint(Constraint):
     def reset(self) -> None:
         mask = self.release_times > 0
 
-        self.tasks.set_start_bounds('lb')[mask] = np.maximum(self.tasks.start_lb[mask], self.release_times[mask])
+        self.tasks.start_lb[mask] = np.maximum(self.tasks.start_lb[mask], self.release_times[mask])
 
 
     def set_release_time(self, task: Scalar, release_time: int) -> None:
@@ -323,7 +350,7 @@ class DueDatesConstraint(Constraint):
     def reset(self) -> None:
         mask = self.due_dates > 0
 
-        self.tasks.set_end_bounds('ub')[mask] = np.minimum(self.tasks.end_ub[mask], self.due_dates[mask])
+        self.tasks.end_ub[mask] = np.minimum(self.tasks.end_ub[mask], self.due_dates[mask])
 
 
     def set_due_date(self, task: Scalar, due_date: int) -> None:
