@@ -25,26 +25,35 @@ from . import instructions
 
 TaskAllowedTypes: TypeAlias = DataFrame | dict[str, ArrayLike]
 ProcessTimeAllowedTypes: TypeAlias = ArrayLike | Iterable[int] | str
-ActionType: TypeAlias = Iterable[tuple[str | Instruction, *tuple[int, ...]]] | tuple[str | Instruction, *tuple[int, ...]] | None
+ActionType: TypeAlias = (
+    Iterable[tuple[str | Instruction, *tuple[int, ...]]]
+    | tuple[str | Instruction, *tuple[int, ...]]
+    | None
+)
 
 InstructionSpace = Text(max_length=1, charset=frozenset(Instructions))
-IntSpace         = Box(low=0, high=MAX_INT, shape=(), dtype=int64)
-ActionSpace = OneOf([
-    Tuple([InstructionSpace]),
-    Tuple([InstructionSpace, IntSpace]),
-    Tuple([InstructionSpace, IntSpace, IntSpace]),
-    Tuple([InstructionSpace, IntSpace, IntSpace, IntSpace]),
-])
+IntSpace = Box(low=0, high=MAX_INT, shape=(), dtype=int64)
+ActionSpace = OneOf(
+    [
+        Tuple([InstructionSpace]),
+        Tuple([InstructionSpace, IntSpace]),
+        Tuple([InstructionSpace, IntSpace, IntSpace]),
+        Tuple([InstructionSpace, IntSpace, IntSpace, IntSpace]),
+    ]
+)
 
 
-def is_single_action(action: ActionType) -> TypeGuard[tuple[str | Instruction, *tuple[int, ...]]]:
+def is_single_action(
+    action: ActionType,
+) -> TypeGuard[tuple[str | Instruction, *tuple[int, ...]]]:
     return isinstance(action, tuple) and isinstance(action[0], str)
 
+
 def parse_args(
-        instruction_name: str,
-        args: tuple[int, ...],
-        n_required: int,
-    ) -> tuple[tuple[int, ...], int]:
+    instruction_name: str,
+    args: tuple[int, ...],
+    n_required: int,
+) -> tuple[tuple[int, ...], int]:
     if len(args) == n_required:
         return args, -1
 
@@ -56,10 +65,11 @@ def parse_args(
             f"Expected {n_required} or {n_required + 1} arguments for instruction {instruction_name} , got {len(args)}."
         )
 
+
 class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
     # Environment static variables
-    constraints : dict[str, Constraint]
-    objective   : Objective
+    constraints: dict[str, Constraint]
+    objective: Objective
 
     # Environment dynamic variables
     tasks: Tasks
@@ -72,24 +82,26 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
 
     # Functions with interaction with the user can be slower.
     def __init__(
-            self,
-            machine_setup: Optional[ScheduleSetup] = None,
-            constraints: Optional[dict[str, Constraint] | Iterable[Constraint]] = None,
-            objective: Optional[Objective] = None,
-            instance: Optional[TaskAllowedTypes] = None,
-            *,
-            n_machines: int = 1,
-            allow_preemption: bool = False,
-            processing_times: ProcessTimeAllowedTypes = 'processing_time',
-            jobs: Optional[Iterable[int] | str] = None,
-        ):
-        self.setup = machine_setup if machine_setup is not None else ScheduleSetup(n_machines)
-        self.allow_preemption  = allow_preemption
+        self,
+        machine_setup: Optional[ScheduleSetup] = None,
+        constraints: Optional[dict[str, Constraint] | Iterable[Constraint]] = None,
+        objective: Optional[Objective] = None,
+        instance: Optional[TaskAllowedTypes] = None,
+        *,
+        n_machines: int = 1,
+        allow_preemption: bool = False,
+        processing_times: ProcessTimeAllowedTypes = "processing_time",
+        jobs: Optional[Iterable[int] | str] = None,
+    ):
+        self.setup = (
+            machine_setup if machine_setup is not None else ScheduleSetup(n_machines)
+        )
+        self.allow_preemption = allow_preemption
 
         self.constraints = {}
-        self.objective   = Objective()
+        self.objective = Objective()
 
-        self.scheduled_instructions = {-1 : deque()}
+        self.scheduled_instructions = {-1: deque()}
 
         self.current_time = 0
         self.n_queries = 0
@@ -101,46 +113,45 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
         if is_iterable_type(constraints, Constraint):
             for constraint in constraints:
                 self.add_constraint(constraint)
-        
+
         elif is_dict(constraints, str, Constraint):
             for name, constraint in constraints.items():
                 self.add_constraint(constraint, name)
-        
+
         if objective is not None:
             self.set_objective(objective)
-        
+
         if instance is not None:
             self.set_instance(instance, processing_times=processing_times, jobs=jobs)
-
-
 
     def load_configuration(self, config: dict[str, Any]) -> None:
         # TODO: Implement the loading of the configuration
         pass
 
-
-    def add_constraint(self, constraint: Constraint, name: Optional[str] = None) -> None:
+    def add_constraint(
+        self, constraint: Constraint, name: Optional[str] = None
+    ) -> None:
         name = name if name is not None else constraint.__class__.__name__
 
         self.constraints[name] = constraint
 
-
     def set_objective(self, objective: Objective) -> None:
         self.objective = objective
 
-
     def set_instance(
-            self,
-            instance: TaskAllowedTypes,
-            processing_times: ProcessTimeAllowedTypes = 'processing_time',
-            jobs: Optional[Iterable[int] | str] = None,
-            n_parts: Optional[int] = None, # if we allow preemption, we must define a maximum number of splits
-        ) -> None:
+        self,
+        instance: TaskAllowedTypes,
+        processing_times: ProcessTimeAllowedTypes = "processing_time",
+        jobs: Optional[Iterable[int] | str] = None,
+        n_parts: Optional[
+            int
+        ] = None,  # if we allow preemption, we must define a maximum number of splits
+    ) -> None:
         if n_parts is None:
             n_parts = 16 if self.allow_preemption else 1
 
         features = instance.keys() if isinstance(instance, dict) else instance.columns
-        data     = {feature: convert_to_list(instance[feature]) for feature in features}
+        data = {feature: convert_to_list(instance[feature]) for feature in features}
 
         if isinstance(processing_times, str):
             processing_times = data[processing_times]
@@ -167,23 +178,26 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
 
         self.objective.set_tasks(self.tasks)
 
-        self.observation_space = Dict({
-            "task_id": Box(low=0, high=len(self.tasks), shape=(len(self.tasks),), dtype=int64),
-            **{
-                feature: infer_list_space(data[feature]) for feature in data.keys()
-            },
-            "remaining_time": Box(low=0, high=MAX_INT, shape=(len(self.tasks),), dtype=int64),
-            "status": Text(max_length=1, charset=frozenset(status_str.values())),
-        })
-
+        self.observation_space = Dict(
+            {
+                "task_id": Box(
+                    low=0, high=len(self.tasks), shape=(len(self.tasks),), dtype=int64
+                ),
+                **{feature: infer_list_space(data[feature]) for feature in data.keys()},
+                "remaining_time": Box(
+                    low=0, high=MAX_INT, shape=(len(self.tasks),), dtype=int64
+                ),
+                "status": Text(max_length=1, charset=frozenset(status_str.values())),
+            }
+        )
 
     def get_state(self) -> dict[str, list[Any]]:
         return self.tasks.get_state(self.current_time)
 
     def get_info(self) -> dict[str, Any]:
         return {
-            'n_queries': self.n_queries,
-            'current_time': self.current_time,
+            "n_queries": self.n_queries,
+            "current_time": self.current_time,
         }
 
     def get_objective(self) -> float:
@@ -200,13 +214,10 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
             constraint.propagate(self.current_time)
 
     def reset(
-            self,
-            *,
-            seed: Optional[int] = None,
-            options: dict[str, Any] | None = None
+        self, *, seed: Optional[int] = None, options: dict[str, Any] | None = None
     ) -> tuple[dict[str, list[Any]], dict[str, Any]]:
         super().reset(seed=seed)
-        
+
         self.scheduled_instructions.clear()
         self.scheduled_instructions[-1] = deque()
 
@@ -217,7 +228,7 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
         self.tasks.reset()
         for constraint in self.constraints.values():
             constraint.reset()
-        
+
         self.update_state()
 
         return self.get_state(), self.get_info()
@@ -225,7 +236,8 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
     def instruction_times(self, strict: bool = False) -> list[int]:
         if strict:
             instruction_times = [
-                instruction_time for instruction_time in self.scheduled_instructions.keys()
+                instruction_time
+                for instruction_time in self.scheduled_instructions.keys()
                 if instruction_time > self.current_time
             ]
 
@@ -235,17 +247,19 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
 
         return instruction_times
 
-
     def next_decision_time(self, strict: bool = False) -> int:
         if strict:
             operation_points = [
-                task.get_start_lb() for task in self.tasks
-                if task.is_awaiting(self.current_time) and task.get_start_lb() > self.current_time
+                task.get_start_lb()
+                for task in self.tasks
+                if task.is_awaiting(self.current_time)
+                and task.get_start_lb() > self.current_time
             ]
 
         else:
             operation_points = [
-                task.get_start_lb() for task in self.tasks
+                task.get_start_lb()
+                for task in self.tasks
                 if task.is_awaiting(self.current_time)
             ]
 
@@ -266,15 +280,13 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
 
         return time
 
-
     def advance_to(self, time: int) -> None:
-       self.current_time = time
-       self.update_state()
+        self.current_time = time
+        self.update_state()
 
     def advance_to_next_instruction(self) -> None:
         time = max(
-            min(self.instruction_times(), default=self.advancing_to),
-            self.current_time
+            min(self.instruction_times(), default=self.advancing_to), self.current_time
         )
         self.advance_to(time)
 
@@ -286,9 +298,11 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
         time = self.next_decision_time(True)
         self.advance_to(time)
 
-    def schedule_instruction(self, instruction: str | Instruction, args: tuple[int, ...]) -> None:
+    def schedule_instruction(
+        self, instruction: str | Instruction, args: tuple[int, ...]
+    ) -> None:
         match instruction:
-            case 'execute':
+            case "execute":
                 if self.setup.parallel_machines:
                     (task_id, machine), time = parse_args(instruction, args, 2)
 
@@ -298,7 +312,7 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
 
                 instruction = instructions.Execute(task_id, machine)
 
-            case 'submit':
+            case "submit":
                 if self.setup.parallel_machines:
                     (task_id, machine), time = parse_args(instruction, args, 2)
 
@@ -308,23 +322,23 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
 
                 instruction = instructions.Submit(task_id, machine)
 
-            case 'pause':
+            case "pause":
                 (task_id,), time = parse_args(instruction, args, 1)
                 instruction = instructions.Pause(task_id)
 
-            case 'complete':
+            case "complete":
                 (task_id,), time = parse_args(instruction, args, 1)
                 instruction = instructions.Complete(task_id)
 
-            case 'advance':
+            case "advance":
                 (to_time,), time = parse_args(instruction, args, 1)
                 instruction = instructions.Advance(to_time)
 
-            case 'query':
+            case "query":
                 args, time = parse_args(instruction, args, 0)
                 instruction = instructions.Query()
 
-            case 'clear':
+            case "clear":
                 args, time = parse_args(instruction, args, 0)
                 instruction = instructions.Clear()
 
@@ -353,14 +367,18 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
             if not self.scheduled_instructions[self.current_time]:
                 del self.scheduled_instructions[self.current_time]
 
-            signal, args = instruction.process(self.current_time, self.tasks, self.scheduled_instructions)
+            signal, args = instruction.process(
+                self.current_time, self.tasks, self.scheduled_instructions
+            )
 
             if signal.is_failure():
                 if isinstance(args, str):
                     warn(f"Instruction {instruction} failed with message: {args}.")
 
                 else:
-                    warn(f"Scheduled instruction {instruction} could not be executed at time {self.current_time}.")
+                    warn(
+                        f"Scheduled instruction {instruction} could not be executed at time {self.current_time}."
+                    )
 
                 return True
 
@@ -368,13 +386,18 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
             self.advance_to_next_instruction()
             return False
 
-        elif not self.scheduled_instructions[-1] and len(self.scheduled_instructions) == 1:
+        elif (
+            not self.scheduled_instructions[-1]
+            and len(self.scheduled_instructions) == 1
+        ):
             # Force query when no instructions are left
             return True
 
         else:
             for i, instruction in enumerate(self.scheduled_instructions[-1]):
-                signal, args = instruction.process(self.current_time, self.tasks, self.scheduled_instructions)
+                signal, args = instruction.process(
+                    self.current_time, self.tasks, self.scheduled_instructions
+                )
 
                 if signal == Signal.Skip:
                     continue
@@ -412,11 +435,10 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
 
         return False
 
-
     def step(
-            self,
-            action: ActionType,
-        ) -> tuple[dict[str, list[Any]], float, bool, bool, dict[str, Any]]:
+        self,
+        action: ActionType,
+    ) -> tuple[dict[str, list[Any]], float, bool, bool, dict[str, Any]]:
 
         act_instructions: Iterable[tuple[str | Instruction, *tuple[int, ...]]]
         if is_single_action(action):
@@ -440,18 +462,18 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
 
         self.n_queries += 1
 
-        obs    = self.get_state()
+        obs = self.get_state()
 
         reward = self.get_objective() - previous_objective
-        if self.objective.direction == 'minimize':
+        if self.objective.direction == "minimize":
             reward *= -1
 
-        info   = self.get_info()
+        info = self.get_info()
 
         return obs, reward, self.is_terminal(), self.truncate(), info
-    
+
     def export(self, filename: str) -> None:
-        with open(f"{filename}.mzn", 'w') as file:
+        with open(f"{filename}.mzn", "w") as file:
             file.write(self.tasks.export_model())
             file.write(self.setup.export_model())
 
@@ -460,7 +482,7 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
 
             file.write(self.objective.export_model())
 
-        with open(f"{filename}.dzn", 'w') as file:
+        with open(f"{filename}.dzn", "w") as file:
             file.write(self.tasks.export_data())
             file.write(self.setup.export_data())
 
@@ -468,3 +490,16 @@ class SchedulingCPEnv(Env[dict[str, list[Any]], ActionType]):
                 file.write(constraint.export_data())
 
             file.write(self.objective.export_data())
+
+    def get_entry(self) -> str:
+        alpha = self.setup.get_entry()
+        beta = ", ".join(
+            [
+                constraint.get_entry()
+                for name, constraint in self.constraints.items()
+                if not name.startswith("_setup_") and constraint.get_entry()
+            ]
+        )
+        gamma = self.objective.get_entry()
+
+        return f"{alpha} | {beta} | {gamma}"

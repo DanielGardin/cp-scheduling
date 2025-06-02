@@ -16,7 +16,7 @@ excluding_files = [
 
 compiling_files = [
     str(path) for path in Path('cpscheduler/environment').glob('*.py') if path.name not in excluding_files
-]
+] + ['cpscheduler/policies/heuristics/pdr_heuristics.py']
 
 
 setup(

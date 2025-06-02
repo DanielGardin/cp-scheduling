@@ -3,7 +3,7 @@ from typing import ClassVar, Iterable, Literal, SupportsFloat, Optional
 from textwrap import dedent
 
 from .tasks import Tasks
-from .utils import convert_to_list
+from .utils import convert_to_list, scale_to_int
 
 OptimizationDirections = Literal["min", "max"]
 
@@ -38,6 +38,9 @@ class Objective:
     def export_data(self) -> str:
         return ""
 
+    def get_entry(self) -> str:
+        return ""
+
 
 class Makespan(Objective):
     """
@@ -59,15 +62,20 @@ class Makespan(Objective):
 
         return dedent(model)
 
+    def get_entry(self) -> str:
+        return "C_max"
+
 
 class WeightedCompletionTime(Objective):
     def __init__(
         self,
         job_weights: Iterable[float],
         direction: Optional[OptimizationDirections] = None,
+        scale_integer: bool = False,
     ):
         super().__init__(direction)
         self.job_weights = convert_to_list(job_weights)
+        self.scale_integer = scale_integer
 
     def get_current(self, time: int) -> float:
         current_value = 0.0
@@ -84,20 +92,29 @@ class WeightedCompletionTime(Objective):
         return current_value
 
     def export_data(self) -> str:
+        scaled_weights = scale_to_int(self.job_weights) if self.scale_integer else self.job_weights
+        types = "int" if self.scale_integer else "float"
+
         data = f"""
-            int: num_jobs = {len(self.job_weights)};
-            array[1..num_jobs] of float: job_weights = {self.job_weights};
+            job_weights = {scaled_weights};
         """
 
         return dedent(data)
 
     # Do not work
     def export_model(self) -> str:
-        model = f"""
-            var float: completion_time;
-            constraint completion_time = sum(j in 1..num_jobs)(job_weights[j] * max(t in job[j])(end[t, num_parts]));
+        types = "int" if self.scale_integer else "float"
 
-            solve {self.direction} completion_time;
+        model = f"""
+            array[1..num_jobs] of {types}: job_weights;
+
+            var {types}: weighted_completion_time;
+            constraint weighted_completion_time = sum(j in 1..num_jobs)(job_weights[j] * max(t in 1..num_tasks where job[t] = j)(end[t, num_parts]));
+
+            solve {self.direction} weighted_completion_time;
         """
 
         return dedent(model)
+
+    def get_entry(self) -> str:
+        return "Σ w_j C_j"
