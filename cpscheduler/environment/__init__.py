@@ -2,9 +2,10 @@ __all__ = [
     "SchedulingCPEnv",
 
     # Alpha setups
-    "JobShopSetup",
     "SingleMachineSetup",
     "IdenticalParallelMachineSetup",
+    "JobShopSetup",
+    "OpenShopSetup",
 
     # Beta constraints
     "PrecedenceConstraint",
@@ -22,9 +23,10 @@ __all__ = [
 from .env import SchedulingCPEnv
 
 from .schedule_setup import (
-    JobShopSetup,
     SingleMachineSetup,
     IdenticalParallelMachineSetup,
+    JobShopSetup,
+    OpenShopSetup
 )
 
 from .constraints import (
