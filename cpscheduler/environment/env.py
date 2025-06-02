@@ -1,5 +1,5 @@
-from typing import Any, Optional, Final, Never, ClassVar, TypeVar, runtime_checkable, Protocol
-from numpy.typing import NDArray
+from typing import Any, Optional, Final, Never, ClassVar, TypeVar, runtime_checkable, Protocol, Generic, TypeAlias, Callable, ParamSpec, Concatenate
+from numpy.typing import NDArray, ArrayLike
 from pandas import DataFrame
 
 from mypy_extensions import mypyc_attr
@@ -7,22 +7,24 @@ from mypy_extensions import mypyc_attr
 import numpy as np
 import numpy.lib.recfunctions as rf
 
+from warnings import warn
+import heapq
+
 from .constraints import Constraint
 from .objectives import Objective
 from .variables import IntervalVars, Scalar, AVAILABLE_SOLVERS
 
+MIN_INT: Final[int] = -(2 ** 31 - 1)
+MAX_INT: Final[int] =   2 ** 31 - 1
 
-MIN_INT: Final[int] = -2 ** 31 + 1
-MAX_INT: Final[int] =  2 ** 31 - 1
+_T = TypeVar('_T', covariant=True,)
+SetupClass: TypeAlias = Callable[Concatenate[IntervalVars, ...], _T] | type[_T] | _T
 
-_Obs = TypeVar('_Obs', covariant=True)
-_Action = TypeVar('_Action', contravariant=True)
 
-@runtime_checkable
-class Env(Protocol[_Obs, _Action]):
-    def reset(self) -> tuple[_Obs, dict[str, Any]]: ...
+class Env(Protocol):
+    def reset(self) -> tuple[Any, dict[str, Any]]: ...
 
-    def step(self, action: _Action, *args: Any, **kwargs: Any) -> tuple[_Obs, float, bool, bool, dict[str, Any]]: ...
+    def step(self, action: Any, *args: Any, **kwargs: Any) -> tuple[Any, float, bool, bool, dict[str, Any]]: ...
 
     def render(self) -> None: ...
 
@@ -46,7 +48,7 @@ class SchedulingCPEnv:
     def __init__(
             self,
             instance: DataFrame,
-            duration_feature: str | NDArray[np.integer[Any]]
+            duration: str | ArrayLike,
         ) -> None:
         self.constraints = {}
         self.objective   = Objective()
@@ -54,9 +56,13 @@ class SchedulingCPEnv:
 
         tasks = self.process_dataframe(instance)
 
-        duration = tasks[duration_feature] if isinstance(duration_feature, str) else duration_feature
+        if isinstance(duration, str):
+            duration = tasks[duration].astype(np.int32)
+        
+        else:
+            duration = np.asarray(duration, dtype=np.int32)
 
-        self.tasks = IntervalVars(tasks, duration.astype(np.int32), instance.index.to_numpy())
+        self.tasks = IntervalVars(tasks, duration, instance.index.to_numpy())
 
 
     def process_dataframe(self, df: DataFrame, ignore_index: bool = False) -> NDArray[np.void]:
@@ -68,13 +74,35 @@ class SchedulingCPEnv:
         return np.asarray(df.to_records(index=False))
 
 
-    def add_constraint(self, constraint: Constraint, name: Optional[str] = None) -> None:
+    def add_constraint(
+            self,
+            constraint_fn: SetupClass[Constraint],
+            name: Optional[str] = None,
+            *args: Any, **kwargs: Any
+        ) -> None:
+        if isinstance(constraint_fn, Constraint):
+            constraint = constraint_fn
+        
+        else:
+            constraint = constraint_fn(self.tasks, *args, **kwargs) # type: ignore
+
         if name is None: name = constraint.__class__.__name__
 
         self.constraints[name] = constraint
 
 
-    def set_objective(self, objective: Objective, minimize: bool = True, name: Optional[str] = None) -> None:
+    def set_objective(
+            self,
+            objective_fn: SetupClass[Objective],
+            minimize: bool = True,
+            *args: Any, **kwargs: Any
+        ) -> None:
+        if isinstance(objective_fn, Objective):
+            objective = objective_fn
+        
+        else:
+            objective = objective_fn(self.tasks, *args, **kwargs) # type: ignore
+
         self.objective = objective
         self.minimize  = minimize
 
@@ -118,8 +146,13 @@ class SchedulingCPEnv:
                 result.get_var_solution(name).start for name in self.tasks.names # type: ignore
             ], dtype=np.int32)
 
-            objective_values = np.asarray(result.get_objective_values(), dtype=np.int32)
-            is_optimal = result.is_solution_optimal()
+            if type(self.objective) is Objective:
+                objective_values = np.array([], dtype=np.int32)
+                is_optimal = True
+
+            else:
+                objective_values = np.asarray(result.get_objective_values(), dtype=np.int32)
+                is_optimal = result.is_solution_optimal()
 
             order = np.argsort(start_times)
 
@@ -147,8 +180,13 @@ class SchedulingCPEnv:
                 cp_solver.Value(locals_[f"{name}_start"]) for name in self.tasks.names
             ], dtype=np.int32)
 
-            objective_values = np.array([cp_solver.ObjectiveValue()], dtype=np.int32)
-            is_optimal = status is cp_model.OPTIMAL # type: ignore[comparison-overlap]
+            if type(self.objective) is Objective:
+                objective_values = np.array([], dtype=np.int32)
+                is_optimal = True
+
+            else:
+                objective_values = np.array([cp_solver.ObjectiveValue()], dtype=np.int32)
+                is_optimal = status is cp_model.OPTIMAL # type: ignore[comparison-overlap]
 
         else:
             raise ValueError(f"Unknown solver {solver}, available solvers are 'cplex' or 'ortools'")
@@ -196,11 +234,10 @@ class SchedulingCPEnv:
             'current_time'      : self.current_time,
             'executed_actions'  : self.scheduled_action[:self.current_task],
             'scheduled_actions' : self.scheduled_action[self.current_task:],
-            'objective_value'   : self.objective.get_current()
+            'objective_value'   : self.objective.get_current(self.current_time)
         }
 
         if not self.is_terminal(): return info
-        
         info |= {
             'solution' : np.argsort(self.tasks.start_lb[:], stable=True).astype(np.int32),
         }
@@ -218,7 +255,6 @@ class SchedulingCPEnv:
         self.n_queries = 0
 
         self.tasks.reset_state()
-        
         for constraint in self.constraints.values():
             constraint.reset()
 
@@ -230,8 +266,8 @@ class SchedulingCPEnv:
             Check if the constraints and objectives are consistent with the tasks.
         """
         if type(self.objective) is Objective:
-            raise ValueError("No objectives have been added to the environment. Please add at least one objective.")
-    
+            warn("No objective has been set, the environment will provide null rewards.")
+
         return None
 
 
@@ -240,7 +276,7 @@ class SchedulingCPEnv:
         original = self.tasks.to_propagate.copy()
 
         for constraint in self.constraints.values():
-            constraint.propagate()
+            constraint.propagate(self.current_time)
 
         if np.all(original == self.tasks.to_propagate):
             self.tasks.to_propagate[:] = False
@@ -250,28 +286,29 @@ class SchedulingCPEnv:
             self.tasks.to_propagate[:] = False
 
             for constraint in self.constraints.values():
-                constraint.propagate()
+                constraint.propagate(self.current_time)
 
         self.tasks.to_propagate[:] = False
 
 
     def step(
             self,
-            action: Optional[NDArray[np.generic]]       = None,
-            time_skip: Optional[int]                     = None,
-            extend: bool                                 = False,
-            enforce_order: bool                          = True
+            action: Optional[ArrayLike] = None,
+            time_skip: Optional[int]    = None,
+            extend: bool                = False,
+            enforce_order: bool         = True
         ) -> tuple[NDArray[np.void], float, bool, bool, dict[str, Any]]:
 
         self.current_task = 0
         if action is not None:
+            action = np.asarray(action, dtype=self.tasks.index_dtype)
+
             if extend:
                 self.scheduled_action = np.concatenate([self.scheduled_action, action])
-            
             else:
                 self.scheduled_action = action.copy()
 
-        previous_objective = self.objective.get_current()
+        previous_objective = self.objective.get_current(self.current_time)
 
         self.n_queries += 1
 
@@ -286,13 +323,12 @@ class SchedulingCPEnv:
             truncated  = self.is_truncated()
 
         obs    = self._get_obs()
-        reward = (self.objective.get_current() - previous_objective) * (-1 if self.minimize else 1)
+        reward = (self.objective.get_current(self.current_time) - previous_objective) * (-1 if self.minimize else 1)
         info   = self._get_info()
 
         self.scheduled_action = self.scheduled_action[self.current_task:]
 
         return obs, reward, terminated, truncated, info
-
 
 
     def one_action(self, enforce_order: bool, time_limit: int) -> bool:
@@ -412,12 +448,8 @@ class SchedulingCPEnv:
             n_bins = len(np.unique(bins))
             bins   = bins[is_fixed]
 
-        else:
-            n_bins = 1
-            bins   = np.zeros(len(start_times), dtype=np.int32)
-
-        bins   = self.tasks[bin_feature][is_fixed] if bin_feature is not None else np.zeros(len(start_times), dtype=np.int32)
-        n_bins = len(np.unique(self.tasks[bin_feature])) if bin_feature is not None else 1
+        else: # Sweep line algorithm to decide the minimum number of bins
+            bins, n_bins = allocate_bins(self.tasks)
 
         colors = np.array(sns.color_palette(palette, n_colors=n_groups))
 
@@ -431,8 +463,6 @@ class SchedulingCPEnv:
             height    = bar_width
         )
 
-        ax.set_yticks(np.arange(n_bins))
-        ax.set_ylim(n_bins - bar_width/2, bar_width/2 - 1)
         ax.set_ylabel(bin_feature if bin_feature is not None else 'Task bins')
 
         ax.set_xlim(0, max(self.current_time/0.95, 1))
@@ -453,3 +483,35 @@ class SchedulingCPEnv:
             self,
         ) -> None:
         ...
+
+
+
+def allocate_bins(tasks: IntervalVars) -> tuple[NDArray[np.int32], int]:
+    is_fixed = tasks.is_fixed()
+
+    indexed_tasks = sorted([
+        (start, end, i) for i, (start, end) in enumerate(zip(tasks.start_lb[is_fixed], tasks.end_lb[is_fixed]))
+    ])
+
+    first_start, first_end, first_task = indexed_tasks[0]
+
+    heap = [(first_end, 0)]
+
+    bins = np.zeros(len(indexed_tasks), dtype=np.int32)
+
+    current_bins = 1
+    for start, end, task_id in indexed_tasks[1:]:
+        earliest_end, bin_id = heap[0]
+
+        if start >= earliest_end:
+            heapq.heappop(heap)
+            bin_ = bin_id
+
+        else:
+            bin_ = current_bins
+            current_bins += 1
+        
+        bins[task_id] = bin_
+        heapq.heappush(heap, (end, bin_))
+    
+    return bins, current_bins

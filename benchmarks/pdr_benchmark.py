@@ -7,7 +7,7 @@ from tqdm import tqdm
 from time import perf_counter
 
 from cpscheduler.common_envs import JobShopEnv
-from cpscheduler.environment import read_instance
+from cpscheduler.environment import read_jsp_instance
 from cpscheduler.policies.heuristics import ShortestProcessingTime, MostOperationsRemaining, MostWorkRemaining
 
 root = Path(__file__).parent.parent
@@ -47,7 +47,7 @@ for dataset in datasets:
         continue
 
     for instance_path in all_instances:
-        instance, metadata = read_instance(instance_path)
+        instance, metadata = read_jsp_instance(instance_path)
 
         instance_size = (int(metadata['n_jobs']), int(metadata['n_machines']))
         instance_name = instance_path.stem

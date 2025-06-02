@@ -145,17 +145,17 @@ class WeightedShortestProcessingTime(PriorityDispatchingRule):
     """
     def __init__(
             self,
-            job_weight: NDArray[np.floating[Any]],
+            weight: NDArray[np.floating[Any]],
             processing_time_label: str = 'processing_time',
-            job_label: str = 'job',
+            weighted_label: str = 'job',
         ):
         self.processing_time = processing_time_label
-        self.job_label       = job_label
+        self.weighted_label       = weighted_label
 
-        self.job_weight = job_weight
+        self.weight = weight
 
 
     def priority_rule(self, obs: NDArray[np.void]) -> NDArray[np.float32]:
-        priority_values: NDArray[np.float32] = (self.job_weight[obs[self.job_label]] / obs[self.processing_time]).astype(np.float32)
+        priority_values: NDArray[np.float32] = (self.weight[obs[self.weighted_label]] / obs[self.processing_time]).astype(np.float32)
 
         return priority_values
