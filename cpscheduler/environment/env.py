@@ -79,7 +79,7 @@ class SchedulingCPEnv:
 
     def get_cp_solution(
             self,
-            timelimit: int = 60
+            timelimit: float = 60
         ) -> tuple[NDArray[np.generic], NDArray[np.int32], bool]:
         from docplex.cp.model import CpoModel, CpoSolveResult
 
@@ -147,13 +147,21 @@ class SchedulingCPEnv:
 
 
     def _get_info(self) -> dict[str, Any]:
-        return {
+        info = {
             'n_queries'         : self.n_queries,
             'current_time'      : self.current_time,
             'executed_actions'  : self.scheduled_action[:self.current_task],
             'scheduled_actions' : self.scheduled_action[self.current_task:],
             'objectives'        : self.get_objective_values()
         }
+
+        if not self.is_terminal(): return info
+        
+        info |= {
+            'solution' : np.argsort(self.tasks.start_lb[:], stable=True).astype(np.int32),
+        }
+
+        return info
 
 
     def reset(self) -> tuple[NDArray[np.void] | DataFrame, dict[str, Any]]:
@@ -225,7 +233,7 @@ class SchedulingCPEnv:
                 self.scheduled_action = np.concatenate([self.scheduled_action, actions])
             
             else:
-                self.scheduled_action = actions
+                self.scheduled_action = actions.copy()
 
         if time_skip == 0:
             obs        = self._get_obs()
@@ -269,9 +277,7 @@ class SchedulingCPEnv:
 
                 return True
 
-            next_task_end = int(np.min(self.tasks.end_lb[executing_tasks]))
-
-            self.current_time = min(next_task_end, time_limit)
+            self.current_time = np.min(self.tasks.end_lb[executing_tasks], initial=time_limit).item()
 
             return True
 
@@ -288,11 +294,10 @@ class SchedulingCPEnv:
                 if not np.any(executing_tasks) or self.current_time >= time_limit:
                     return True
 
-                next_task_end = int(np.min(self.tasks.end_lb[executing_tasks]))
-
-                self.current_time = min(next_task_end, time_limit)
+                self.current_time = np.min(self.tasks.end_lb[executing_tasks], initial=time_limit).item()
 
                 return False
+
 
         else: # not enforce_order
             for task_place, task in enumerate(self.scheduled_action[self.current_task:]):
@@ -300,27 +305,31 @@ class SchedulingCPEnv:
                     current     = self.current_task
                     task_place += current
 
-                    self.scheduled_action[[current, task_place]] = self.scheduled_action[[task_place, current]]
+                    if task_place == current: break
+
+                    self.scheduled_action[current+1:task_place+1] = self.scheduled_action[current:task_place]
+                    self.scheduled_action[current] = task
                     break
 
 
             else:
-                to_schedule = ~self.tasks.is_fixed()
-                next_task_start = np.min(self.tasks.start_lb[to_schedule], initial=time_limit)
-                self.current_time = int(next_task_start)
+                to_schedule = self.tasks.is_awaiting()
+
+                self.current_time = np.min(self.tasks.start_lb[to_schedule], initial=time_limit).item()
 
                 return self.current_time >= time_limit
+
 
         self.tasks.fix_start(task, self.current_time)
         self.current_task += 1
 
         self.update_state()
 
-        to_schedule = ~self.tasks.is_fixed()
+        to_schedule = self.tasks.is_awaiting()
 
         if np.any(to_schedule):
-            next_task_start   = np.min(self.tasks.start_lb[to_schedule], initial=time_limit)
-            self.current_time = int(next_task_start)
+            self.current_time = np.min(self.tasks.start_lb[to_schedule], initial=time_limit).item()
+
 
         else:
             self.current_time = int(np.max(self.tasks.end_lb[:]))
@@ -340,6 +349,7 @@ class SchedulingCPEnv:
 
         """
         import matplotlib.pyplot as plt
+        from matplotlib.patches import Patch
         import seaborn as sns
 
         fig, ax = plt.subplots(figsize=(12, 6))
@@ -349,35 +359,62 @@ class SchedulingCPEnv:
         start_times = self.tasks.start_lb[is_fixed]
         durations   = self.tasks.durations[is_fixed]
 
-        bins   = self.tasks[bin_feature][is_fixed]   if   bin_feature is not None else np.zeros(len(start_times), dtype=np.int32)
-        groups = self.tasks[group_feature][is_fixed] if group_feature is not None else np.zeros(len(start_times), dtype=np.int32)
+        if group_feature is not None:
+            groups = self.tasks[group_feature]
+            group_mapping = {group: i for i, group in enumerate(np.unique(groups))}
 
-        n_bins   = len(np.unique(self.tasks[bin_feature]))   if   bin_feature is not None else 1
-        n_groups = len(np.unique(self.tasks[group_feature])) if group_feature is not None else 1
+            groups    = groups[is_fixed]
+            group_ids = np.array([group_mapping[group] for group in groups])
+            n_groups  = len(group_mapping)
+
+        else:
+            group_mapping = {0: 0}
+
+            groups    = np.zeros(len(start_times), dtype=np.int32)
+            group_ids = groups
+            n_groups  = 1
+
+
+        if bin_feature is not None:
+            bins = self.tasks[bin_feature]
+
+            n_bins = len(np.unique(bins))
+            bins   = bins[is_fixed]
+
+        else:
+            n_bins = 1
+            bins   = np.zeros(len(start_times), dtype=np.int32)
+
+        bins   = self.tasks[bin_feature][is_fixed] if bin_feature is not None else np.zeros(len(start_times), dtype=np.int32)
+        n_bins = len(np.unique(self.tasks[bin_feature])) if bin_feature is not None else 1
+
         colors = np.array(sns.color_palette(palette, n_colors=n_groups))
 
         ax.barh(
             y         = bins,
             width     = durations,
             left      = start_times,
-            color     = colors[groups],
+            color     = colors[group_ids],
             edgecolor = 'white',
-            height    = bar_width,
-            label     = self.tasks.ids[is_fixed]
+            linewidth = 0.5,
+            height    = bar_width
         )
 
         ax.set_yticks(np.arange(n_bins))
         ax.set_ylim(n_bins - bar_width/2, bar_width/2 - 1)
-        ax.set_ylabel(group_feature if group_feature is not None else 'Task bins')
+        ax.set_ylabel(bin_feature if bin_feature is not None else 'Task bins')
 
         ax.set_xlim(0, max(self.current_time/0.95, 1))
         ax.set_xlabel('Time')
 
         ax.set_title('Gantt Chart of Scheduled Tasks')
 
-        ax.legend(loc='upper right', title='Gantt Chart')
+        legend_elements = [Patch(facecolor=colors[i], label=group) for i, group in enumerate(group_mapping)]
+        ax.legend(handles=legend_elements ,title=group_feature, loc='center left', bbox_to_anchor=(1, 0.5))
 
-        ax.grid(True)
+        ax.grid(True, alpha=0.4)
+        ax.set_axisbelow(True)
+
         plt.show()
 
 
