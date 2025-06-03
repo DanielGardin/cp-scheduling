@@ -70,24 +70,24 @@ def indicator_var(
     if operator == "==":
         model.addConstraint(
             lhs <= rhs + (1 - indicator) * big_m,
-            f"indicator_eq_{lhs}_{rhs}"
+            f"indicator_{lhs}_le_{rhs}"
         )
 
         model.addConstraint(
             lhs >= rhs - (1 - indicator) * big_m,
-            f"indicator_eq_{lhs}_{rhs}_neg"
+            f"indicator_{lhs}_ge_{rhs}"
         )
 
     elif operator == "<=":
         model.addConstraint(
             lhs <= rhs + (1 - indicator) * big_m,
-            f"indicator_le_{lhs}_{rhs}"
+            f"indicator_{lhs}_le_{rhs}"
         )
 
     elif operator == ">=":
         model.addConstraint(
             lhs >= rhs - (1 - indicator) * big_m,
-            f"indicator_ge_{lhs}_{rhs}"
+            f"indicator_{lhs}_ge_{rhs}"
         )
 
     else:

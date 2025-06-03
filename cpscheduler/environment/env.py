@@ -188,11 +188,11 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
         return f"SchedulingEnv({self.get_entry()}, not loaded)"
 
-    def add_constraint(self, constraint: Constraint) -> None:
+    def add_constraint(self, constraint: Constraint, replace: bool = False) -> None:
         "Add a constraint to the environment."
         name = constraint.name
 
-        if name in self.constraints:
+        if name in self.constraints and not replace:
             raise ValueError(
                 f"Constraint with name {name} already exists. Please use a different name."
             )
@@ -268,7 +268,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
         self.setup.set_tasks(self.tasks)
         for constraint in self.setup.setup_constraints():
-            self.add_constraint(constraint)
+            self.add_constraint(constraint, replace=True)
 
         for constraint in self.constraints.values():
             constraint.set_tasks(self.tasks)

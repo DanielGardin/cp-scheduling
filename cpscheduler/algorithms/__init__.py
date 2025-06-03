@@ -1,10 +1,11 @@
 __all__ = [
-    'Buffer',
-    'BaseAlgorithm',
-    'BehaviorCloning'
+    # Online RL
+    "Reinforce",
+
+    # Offline RL
+    "BehaviorCloning"
 ]
 
-from .buffer import Buffer
-from .base import BaseAlgorithm
+from .online.reinforce import Reinforce
 
-from .bc import BehaviorCloning
+from .offline.bc import BehaviorCloning

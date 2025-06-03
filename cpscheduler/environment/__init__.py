@@ -30,10 +30,6 @@ __all__ = [
     "TotalTardyJobs",
     "WeightedTardyJobs",
     "TotalFlowTime",
-
-    # Wrappers
-    "TabularObservationWrapper",
-    "PermutationActionWrapper",
 ]
 
 from .env import SchedulingEnv
@@ -70,9 +66,4 @@ from .objectives import (
     TotalTardyJobs,
     WeightedTardyJobs,
     TotalFlowTime
-)
-
-from .wrappers import (
-    TabularObservationWrapper,
-    PermutationActionWrapper
 )

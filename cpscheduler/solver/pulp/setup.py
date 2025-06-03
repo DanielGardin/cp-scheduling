@@ -28,7 +28,8 @@ def _(setup: SingleMachineSetup) -> Callable[[LpProblem, PulpVariables], None]:
         for task_id, task in enumerate(setup.tasks):
             model.addConstraint(
                 decision_vars.end_times[task_id] ==
-                decision_vars.start_times[task_id] + task.processing_times[0]
+                decision_vars.start_times[task_id] + task.processing_times[0],
+                f"non_preemptive_{task_id}"
             )
 
     return export_model
@@ -39,13 +40,15 @@ def _(setup: IdenticalParallelMachineSetup) -> Callable[[LpProblem, PulpVariable
         for task_id, task in enumerate(setup.tasks):
             model.addConstraint(
                 decision_vars.end_times[task_id] ==
-                decision_vars.start_times[task_id] + task.processing_times[0]
+                decision_vars.start_times[task_id] + task.processing_times[0],
+                f"non_preemptive_{task_id}"
             )
 
             model.addConstraint(lpSum(
                 decision_vars.assignments[task_id][machine_id]
                 for machine_id in range(setup.n_machines)
-                ) == 1
+                ) == 1,
+                f"assignment_{task_id}"
             )
 
     return export_model

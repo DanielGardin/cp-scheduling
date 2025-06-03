@@ -5,9 +5,9 @@ from torch.optim import Optimizer
 
 from tensordict import TensorDict
 
-from .base import BaseAlgorithm
-from .buffer import Buffer
-from .protocols import Policy
+from ..base import BaseAlgorithm
+from ..buffer import Buffer
+from ..protocols import Policy
 
 class BehaviorCloning(BaseAlgorithm):
     """
@@ -25,12 +25,7 @@ class BehaviorCloning(BaseAlgorithm):
     actions: Tensor
         The actions taken by the expert.
 
-    loss: nn.Module
-        The loss function used to train the actor.
-        It should take the predicted action, log probability of the action,
-        and the target action as input and return the loss.
-
-    actor: nn.Module
+    actor: Policy
         The actor network that predicts the action given a state.
         It should take the state as input and return the predicted action
         and log probability of the action.
@@ -40,13 +35,12 @@ class BehaviorCloning(BaseAlgorithm):
         It should be an instance of torch.optim.Optimizer or a subclass of it.
     """
     def __init__(
-            self,
-            states: Tensor,
-            actions: Tensor,
-            actor: Policy[Tensor, Tensor],
-            actor_optimizer: Optimizer,
-        ):
-
+        self,
+        states: Tensor,
+        actions: Tensor,
+        actor: Policy[Tensor, Tensor],
+        actor_optimizer: Optimizer,
+    ):
         buffer = Buffer.from_tensors(
             state=states,
             action=actions,

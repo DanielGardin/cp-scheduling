@@ -1,4 +1,4 @@
-from pulp import LpVariable, LpInteger, LpBinary, value
+from pulp import LpVariable, LpInteger, LpBinary, value, LpAffineExpression
 
 from cpscheduler.environment.tasks import Tasks
 
@@ -7,6 +7,7 @@ class PulpVariables:
     end_times: list[LpVariable]
     assignments: list[list[LpVariable]]
     orders: dict[tuple[int, int], LpVariable]
+    objective: LpVariable | LpAffineExpression
 
     def __init__(
             self,
@@ -76,3 +77,18 @@ class PulpVariables:
         }
 
         return orders
+
+    def set_objective(self, objective_var: LpVariable | LpAffineExpression) -> None:
+        self.objective = objective_var
+
+    def get_objective_value(self) -> float:
+        if hasattr(self, 'objective'):
+            obj_value = value(self.objective)
+
+            if obj_value is None:
+                raise ValueError("Objective variable has not been set or is None.")
+
+            assert isinstance(obj_value, (float, int))
+            return float(obj_value)
+
+        raise ValueError("Objective variable has not been set.")
