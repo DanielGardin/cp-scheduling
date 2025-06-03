@@ -11,12 +11,12 @@ IndexType = Union[None, int, slice, Tensor, list[Any], tuple[Any, ...]]
 
 class Buffer:
     def __init__(
-            self,
-            buffer_size: int,
-            buffer_shapes: Mapping[str, tuple[int, ...]],
-            device: Device = 'cpu',
-            allow_grad: bool = False
-        ) -> None:
+        self,
+        buffer_size: int,
+        buffer_shapes: Mapping[str, tuple[int, ...]],
+        device: Device = 'cpu',
+        allow_grad: bool = False
+    ) -> None:
         self.capacity = buffer_size
         self.device = device
 

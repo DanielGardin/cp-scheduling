@@ -38,3 +38,17 @@ ignore_missing_imports = true
 follow_imports = "skip"
 follow_imports_for_stubs = true
 disallow_untyped_calls = false
+
+[[tool.mypy.overrides]]
+module = "pulp.*"
+ignore_missing_imports = true
+follow_imports = "skip"
+follow_imports_for_stubs = true
+disallow_untyped_calls = false
+
+[[tool.tensordict.overrides]]
+module = "pulp.*"
+ignore_missing_imports = true
+follow_imports = "skip"
+follow_imports_for_stubs = true
+disallow_untyped_calls = false

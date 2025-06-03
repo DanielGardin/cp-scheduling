@@ -1,19 +1,13 @@
-"""
-    wrappers.py
-
-    This module defines various wrappers for the scheduling environment to modify
-    the observation and action spaces, as well as to add additional functionality.
-"""
 from typing import Any, TypeVar, Iterable
 
 from gymnasium.spaces import Dict, Tuple, Box, OneOf, Space, Sequence
 
-from gymnasium import ObservationWrapper, ActionWrapper, Env
+from gymnasium import ObservationWrapper, Env
 
-from .env import ObsType, ActionType
-from .tasks import Tasks
-from .utils import is_iterable_type
-from .common import MAX_INT
+from ..env import ObsType, ActionType
+from ..tasks import Tasks
+from ..utils import is_iterable_type
+from ..common import MAX_INT
 
 def reshape_space(space: Space[Any], shape: tuple[int, ...]) -> Space[Any]:
     """
@@ -25,17 +19,17 @@ def reshape_space(space: Space[Any], shape: tuple[int, ...]) -> Space[Any]:
             high=space.high.reshape(shape), # type: ignore
             dtype=space.dtype               # type: ignore
         )
-    elif isinstance(space, Dict):
+
+    if isinstance(space, Dict):
         return Dict({key: reshape_space(value, shape) for key, value in space.spaces.items()})
 
-    elif isinstance(space, Tuple):
+    if isinstance(space, Tuple):
         return Tuple([reshape_space(value, shape) for value in space.spaces])
 
-    elif isinstance(space, OneOf):
+    if isinstance(space, OneOf):
         return OneOf([reshape_space(value, shape) for value in space.spaces])
 
-    else:
-        raise ValueError(f"Unsupported space type: {type(space)}")
+    raise ValueError(f"Unsupported space type: {type(space)}")
 
 _Act = TypeVar("_Act")
 class TabularObservationWrapper(ObservationWrapper[dict[str, list[Any]], _Act, ObsType]):
@@ -128,29 +122,3 @@ class CPStateWrapper(ObservationWrapper[ObsType, ActionType, ObsType]):
         ]
 
         return task_data, job_data
-
-
-_Obs = TypeVar("_Obs")
-class PermutationActionWrapper(ActionWrapper[_Obs, Iterable[int], ActionType]):
-    """
-    A wrapper that converts the action space to a permutation of the job IDs.
-    """
-    def __init__(
-            self,
-            env: Env[_Obs, ActionType],
-            strict: bool = True
-        ):
-        super().__init__(env)
-
-        if not env.get_wrapper_attr("loaded"):
-            raise ValueError("Environment must be loaded before wrapping.")
-
-        n_jobs = len(getattr(env.get_wrapper_attr("tasks"), "jobs"))
-        self.instruction = "execute" if strict else "submit"
-
-        self.action_space = Sequence(
-            Box(low=0, high=n_jobs - 1, shape=(1,)), stack=True
-        )
-
-    def action(self, action: Iterable[int]) -> ActionType:
-        return [(self.instruction, job_id) for job_id in action]

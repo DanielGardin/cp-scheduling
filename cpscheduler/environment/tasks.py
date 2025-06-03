@@ -485,6 +485,25 @@ class Tasks:
 
         return task_state, job_state
 
+    def tighten_bounds(self, time: int) -> None:
+        "Tighten the bounds of the tasks based on the current time."
+
+        max_time = time + sum([
+            max(p_times for p_times in task.processing_times.values())
+            for task in self.tasks if not task.is_fixed()
+        ])
+
+        for task in self.tasks:
+            if task.is_fixed():
+                continue
+
+            if task.get_start_lb() < time:
+                task.set_start_lb(time)
+
+            if task.get_end_ub() > max_time:
+                task.set_end_ub(max_time)
+
+
     def get_time_ub(self) -> int:
         "Get the upper bound for the time in the tasks."
         upper = 0

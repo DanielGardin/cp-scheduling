@@ -270,6 +270,8 @@ class TotalTardiness(Objective):
 
         return sum(tardiness)
 
+    def get_entry(self) -> str:
+        return "ΣT_j"
 
 class WeightedTardiness(Objective):
     """
@@ -319,7 +321,7 @@ class WeightedTardiness(Objective):
             weighted_tardiness += weight * max(0, max_completion_time - due_date)
 
         return weighted_tardiness
-    
+
     def get_entry(self) -> str:
         return "Σw_jT_j"
 
@@ -357,6 +359,8 @@ class TotalEarliness(Objective):
 
         return sum(tardiness)
 
+    def get_entry(self) -> str:
+        return "ΣE_j"
 
 class WeightedEarliness(Objective):
     """
@@ -406,6 +410,8 @@ class WeightedEarliness(Objective):
 
         return weighted_tardiness
 
+    def get_entry(self) -> str:
+        return "Σw_jE_j"
 
 class TotalTardyJobs(Objective):
     """
@@ -439,6 +445,9 @@ class TotalTardyJobs(Objective):
         ]
 
         return sum(tardiness)
+
+    def get_entry(self) -> str:
+        return "ΣU_j"
 
 class WeightedTardyJobs(Objective):
     """
@@ -487,6 +496,9 @@ class WeightedTardyJobs(Objective):
             weighted_tardiness += weight * (1 if max_completion_time > due_date else 0)
 
         return weighted_tardiness
+
+    def get_entry(self) -> str:
+        return "Σw_jU_j"
 
 class TotalFlowTime(Objective):
     """

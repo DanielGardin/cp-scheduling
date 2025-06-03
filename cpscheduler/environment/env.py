@@ -188,11 +188,11 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
         return f"SchedulingEnv({self.get_entry()}, not loaded)"
 
-    def add_constraint(self, constraint: Constraint) -> None:
+    def add_constraint(self, constraint: Constraint, replace: bool = False) -> None:
         "Add a constraint to the environment."
         name = constraint.name
 
-        if name in self.constraints:
+        if name in self.constraints and not replace:
             raise ValueError(
                 f"Constraint with name {name} already exists. Please use a different name."
             )
@@ -268,7 +268,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
         self.setup.set_tasks(self.tasks)
         for constraint in self.setup.setup_constraints():
-            self.add_constraint(constraint)
+            self.add_constraint(constraint, replace=True)
 
         for constraint in self.constraints.values():
             constraint.set_tasks(self.tasks)
@@ -477,6 +477,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
         i = -1
         schedule = self.scheduled_instructions[time]
+
         while signal.action & Action.SKIPPED and i+1 < len(schedule):
             i += 1
             instruction = schedule[i]
@@ -487,10 +488,10 @@ class SchedulingEnv(Env[ObsType, ActionType]):
                 self.scheduled_instructions
             )
 
-        action       = signal.action
+        action = signal.action
         halt, change = False, False
 
-        if not allow_wait and action & Action.WAIT:
+        if not allow_wait and action == Action.WAIT:
             warn(
                 f"{instruction} is not allowed to wait at {self.current_time}."
             )
@@ -504,10 +505,12 @@ class SchedulingEnv(Env[ObsType, ActionType]):
                     break
 
             else:
-                schedule.pop(i)
+                if i != -1: schedule.pop(i) 
+                else:     halt = True
+
                 return halt, change
 
-        else:
+        elif i != -1:
             schedule.pop(i)
 
         if action & Action.REEVALUATE:
@@ -559,6 +562,12 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
         elif not self.scheduled_instructions[-1] and len(self.scheduled_instructions) == 1:
             halt, change = True, False
+
+            if all(task.is_fixed() for task in self.tasks):
+                end_time = self.tasks.get_time_ub()
+                self.advance_to(end_time)
+
+                change = end_time != self.current_time
 
         else:
             halt, change = self.resolve_schedule()

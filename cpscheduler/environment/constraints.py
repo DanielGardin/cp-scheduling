@@ -205,19 +205,6 @@ class PrecedenceConstraint(Constraint):
             if task_id == self.topological_order[ptr]:
                 ptr += 1
 
-    # def export_data(self) -> str:
-    #     data = f"edges_{self.name} = [|\n"
-
-    #     num_edges = 0
-    #     for task, children in self.original_precedence.items():
-    #         for child in children:
-    #             data += f"{task+1}, {child+1} |\n"
-    #             num_edges += 1
-
-    #     data += "|];"
-
-    #     return f"num_edges_{self.name} = {num_edges};\n{data}"
-
     def get_entry(self) -> str:
         n_children = sum(len(tasks) for tasks in self.precedence.values())
         n_unique_children = len(set(
@@ -343,18 +330,6 @@ class DisjunctiveConstraint(Constraint):
                 if task.get_start_lb() < minimum_start_time:
                     task.set_start_lb(minimum_start_time)
 
-    # def export_data(self) -> str:
-    #     data = f"num_groups_{self.name} = {len(self.original_disjunctive_groups)};\n"
-    #     data += f"group_tasks_{self.name} = [\n"
-    #     for tasks in self.original_disjunctive_groups.values():
-    #         data += "    {" + ', '.join([
-    #             str(task_id + 1) for task_id in tasks
-    #         ]) + "},\n"
-    #     data += "];\n"
-
-    #     return dedent(data)
-
-
 class ReleaseDateConstraint(Constraint):
     """
     Release date constraint for the scheduling environment.
@@ -375,7 +350,7 @@ class ReleaseDateConstraint(Constraint):
 
     def __init__(
             self,
-            release_dates: Mapping[int, int] | str = 'release_time',
+            release_dates: Mapping[int, int] | Iterable[int] | str = 'release_time',
             name: Optional[str] = None
         ):
         super().__init__(name)
@@ -383,7 +358,12 @@ class ReleaseDateConstraint(Constraint):
         if isinstance(release_dates, str):
             self.tags['release_time'] = release_dates
 
+        elif is_iterable_type(release_dates, int):
+            self.release_dates = {task: date for task, date in enumerate(release_dates)}
+
         else:
+            assert isinstance(release_dates, Mapping)
+            release_dates = cast(Mapping[int, int], release_dates) 
             self.release_dates = {task: date for task, date in release_dates.items()}
 
     def set_tasks(self, tasks: Tasks) -> None:
@@ -424,7 +404,7 @@ class DeadlineConstraint(Constraint):
 
     def __init__(
             self,
-            deadlines: Mapping[int, int] | str = 'due_dates',
+            deadlines: Mapping[int, int] | Iterable[int] | str = 'due_dates',
             name: Optional[str] = None
         ):
         super().__init__(name)
@@ -432,7 +412,12 @@ class DeadlineConstraint(Constraint):
         if isinstance(deadlines, str):
             self.tags['due_date'] = deadlines
 
+        elif is_iterable_type(deadlines, int):
+            self.deadlines = {task: date for task, date in enumerate(deadlines)}
+
         else:
+            assert isinstance(deadlines, Mapping)
+            deadlines = cast(Mapping[int, int], deadlines)
             self.deadlines = {task: date for task, date in deadlines.items()}
 
     def set_tasks(self, tasks: Tasks) -> None:
@@ -554,31 +539,6 @@ class ResourceConstraint(Constraint):
 
                 if task.get_start_lb() < minimum_start_time:
                     task.set_start_lb(minimum_start_time)
-
-    # def export_data(self) -> str:
-    #     new_line = '\n'
-
-    #     resources_str = f"resources_{self.name} = [|\n"
-    #     capacities_str = f"capacities_{self.name} = ["
-
-    #     for i, resource in enumerate(self.resources):
-    #         row = list(resource.values()) + [self.capacities[i]]
-    #         int_row = scale_to_int(row)
-
-    #         resources_str += ', '.join(map(str, int_row[:-1]))+ " |"
-    #         capacities_str += str(int_row[-1])
-
-    #         if i == len(self.resources) - 1:
-    #             resources_str += "];\n"
-    #             capacities_str += "];\n"
-
-    #         else:
-    #             resources_str += new_line
-    #             capacities_str += ", "
-
-    #     return f"num_resources_{self.name} = {len(self.resources)};\n" + \
-    #             capacities_str + \
-    #             resources_str
 
 class MachineConstraint(Constraint):
     """

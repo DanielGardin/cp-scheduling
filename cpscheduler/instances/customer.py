@@ -65,15 +65,14 @@ def customer_scheduling_instance(
     n_customers_per_weight = np.diff(np.insert(assignment, 0, 0))
 
     # Check if any weight bin has no customers assigned and tweak the boundaries
-    if np.any(n_customers_per_weight <= 0):
-        for i in range(len(n_customers_per_weight)-1, 0, -1):
-            current = n_customers_per_weight[i]
+    for i in range(len(n_customers_per_weight)-1, 0, -1):
+        current = n_customers_per_weight[i]
 
-            if current <= 0:
-                required = 1 - current
+        if current <= 0:
+            required = 1 - current
 
-                n_customers_per_weight[i]   += required
-                n_customers_per_weight[i-1] -= required
+            n_customers_per_weight[i]   += required
+            n_customers_per_weight[i-1] -= required
 
     customer_information = DataFrame({
         weight_feature : 0,
@@ -91,19 +90,19 @@ def customer_scheduling_instance(
 
         jobs_distribution = rng.multinomial(n_jobs - n_customers_in_bin, bin_presence) + 1
 
-        idx += n_customers_in_bin
+        idx += int(n_customers_in_bin)
 
         customer_information.loc[customers.tolist(), weight_feature] = weight
-        customer_information.loc[customers.tolist(), 'n_jobs'] = jobs_distribution
+        customer_information.loc[customers.tolist(), 'n_jobs']       = jobs_distribution
     
         base_instance.loc[base_instance[weight_feature] == weight, customer_feature] = (
             rng.permutation(np.repeat(customers, jobs_distribution))
         )
 
-    weight_normalization = customer_information[weight_feature].sum()
+    weight_norm = customer_information[weight_feature].sum()
 
-    base_instance[weight_feature]    = base_instance[weight_feature] / weight_normalization
-    customer_information[weight_feature] = customer_information[weight_feature] / weight_normalization
+    base_instance[weight_feature]        = base_instance[weight_feature] / weight_norm
+    customer_information[weight_feature] = customer_information[weight_feature] / weight_norm
 
     base_instance[customer_feature] = base_instance[customer_feature].astype(int)
 

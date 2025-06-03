@@ -32,10 +32,12 @@ def ceildiv(a: int, b: int) -> int:
     return -(a // -b)
 
 
-def summary_logs(logs: dict[str, Any]) -> dict[str, str]:
+def summary_logs(logs: dict[str, Any], tag: str | None = None) -> dict[str, str]:
     summary: dict[str, str] = {}
 
     for key, value in logs.items():
+        if tag: key = f"{tag}/{key}"
+
         if isinstance(value, float):
             summary[key] = f"{value:.4f}"
 
@@ -112,7 +114,7 @@ class BaseAlgorithm(Module, ABC):
                 sync_tensorboard=True
             )
 
-        self.writer = SummaryWriter(log_dir=log_dir) # type: ignore
+        self.writer = SummaryWriter(log_dir=log_dir)
 
     def learn(
             self,
@@ -124,7 +126,12 @@ class BaseAlgorithm(Module, ABC):
             seed: Optional[int] = None
         ) -> None:
         if not hasattr(self, "writer"):
-            logger.info("Calling learn before begin_experiment, no logging will be done and no weights will be saved.")
+            logger.info(
+                "Calling learn before begin_experiment, no logging will be done"
+                "and no weights will be saved."
+            )
+
+            self.writer = SummaryWriter()
 
         if seed is not None:
             set_seed(seed)
@@ -173,12 +180,14 @@ class BaseAlgorithm(Module, ABC):
                     with torch.no_grad():
                         self.eval()
                         val_logs = self.validate()
-                        self._write_logs(val_logs, tag="validation")
+                        self._write_logs(val_logs, tag="val")
 
-                    epoch_log = {**start_logs, **update_logs, **end_logs, **val_logs}
-                    pbar.set_postfix(
-                        summary_logs(epoch_log)
-                    )
+                    pbar.set_postfix({
+                        **summary_logs(start_logs, tag="start"),
+                        **summary_logs(update_logs, tag="update"),
+                        **summary_logs(end_logs, tag="end"),
+                        **summary_logs(val_logs, tag="val")
+                    })
 
             if lr_scheduler is not None:
                 lr_scheduler.step()
