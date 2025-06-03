@@ -16,6 +16,18 @@ from .tasks import Tasks
 from .constraints import Constraint, DisjunctiveConstraint, PrecedenceConstraint, MachineConstraint
 from .utils import is_iterable_type, convert_to_list
 
+PTIME_ALIASES = ["processing_time", "process_time", "processing time"]
+
+# TODO: Expand the inference logic to handle more complex cases
+def infer_processing_time(data: dict[str, list[Any]]) -> ProcessTimeAllowedTypes:
+    for alias in PTIME_ALIASES:
+        if alias in data:
+            return alias
+
+    raise ValueError(
+        f"Cannot infer processing time from the data."
+    )
+
 @mypyc_attr(allow_interpreted_subclasses=True)
 class ScheduleSetup(ABC):
     """
@@ -87,6 +99,9 @@ class SingleMachineSetup(ScheduleSetup):
         data: dict[str, list[Any]],
         process_time: ProcessTimeAllowedTypes,
     ) -> list[dict[int, int]]:
+        if process_time is None:
+            process_time = infer_processing_time(data)
+
         if is_iterable_type(process_time, int):
             return [{0: p_time} for p_time in process_time]
 
@@ -134,6 +149,9 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
         data: dict[str, list[Any]],
         process_time: ProcessTimeAllowedTypes,
     ) -> list[dict[int, int]]:
+        if process_time is None:
+            process_time = infer_processing_time(data)
+
         if is_iterable_type(process_time, int):
             return [
                 {machine: p_time for machine in range(self.n_machines)}
@@ -177,6 +195,9 @@ class UniformParallelMachineSetup(ScheduleSetup):
         data: dict[str, list[Any]],
         process_time: ProcessTimeAllowedTypes,
     ) -> list[dict[int, int]]:
+        if process_time is None:
+            process_time = infer_processing_time(data)
+
         if is_iterable_type(process_time, int):
             return [
                 {machine: p_time // self.speed[machine] for machine in range(self.n_machines)}
@@ -261,6 +282,9 @@ class JobShopSetup(ScheduleSetup):
         data: dict[str, list[Any]],
         process_time: ProcessTimeAllowedTypes,
     ) -> list[dict[int, int]]:
+        if process_time is None:
+            process_time = infer_processing_time(data)
+
         if is_iterable_type(process_time, int):
             return [
                 {machine: p_time}
@@ -325,6 +349,9 @@ class OpenShopSetup(ScheduleSetup):
         data: dict[str, list[Any]],
         process_time: ProcessTimeAllowedTypes,
     ) -> list[dict[int, int]]:
+        if process_time is None:
+            process_time = infer_processing_time(data)
+
         if is_iterable_type(process_time, int):
             return [
                 {machine: p_time}

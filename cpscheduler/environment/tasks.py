@@ -22,7 +22,7 @@ can be used in constraints and objectives (i.e. due-dates, customer, type of tas
 We do not reccomend customizing this module, as it's tightly coupled with the other modules
 in the environment, change with caution.
 """
-from typing import Any, Iterator, Optional, NamedTuple, ClassVar, Iterable
+from typing import Any, Iterator, NamedTuple, ClassVar, Iterable
 
 from .common import MAX_INT, MIN_INT
 
@@ -381,8 +381,8 @@ class Tasks:
         self,
         data            : dict[str, list[Any]],
         processing_times: list[dict[int, int]],
-        jobs_ids        : Optional[Iterable[int] | str] = None,
-        job_data        : Optional[dict[str, list[Any]]] = None,
+        jobs_ids        : Iterable[int] | str | None  = None,
+        job_data        : dict[str, list[Any]] | None = None,
         n_parts: int = 1,
     ):
         self.n_parts = n_parts

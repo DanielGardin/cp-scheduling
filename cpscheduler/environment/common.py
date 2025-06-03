@@ -10,5 +10,6 @@ ProcessTimeAllowedTypes: TypeAlias = (
     Iterable[Iterable[int]]     |
     Iterable[int]               | # Requires a machine array
     str                         | # Requires a machine array
-    Iterable[str]                 # Map columns in data to machines
+    Iterable[str]               | # Map columns in data to machines
+    None                          # Infer from data
 )
