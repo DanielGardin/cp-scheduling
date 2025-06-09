@@ -1,4 +1,4 @@
-from typing import Any, TypeVar, Iterable
+from typing import Any, TypeVar, Iterable, SupportsInt
 
 from abc import ABC, abstractmethod
 
@@ -50,7 +50,7 @@ class SchedulingActionWrapper(ActionWrapper[_Obs, _Act, ActionType], ABC):
         """
         return None
 
-class PermutationActionWrapper(SchedulingActionWrapper[_Obs, Iterable[int]]):
+class PermutationActionWrapper(SchedulingActionWrapper[_Obs, Iterable[SupportsInt]]):
     """
     A wrapper that converts the action space to a permutation of the job IDs.
     """
@@ -63,12 +63,12 @@ class PermutationActionWrapper(SchedulingActionWrapper[_Obs, Iterable[int]]):
 
         self.instruction = "execute" if strict else "submit"
 
-    def get_action_space(self) -> Space[Iterable[int]]:
+    def get_action_space(self) -> Space[Iterable[SupportsInt]]:
         n_jobs = len(getattr(self.env.get_wrapper_attr("tasks"), "jobs"))
 
         return Sequence(
             Box(low=0, high=n_jobs - 1, shape=(1,)), stack=True
         )
 
-    def action(self, action: Iterable[int]) -> ActionType:
+    def action(self, action: Iterable[SupportsInt]) -> ActionType:
         return [(self.instruction, job_id) for job_id in action]

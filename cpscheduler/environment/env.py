@@ -30,7 +30,7 @@ from .render import Renderer, PlotlyRenderer
 
 InstanceTypes: TypeAlias = DataFrame | Mapping[str, Iterable[Any]]
 
-SingleAction: TypeAlias = tuple[str | Instruction, *tuple[int, ...]]
+SingleAction: TypeAlias = tuple[str | Instruction, *tuple[SupportsInt, ...]]
 ActionType: TypeAlias   = SingleAction | Iterable[SingleAction] | None
 ObsType: TypeAlias      = tuple[dict[str, list[Any]], dict[str, list[Any]]]
 
@@ -48,7 +48,7 @@ ActionSpace = OneOf([
 
 JOB_ID_ALIASES = ["job", "job_id"]
 
-def is_single_action(action: ActionType) -> TypeGuard[tuple[str | Instruction, *tuple[int, ...]]]:
+def is_single_action(action: ActionType) -> TypeGuard[tuple[str | Instruction, *tuple[SupportsInt, ...]]]:
     "Check if the action is a single instruction or a iterable of instructions."
     if not isinstance(action, tuple):
         return False
@@ -186,7 +186,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
     def __repr__(self) -> str:
         if self.loaded:
             return f"SchedulingEnv({self.get_entry()}, n_tasks={len(self.tasks)}, "\
-                    "current_time={self.current_time}, loaded=True)"
+                   f"current_time={self.current_time}, loaded=True)"
 
         return f"SchedulingEnv({self.get_entry()}, not loaded)"
 
@@ -587,12 +587,15 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         action: ActionType = None,
     ) -> tuple[ObsType, float, bool, bool, dict[str, Any]]:
         if is_single_action(action):
-            self.schedule_instruction(action[0], action[1:])
+            single_args =  tuple(map(int, action[1:]))
+            self.schedule_instruction(action[0], single_args)
 
         elif action is not None:
             action = cast(Iterable[SingleAction], action)
+
             for instruction in action:
-                self.schedule_instruction(instruction[0], instruction[1:])
+                args = tuple(map(int, instruction[1:]))
+                self.schedule_instruction(instruction[0], args)
 
         previous_objective = self.get_objective()
 

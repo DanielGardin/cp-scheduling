@@ -183,6 +183,9 @@ class PreprocessObservationWrapper(SchedulingObservationWrapper[NDArray[np.float
 
         return Box(float("-inf"), float("inf"), shape=(n_jobs, self.n_features))
 
+    def default_observation_space(self) -> Space[NDArray[np.floating[Any]]] | None:
+        return Box(float("-inf"), float("inf"), shape=(0, self.n_features))
+
     def observation(self, observation: ObsType) -> NDArray[np.floating[Any]]:
         task_data, job_data = observation
 
