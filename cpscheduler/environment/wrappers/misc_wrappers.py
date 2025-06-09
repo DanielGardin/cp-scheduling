@@ -1,4 +1,4 @@
-from typing import Any, TypeVar, Iterable, Callable
+from typing import Any, TypeVar, Callable
 from pandas import DataFrame
 
 from gymnasium import Env, Wrapper

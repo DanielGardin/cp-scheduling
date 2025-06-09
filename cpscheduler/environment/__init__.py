@@ -50,7 +50,6 @@ from .constraints import (
     ResourceConstraint,
     MachineConstraint,
     SetupConstraint,
-
 )
 
 from .objectives import (

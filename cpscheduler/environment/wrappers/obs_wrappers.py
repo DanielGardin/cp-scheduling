@@ -1,5 +1,4 @@
 from typing import Any, TypeVar, Callable
-from pandas import DataFrame
 from numpy.typing import NDArray
 
 from abc import ABC, abstractmethod

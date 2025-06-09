@@ -12,7 +12,8 @@
 """
 from warnings import warn
 
-from typing import Any, Optional, TypeAlias, Iterable, SupportsInt, TypeGuard, Mapping, cast
+from typing import Any, Optional, TypeAlias, Iterable, SupportsInt, Mapping
+from typing_extensions import TypeIs
 from pandas import DataFrame
 
 from gymnasium import Env
@@ -48,7 +49,7 @@ ActionSpace = OneOf([
 
 JOB_ID_ALIASES = ["job", "job_id"]
 
-def is_single_action(action: ActionType) -> TypeGuard[tuple[str | Instruction, *tuple[SupportsInt, ...]]]:
+def is_single_action(action: ActionType) -> TypeIs[tuple[str | Instruction, *tuple[SupportsInt, ...]]]:
     "Check if the action is a single instruction or a iterable of instructions."
     if not isinstance(action, tuple):
         return False
@@ -98,6 +99,24 @@ class SchedulingEnv(Env[ObsType, ActionType]):
             Whether to allow preemption in the scheduling process. If True, tasks can be interrupted
             and resumed later.
 
+        instance: InstanceTypes, optional
+            The instance data for the scheduling problem. It can be a DataFrame or a dictionary
+            containing task features and their values.
+        
+        processing_times: ProcessTimeAllowedTypes, optional
+            The processing times for the tasks, it is dependent on the machine setup. If not provided,
+            the environment will attempt to infer processing times from the instance data.
+        
+        job_instance: InstanceTypes, optional
+            The job instance data for the scheduling problem. It can be a DataFrame or a dictionary
+            containing job features and their values. If None, no job instance is set.
+        
+        job_ids: Iterable[int] | str, optional
+            The job IDs for the tasks. If None, job IDs are as the default index of the job_instance.
+        
+        n_parts: int, optional
+            The number of parts to split the tasks into. If None, it defaults to 16 if preemption is
+            allowed, otherwise 1.
     """
     # Environment static variables
     setup           : ScheduleSetup
@@ -591,8 +610,6 @@ class SchedulingEnv(Env[ObsType, ActionType]):
             self.schedule_instruction(action[0], single_args)
 
         elif action is not None:
-            action = cast(Iterable[SingleAction], action)
-
             for instruction in action:
                 args = tuple(map(int, instruction[1:]))
                 self.schedule_instruction(instruction[0], args)
