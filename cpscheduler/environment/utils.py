@@ -9,9 +9,10 @@ from typing import (
     Optional,
     overload,
     Iterable,
-    TypeGuard,
     Sequence,
+    Mapping
 )
+from typing_extensions import TypeIs
 
 from collections import deque
 from fractions import Fraction
@@ -67,7 +68,7 @@ def convert_to_list(
     except TypeError:
         return [array] if dtype is None else [dtype(array)]
 
-def is_iterable_type(obj: Iterable[Any] | Any, dtype: type[_T]) -> TypeGuard[Iterable[_T]]:
+def is_iterable_type(obj: Any, dtype: type[_T]) -> TypeIs[Iterable[_T]]:
     """
     Returns whether the object is an iterable containing elements of the specified type.
 
@@ -93,9 +94,9 @@ def is_iterable_type(obj: Iterable[Any] | Any, dtype: type[_T]) -> TypeGuard[Ite
 
 _K = TypeVar("_K")
 _V = TypeVar("_V")
-def is_dict(
+def is_mapping(
     obj: dict[Any, Any] | Any, keys_type: type[_K], values_type: type[_V]
-) -> TypeGuard[dict[_K, _V]]:
+) -> TypeIs[Mapping[_K, _V]]:
     """
     Returns whether the object is a dictionary.
 
@@ -207,24 +208,29 @@ def binary_search(
 
     return left
 
-def infer_list_space(array: list[_T]) -> spaces.Space[Any]:
+def infer_list_space(array: list[Any]) -> spaces.Space[Any]:
     "Infer the Gymnasium space for a list based on its elements."
     n = len(array)
 
-    if is_iterable_type(array, bool):
-        return spaces.MultiBinary(n)
+    if n == 0:
+        return spaces.Tuple([])
 
-    if is_iterable_type(array, int):
+    elem = array[0]
+
+    if isinstance(elem, str):
+        return spaces.Tuple([spaces.Text(max_length=100) for _ in range(n)])
+
+    if isinstance(elem, int):
         return spaces.Box(low=MIN_INT, high=MAX_INT, shape=(n,), dtype=np.int64)
 
-    if is_iterable_type(array, float):
+    if isinstance(elem, float):
         return spaces.Box(low=-np.inf, high=np.inf, shape=(n,), dtype=np.float64)
+
+    if isinstance(elem, bool):
+        return spaces.MultiBinary(n)
 
     if is_iterable_type(array, str):
         return spaces.Tuple([spaces.Text(max_length=100) for _ in range(n)])
-
-    raise TypeError(f"Cannot infer the space of the list: {array}")
-
 
 def scale_to_int(float_list: list[float], scale_factor: float = 1000.0) -> list[int]:
     "Scale a list of floats to integers using a common denominator."

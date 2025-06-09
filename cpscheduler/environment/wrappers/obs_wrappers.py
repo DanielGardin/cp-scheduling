@@ -1,10 +1,14 @@
-from typing import Any, TypeVar, Iterable
+from typing import Any, TypeVar, Callable
+from numpy.typing import NDArray
 
+from abc import ABC, abstractmethod
+
+import numpy as np
 from gymnasium.spaces import Dict, Tuple, Box, OneOf, Space, Sequence
 
 from gymnasium import ObservationWrapper, Env
 
-from ..env import ObsType, ActionType
+from ..env import ObsType
 from ..tasks import Tasks
 from ..utils import is_iterable_type
 from ..common import MAX_INT
@@ -31,23 +35,58 @@ def reshape_space(space: Space[Any], shape: tuple[int, ...]) -> Space[Any]:
 
     raise ValueError(f"Unsupported space type: {type(space)}")
 
+_Obs = TypeVar("_Obs")
 _Act = TypeVar("_Act")
-class TabularObservationWrapper(ObservationWrapper[dict[str, list[Any]], _Act, ObsType]):
+class SchedulingObservationWrapper(ObservationWrapper[_Obs, _Act, ObsType], ABC):
+    def __init__(self, env: Env[ObsType, _Act]):
+        super().__init__(env)
+
+        if self.env.get_wrapper_attr("loaded"):
+            self.observation_space = self.get_observation_space()
+
+        else:
+            default_space = self.default_observation_space()
+
+            if default_space is not None:
+                self.observation_space = default_space
+
+    def reset(
+        self,
+        *,
+        seed: int | None = None,
+        options: dict[str, Any] | None = None,
+    ) -> tuple[_Obs, dict[str, Any]]:
+        obs, info = super().reset(seed=seed, options=options)
+        self.observation_space = self.get_observation_space()
+
+        return obs, info
+
+    @abstractmethod
+    def get_observation_space(self) -> Space[_Obs]:
+        """
+        Get the observation space for the environment.
+        This method is called when the environment is loaded, both during
+        initialization and when the environment is reset.
+        """
+
+    def default_observation_space(self) -> Space[_Obs] | None:
+        """
+        Get the default observation space for the environment during initialization,
+        when the environment's observation space is not known yet.
+        """
+        return None
+
+class TabularObservationWrapper(SchedulingObservationWrapper[dict[str, list[Any]], _Act]):
     """
     A wrapper that converts the observation space to a single tabular space after merging
     the task and job features.
     """
-    def __init__(self, env: Env[ObsType, _Act]):
-        super().__init__(env)
+    def get_observation_space(self) -> Space[dict[str, list[Any]]]:
+        if not is_iterable_type(self.env.observation_space, Dict):
+            raise ValueError(f"Unexpected env observation space: {self.env.observation_space}")
 
-        if not env.get_wrapper_attr("loaded"):
-            raise ValueError("Environment must be loaded before wrapping.")
-
-        if not is_iterable_type(env.observation_space, Dict):
-            raise ValueError(f"Unexpected env observation space: {env.observation_space}")
-
-        task_feature_space, job_feature_space = env.observation_space
-        n_tasks = len(env.get_wrapper_attr("tasks"))
+        task_feature_space, job_feature_space = self.env.observation_space
+        n_tasks = len(self.env.get_wrapper_attr("tasks"))
 
         job_spaces = {
             job_feature: reshape_space(space, (n_tasks,))
@@ -55,7 +94,7 @@ class TabularObservationWrapper(ObservationWrapper[dict[str, list[Any]], _Act, O
         }
         del job_spaces['job_id']
 
-        self.observation_space = (
+        return (
             task_feature_space if len(job_feature_space) == 1 else
             Dict({
                 **task_feature_space,
@@ -83,24 +122,19 @@ class TabularObservationWrapper(ObservationWrapper[dict[str, list[Any]], _Act, O
 
         return merged_data
 
-class CPStateWrapper(ObservationWrapper[ObsType, ActionType, ObsType]):
+class CPStateWrapper(SchedulingObservationWrapper[ObsType, _Act]):
     """
     A wrapper that adds Constraint Programming (CP) state information
     to the observation space.
     """
-    def __init__(self, env: Env[ObsType, ActionType]):
-        super().__init__(env)
+    def get_observation_space(self) -> Space[ObsType]:
+        if not is_iterable_type(self.env.observation_space, Dict):
+            raise ValueError(f"Unexpected env observation space: {self.env.observation_space}")
 
-        if not env.get_wrapper_attr("loaded"):
-            raise ValueError("Environment must be loaded before wrapping.")
-        
-        if not is_iterable_type(env.observation_space, Dict):
-            raise ValueError(f"Unexpected env observation space: {env.observation_space}")
+        task_feature_space, job_feature_space = self.env.observation_space
+        n_tasks = len(self.env.get_wrapper_attr("tasks"))
 
-        task_feature_space, job_feature_space = env.observation_space
-        n_tasks = len(env.get_wrapper_attr("tasks"))
-
-        self.observation_space = Tuple((
+        return Tuple((
             Dict({
                 **task_feature_space,
                 'lower_bound': Box(low=0, high=MAX_INT, shape=(n_tasks,)),
@@ -122,3 +156,36 @@ class CPStateWrapper(ObservationWrapper[ObsType, ActionType, ObsType]):
         ]
 
         return task_data, job_data
+
+
+class PreprocessObservationWrapper(SchedulingObservationWrapper[NDArray[np.floating[Any]], _Act]):
+    """
+    A wrapper that preprocesses the observation space by removing the 'job_id' feature
+    from the job features.
+    """
+    def __init__(
+            self,
+            env: Env[ObsType, _Act],
+            transform: Callable[[*ObsType], NDArray[np.floating[Any]]],
+            n_features: int
+        ):
+        self.n_features = n_features
+        self.transform  = transform
+
+        super().__init__(env)
+
+    def get_observation_space(self) -> Space[NDArray[np.floating[Any]]]:
+        if not is_iterable_type(self.env.observation_space, Dict):
+            raise ValueError(f"Unexpected env observation space: {self.env.observation_space}")
+
+        n_jobs = len(getattr(self.env.get_wrapper_attr("tasks"), "jobs"))
+
+        return Box(float("-inf"), float("inf"), shape=(n_jobs, self.n_features))
+
+    def default_observation_space(self) -> Space[NDArray[np.floating[Any]]] | None:
+        return Box(float("-inf"), float("inf"), shape=(0, self.n_features))
+
+    def observation(self, observation: ObsType) -> NDArray[np.floating[Any]]:
+        task_data, job_data = observation
+
+        return self.transform(task_data, job_data)

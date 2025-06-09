@@ -12,7 +12,8 @@
 """
 from warnings import warn
 
-from typing import Any, Optional, TypeAlias, Iterable, SupportsInt, TypeGuard, Mapping, cast
+from typing import Any, Optional, TypeAlias, Iterable, SupportsInt, Mapping
+from typing_extensions import TypeIs
 from pandas import DataFrame
 
 from gymnasium import Env
@@ -30,7 +31,7 @@ from .render import Renderer, PlotlyRenderer
 
 InstanceTypes: TypeAlias = DataFrame | Mapping[str, Iterable[Any]]
 
-SingleAction: TypeAlias = tuple[str | Instruction, *tuple[int, ...]]
+SingleAction: TypeAlias = tuple[str | Instruction, *tuple[SupportsInt, ...]]
 ActionType: TypeAlias   = SingleAction | Iterable[SingleAction] | None
 ObsType: TypeAlias      = tuple[dict[str, list[Any]], dict[str, list[Any]]]
 
@@ -46,7 +47,9 @@ ActionSpace = OneOf([
     Tuple([InstructionSpace, IntSpace, IntSpace, IntSpace]),
 ])
 
-def is_single_action(action: ActionType) -> TypeGuard[tuple[str | Instruction, *tuple[int, ...]]]:
+JOB_ID_ALIASES = ["job", "job_id"]
+
+def is_single_action(action: ActionType) -> TypeIs[tuple[str | Instruction, *tuple[SupportsInt, ...]]]:
     "Check if the action is a single instruction or a iterable of instructions."
     if not isinstance(action, tuple):
         return False
@@ -96,6 +99,24 @@ class SchedulingEnv(Env[ObsType, ActionType]):
             Whether to allow preemption in the scheduling process. If True, tasks can be interrupted
             and resumed later.
 
+        instance: InstanceTypes, optional
+            The instance data for the scheduling problem. It can be a DataFrame or a dictionary
+            containing task features and their values.
+        
+        processing_times: ProcessTimeAllowedTypes, optional
+            The processing times for the tasks, it is dependent on the machine setup. If not provided,
+            the environment will attempt to infer processing times from the instance data.
+        
+        job_instance: InstanceTypes, optional
+            The job instance data for the scheduling problem. It can be a DataFrame or a dictionary
+            containing job features and their values. If None, no job instance is set.
+        
+        job_ids: Iterable[int] | str, optional
+            The job IDs for the tasks. If None, job IDs are as the default index of the job_instance.
+        
+        n_parts: int, optional
+            The number of parts to split the tasks into. If None, it defaults to 16 if preemption is
+            allowed, otherwise 1.
     """
     # Environment static variables
     setup           : ScheduleSetup
@@ -127,7 +148,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         minimize        : Optional[bool]                    = None,
         allow_preemption: bool                              = False,
         instance         : Optional[InstanceTypes]          = None,
-        processing_times: Optional[ProcessTimeAllowedTypes] = None,
+        processing_times: ProcessTimeAllowedTypes           = None,
         job_instance     : Optional[InstanceTypes]          = None,
         job_ids          : Optional[Iterable[int] | str]    = None,
         n_parts          : Optional[int]                    = None,
@@ -135,17 +156,17 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         self.allow_preemption = allow_preemption
         self.loaded = False
 
-        self.setup       = machine_setup
+        self.setup = machine_setup
 
         self.constraints = {}
         if constraints is not None:
             for constraint in constraints:
                 self.add_constraint(constraint)
 
-        if objective is None:
-            self.objective   = Objective()
-        else:
-            self.set_objective(objective, minimize)
+        self.set_objective(
+            Objective() if objective is None else objective,
+            minimize=minimize
+        )
 
         self.render_mode = render_mode
         self.scheduled_instructions = {-1: []}
@@ -166,7 +187,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
         self.advancing_to = 0
 
-        if instance is not None and processing_times is not None:
+        if instance is not None:
             self.set_instance(
                 instance,
                 processing_times,
@@ -184,7 +205,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
     def __repr__(self) -> str:
         if self.loaded:
             return f"SchedulingEnv({self.get_entry()}, n_tasks={len(self.tasks)}, "\
-                    "current_time={self.current_time}, loaded=True)"
+                   f"current_time={self.current_time}, loaded=True)"
 
         return f"SchedulingEnv({self.get_entry()}, not loaded)"
 
@@ -216,7 +237,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
     def set_instance(
         self,
         instance         : InstanceTypes,
-        processing_times : ProcessTimeAllowedTypes,
+        processing_times : ProcessTimeAllowedTypes = None,
         job_instance     : Optional[InstanceTypes] = None,
         job_ids          : Optional[Iterable[int] | str] = None,
         n_parts          : Optional[int] = None,
@@ -257,6 +278,12 @@ class SchedulingEnv(Env[ObsType, ActionType]):
             data,
             processing_times
         )
+
+        if job_ids is None:
+            for alias in JOB_ID_ALIASES:
+                if alias in data:
+                    job_ids = alias
+                    break
 
         self.tasks = Tasks(
             data,
@@ -326,9 +353,9 @@ class SchedulingEnv(Env[ObsType, ActionType]):
     ) -> tuple[ObsType, dict[str, Any]]:
         super().reset(seed=seed)
 
-        if options is not None and 'instance' in options and 'processing_times' in options:
+        if options is not None and 'instance' in options:
             instance         = options['instance']
-            processing_times = options['processing_times']
+            processing_times = options.get('processing_times', None)
             job_instance     = options.get('job_instance', None)
             job_ids          = options.get('job_ids', None)
             n_parts          = options.get('n_parts', None)
@@ -579,12 +606,13 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         action: ActionType = None,
     ) -> tuple[ObsType, float, bool, bool, dict[str, Any]]:
         if is_single_action(action):
-            self.schedule_instruction(action[0], action[1:])
+            single_args =  tuple(map(int, action[1:]))
+            self.schedule_instruction(action[0], single_args)
 
         elif action is not None:
-            action = cast(Iterable[SingleAction], action)
             for instruction in action:
-                self.schedule_instruction(instruction[0], instruction[1:])
+                args = tuple(map(int, instruction[1:]))
+                self.schedule_instruction(instruction[0], args)
 
         previous_objective = self.get_objective()
 

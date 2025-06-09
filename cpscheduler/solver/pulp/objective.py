@@ -1,4 +1,4 @@
-from typing import Callable
+from typing import Callable, TypeAlias
 
 from pulp import LpProblem, lpSum, LpVariable, LpInteger, lpDot, LpAffineExpression
 
@@ -23,7 +23,7 @@ from cpscheduler.environment.objectives import (
 from .tasks import PulpVariables
 from .utils import max_pulp, indicator_var
 
-ObjectiveVar = LpVariable | LpAffineExpression
+ObjectiveVar: TypeAlias = LpVariable | LpAffineExpression
 
 @singledispatch
 def export_objective_pulp(setup: Objective) -> Callable[[LpProblem, PulpVariables], ObjectiveVar]:

@@ -24,7 +24,7 @@ class Reinforce(BaseAlgorithm):
         self,
         obs_shape: tuple[int, ...],
         action_shape: tuple[int, ...],
-        env: VectorEnv,
+        env: VectorEnv[Any, Any, Any],
         actor: Policy[Tensor, Tensor],
         actor_optimizer: Optimizer,
         baseline: nn.Module | Baselines | None = None,

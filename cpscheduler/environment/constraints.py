@@ -10,7 +10,7 @@
     implementing the required methods.
 
 """
-from typing import Any, Mapping, Iterable, TypeVar, Optional, Self, cast
+from typing import Any, Mapping, Iterable, TypeVar, Optional, Self
 from copy import deepcopy
 
 from abc import ABC
@@ -358,13 +358,11 @@ class ReleaseDateConstraint(Constraint):
         if isinstance(release_dates, str):
             self.tags['release_time'] = release_dates
 
-        elif is_iterable_type(release_dates, int):
-            self.release_dates = {task: date for task, date in enumerate(release_dates)}
+        elif is_mapping(release_dates, int, int):
+            self.release_dates = {task: date for task, date in release_dates.items()}
 
         else:
-            assert isinstance(release_dates, Mapping)
-            release_dates = cast(Mapping[int, int], release_dates) 
-            self.release_dates = {task: date for task, date in release_dates.items()}
+            self.release_dates = {task: date for task, date in enumerate(release_dates)}
 
     def set_tasks(self, tasks: Tasks) -> None:
         super().set_tasks(tasks)
@@ -412,13 +410,11 @@ class DeadlineConstraint(Constraint):
         if isinstance(deadlines, str):
             self.tags['due_date'] = deadlines
 
-        elif is_iterable_type(deadlines, int):
-            self.deadlines = {task: date for task, date in enumerate(deadlines)}
+        elif is_mapping(deadlines, int, int):
+            self.deadlines = {task: date for task, date in deadlines.items()}
 
         else:
-            assert isinstance(deadlines, Mapping)
-            deadlines = cast(Mapping[int, int], deadlines)
-            self.deadlines = {task: date for task, date in deadlines.items()}
+            self.deadlines = {task: date for task, date in enumerate(deadlines)}
 
     def set_tasks(self, tasks: Tasks) -> None:
         super().set_tasks(tasks)
@@ -476,10 +472,6 @@ class ResourceConstraint(Constraint):
                 self.tags[f'resource_{resource_id}'] = resouce_name
 
         else:
-            resource_usage = cast(
-                Iterable[Mapping[int, float]], resource_usage
-            )
-
             self.original_resources = [
                 {task_id: usage for task_id, usage in resources.items()}
                 for resources in resource_usage
