@@ -10,7 +10,7 @@ from pulp import LpProblem, lpSum, LpVariable, lpDot, LpInteger, LpContinuous, L
 
 def max_pulp(
     model: LpProblem,
-    decision_vars: Sequence[LpVariable | LpAffineExpression | int | float],
+    decision_vars: Iterable[LpVariable | LpAffineExpression | int | float],
     max_var: LpVariable | None = None,
     cat: str = LpContinuous,
     name: str = "max_value",
@@ -39,59 +39,67 @@ def max_pulp(
 
     return max_var
 
-def indicator_var(
+
+def indicator_constraint(
     model: LpProblem,
     lhs: LpVariable | LpAffineExpression,
     rhs: LpVariable | LpAffineExpression | int | float = 0,
     operator: Literal["==", "<=", ">="] = "==",
-    indicator: LpVariable | None = None,
+    indicators: Iterable[LpVariable] | LpVariable | None = None,
     big_m: float = 1e6,
+    name: str | None = None
 ) -> LpVariable:
     """
-    Adds constraints to the model to enforce that if the indicator variable is 1, then the comparison must hold.
+    Adds constraints to the model to enforce that if all indicator variables are 1, then the comparison must hold.
     It is equivalent to:
-    - indicator == 1 -> lhs ⋈ rhs
-    - indicator == 0 -> lhs is unconstrained
+    - all indicators == 1 -> lhs ⋈ rhs
+    - any indicator  == 0 -> lhs is unconstrained
 
     Parameters:
         model (LpProblem): The PuLP problem instance.
         lhs (LpVariable | LpAffineExpression): The left-hand side variable or expression.
         rhs (LpVariable | LpAffineExpression | int | float, optional): The right-hand side variable or value. Defaults to 0.
         operator (str, optional): The comparison operator ("==", "<=", ">="). Defaults to "==".
-        indicator (LpVariable | None, optional): The indicator variable. If None, a new variable is created. Defaults to None.
+        indicators (Iterable[LpVariable] | LpVariable, optional): The indicator variables. If None, a new variable is created. Defaults to None.
         big_m (float, optional): A large constant for the big-M method. Defaults to 1e6.
 
         When choosing a value for `big_m`, ensure it is large enough to not constrain the model unnecessarily,
         the ideal value is typically upper_bound(lhs) - lower_bound(rhs) if known.
     """
 
-    if indicator is None:
+    if isinstance(indicators, LpVariable):
+        indicator = indicators
+        n_vars = 1
+
+    elif indicators is None:
         indicator = LpVariable("indicator", lowBound=0, upBound=1, cat=LpInteger)
+        n_vars = 1
+
+    elif isinstance(indicators, Iterable):
+        indicator = lpSum(indicators)
+        n_vars    = sum(1 for _ in indicators)
 
     if operator == "==":
         model.addConstraint(
-            lhs <= rhs + (1 - indicator) * big_m,
-            f"indicator_{lhs}_le_{rhs}"
+            lhs <= rhs + (n_vars - indicator) * big_m,
+            name if name is not None else f"{indicator}_{lhs}_le_{rhs}"
         )
 
         model.addConstraint(
-            lhs >= rhs - (1 - indicator) * big_m,
-            f"indicator_{lhs}_ge_{rhs}"
+            lhs >= rhs - (n_vars - indicator) * big_m,
+            name if name is not None else f"{indicator}_{lhs}_ge_{rhs}"
         )
 
     elif operator == "<=":
         model.addConstraint(
-            lhs <= rhs + (1 - indicator) * big_m,
-            f"indicator_{lhs}_le_{rhs}"
+            lhs <= rhs + (n_vars - indicator) * big_m,
+            name if name is not None else f"{indicator}_{lhs}_le_{rhs}"
         )
 
     elif operator == ">=":
         model.addConstraint(
-            lhs >= rhs - (1 - indicator) * big_m,
-            f"indicator_{lhs}_ge_{rhs}"
+            lhs >= rhs - (n_vars - indicator) * big_m,
+            name if name is not None else f"indicator_{indicator}_{lhs}_ge_{rhs}"
         )
-
-    else:
-        raise ValueError(f"Unsupported operator: {operator}")
 
     return indicator
