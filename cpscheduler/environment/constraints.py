@@ -20,7 +20,10 @@ import re
 from mypy_extensions import mypyc_attr
 
 from .tasks import Tasks, Status
-from .utils import convert_to_list, topological_sort, binary_search, is_iterable_type
+from .utils import convert_to_list, topological_sort, binary_search, is_iterable_type, is_mapping
+
+constraints: dict[str, type['Constraint']] = {}
+
 @mypyc_attr(allow_interpreted_subclasses=True)
 class Constraint(ABC):
     """
@@ -32,8 +35,12 @@ class Constraint(ABC):
     tags: dict[str, str]
 
     tasks: Tasks
+    def __init_subclass__(cls) -> None:
+        super().__init_subclass__()
 
-    def __init__(self, name: Optional[str] = None) -> None:
+        constraints[cls.__name__] = cls
+
+    def __init__(self, name: str | None = None) -> None:
         if name is not None and not re.match(r'^[a-zA-Z0-9_]+$', name):
             raise ValueError(
                 "Constraint name must be alphanumeric and cannot contain spaces"
@@ -64,16 +71,7 @@ class Constraint(ABC):
     def get_data(self, feature_or_tag: str) -> list[Any]:
         "Get the data for a feature or tag from the tasks data."
         feature = self.tags.get(feature_or_tag, feature_or_tag)
-
-        if feature in self.tasks.data:
-            return self.tasks.data[feature]
-
-        if feature in self.tasks.jobs_data:
-            data = self.tasks.jobs_data[feature]
-
-            return [data[job] for job in self.tasks.data['job_id']]
-
-        assert False, f"Feature {feature} not found in tasks data"
+        return self.tasks.get_data(feature)
 
     def reset(self) -> None:
         "Reset the constraint to its initial state."

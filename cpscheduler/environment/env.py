@@ -318,7 +318,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
             Dict(job_feature_space)
         ])
 
-        self.renderer = PlotlyRenderer(self.tasks, self.setup.n_machines)
+        self.renderer = PlotlyRenderer(self.tasks)
         self.loaded   = True
 
     def get_state(self) -> ObsType:
@@ -464,12 +464,11 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
     def schedule_instruction(self, action: str | Instruction, args: tuple[int, ...]) -> None:
         "Add a single instruction to the schedule."
-        if not self.setup.parallel and action in ("execute", "submit"):
+        if action in ("execute", "submit"):
             if len(args) == 2:
                 task, time = args
 
                 args = (task, self.setup.get_machine(task), time)
-
 
             elif len(args) == 1:
                 task, = args

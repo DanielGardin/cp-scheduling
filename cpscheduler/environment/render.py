@@ -26,11 +26,9 @@ class Renderer(ABC):
     "Renderer base class for visualizing task schedules."
     def __init__(
             self,
-            tasks: Tasks,
-            n_machines: int
+            tasks: Tasks
         ):
         self.tasks = tasks
-        self.n_machines = n_machines
 
     @abstractmethod
     def build_gantt(self, current_time: int) -> Any:
@@ -102,7 +100,7 @@ class PlotlyRenderer(Renderer):
             width=1600,
             height=800,
             barmode='overlay',
-            yaxis=dict(title='Assignment', tickvals=list(range(self.n_machines)), autorange='reversed'),
+            yaxis=dict(title='Assignment', tickvals=list(range(self.tasks.n_machines)), autorange='reversed'),
             xaxis=dict(title='Time', range=[0, max(current_time / 0.95, 1)], showgrid=True, gridcolor='rgba(0,0,0,0.4)')
         )
 

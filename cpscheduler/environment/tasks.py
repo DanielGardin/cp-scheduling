@@ -371,6 +371,7 @@ class Tasks:
     "Container class for the tasks in the scheduling environment."
     n_tasks: int
     n_parts: int
+    n_machines: int
 
     tasks: list[Task]
     jobs: list[list[Task]]
@@ -392,8 +393,13 @@ class Tasks:
         self.jobs  = []
 
         self.n_tasks = 0
+
+        machines: set[int] = set()
         for processing_time in processing_times:
             self.add_task(processing_time)
+            machines.update(processing_time.keys())
+
+        self.n_machines = len(machines)
 
         jobs_i: list[int] = (
             data.pop(jobs_ids) if isinstance(jobs_ids, str) else
@@ -464,6 +470,18 @@ class Tasks:
     def get_feature(self, task: int, feature: str) -> Any:
         "Get a specific data feature of a task."
         return self.data[feature][task]
+
+    def get_data(self, feature: str) -> list[Any]:
+        "Get a specific, task or job, data feature for all tasks."
+        if feature in self.data:
+            return self.data[feature]
+    
+        if feature in self.jobs_data:
+            job_data = self.jobs_data[feature]
+
+            return [job_data[job_id] for job_id in self.data['job_id']]
+
+        raise KeyError(f"Feature '{feature}' not found in tasks or jobs data.")
 
     def get_job_tasks(self, job: int) -> list[Task]:
         "Get the tasks associated with a specific job."

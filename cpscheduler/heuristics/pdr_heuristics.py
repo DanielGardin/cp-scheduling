@@ -7,6 +7,8 @@ import random
 from abc import ABC, abstractmethod
 from mypy_extensions import mypyc_attr
 
+from cpscheduler.environment.utils import convert_to_list
+
 ObsType = tuple[dict[str, list[Any]], dict[str, list[Any]]]
 
 def sample_gumbel() -> float:
@@ -38,7 +40,7 @@ class PriorityDispatchingRule(ABC):
 
         return filtered_tasks
 
-    def get_priority(self, obs: ObsType, current_time: Optional[int] = None) -> list[tuple[float, int]]:
+    def get_priority(self, obs: ObsType, current_time: int | None = None) -> list[tuple[float, int]]:
         """
         Get the priority of tasks in the waiting buffer.
 
@@ -61,7 +63,17 @@ class PriorityDispatchingRule(ABC):
             for task_id, priority in zip(task_ids, priority_values)
         ]
 
-    def __call__(self, obs: ObsType, current_time: Optional[int] = None) -> list[tuple[str, int]]:
+    def get_data(self, tasks: dict[str, list[Any]], jobs: dict[str, list[Any]], feature: str) -> list[Any]:
+        if feature in tasks:
+            return tasks[feature]
+        
+        if feature in jobs:
+            job_data = jobs[feature]
+            return [job_data[job_id] for job_id in tasks['job_id']]
+    
+        raise ValueError(f"Feature '{feature}' not found in tasks or jobs.")
+
+    def __call__(self, obs: ObsType, current_time: int | None = None) -> list[tuple[str, int]]:
         priorities = self.get_priority(obs, current_time)
 
         action = [
@@ -73,11 +85,11 @@ class PriorityDispatchingRule(ABC):
     def sample(
             self,
             obs: ObsType,
-            current_time: Optional[int] = None,
+            current_time: int | None = None,
             temp: float = 1.,
-            target_prob: Optional[float] = None,
+            target_prob: float | None = None,
             n_iter: int = 5,
-            seed: Optional[int] = None
+            seed: int | None = None
         ) -> list[tuple[str, int]]:
         """
         Sample a task based on the priority rule. Instead of greedily selecting the task with the highest priority,
@@ -135,11 +147,11 @@ class CombinedRule(PriorityDispatchingRule):
     """
     def __init__(
             self,
-            rules: list[PriorityDispatchingRule],
-            weights: Optional[list[float]] = None
+            rules: Iterable[PriorityDispatchingRule],
+            weights: Iterable[float] | None = None
         ):
-        self.rules   = rules
-        self.weights = weights if weights is not None else [1.0] * len(rules)
+        self.rules   = list(rules)
+        self.weights = convert_to_list(weights, float) if weights is not None else [1.0] * len(self.rules)
 
     def priority_rule(self, tasks: dict[str, list[Any]], jobs: dict[str, list[Any]], time: int) -> list[float]:
         priority_values = [rule.priority_rule(tasks, jobs, time) for rule in self.rules]
@@ -148,14 +160,6 @@ class CombinedRule(PriorityDispatchingRule):
             sum(weight * value for weight, value in zip(self.weights, values))
             for values in zip(*priority_values)
         ]
-
-
-class WeightedPDRVariant(PriorityDispatchingRule):
-    """
-    Weighted Variant PDR heuristic.
-
-    This is a wrapper for a arbitrary dispatching rule by 
-    """
 
 class ShortestProcessingTime(PriorityDispatchingRule):
     """
@@ -171,9 +175,11 @@ class ShortestProcessingTime(PriorityDispatchingRule):
 
 
     def priority_rule(self, tasks: dict[str, list[Any]], jobs: dict[str, list[Any]], time: int) -> list[float]:
+        processing_times: list[int] = self.get_data(tasks, jobs, self.processing_time_label)
+
         return [
             -processing_time
-            for processing_time in tasks[self.processing_time_label]
+            for processing_time in processing_times
         ]
 
 class MostOperationsRemaining(PriorityDispatchingRule):
@@ -189,19 +195,17 @@ class MostOperationsRemaining(PriorityDispatchingRule):
         self.operation_label = operation_label
 
     def priority_rule(self, tasks: dict[str, list[Any]], jobs: dict[str, list[Any]], time: int) -> list[float]:
-        priority_values: list[float] = tasks[self.operation_label].copy()
+        operation: list[int] = self.get_data(tasks, jobs, self.operation_label).copy()
+        job_ids: list[int] = tasks['job_id']
 
-        max_ops: dict[Any, int] = {}
-        for job, op in zip(tasks['job_id'], tasks[self.operation_label]):
-            if job not in max_ops:
-                max_ops[job] = 0
-
+        max_ops: list[int] = [0 for _ in range(len(job_ids))]
+        for job, op in zip(job_ids, operation):
             max_ops[job] = max(max_ops[job], op)
 
-        for i, op in enumerate(priority_values):
-            priority_values[i] = max_ops[tasks['job_id'][i]] - op
-
-        return priority_values
+        return [
+            max_ops[job] - op
+            for job, op in zip(tasks['job_id'], operation)
+        ]
 
 class RandomPriority(PriorityDispatchingRule):
     """
@@ -209,7 +213,7 @@ class RandomPriority(PriorityDispatchingRule):
 
     This heuristic randomly selects a job from the waiting buffer as the next job to be scheduled.
     """
-    def __init__(self, seed: Optional[int] = None):
+    def __init__(self, seed: int | None = None):
         self.seed = seed
     
     def priority_rule(self, tasks: dict[str, list[Any]], jobs: dict[str, list[Any]], time: int) -> list[float]:
@@ -237,27 +241,21 @@ class MostWorkRemaining(PriorityDispatchingRule):
 
 
     def priority_rule(self, tasks: dict[str, list[Any]], jobs: dict[str, list[Any]], time: int) -> list[float]:
-        assert 'job_id' in tasks, "job_id is required in the task state"
+        ops    : list[int]   = self.get_data(tasks, jobs, self.operation_label)
+        procs  : list[int]   = self.get_data(tasks, jobs, self.processing_time_label)
+        job_ids: list[int]   = tasks['job_id']
 
-        ops    : list[int]   = tasks[self.operation_label]
-        procs  : list[float] = tasks[self.processing_time_label]
+        cumulative_processing_times: list[list[float]] = [[] for _ in range(len(jobs['job_id']))]
 
-        cumulative_processing_times: dict[int, list[float]] = {}
-
-        for task_id, job_id in enumerate(tasks['job_id']):
-            if job_id not in cumulative_processing_times:
-                cumulative_processing_times[job_id] = []
-            
+        for task_id, job_id in enumerate(job_ids):
             cumulative_processing_times[job_id].append(0.)
 
-
-        for task_id, job_id in enumerate(tasks['job_id']):
+        for task_id, job_id in enumerate(job_ids):
             op_number = ops[task_id]
             proc_time = procs[task_id]
 
             for i in range(op_number + 1):
                 cumulative_processing_times[job_id][i] += proc_time
-
 
         return [
             cumulative_processing_times[job][op]
@@ -273,23 +271,15 @@ class EarliestDueDate(PriorityDispatchingRule):
     def __init__(
             self,
             due_date_label: str = 'due_date',
-            job_info: bool = False
         ):
         self.due_date_label = due_date_label
-        self.job_info       = job_info
 
 
     def priority_rule(self, tasks: dict[str, list[Any]], jobs: dict[str, list[Any]], time: int) -> list[float]:
-        due_dates: list[int]
-
-        due_dates = (
-            [jobs[self.due_date_label][job_id] for job_id in tasks['job_id']]
-            if self.job_info else
-            tasks[self.due_date_label]
-        )
+        due_dates: list[int] = self.get_data(tasks, jobs, self.due_date_label)
 
         return [
-            -float(due_date)
+            - due_date
             for due_date in due_dates
         ]
 
@@ -301,31 +291,18 @@ class ModifiedDueDate(PriorityDispatchingRule):
             self,
             due_date_label: str = 'due_date',
             processing_time_label: str = 'processing_time',
-            weight_label: Optional[str] = None,
-            job_info: bool = False
+            weight_label: str | None = None,
         ):
         self.due_date_label        = due_date_label
         self.processing_time_label = processing_time_label
         self.weight_label          = weight_label
-        self.job_info              = job_info
 
     def priority_rule(self, tasks: dict[str, list[Any]], jobs: dict[str, list[Any]], time: int) -> list[float]:
-        due_dates: list[int]
-
-        due_dates = (
-            [jobs[self.due_date_label][job_id] for job_id in tasks['job_id']]
-            if self.job_info else
-            tasks[self.due_date_label]
-        )
-
-        processing_times: list[int] = tasks[self.processing_time_label]
+        due_dates: list[int]        = self.get_data(tasks, jobs, self.due_date_label)
+        processing_times: list[int] = self.get_data(tasks, jobs, self.processing_time_label)
 
         if self.weight_label is not None:
-            weights: list[float] = (
-                [jobs[self.weight_label][job_id] for job_id in tasks['job_id']]
-                if self.job_info else
-                tasks[self.weight_label]
-            )
+            weights: list[float] = self.get_data(tasks, jobs, self.weight_label)
 
             return [
                 - max(proc_time + time, due_date) / weight
@@ -333,7 +310,7 @@ class ModifiedDueDate(PriorityDispatchingRule):
             ]
 
         return [
-            -float(max(proc_time + time, due_date))
+            - max(proc_time + time, due_date)
             for proc_time, due_date in zip(processing_times, due_dates)
         ]
 
@@ -349,21 +326,13 @@ class WeightedShortestProcessingTime(PriorityDispatchingRule):
             self,
             weight_label: str = 'weight',
             processing_time_label: str = 'processing_time',
-            job_info: bool = False
         ):
         self.weighted_label  = weight_label
         self.processing_time = processing_time_label
-        self.job_info        = job_info
 
     def priority_rule(self, tasks: dict[str, list[Any]], jobs: dict[str, list[Any]], time: int) -> list[float]:
-        weights: list[float]
-
-        weights = (
-            [jobs[self.weighted_label][job_id] for job_id in tasks['job_id']]
-            if self.job_info else
-            tasks[self.weighted_label]
-        )
-        processing_time = tasks[self.processing_time]
+        weights: list[float]       = self.get_data(tasks, jobs, self.weighted_label)
+        processing_time: list[int] = self.get_data(tasks, jobs, self.processing_time)
 
         return [
             - proc_time / weight
@@ -380,42 +349,27 @@ class MinimumSlackTime(PriorityDispatchingRule):
             self,
             due_date_label: str = 'due_date',
             processing_time_label: str = 'processing_time',
-            release_time_label: Optional[str] = None,
-            job_info: bool = False
+            release_time_label: str | None = None
         ):
         self.due_date_label        = due_date_label
         self.processing_time_label = processing_time_label
         self.release_time_label    = release_time_label
-        self.job_info             = job_info
 
     def priority_rule(self, tasks: dict[str, list[Any]], jobs: dict[str, list[Any]], time: int) -> list[float]:
-        due_dates: list[int]
-
-        due_dates = (
-            [jobs[self.due_date_label][job_id] for job_id in tasks['job_id']]
-            if self.job_info else
-            tasks[self.due_date_label]  
-        )
-
-        proc_times: list[int] = tasks[self.processing_time_label]
+        due_dates: list[int]       = self.get_data(tasks, jobs, self.due_date_label)
+        processing_time: list[int] = self.get_data(tasks, jobs, self.processing_time_label)
 
         if self.release_time_label is not None:
-            release_dates: list[int] = tasks[self.release_time_label]
-            
-            release_dates = (
-                [jobs[self.release_time_label][job_id] for job_id in tasks['job_id']]
-                if self.job_info else
-                tasks[self.release_time_label]
-            )
+            release_dates: list[int] = self.get_data(tasks, jobs, self.release_time_label)
 
             return [
-                float(max(time, release_date) + proc_time - due_date)
-                for due_date, proc_time, release_date in zip(due_dates, proc_times, release_dates)
+                max(time, release_date) + proc_time - due_date
+                for due_date, proc_time, release_date in zip(due_dates, processing_time, release_dates)
             ]
 
         return [
-            float(time + proc_time - due_date)
-            for due_date, proc_time in zip(due_dates, proc_times)
+            time + proc_time - due_date
+            for due_date, proc_time in zip(due_dates, processing_time)
         ]
 
 class CriticalRatio(PriorityDispatchingRule):
@@ -428,42 +382,27 @@ class CriticalRatio(PriorityDispatchingRule):
             self,
             due_date_label: str = 'due_date',
             processing_time_label: str = 'processing_time',
-            release_time_label: Optional[str] = None,
-            job_info: bool = False
+            release_time_label: str | None = None
         ):
         self.due_date_label        = due_date_label
         self.processing_time_label = processing_time_label
         self.release_time_label    = release_time_label
-        self.job_info             = job_info
 
     def priority_rule(self, tasks: dict[str, list[Any]], jobs: dict[str, list[Any]], time: int) -> list[float]:
-        due_dates: list[int]
-
-        due_dates = (
-            [jobs[self.due_date_label][job_id] for job_id in tasks['job_id']]
-            if self.job_info else
-            tasks[self.due_date_label]
-        )
-
-        proc_times: list[int] = tasks[self.processing_time_label]
+        due_dates: list[int]       = self.get_data(tasks, jobs, self.due_date_label)
+        processing_time: list[int] = self.get_data(tasks, jobs, self.processing_time_label)
 
         if self.release_time_label is not None:
-            release_dates: list[int] = tasks[self.release_time_label]
-            
-            release_dates = (
-                [jobs[self.release_time_label][job_id] for job_id in tasks['job_id']]
-                if self.job_info else
-                tasks[self.release_time_label]
-            )
+            release_dates: list[int] = self.get_data(tasks, jobs, self.release_time_label)
 
             return [
                 (due_date - max(time, release_date)) / proc_time
-                for due_date, proc_time, release_date in zip(due_dates, proc_times, release_dates)
+                for due_date, proc_time, release_date in zip(due_dates, processing_time, release_dates)
             ]
 
         return [
             (due_date - time) / proc_time
-            for due_date, proc_time in zip(due_dates, proc_times)
+            for due_date, proc_time in zip(due_dates, processing_time)
         ]
 
 class FirstInFirstOut(PriorityDispatchingRule):
@@ -474,23 +413,15 @@ class FirstInFirstOut(PriorityDispatchingRule):
     """
     def __init__(
             self,
-            release_time_label: str = 'release_time',
-            job_info: bool = False
+            release_time_label: str = 'release_time'
         ):
         self.release_time_label = release_time_label
-        self.job_info           = job_info
 
     def priority_rule(self, tasks: dict[str, list[Any]], jobs: dict[str, list[Any]], time: int) -> list[float]:
-        release_dates: list[int]
-        
-        release_dates = (
-            [jobs[self.release_time_label][job_id] for job_id in tasks['job_id']]
-            if self.job_info else
-            tasks[self.release_time_label]
-        )
+        release_dates: list[int] = self.get_data(tasks, jobs, self.release_time_label)
 
         return [
-            float(time - release_date)
+            time - release_date
             for release_date in release_dates
         ]
 
@@ -503,35 +434,22 @@ class CostOverTime(PriorityDispatchingRule):
             self,
             weight_label: str = 'weight',
             processing_time_label: str = 'processing_time',
-            due_date_label: str = 'due_date',
-            job_info: bool = False
+            due_date_label: str = 'due_date'
         ):
         self.weighted_label  = weight_label
         self.processing_time = processing_time_label
         self.due_date_label  = due_date_label
-        self.job_info        = job_info
 
     def priority_rule(self, tasks: dict[str, list[Any]], jobs: dict[str, list[Any]], time: int) -> list[float]:
-        weights: list[float]
+        weights: list[float]       = self.get_data(tasks, jobs, self.weighted_label)
+        processing_time: list[int] = self.get_data(tasks, jobs, self.processing_time)
+        due_dates: list[int]       = self.get_data(tasks, jobs, self.due_date_label)
 
-        weights = (
-            [jobs[self.weighted_label][job_id] for job_id in tasks['job_id']]
-            if self.job_info else
-            tasks[self.weighted_label]
-        )
-        processing_time = tasks[self.processing_time]
-
-        due_dates = (
-            [jobs[self.due_date_label][job_id] for job_id in tasks['job_id']]
-            if self.job_info else
-            tasks[self.due_date_label]  
-        )
-
-        T = sum(processing_time)
+        P = sum(processing_time)
 
         return [
             weight / proc_time if due_date <= proc_time + time else
-            weight / proc_time * (T - due_date) / (T - time - proc_time) if due_date  < T else
+            weight / proc_time * (P - due_date) / (P - time - proc_time) if due_date  < P else
             0
             for weight, proc_time, due_date in zip(weights, processing_time, due_dates)
         ]
@@ -546,36 +464,23 @@ class ApparentTardinessCost(PriorityDispatchingRule):
             lookahead: float,
             weight_label: str = 'weight',
             processing_time_label: str = 'processing_time',
-            due_date_label: str = 'due_date',
-            job_info: bool = False
+            due_date_label: str = 'due_date'
         ):
         self.lookahead       = lookahead
 
         self.weighted_label  = weight_label
         self.processing_time = processing_time_label
         self.due_date_label  = due_date_label
-        self.job_info        = job_info
 
     def priority_rule(self, tasks: dict[str, list[Any]], jobs: dict[str, list[Any]], time: int) -> list[float]:
-        weights: list[float]
+        weights: list[float]       = self.get_data(tasks, jobs, self.weighted_label)
+        processing_time: list[int] = self.get_data(tasks, jobs, self.processing_time)
+        due_dates: list[int]       = self.get_data(tasks, jobs, self.due_date_label)
 
-        weights = (
-            [jobs[self.weighted_label][job_id] for job_id in tasks['job_id']]
-            if self.job_info else
-            tasks[self.weighted_label]
-        )
-        processing_time = tasks[self.processing_time]
-
-        due_dates = (
-            [jobs[self.due_date_label][job_id] for job_id in tasks['job_id']]
-            if self.job_info else
-            tasks[self.due_date_label]  
-        )
-
-        T_mean = sum(processing_time) / len(processing_time)
+        P_mean = sum(processing_time) / len(processing_time)
 
         return [
-            weight / proc_time * exp(-max(0, due_date - time - proc_time) / (self.lookahead * T_mean))
+            weight / proc_time * exp(-max(0, due_date - time - proc_time) / (self.lookahead * P_mean))
             for weight, proc_time, due_date in zip(weights, processing_time, due_dates)
         ]
 
@@ -588,23 +493,16 @@ class TrafficPriority(PriorityDispatchingRule):
             self,
             K: float = 3.,
             processing_time_label: str = 'processing_time',
-            due_date_label: str = 'due_date',
-            job_info: bool = False
+            due_date_label: str = 'due_date'
         ):
         self.K = K
 
         self.processing_time = processing_time_label
         self.due_date_label  = due_date_label
-        self.job_info        = job_info
 
     def priority_rule(self, tasks: dict[str, list[Any]], jobs: dict[str, list[Any]], time: int) -> list[float]:
-        processing_time = tasks[self.processing_time]
-
-        due_dates = (
-            [jobs[self.due_date_label][job_id] for job_id in tasks['job_id']]
-            if self.job_info else
-            tasks[self.due_date_label]  
-        )
+        processing_time: list[int] = self.get_data(tasks, jobs, self.processing_time)
+        due_dates: list[int]       = self.get_data(tasks, jobs, self.due_date_label)
 
         traffic_congestion_ratio = len(processing_time) * sum(processing_time) / sum(due_dates)
 
