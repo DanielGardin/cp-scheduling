@@ -1,4 +1,5 @@
 from typing import Any
+from collections.abc import Iterable
 
 from pulp import LpProblem, LpSolver, LpMinimize, LpMaximize, LpSolution
 import pulp as pl

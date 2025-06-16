@@ -1,4 +1,5 @@
-from typing import Any, Literal, Callable
+from typing import Any, Literal
+from collections.abc import Callable
 from torch import Tensor
 
 import random

@@ -1,4 +1,4 @@
-from typing import Any, Iterable, Callable, Optional
+from collections.abc import Iterable, Callable
 
 from torch import Tensor
 

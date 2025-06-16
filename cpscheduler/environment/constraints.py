@@ -10,7 +10,8 @@
     implementing the required methods.
 
 """
-from typing import Any, Mapping, Iterable, TypeVar, Optional, Self
+from typing import Any, TypeVar, Self
+from collections.abc import Iterable, Mapping
 from copy import deepcopy
 
 from abc import ABC
@@ -117,7 +118,7 @@ class PrecedenceConstraint(Constraint):
         self,
         precedence: Mapping[int, Iterable[int]],
         no_wait: bool = False,
-        name: Optional[str] = None,
+        name: str | None = None,
     ):
         super().__init__(name)
 
@@ -132,7 +133,7 @@ class PrecedenceConstraint(Constraint):
         cls,
         edges: Iterable[tuple[int, int]],
         no_wait: bool = False,
-        name: Optional[str] = None
+        name: str | None = None
     ) -> Self:
         """
 
@@ -248,7 +249,7 @@ class NoWait(PrecedenceConstraint):
             An optional name for the constraint.
     """
 
-    def __init__(self, precedence: Mapping[int, Iterable[int]], name: Optional[str] = None,):
+    def __init__(self, precedence: Mapping[int, Iterable[int]], name: str | None = None,):
         super().__init__(precedence, no_wait=True, name=name)
 
 
@@ -276,7 +277,7 @@ class DisjunctiveConstraint(Constraint):
     def __init__(
         self,
         disjunctive_groups: Mapping[_T, Iterable[int]] | str,
-        name: Optional[str] = None
+        name: str | None = None
     ):
         super().__init__(name)
 
@@ -351,7 +352,7 @@ class ReleaseDateConstraint(Constraint):
     def __init__(
             self,
             release_dates: Mapping[int, int] | Iterable[int] | str = 'release_time',
-            name: Optional[str] = None
+            name: str | None = None
         ):
         super().__init__(name)
 
@@ -403,7 +404,7 @@ class DeadlineConstraint(Constraint):
     def __init__(
             self,
             deadlines: Mapping[int, int] | Iterable[int] | str = 'due_dates',
-            name: Optional[str] = None
+            name: str | None = None
         ):
         super().__init__(name)
 
@@ -461,7 +462,7 @@ class ResourceConstraint(Constraint):
         self,
         capacities: Iterable[float],
         resource_usage: Iterable[Mapping[int, float]] | Iterable[str],
-        name: Optional[str] = None
+        name: str | None = None
     ) -> None:
         super().__init__(name)
 
@@ -549,8 +550,8 @@ class MachineConstraint(Constraint):
 
     def __init__(
         self,
-        machine_constraint: Optional[Iterable[Iterable[int]] | str] = None,
-        name: Optional[str] = None
+        machine_constraint: Iterable[Iterable[int]] | str | None = None,
+        name: str | None = None
     ) -> None:
         super().__init__(name)
 
@@ -628,7 +629,7 @@ class SetupConstraint(Constraint):
     def __init__(
             self,
             setup_times: Mapping[int, Mapping[int, int]],
-            name: Optional[str] = None
+            name: str | None = None
         ) -> None:
         super().__init__(name)
 

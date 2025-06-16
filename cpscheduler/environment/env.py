@@ -12,7 +12,8 @@
 """
 from warnings import warn
 
-from typing import Any, Optional, TypeAlias, Iterable, SupportsInt, Mapping
+from typing import Any, TypeAlias, SupportsInt
+from collections.abc import Iterable, Mapping
 from typing_extensions import TypeIs
 from pandas import DataFrame
 
@@ -141,17 +142,17 @@ class SchedulingEnv(Env[ObsType, ActionType]):
     def __init__(
         self,
         machine_setup: ScheduleSetup,
-        constraints: Optional[Iterable[Constraint]] = None,
-        objective  : Optional[Objective]            = None,
-        render_mode: Optional[str]                  = None,
+        constraints: Iterable[Constraint] | None = None,
+        objective   : Objective | None           = None,
+        render_mode: str | None                  = None,
         *,
-        minimize        : Optional[bool]                    = None,
-        allow_preemption: bool                              = False,
-        instance         : Optional[InstanceTypes]          = None,
-        processing_times: ProcessTimeAllowedTypes           = None,
-        job_instance     : Optional[InstanceTypes]          = None,
-        job_ids          : Optional[Iterable[int] | str]    = None,
-        n_parts          : Optional[int]                    = None,
+        minimize        : bool | None                 = None,
+        allow_preemption: bool                        = False,
+        instance        : InstanceTypes | None        = None,
+        processing_times: ProcessTimeAllowedTypes     = None,
+        job_instance    : InstanceTypes | None        = None,
+        job_ids         : Iterable[int]  | str | None = None,
+        n_parts         : int | None                  = None,
     ):
         self.allow_preemption = allow_preemption
         self.loaded = False
@@ -223,7 +224,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         if self.loaded:
             self.constraints[name].set_tasks(self.tasks)
 
-    def set_objective(self, objective: Objective, minimize: Optional[bool] = None) -> None:
+    def set_objective(self, objective: Objective, minimize: bool | None = None) -> None:
         "Set the objective function for the environment."
         self.objective = objective
         self.minimize  = (
@@ -238,9 +239,9 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         self,
         instance         : InstanceTypes,
         processing_times : ProcessTimeAllowedTypes = None,
-        job_instance     : Optional[InstanceTypes] = None,
-        job_ids          : Optional[Iterable[int] | str] = None,
-        n_parts          : Optional[int] = None,
+        job_instance     : InstanceTypes | None  = None,
+        job_ids          : Iterable[int] | str | None = None,
+        n_parts          : int | None = None,
     ) -> None:
         """
         Set the instance data for the environment.
@@ -349,7 +350,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
             constraint.propagate(self.current_time)
 
     def reset(
-        self, *, seed: Optional[int] = None, options: dict[str, Any] | None = None
+        self, *, seed: int | None = None, options: dict[str, Any] | None = None
     ) -> tuple[ObsType, dict[str, Any]]:
         super().reset(seed=seed)
 

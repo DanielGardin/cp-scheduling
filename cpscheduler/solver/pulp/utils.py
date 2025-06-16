@@ -3,7 +3,8 @@
 
     Utility model for easy modeling with PuLP.
 """
-from typing import Sequence, Literal
+from typing import Literal
+from collections.abc import Iterable
 
 from pulp import LpProblem, lpSum, LpVariable, lpDot, LpInteger, LpContinuous, LpAffineExpression
 

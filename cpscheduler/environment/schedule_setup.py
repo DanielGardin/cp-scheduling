@@ -5,7 +5,8 @@
     It provides a framework for creating various scheduling environments, such as single machine,
     identical parallel machines, uniform parallel machines, job shop, and open shop setups.
 """
-from typing import Any, ClassVar, Iterable
+from typing import Any, ClassVar
+from collections.abc import Iterable, Mapping
 
 from abc import ABC, abstractmethod
 
@@ -163,7 +164,7 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
                 {machine: p_time for machine in range(self.n_machines)}
                 for p_time in data[process_time]
             ]
-    
+
         raise ValueError(
             "Cannot parse the process time. Please provide an iterable of integers or a string."
         )

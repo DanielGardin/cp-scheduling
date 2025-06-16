@@ -1,4 +1,5 @@
-from typing import Any, Mapping, Optional, Iterable, Never, Union, Literal, Self
+from typing import Any, Never, Union, Literal, Self
+from collections.abc import Iterable, Mapping
 from torch.types import Device, Tensor
 
 import torch
@@ -7,7 +8,6 @@ from tensordict import TensorDict
 from warnings import warn
 
 IndexType = Union[None, int, slice, Tensor, list[Any], tuple[Any, ...]]
-
 
 class Buffer:
     def __init__(
@@ -131,7 +131,7 @@ class Buffer:
 
     def normalize(
             self,
-            keys: Optional[Iterable[str]] = None,
+            keys: Iterable[str] | None = None,
             kind: Literal['minmax', 'standard'] = 'minmax',
             eps: float = 1e-6
         ) -> None:
@@ -170,7 +170,7 @@ class Buffer:
         return buffer
 
 
-    def sample(self, batch_size: int, device: Optional[Device] = None) -> TensorDict:
+    def sample(self, batch_size: int, device: Device | None = None) -> TensorDict:
         idxs = torch.randint(0, self.current_size, (batch_size,))
 
         buffer: TensorDict = self.buffer[idxs]
@@ -181,7 +181,7 @@ class Buffer:
         return self._apply_norm(buffer)
 
 
-    def loader(self, batch_size: int, device: Optional[Device] = None) -> Iterable[TensorDict]:
+    def loader(self, batch_size: int, device: Device | None = None) -> Iterable[TensorDict]:
         idxs = torch.randperm(self.current_size)
         batch: TensorDict
 

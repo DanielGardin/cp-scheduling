@@ -3,15 +3,8 @@
 
     This module provides utility functions for the environment and other modules.
 """
-from typing import (
-    Any,
-    TypeVar,
-    Optional,
-    overload,
-    Iterable,
-    Sequence,
-    Mapping
-)
+from typing import Any, TypeVar, overload
+from collections.abc import Iterable, Mapping, Sequence
 from typing_extensions import TypeIs
 
 from collections import deque
@@ -34,9 +27,7 @@ def convert_to_list(array: Iterable[_S], dtype: None = None) -> list[_S]: ...
 @overload
 def convert_to_list(array: Any, dtype: None = None) -> list[Any]: ...
 
-def convert_to_list(
-    array: Iterable[Any], dtype: Optional[type[_T]] = None
-) -> list[Any]:
+def convert_to_list(array: Iterable[Any], dtype: type[_T] | None = None) -> list[Any]:
     """
     Convert an iterable to a list. If a dtype is provided, the elements of the list will be casted
     to that type.

@@ -1,4 +1,5 @@
-from typing import Callable
+from typing import TypeAlias
+from collections.abc import Callable, Iterable
 
 from pulp import LpProblem
 

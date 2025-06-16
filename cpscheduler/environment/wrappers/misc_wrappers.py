@@ -1,4 +1,5 @@
-from typing import Any, TypeVar, Callable
+from typing import Any, TypeVar
+from collections.abc import Callable
 from pandas import DataFrame
 
 from gymnasium import Env, Wrapper

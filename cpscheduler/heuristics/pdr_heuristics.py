@@ -1,4 +1,5 @@
-from typing import Any, Optional
+from typing import Any
+from collections.abc import Iterable
 
 from math import log, exp
 import random

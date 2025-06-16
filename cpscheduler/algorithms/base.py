@@ -1,4 +1,7 @@
-from typing import Any, Optional, MutableSequence, TypeAlias, Callable, Self
+from warnings import warn
+
+from typing import Any, Self
+from collections.abc import Iterable
 from torch.types import Device
 
 from pathlib import Path

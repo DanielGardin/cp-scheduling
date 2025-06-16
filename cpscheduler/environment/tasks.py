@@ -22,7 +22,8 @@ can be used in constraints and objectives (i.e. due-dates, customer, type of tas
 We do not reccomend customizing this module, as it's tightly coupled with the other modules
 in the environment, change with caution.
 """
-from typing import Any, Iterator, NamedTuple, ClassVar, Iterable
+from typing import Any, NamedTuple, ClassVar
+from collections.abc import Iterator, Iterable
 
 from .common import MAX_INT, MIN_INT
 

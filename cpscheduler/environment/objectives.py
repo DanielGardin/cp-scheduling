@@ -6,7 +6,8 @@
     and can be used to guide the search for an optimal schedule by providing a numerical value
     that represents the quality of the schedule.
 """
-from typing import ClassVar, Iterable, Optional, Any
+from typing import ClassVar, Any
+from collections.abc import Iterable
 
 from mypy_extensions import mypyc_attr
 
@@ -96,7 +97,7 @@ class ComposedObjective(Objective):
     def __init__(
         self,
         objectives: Iterable[Objective],
-        coefficients: Optional[Iterable[float]] = None
+        coefficients: Iterable[float] | None = None
     ):
         super().__init__()
         self.objectives = list(objectives)

@@ -1,10 +1,11 @@
-from typing import Any, TypeVar, Callable
+from typing import Any, TypeVar
+from collections.abc import Callable
 from numpy.typing import NDArray
 
 from abc import ABC, abstractmethod
 
 import numpy as np
-from gymnasium.spaces import Dict, Tuple, Box, OneOf, Space, Sequence
+from gymnasium.spaces import Dict, Tuple, Box, OneOf, Space
 
 from gymnasium import ObservationWrapper, Env
 

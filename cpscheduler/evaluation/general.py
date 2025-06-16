@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any
 
 from numpy.typing import NDArray
 import numpy as np
@@ -8,11 +8,11 @@ def confidence_interval(
     thresholds: NDArray[np.floating[Any]],
     n_bootstrap: int = 1000,
     confidence: float = 0.95,
-    seed: Optional[int] = None,
+    seed: int | None = None,
 ) -> tuple[NDArray[np.floating[Any]], NDArray[np.floating[Any]], NDArray[np.floating[Any]]]:
     rng = np.random.default_rng(0)
 
-    n_experiments, n_samples = metrics.shape
+    _, n_samples = metrics.shape
 
     choices = rng.choice(metrics, size=(n_bootstrap, n_samples), replace=True, axis=-1)
     choices = np.sort(choices, axis=-1)
@@ -26,3 +26,4 @@ def confidence_interval(
     mean_ccdf = np.mean(ccdfs, axis=-2)
 
     return mean_ccdf, lower, upper
+
