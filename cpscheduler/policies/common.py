@@ -87,21 +87,29 @@ class TransformerEncoder(nn.Module):
             self,
             input_dim: int,
             hidden_dim: int = 128,
+            output_dim: int = 1,
             num_heads: int = 4,
-            num_layers: int = 2
+            num_layers: int = 2,
+            norm_first: bool = True,
+            activation: str | Callable[[Tensor], Tensor] = 'relu',
+            dropout: float = 0.1,
         ):
         super().__init__()
         self.encoder_layer = nn.TransformerEncoderLayer(
-            d_model=input_dim,
-            nhead=num_heads,
-            dim_feedforward=hidden_dim,
-            batch_first=True
+            d_model         = input_dim,
+            nhead           = num_heads,
+            dim_feedforward = 4*hidden_dim,
+            dropout         = dropout,
+            batch_first     = True,
+            norm_first      = norm_first,
+            activation      = activation
         )
         
         self.transformer = nn.TransformerEncoder(self.encoder_layer, num_layers=num_layers)
-        self.output = nn.Linear(input_dim, 1)
+        self.output = nn.Linear(input_dim, output_dim)
 
     def forward(self, x: Tensor) -> Tensor:
         # x: (batch_size, num_items, feature_dim)
         x = self.transformer(x)
-        return self.output(x).squeeze(-1)
+        x = self.output(x)
+        return x

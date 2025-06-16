@@ -168,10 +168,13 @@ class PreprocessObservationWrapper(SchedulingObservationWrapper[NDArray[np.float
             self,
             env: Env[ObsType, _Act],
             transform: Callable[[*ObsType], NDArray[np.floating[Any]]],
-            n_features: int
         ):
-        self.n_features = n_features
         self.transform  = transform
+
+        obs, info = env.reset()
+        array_obs = transform(*obs)
+
+        self.n_features = array_obs.shape[-1]
 
         super().__init__(env)
 
@@ -182,9 +185,6 @@ class PreprocessObservationWrapper(SchedulingObservationWrapper[NDArray[np.float
         n_jobs = len(getattr(self.env.get_wrapper_attr("tasks"), "jobs"))
 
         return Box(float("-inf"), float("inf"), shape=(n_jobs, self.n_features))
-
-    def default_observation_space(self) -> Space[NDArray[np.floating[Any]]] | None:
-        return Box(float("-inf"), float("inf"), shape=(0, self.n_features))
 
     def observation(self, observation: ObsType) -> NDArray[np.floating[Any]]:
         task_data, job_data = observation

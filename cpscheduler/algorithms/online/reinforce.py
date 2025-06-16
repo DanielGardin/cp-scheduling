@@ -18,26 +18,27 @@ from ..buffer import Buffer
 from ..protocols import Policy
 from ..utils import get_device
 
-Baselines = Literal['mean', 'greedy']
+Baselines = Literal['mean', 'greedy', 'none'] | Callable[[Tensor], Tensor]
 
 class Reinforce(BaseAlgorithm):
     def __init__(
         self,
         obs_shape: tuple[int, ...],
         action_shape: tuple[int, ...],
-        env: VectorEnv[Any, Any, Any],
+        envs: VectorEnv[Any, Any, Any],
         actor: Policy[Tensor, Tensor],
         actor_optimizer: Optimizer,
         baseline: nn.Module | Baselines | None = None,
         /,
         mc_samples: int = 1,
-        buffer_size: int = 10000,
+        n_steps: int = 1,
         baseline_decay: float = 0.99,
         device: str = 'auto',
-        grad_clip: float | None = None,
     ):
         self.obs_shape    = obs_shape
         self.action_shape = action_shape
+
+        buffer_size = n_steps * envs.num_envs * mc_samples
 
         buffer = Buffer(
             buffer_size,
@@ -45,16 +46,14 @@ class Reinforce(BaseAlgorithm):
                 'obs': obs_shape,
                 'action': action_shape,
                 'returns': (1,),
-                'log_prob': (1,),
                 'greedy_return': (1,)
             },
-            device=get_device(device),
-            allow_grad=False
+            allow_grad=True
         )
 
-        super().__init__(buffer)
+        super().__init__(buffer, get_device(device))
 
-        self.env             = env
+        self.envs            = envs
         self.actor           = actor
         self.actor_optimizer = actor_optimizer
 
@@ -62,12 +61,11 @@ class Reinforce(BaseAlgorithm):
         self.baseline        = baseline
         self.running_mean    = torch.tensor(0)
         self.baseline_decay  = baseline_decay
-        self.grad_clip       = grad_clip
 
     def compute_baseline(self, batch: TensorDict) -> Tensor:
-        if self.baseline is None:
+        if self.baseline is None or self.baseline == 'none':
             return torch.tensor(0)
-    
+
         if isinstance(self.baseline, str):
             if self.baseline == 'mean':
                 batch_mean = torch.mean(batch['returns'])
@@ -77,11 +75,11 @@ class Reinforce(BaseAlgorithm):
                     (1 - self.baseline_decay) * batch_mean
                 )
 
-                return self.running_mean.expand(batch['returns'].shape)
+                return self.running_mean
 
             if self.baseline == 'greedy':
                 return batch['greedy_return']
-        
+
             raise ValueError(f"Unknown baseline type: {self.baseline}")
 
         with torch.no_grad():
@@ -89,43 +87,45 @@ class Reinforce(BaseAlgorithm):
 
     def on_epoch_start(self) -> dict[str, Any]:
         self.buffer.clear()
-        n_envs = self.env.num_envs
+        n_envs = self.envs.num_envs
 
-        all_greedy_returns = np.zeros((n_envs, self.mc_samples))
+        all_greedy_returns = np.zeros((n_envs, self.mc_samples), dtype=np.float32)
 
-        for i in range(self.mc_samples):
-            seed = random.randint(0, 2**31 - 1)
+        with torch.no_grad():
+            for i in range(self.mc_samples):
+                seed = random.randint(0, 2**31 - 1)
 
-            obs, _ = self.env.reset(seed=seed)
+                obs, _ = self.envs.reset(seed=seed)
 
-            observations = torch.tensor(obs).reshape(n_envs, *self.obs_shape)
+                observations = torch.tensor(obs).reshape(n_envs, *self.obs_shape)
 
-            actions, log_probs = self.actor.get_action(observations.to(self.device))
-            actions = actions.reshape(n_envs, *self.action_shape)
+                actions, _ = self.actor.get_action(observations.to(self.device))
+                actions = actions.reshape(n_envs, *self.action_shape)
 
-            _, returns, *_ = self.env.step(actions.cpu().numpy())
+                _, returns, *_ = self.envs.step(actions.cpu().numpy())
 
-            obs, _ = self.env.reset(seed=seed)
-            greedy_action = self.actor.greedy(observations.to(self.device))
+                obs, _ = self.envs.reset(seed=seed)
 
-            _, greedy_returns, *_ = self.env.step(greedy_action.cpu().numpy())
-            all_greedy_returns[:, i] = greedy_returns
+                greedy_action = self.actor.greedy(observations.to(self.device))
 
-            self.buffer.add(
-                obs           = observations,
-                action        = actions,
-                returns       = torch.tensor(returns).reshape(n_envs, 1),
-                log_prob      = log_probs,
-                greedy_return = torch.tensor(greedy_returns).reshape(n_envs, 1)
-            )
+                _, greedy_returns, *_ = self.envs.step(greedy_action.cpu().numpy())
+                all_greedy_returns[:, i] = greedy_returns
+
+                self.buffer.add(
+                    obs           = observations,
+                    action        = actions,
+                    returns       = torch.tensor(returns).reshape(n_envs, 1),
+                    greedy_return = torch.tensor(greedy_returns).reshape(n_envs, 1)
+                )
 
         return {
-            'rewards' : all_greedy_returns
+            'rewards' : all_greedy_returns,
         }
 
     def update(self, batch: TensorDict) -> dict[str, Any]:
         returns   = batch['returns']
-        log_probs = batch['log_prob']
+
+        log_probs = self.actor.log_prob(batch['obs'], batch['action'])
 
         baseline = self.compute_baseline(batch)
 
@@ -140,3 +140,8 @@ class Reinforce(BaseAlgorithm):
         return {
             "loss/actor": loss.item(),
         }
+
+    def end_experiment(self) -> None:
+        super().end_experiment()
+
+        self.envs.close()

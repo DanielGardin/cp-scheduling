@@ -1,6 +1,7 @@
 from typing import Any
 from torch import Tensor
-from torch import nn
+
+import torch
 from torch.optim import Optimizer
 
 from tensordict import TensorDict
@@ -40,13 +41,14 @@ class BehaviorCloning(BaseAlgorithm):
         actions: Tensor,
         actor: Policy[Tensor, Tensor],
         actor_optimizer: Optimizer,
+        device: str = 'auto',
     ):
         buffer = Buffer.from_tensors(
             state=states,
             action=actions,
         )
 
-        super().__init__(buffer)
+        super().__init__(buffer, device)
 
         self.actor = actor
         self.actor_optimizer = actor_optimizer
@@ -55,15 +57,15 @@ class BehaviorCloning(BaseAlgorithm):
     def update(self, batch: TensorDict) -> dict[str, Any]:
         target_action = batch['action']
 
-        loss = - self.actor.log_prob(
+        loss = - torch.mean(self.actor.log_prob(
             batch['state'],
             target_action
-        ).mean()
+        ))
 
         self.actor_optimizer.zero_grad()
         loss.backward()
         self.actor_optimizer.step()
 
         return {
-            "loss/actor" : loss
+            "loss/actor" : loss.item(),
         }

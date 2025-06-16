@@ -15,6 +15,8 @@ from torch.nn import Module
 from tensordict import TensorDict
 from torch.optim.lr_scheduler import LRScheduler
 from torch.utils.tensorboard.writer import SummaryWriter
+from torch.utils.tensorboard.summary import hparams
+from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
 
 from abc import ABC, abstractmethod
 
@@ -22,11 +24,12 @@ import logging
 import tqdm
 
 from .buffer import Buffer
-from .utils import set_seed
+from .utils import set_seed, get_device
 
-
-logging.basicConfig(level=logging.INFO,
-                    format="[%(asctime)s] [%(name)s] [%(filename)s(%(lineno)d)] [%(levelname)s] %(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(asctime)s] [%(name)s] [%(filename)s(%(lineno)d)] [%(levelname)s] %(message)s"
+)
 
 logger = logging.getLogger(__name__)
 
@@ -34,21 +37,26 @@ logger = logging.getLogger(__name__)
 def ceildiv(a: int, b: int) -> int:
     return -(a // -b)
 
-
 def summary_logs(logs: dict[str, Any], tag: str | None = None) -> dict[str, str]:
     summary: dict[str, str] = {}
 
     for key, value in logs.items():
         if tag: key = f"{tag}/{key}"
 
-        if isinstance(value, float):
-            summary[key] = f"{value:.4f}"
+        try:
+            mean = np.mean(value)
+            std  = np.std(value)
 
-        elif isinstance(value, MutableSequence):
-            summary[key] = f"{np.mean(value):.4f} ± {np.std(value):.4f}"
+            summary[key] = (
+                f"{mean:.4f}" + ("" if std <= 1e-8 else f" ± {std:.4f}")
+            )
+        
+        except TypeError:
+            warn(f"Could not summarize log {key} with type {type(value)}.")
+            # If value is not a sequence, we handle it separately
+            pass
 
     return summary
-
 
 def extend_logs(logs: dict[str, list[Any]], new_logs: dict[str, Any]) -> None:
     for key, value in new_logs.items():
@@ -58,48 +66,66 @@ def extend_logs(logs: dict[str, list[Any]], new_logs: dict[str, Any]) -> None:
         if isinstance(value, float):
             logs[key].append(value)
 
-        elif isinstance(value, MutableSequence):
+        elif isinstance(value, Iterable):
             logs[key].extend(value)
 
 
 class BaseAlgorithm(Module, ABC):
     writer: SummaryWriter
 
-    def __init__(self, buffer: Buffer) -> None:
+    def __init__(self, buffer: Buffer, device: Device) -> None:
         super().__init__()
 
         self.buffer = buffer
+        self.buffer.to(get_device(device))
+
         self.global_step = 0
+
+        self.metric: str = ""
+        self.minimize: bool = True
+        self.best_running_metric: float = float('inf')
+        self.checkpoint_path: Path | None = None
 
     @property
     def device(self) -> Device:
-        return next(self.parameters()).device # type: ignore
+        return next(self.parameters()).device
 
-    def _write_logs(self, logs: dict[str, Any], tag: Optional[str] = None) -> None:
+    def _write_logs(self, logs: dict[str, Any], tag: str | None = None) -> None:
         if not hasattr(self, "writer"):
             return
 
         for key, value in logs.items():
             if tag: key = f"{tag}/{key}"
-            
-            if isinstance(value, float):
-                self.writer.add_scalar(key, value, self.global_step) # type: ignore
 
-            elif isinstance(value, MutableSequence):
-                self.writer.add_scalar(key + "/mean", np.mean(value), self.global_step) # type: ignore
-                self.writer.add_scalar(key + "/std", np.std(value), self.global_step) # type: ignore
+            try:
+                mean = np.mean(value)
+
+                self.writer.add_scalar(
+                    key,
+                    mean,
+                    global_step=self.global_step
+                )
+
+            except TypeError:
+                warn(f"Could not summarize log {key} with type {type(value)}.")
+                # If value is not a sequence, we handle it separately
+                pass
+
 
     def begin_experiment(
             self,
             project_name: str,
-            experiment_name: str,
-            log_dir: str | Path,
+            experiment_name: str = "experiment",
+            log_dir: str | Path | None = None,
             use_wandb: bool = False,
-            config: Optional[dict[str, Any]] = None
+            config: dict[str, Any] | None = None,
+            save_model: bool = True
         ) -> None:
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
         experiment_name = f"{experiment_name}_{timestamp}"
+        if log_dir is not None:
+            log_dir = Path(log_dir) / experiment_name
 
         if use_wandb:
             try:
@@ -118,15 +144,33 @@ class BaseAlgorithm(Module, ABC):
             )
 
         self.writer = SummaryWriter(log_dir=log_dir)
+        self.save_model = save_model
+        self.config = config
+
+    def set_objective_metric(
+        self,
+        objective_metric: str,
+        minimize: bool = True,
+        checkpoint_path: str | Path | None = None
+    ) -> None:
+        self.metric = objective_metric
+        self.minimize = minimize
+
+        if checkpoint_path is None:
+            if hasattr(self, "writer"):
+                self.checkpoint_path = Path(self.writer.get_logdir()) / "checkpoint.pth"
+
+        else:
+            self.checkpoint_path = Path(checkpoint_path)
 
     def learn(
             self,
             num_updates: int,
             steps_per_update: int,
             batch_size: int,
-            validation_freq: Optional[int] = 1,
-            lr_scheduler: Optional[LRScheduler] = None,
-            seed: Optional[int] = None
+            validation_freq: int | None = 1,
+            lr_scheduler: LRScheduler | None = None,
+            seed: int | None = None
         ) -> None:
         if not hasattr(self, "writer"):
             logger.info(
@@ -155,7 +199,6 @@ class BaseAlgorithm(Module, ABC):
                 total=n_steps,
                 unit=" steps",
                 dynamic_ncols=True,
-                # ncols=300,
                 leave=validation_freq is not None and update % validation_freq == 0
             ) as pbar:
                 pbar.set_description(f"Epoch {update}/{num_updates}")
@@ -164,17 +207,16 @@ class BaseAlgorithm(Module, ABC):
                     for batch in self.buffer.loader(batch_size, self.device):
                         train_logs = self.update(batch)
 
+                        pbar.update()
                         pbar.set_postfix(
                             summary_logs(train_logs)
                         )
-                        pbar.update()
 
                         extend_logs(update_logs, train_logs)
 
                         self.global_step += 1
 
-                    self._write_logs(update_logs, tag="update")
-
+                self._write_logs(update_logs, tag="update")
                 end_logs = self.on_epoch_end()
                 self._write_logs(end_logs, tag="end")
 
@@ -191,6 +233,18 @@ class BaseAlgorithm(Module, ABC):
                         **summary_logs(end_logs, tag="end"),
                         **summary_logs(val_logs, tag="val")
                     })
+
+            if self.metric:
+                log: dict[str, Any] = {}
+                for log in [update_logs, end_logs, val_logs]:
+                    if self.metric not in log: continue
+
+                    metric_value = float(np.mean(log[self.metric]))
+                    if self.minimize:
+                        if metric_value < self.best_running_metric:
+                            self.best_running_metric = metric_value
+                            if self.checkpoint_path is not None:
+                                self.save_checkpoint(self.checkpoint_path)
 
             if lr_scheduler is not None:
                 lr_scheduler.step()
@@ -216,7 +270,38 @@ class BaseAlgorithm(Module, ABC):
     def validate(self) -> dict[str, Any]:
         return {}
 
+    def save_checkpoint(self, path: str | Path) -> None:
+        torch.save(self.state_dict(), path)
+        logger.info(f"Checkpoint saved to {path}")
+
+    # TODO: Separate the state_dict for each module
     def end_experiment(self) -> None:
+        if self.save_model:
+            model_path = Path(self.writer.get_logdir()) / "model.pth"
+            self.save_checkpoint(model_path)
+
+        if self.config is not None:
+            config_path = Path(self.writer.get_logdir()) / "config.json"
+            with open(config_path, "w") as f:
+                import json
+                json.dump(self.config, f, indent=4)
+            
+            # This is the implementation of writer.add_hparams, but for some reason,
+            # it creates a new SummaryWriter instead of using the existing one.
+            metric_dict = self.get_last_metrics()
+            
+            exp, ssi, sei = hparams(
+                hparam_dict=self.config,
+                metric_dict=metric_dict,
+            )
+
+            self.writer.file_writer.add_summary(exp) # type: ignore
+            self.writer.file_writer.add_summary(ssi) # type: ignore
+            self.writer.file_writer.add_summary(sei) # type: ignore
+
+            for tag, value in metric_dict.items():
+                self.writer.add_scalar(tag, value, global_step=self.global_step)
+
         if hasattr(self, "writer"):
             self.writer.close()
 
@@ -228,3 +313,30 @@ class BaseAlgorithm(Module, ABC):
         self.eval()
         self.end_experiment()
 
+    def get_logs(self) -> dict[str, dict[int, Any]]:
+        if not hasattr(self, "writer"):
+            logger.warning("No writer found, returning empty logs.")
+            return {}
+
+        event_acc = EventAccumulator(str(self.writer.get_logdir()))
+        event_acc.Reload()
+
+        tags = event_acc.Tags()["scalars"]
+
+        return {
+            tag: {
+                event.step: event.value
+                for event in event_acc.Scalars(tag)
+            }
+            for tag in tags
+        }
+
+    def get_last_metrics(self) -> dict[str, Any]:
+        logs = self.get_logs()
+        if not logs:
+            return {}
+
+        return {
+            tag: values[max(values.keys())]
+            for tag, values in logs.items()
+        }
