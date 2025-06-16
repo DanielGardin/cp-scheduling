@@ -1,7 +1,10 @@
 import pytest
+from typing import Any
 
 import numpy as np
 import torch
+
+from gymnasium import Env
 
 from common import env_setup
 
@@ -14,8 +17,9 @@ def test_numpy_scalar() -> None:
     obs, reward, terminated, truncated, info = env.step(("execute", np.array(0)))
 
 def test_numpy_array() -> None:
-    env = env_setup("ta01")
-    env = PermutationActionWrapper(env)
+    env = PermutationActionWrapper(
+        env_setup("ta01")
+    )
 
     env.reset()
 
@@ -28,8 +32,9 @@ def test_torch_scalar() -> None:
     obs, reward, terminated, truncated, info = env.step(("execute", torch.tensor(0)))
 
 def test_torch_array() -> None:
-    env = env_setup("ta01")
-    env = PermutationActionWrapper(env)
+    env = PermutationActionWrapper(
+        env_setup("ta01")
+    )
 
     env.reset()
 
