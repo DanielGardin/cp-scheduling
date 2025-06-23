@@ -8,12 +8,15 @@ from collections.abc import Iterable
 
 from pulp import LpProblem, lpSum, LpVariable, lpDot, LpInteger, LpContinuous, LpAffineExpression
 
+GLOBAL_BIG_M = 1e6  # Default value for big-M method, can be adjusted based on problem scale
+
+global_max_id = 0
 def max_pulp(
     model: LpProblem,
     decision_vars: Iterable[LpVariable | LpAffineExpression | int | float],
     max_var: LpVariable | None = None,
     cat: str = LpContinuous,
-    name: str = "max_value",
+    name: str | None = None,
 ) -> LpVariable:
     """
     Adds constraints to the model to ensure max_var is at least as large as each decision variable.
@@ -21,13 +24,19 @@ def max_pulp(
 
     Parameters:
         model (LpProblem): The PuLP problem instance.
-        max_var (LpVariable): The variable to represent the maximum value.
+        max_var (LpVariable, optional): The variable to represent the maximum value.
         decision_vars (list[LpVariable | LpAffineExpression | int | float]): The list of variables or expressions.
-        name (str, optional): A prefix for constraint names. Defaults to "max_value".
+        name (str, optional): A prefix for constraint names.
 
     Returns:
         LpVariable: The variable representing the maximum value.
     """
+    global global_max_id
+
+    if name is None:
+        global_max_id += 1
+        name = f"max_var_{global_max_id}"
+
     if max_var is None:
         max_var = LpVariable(name, lowBound=None, cat=cat)
 
@@ -39,14 +48,13 @@ def max_pulp(
 
     return max_var
 
-
 def indicator_constraint(
     model: LpProblem,
     lhs: LpVariable | LpAffineExpression,
     rhs: LpVariable | LpAffineExpression | int | float = 0,
     operator: Literal["==", "<=", ">="] = "==",
     indicators: Iterable[LpVariable] | LpVariable | None = None,
-    big_m: float = 1e6,
+    big_m: float = GLOBAL_BIG_M,
     name: str | None = None
 ) -> LpVariable:
     """
@@ -72,12 +80,26 @@ def indicator_constraint(
         n_vars = 1
 
     elif indicators is None:
-        indicator = LpVariable("indicator", lowBound=0, upBound=1, cat=LpInteger)
+        indicator = LpVariable(f"{name}_indicator", lowBound=0, upBound=1, cat=LpInteger)
         n_vars = 1
 
     elif isinstance(indicators, Iterable):
         indicator = lpSum(indicators)
         n_vars    = sum(1 for _ in indicators)
+
+        ## This implementation seems to be slower for some reason?
+        # indicator = LpVariable(name, lowBound=0, upBound=1, cat=LpInteger)
+        # n_vars = sum(1 for _ in indicators)
+
+        # model.addConstraint(
+        #     indicator >= lpSum(indicators) - n_vars + 1
+        # )
+
+        # for i, ind in enumerate(indicators):
+        #     model.addConstraint(
+        #         indicator <= ind,
+        #         f"{name}_indicator_{i}"
+        #     )
 
     if operator == "==":
         model.addConstraint(
@@ -99,7 +121,7 @@ def indicator_constraint(
     elif operator == ">=":
         model.addConstraint(
             lhs >= rhs - (n_vars - indicator) * big_m,
-            name if name is not None else f"indicator_{indicator}_{lhs}_ge_{rhs}"
+            name if name is not None else f"{indicator}_{lhs}_ge_{rhs}"
         )
 
     return indicator

@@ -54,9 +54,9 @@ class PulpSolver:
 
         assert num_parts == 1, "This version does not support preemption."
 
-        variables: PulpVariables = (
-            PulpTimetable(env.tasks) if timetable else
-            PulpSchedulingVariables(env.tasks)
+        variables = (
+            PulpTimetable(model, env.tasks) if timetable else
+            PulpSchedulingVariables(model, env.tasks)
         )
 
         export_setup_pulp(env.setup, variables)(model)

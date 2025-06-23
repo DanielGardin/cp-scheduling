@@ -5,6 +5,7 @@ __all__ = [
     "SingleMachineSetup",
     "IdenticalParallelMachineSetup",
     "UniformParallelMachineSetup",
+    "UnrelatedParallelMachineSetup",
     "JobShopSetup",
     "OpenShopSetup",
 
@@ -38,6 +39,7 @@ from .schedule_setup import (
     SingleMachineSetup,
     IdenticalParallelMachineSetup,
     UniformParallelMachineSetup,
+    UnrelatedParallelMachineSetup,
     JobShopSetup,
     OpenShopSetup
 )

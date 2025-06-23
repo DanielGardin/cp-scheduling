@@ -1,11 +1,26 @@
+from typing import Literal
 from abc import ABC, abstractmethod
 
-from pulp import LpVariable, LpInteger, LpBinary, LpAffineExpression
+from pulp import LpVariable, LpProblem, LpBinary, LpAffineExpression, lpSum
 
 from cpscheduler.environment.tasks import Tasks
 
 
-class PulpVariables(LpVariable, ABC):
+class PulpVariables(ABC):
+    def __init__(self, model: LpProblem, tasks: Tasks):
+        self.model = model
+        self.tasks = tasks
+
+    @property
+    @abstractmethod
+    def end_times(self) -> list[LpVariable | LpAffineExpression]:
+        """
+        Expression for the end time of a task.
+        Returns:
+            A list of LpAffineExpression representing the end times of tasks.
+        """
+
+
     @abstractmethod
     def get_assignments(self) -> list[tuple[int, int]]:
         """
@@ -32,25 +47,28 @@ class PulpVariables(LpVariable, ABC):
 class PulpSchedulingVariables(PulpVariables):
     def __init__(
             self,
+            model: LpProblem,
             tasks: Tasks
         ):
-        self.tasks = tasks
+        super().__init__(model, tasks)
 
+        # By considering the start and end times as continuous variables,
+        # we can get a speedup in the branch-and-bound algorithm.
         self.start_times = [
             LpVariable(
                 f"start_{task.task_id}",
                 lowBound=task.get_start_lb(),
                 upBound=task.get_start_ub(),
-                cat=LpInteger
+                # cat=LpInteger
             ) for task in tasks
         ]
 
-        self.end_times = [
+        self._end_times = [
             LpVariable(
                 f"end_{task.task_id}",
                 lowBound=task.get_end_lb(),
                 upBound=task.get_end_ub(),
-                cat=LpInteger
+                # cat=LpInteger
             ) for task in tasks
         ]
 
@@ -71,6 +89,10 @@ class PulpSchedulingVariables(PulpVariables):
             ) for j in range(tasks.n_tasks) for i in range(j)
         }
 
+    @property
+    def end_times(self) -> list[LpVariable | LpAffineExpression]:
+        return self._end_times
+
     def get_assignments(self) -> list[tuple[int, int]]:
         assignments: list[tuple[int, int]] = []
 
@@ -88,30 +110,80 @@ class PulpSchedulingVariables(PulpVariables):
         return assignments
 
 class PulpTimetable(PulpVariables):
-    def __init__(self, tasks: Tasks):
-        self.tasks = tasks
+    def __init__(self, model: LpProblem, tasks: Tasks):
+        super().__init__(model, tasks)
 
-        time_ub = tasks.get_time_ub()
-
-        self.starting_times: list[list[list[LpVariable]]] = [[[
+        self.T = tasks.get_time_ub() + 1
+        self.start_times: list[dict[int, list[LpVariable]]] = [{
+                machine_id: [
                     LpVariable(
                         name=f"start_{task_id}_{machine_id}_{time}",
                         lowBound=0,
                         upBound=1,
                         cat=LpBinary
-                    ) for task_id in range(tasks.n_tasks)
-                ] for machine_id in range(tasks.n_machines)
-            ] for time in range(time_ub)
+                    ) for time in range(task.get_start_lb(machine_id), task.get_start_ub(machine_id) + 1)
+                ]
+                for machine_id in task.machines
+            }
+            for task_id, task in enumerate(tasks)
         ]
 
+
+        for task_id in range(tasks.n_tasks):
+            starting_times = self.start_times[task_id].values()
+
+            model.addConstraint(
+                lpSum(
+                    decision_var
+                    for machine_decision in starting_times
+                    for decision_var in machine_decision
+                ) == 1
+            )
+
+    def x(self, task_id: int, machine_id: int, time: int) -> LpVariable | int:
+        start_lb = self.tasks[task_id].get_start_lb(machine_id)
+        start_ub = self.tasks[task_id].get_start_ub(machine_id)
+
+        if time < start_lb or time >= start_ub:
+            return 0
+
+        return self.start_times[task_id][machine_id][time - start_lb]
+
+
+    @property
+    def end_times(self) -> list[LpVariable | LpAffineExpression]:
+        "Expression for the end time of a task."
+        return [
+            lpSum(
+            x * (time + self.tasks[task_id].processing_times[machine_id])
+            for machine_id, machine_xs in self.start_times[task_id].items()
+            for time, x in enumerate(machine_xs, start=self.tasks[task_id].get_start_lb(machine_id))
+        ) for task_id in range(self.tasks.n_tasks)]
 
     def get_assignments(self) -> list[tuple[int, int]]:
         assignments: list[tuple[int, int]] = []
 
-        for time in range(len(self.starting_times)):
-            for machine_id in range(self.tasks.n_machines):
-                for task_id in range(self.tasks.n_tasks):
-                    if self.starting_times[time][machine_id][task_id].value() == 1:
-                        assignments.append((machine_id, time))
+        for task_id in range(self.tasks.n_tasks):
+            task = self.tasks[task_id]
 
+            for machine_id in task.machines:
+                for time in range(task.get_start_lb(machine_id), task.get_start_ub(machine_id) + 1):
+                    if self.start_times[task_id][machine_id][time].value():
+                        assignments.append((machine_id, time))
+        
         return assignments
+
+
+    # def get_assignments(self) -> list[tuple[int, int]]:
+    #     assignments: list[tuple[int, int]] = []
+
+    #     for task_id in range(self.tasks.n_tasks):
+
+
+    #         for machine_id in range(self.tasks.n_machines):
+    #             for time in range(len(self.start_times)):
+
+    #                 if [machine_id][time].value() == 1:
+    #                     assignments.append((machine_id, time))
+
+    #     return assignments

@@ -134,6 +134,11 @@ class Task:
                 lb=time,
             )
 
+    @property
+    def machines(self) -> list[int]:
+        "Get the list of machines that can process this task."
+        return list(self.processing_times.keys())
+
     def is_fixed(self) -> bool:
         "Checks if the task has its decision variables fixed."
         return self.fixed

@@ -3,7 +3,7 @@ from collections.abc import Callable
 from pulp import LpProblem, LpAffineExpression, lpSum
 
 from .tasks import PulpVariables, PulpSchedulingVariables, PulpTimetable
-from .utils import indicator_constraint
+from .pulp_utils import indicator_constraint
 
 from cpscheduler.environment.env   import SchedulingEnv
 from cpscheduler.environment.tasks import Tasks
@@ -48,6 +48,7 @@ def job_ordering_symmetry_breaking(
     decision_vars: PulpSchedulingVariables,
     tasks: Tasks
 ) -> None:
+    "When jobs inside machines are exchangeable, break symmetry by ordering by lexicographic order"
     n_tasks = len(decision_vars.tasks)
 
     for j in range(n_tasks):
@@ -62,7 +63,8 @@ def job_ordering_symmetry_breaking(
                         decision_vars.assignments[i][machine_id],
                         decision_vars.assignments[j][machine_id],
                     ),
-                    big_m      = tasks[i].get_end_ub(),
+                    big_m      = tasks[i].get_end_ub() - tasks[j].get_start_lb(),
+                    name       = f"SB_job_{i}_{j}_machine_{machine_id}"
                 )
 
 def machine_ordering_symmetry_breaking(
@@ -70,6 +72,7 @@ def machine_ordering_symmetry_breaking(
     decision_vars: PulpSchedulingVariables,
     tasks: Tasks
 ) -> None:
+    "When machines are exchangeable, break symmetry by ordering by load"
     n_machines = tasks.n_machines
 
     processing_times: list[LpAffineExpression] = [
@@ -82,5 +85,5 @@ def machine_ordering_symmetry_breaking(
     for machine_id in range(n_machines-1):
         model.addConstraint(
             processing_times[machine_id] >= processing_times[machine_id + 1],
+            name=f"SB_machine_{machine_id}_order"
         )
-

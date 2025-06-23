@@ -3,7 +3,7 @@ from collections.abc import Callable
 
 from pulp import LpProblem, lpSum, LpVariable, LpInteger, lpDot, LpAffineExpression
 
-from functools import singledispatch
+from multimethod import multidispatch
 
 from cpscheduler.environment.objectives import (
     Objective,
@@ -22,18 +22,18 @@ from cpscheduler.environment.objectives import (
 )
 
 from .tasks import PulpVariables, PulpSchedulingVariables, PulpTimetable
-from .utils import max_pulp, indicator_constraint
+from .pulp_utils import max_pulp, indicator_constraint
 
 ObjectiveVar: TypeAlias = LpVariable | LpAffineExpression
 ModelExport: TypeAlias  = Callable[[LpProblem], ObjectiveVar]
 
-@singledispatch
+@multidispatch
 def export_objective_pulp(setup: Objective, variables: PulpVariables) -> ModelExport:
     raise NotImplementedError(f"Setup {setup} not implemented for PuLP.")
 
 
 @export_objective_pulp.register
-def _(objective: ComposedObjective, variables: PulpSchedulingVariables) -> ModelExport:
+def _(objective: ComposedObjective, variables: PulpVariables) -> ModelExport:
     def export_model(model: LpProblem) -> ObjectiveVar:
         composed_objective = LpVariable("composed_objective")
 
@@ -46,7 +46,8 @@ def _(objective: ComposedObjective, variables: PulpSchedulingVariables) -> Model
             composed_objective == lpDot(
                 objective.coefficients,
                 sub_objectives
-            )
+            ),
+            name="composed_objective_constraint"
         )
 
         return composed_objective
@@ -54,7 +55,7 @@ def _(objective: ComposedObjective, variables: PulpSchedulingVariables) -> Model
     return export_model
 
 @export_objective_pulp.register
-def _(objective: Makespan, variables: PulpSchedulingVariables) -> ModelExport:
+def _(objective: Makespan, variables: PulpVariables) -> ModelExport:
     def export_model(model: LpProblem) -> ObjectiveVar:
         makespan = max_pulp(
             model,
@@ -68,7 +69,7 @@ def _(objective: Makespan, variables: PulpSchedulingVariables) -> ModelExport:
     return export_model
 
 @export_objective_pulp.register
-def _(objective: TotalCompletionTime, variables: PulpSchedulingVariables) -> ModelExport:
+def _(objective: TotalCompletionTime, variables: PulpVariables) -> ModelExport:
     def export_model(model: LpProblem) -> ObjectiveVar:
         jobs_makespan = [
             max_pulp(
@@ -85,7 +86,7 @@ def _(objective: TotalCompletionTime, variables: PulpSchedulingVariables) -> Mod
     return export_model
 
 @export_objective_pulp.register
-def _(objective: WeightedCompletionTime, variables: PulpSchedulingVariables) -> ModelExport:
+def _(objective: WeightedCompletionTime, variables: PulpVariables) -> ModelExport:
     def export_model(model: LpProblem) -> ObjectiveVar:
         jobs_makespan = [
             max_pulp(
@@ -102,7 +103,7 @@ def _(objective: WeightedCompletionTime, variables: PulpSchedulingVariables) -> 
     return export_model
 
 @export_objective_pulp.register
-def _(objective: MaximumLateness, variables: PulpSchedulingVariables) -> ModelExport:
+def _(objective: MaximumLateness, variables: PulpVariables) -> ModelExport:
     def export_model(model: LpProblem) -> ObjectiveVar:
         lateness = [
             end_time - due_date
@@ -121,7 +122,7 @@ def _(objective: MaximumLateness, variables: PulpSchedulingVariables) -> ModelEx
     return export_model
 
 @export_objective_pulp.register
-def _(objective: TotalTardiness, variables: PulpSchedulingVariables) -> ModelExport:
+def _(objective: TotalTardiness, variables: PulpVariables) -> ModelExport:
     def export_model(model: LpProblem) -> ObjectiveVar:
         total_tardiness = 0
         for job_id, tasks in enumerate(objective.tasks.jobs):
@@ -149,7 +150,7 @@ def _(objective: TotalTardiness, variables: PulpSchedulingVariables) -> ModelExp
     return export_model
 
 @export_objective_pulp.register
-def _(objective: WeightedTardiness, variables: PulpSchedulingVariables) -> ModelExport:
+def _(objective: WeightedTardiness, variables: PulpVariables) -> ModelExport:
     def export_model(model: LpProblem) -> ObjectiveVar:
         weighted_tardiness = 0
         for job_id, tasks in enumerate(objective.tasks.jobs):
@@ -177,7 +178,7 @@ def _(objective: WeightedTardiness, variables: PulpSchedulingVariables) -> Model
     return export_model
 
 @export_objective_pulp.register
-def _(objective: TotalEarliness, variables: PulpSchedulingVariables) -> ModelExport:
+def _(objective: TotalEarliness, variables: PulpVariables) -> ModelExport:
     def export_model(model: LpProblem) -> ObjectiveVar:
         total_earliness = 0
         for job_id, tasks in enumerate(objective.tasks.jobs):
@@ -205,7 +206,7 @@ def _(objective: TotalEarliness, variables: PulpSchedulingVariables) -> ModelExp
     return export_model
 
 @export_objective_pulp.register
-def _(objective: WeightedEarliness, variables: PulpSchedulingVariables) -> ModelExport:
+def _(objective: WeightedEarliness, variables: PulpVariables) -> ModelExport:
     def export_model(model: LpProblem) -> ObjectiveVar:
         weighted_earliness = 0
         for job_id, tasks in enumerate(objective.tasks.jobs):
@@ -233,9 +234,9 @@ def _(objective: WeightedEarliness, variables: PulpSchedulingVariables) -> Model
     return export_model
 
 @export_objective_pulp.register
-def _(objective: TotalTardyJobs, variables: PulpSchedulingVariables) -> ModelExport:
+def _(objective: TotalTardyJobs, variables: PulpVariables) -> ModelExport:
     def export_model(model: LpProblem) -> ObjectiveVar:
-        tardy_jobs = 0
+        tardy_indicator: list[LpVariable] = []
 
         for tasks, due_date in zip(objective.tasks.jobs, objective.due_dates):
             max_tardiness = max_pulp(
@@ -247,23 +248,24 @@ def _(objective: TotalTardyJobs, variables: PulpSchedulingVariables) -> ModelExp
                 name=f"job_{tasks[0]}_tardiness"
             )
 
-            tardy_jobs += indicator_constraint(
-                model,
-                lhs=max_tardiness,
-                operator=">=",
-                rhs=1,
-                big_m=1
+            tardy_indicator.append(
+                    indicator_constraint(
+                    model,
+                    lhs=max_tardiness,
+                    operator=">=",
+                    rhs=1,
+                    big_m=1
+                )
             )
 
-        assert isinstance(tardy_jobs, LpVariable)
-        return tardy_jobs
+        return lpSum(tardy_indicator)
 
     return export_model
 
 @export_objective_pulp.register
-def _(objective: WeightedTardyJobs, variables: PulpSchedulingVariables) -> ModelExport:
+def _(objective: WeightedTardyJobs, variables: PulpVariables) -> ModelExport:
     raise NotImplementedError("WeightedTardyJobs objective is not implemented for PuLP.")
 
 @export_objective_pulp.register
-def _(objective: TotalFlowTime, variables: PulpSchedulingVariables) -> ModelExport:
+def _(objective: TotalFlowTime, variables: PulpVariables) -> ModelExport:
     raise NotImplementedError("TotalFlowTime objective is not implemented for PuLP.")
