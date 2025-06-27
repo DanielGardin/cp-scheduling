@@ -1,6 +1,10 @@
 from pathlib import Path
 
-from cpscheduler.environment import SchedulingEnv, JobShopSetup, Makespan
+from typing import cast
+
+from gymnasium import make
+
+from cpscheduler import SchedulingEnv
 from cpscheduler.instances import read_jsp_instance
 
 TEST_INSTANCES = [
@@ -19,11 +23,9 @@ def env_setup(instance_name: str) -> SchedulingEnv:
 
     instance, _ = read_jsp_instance(path)
 
-    env = SchedulingEnv(
-        JobShopSetup(),
+    env = make(
+        "Jobshop-v0",
+        instance=instance,
     )
 
-    env.set_objective(Makespan())
-    env.set_instance(instance)
-
-    return env
+    return cast(SchedulingEnv, env)

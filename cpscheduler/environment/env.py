@@ -71,7 +71,7 @@ def prepare_instance(instance: InstanceTypes) -> dict[str, list[Any]]:
 
 class SchedulingEnv(Env[ObsType, ActionType]):
     """
-    SchedulingEnv is a custom environment for generic scheduling problems. It is designed to be 
+    SchedulingEnv is a custom environment for generic scheduling problems. It is designed to be
     modular and extensible, allowing users to define their own scheduling problems by specifying
     the machine setup, constraints, objectives, and instances.
 
@@ -103,18 +103,18 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         instance: InstanceTypes, optional
             The instance data for the scheduling problem. It can be a DataFrame or a dictionary
             containing task features and their values.
-        
+
         processing_times: ProcessTimeAllowedTypes, optional
             The processing times for the tasks, it is dependent on the machine setup. If not provided,
             the environment will attempt to infer processing times from the instance data.
-        
+
         job_instance: InstanceTypes, optional
             The job instance data for the scheduling problem. It can be a DataFrame or a dictionary
             containing job features and their values. If None, no job instance is set.
-        
+
         job_ids: Iterable[int] | str, optional
             The job IDs for the tasks. If None, job IDs are as the default index of the job_instance.
-        
+
         n_parts: int, optional
             The number of parts to split the tasks into. If None, it defaults to 16 if preemption is
             allowed, otherwise 1.
@@ -464,19 +464,20 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
     def schedule_instruction(self, action: str | Instruction, args: tuple[int, ...]) -> None:
         "Add a single instruction to the schedule."
-        if action in ("execute", "submit"):
-            if len(args) == 2:
-                task, time = args
+        if action in ("execute", "submit") and 0 < len(args) < 3:
+            task = args[0]
 
-                args = (task, self.setup.get_machine(task), time)
+            machines = self.tasks[task].machines
+            if len(machines) > 1:
+                raise ValueError(
+                    f"Task {task} has multiple machines assigned: {machines}. "
+                    "Please specify the machine to execute on."
+                )
 
-            elif len(args) == 1:
-                task, = args
-                args = (task, self.setup.get_machine(task))
+            args = (task, machines[0], *args[1:])
 
-        if action == "advance":
-            if len(args) == 0:
-                args = (-1,)
+        if action == "advance" and len(args) == 0:
+            args = (-1,)
 
         instruction, time = parse_instruction(action, args)
 
@@ -532,7 +533,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
                     break
 
             else:
-                if i != -1: schedule.pop(i) 
+                if i != -1: schedule.pop(i)
                 else:     halt = True
 
                 return halt, change

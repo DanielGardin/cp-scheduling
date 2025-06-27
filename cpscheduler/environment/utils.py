@@ -8,8 +8,6 @@ from collections.abc import Iterable, Mapping, Sequence
 from typing_extensions import TypeIs
 
 from collections import deque
-from fractions import Fraction
-from math import lcm
 
 import numpy as np
 from gymnasium import spaces
@@ -222,15 +220,3 @@ def infer_list_space(array: list[Any]) -> spaces.Space[Any]:
 
     if is_iterable_type(array, str):
         return spaces.Tuple([spaces.Text(max_length=100) for _ in range(n)])
-
-def scale_to_int(float_list: list[float], scale_factor: float = 1000.0) -> list[int]:
-    "Scale a list of floats to integers using a common denominator."
-    fractions = [Fraction(value).limit_denominator() for value in float_list]
-
-    denominators = [fraction.denominator for fraction in fractions]
-    lcm_denominator = lcm(*denominators)
-
-    if lcm_denominator <= scale_factor:
-        scale_factor = float(lcm_denominator)
-
-    return [int(value * scale_factor) for value in float_list]

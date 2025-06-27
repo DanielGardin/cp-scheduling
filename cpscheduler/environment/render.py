@@ -59,8 +59,8 @@ class PlotlyRenderer(Renderer):
         parts: list[int]       = []
         task_ids: list[int]    = []
         palette = glasbey_dark[:len(self.tasks.jobs)] #type: ignore[no-redef]
-        template = "Task %{customdata[0]} [%{customdata[1]}]:<br>"\
-                   "Start (duration): %{customdata[2]} (%{customdata[3]})<br>"\
+        template = "Task %{customdata[0]} [Job %{customdata[1]}]:<br>"\
+                   "Period: %{customdata[2]}-%{customdata[3]}<br>"\
                    "Machine: %{y}<extra></extra>"
 
         for job, tasks in enumerate(self.tasks.jobs):
@@ -90,7 +90,7 @@ class PlotlyRenderer(Renderer):
                     task_ids[i],
                     parts[i],
                     start_times[i],
-                    durations[i]
+                    start_times[i] + durations[i]
                 ) for i in range(len(start_times))],
                 hovertemplate=template,
                 marker=dict(color=palette[job], line=dict(color='white', width=0.5)) # type: ignore[arg-type]
@@ -113,7 +113,7 @@ class PlotlyRenderer(Renderer):
         fig = self.build_gantt(current_time)
         fig.show()
 
-    # This method is 
+    # This method is
     # def image(self, current_time: int) -> NDArray[floating[Any]]:
     #     if 'PIL' not in modules:
     #         raise ImportError(

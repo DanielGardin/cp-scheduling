@@ -68,7 +68,7 @@ class Task:
 
     The environment has complete information about every task and orchestrates the scheduling
     process by modifying the task state.
-    The task can be split into multiple parts, each with its own starting time and duration.    
+    The task can be split into multiple parts, each with its own starting time and duration.
     """
     processing_times: dict[int, int]
 
@@ -331,10 +331,10 @@ class Task:
     def is_available(self, time: int, machine: int = -1) -> bool:
         "Check if the task is available for execution at a given time."
         if machine != -1:
-            return self.start_bounds[machine].lb <= time < self.start_bounds[machine].ub
+            return self.start_bounds[machine].lb <= time <= self.start_bounds[machine].ub
 
         for machine in self.start_bounds:
-            if self.start_bounds[machine].lb <= time < self.start_bounds[machine].ub:
+            if self.start_bounds[machine].lb <= time <= self.start_bounds[machine].ub:
                 return True
 
         return False
@@ -480,7 +480,7 @@ class Tasks:
         "Get a specific, task or job, data feature for all tasks."
         if feature in self.data:
             return self.data[feature]
-    
+
         if feature in self.jobs_data:
             job_data = self.jobs_data[feature]
 
@@ -491,6 +491,10 @@ class Tasks:
     def get_job_tasks(self, job: int) -> list[Task]:
         "Get the tasks associated with a specific job."
         return self.jobs[job]
+
+    def get_machine_tasks(self, machine: int) -> list[Task]:
+        "Get the tasks that can be processed by a specific machine."
+        return [task for task in self.tasks if machine in task.processing_times]
 
     def get_state(self, current_time: int) -> tuple[dict[str, list[Any]], dict[str, list[Any]]]:
         "Get the state of the tasks and jobs at a given time."

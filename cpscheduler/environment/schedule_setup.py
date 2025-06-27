@@ -72,12 +72,6 @@ class ScheduleSetup(ABC):
         "Build the constraint for that setup."
         return ()
 
-    def get_machine(self, task_id: int) -> int:
-        "Get the default machine for a given task."
-        raise ValueError(
-            f"The {self.__class__.__name__} setup does not have a default machine assignment."
-        )
-
     def get_entry(self) -> str:
         "Produce the α entry for the constraint."
         return ""
@@ -117,9 +111,6 @@ class SingleMachineSetup(ScheduleSetup):
         disjunctive_tasks = {0: list(range(len(self.tasks)))}
 
         return (DisjunctiveConstraint(disjunctive_tasks, name="disjunctive"),)
-
-    def get_machine(self, task_id: int) -> int:
-        return 0
 
     def get_entry(self) -> str:
         return "1"
@@ -280,10 +271,6 @@ class JobShopSetup(ScheduleSetup):
         self.operation_order = operation_order
         self.machine_feature = machine_feature
 
-    def get_machine(self, task_id: int) -> int:
-        machine: int = self.tasks.data[self.machine_feature][task_id]
-        return machine
-
     def setup_constraints(self) -> tuple[Constraint, ...]:
         disjunctive_constraint = DisjunctiveConstraint(
             self.machine_feature,
@@ -351,10 +338,6 @@ class OpenShopSetup(ScheduleSetup):
     ):
         self.machine_feature = machine_feature
         self.disjunctive = disjunctive
-
-    def get_machine(self, task_id: int) -> int:
-        machine: int = self.tasks.data[self.machine_feature][task_id]
-        return machine
 
     def setup_constraints(self) -> tuple[Constraint, ...]:
         task_jobs = {

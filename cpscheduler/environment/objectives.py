@@ -23,7 +23,7 @@ class Objective:
 
     Objective functions are used to evaluate the performance of a scheduling algorithm.
     They can be used to guide the search for an optimal schedule by providing a numerical value
-    that represents the quality of the schedule.    
+    that represents the quality of the schedule.
     """
     default_minimize: bool = True
     tags: dict[str, str]  = {}
@@ -84,13 +84,11 @@ class ComposedObjective(Objective):
     Arguments:
         objectives: Iterable[Objective]
             An iterable of `Objective` instances to be combined.
-        
+
         coefficients: Iterable[float], optional
             An iterable of coefficients for each objective. If not provided, all objectives
             are assumed to have a coefficient of 1.0.
     """
-    objective_name: ClassVar[str] = "composed_objective"
-
     def __init__(
         self,
         objectives: Iterable[Objective],
@@ -119,9 +117,26 @@ class ComposedObjective(Objective):
         return current_value
 
     def get_entry(self) -> str:
-        return " + ".join([
-            f"a_{i} * {objective.get_entry()}" for i, objective in enumerate(self.objectives)
-        ])
+        entry = ""
+
+        for coef, objective in zip(self.coefficients, self.objectives):
+            if entry:
+                if coef >= 0:
+                    entry += " + "
+
+                else:
+                    entry += " - "
+                    coef = -coef
+
+            coef_str = (
+                ""               if coef == 1 else
+                str(coef) if isinstance(coef, int) else
+                f"{coef:.2f}"
+            )
+
+            entry += f"{coef_str} {objective.get_entry()}"
+
+        return entry
 
 class Makespan(Objective):
     """
@@ -142,8 +157,6 @@ class TotalCompletionTime(Objective):
     The total completion time objective function, which aims to minimize the sum of completion times
     of all tasks.
     """
-    objective_name: ClassVar[str] = "total_completion_time"
-
     def get_current(self, time: int) -> int:
         completion_times = [
             max([task.get_end() for task in tasks if task.is_completed(time)], default=0)
@@ -161,7 +174,7 @@ class WeightedCompletionTime(Objective):
     completion times of all tasks. Each task has a weight associated with it, and the objective
     function is the sum of the completion times multiplied by their respective weights.
     """
-    objective_name: ClassVar[str] = "weighted_completion_time"
+    job_weights: list[float]
 
     def __init__(
         self,
@@ -203,6 +216,8 @@ class MaximumLateness(Objective):
     The maximum lateness objective function, which aims to minimize the maximum lateness of all
     tasks. Lateness is defined as the difference between the completion time and the due date.
     """
+    due_dates: list[int]
+
     def __init__(
         self,
         due_dates: Iterable[int] | str = 'due_date',
@@ -239,6 +254,8 @@ class TotalTardiness(Objective):
     tasks. Tardiness is defined as the difference between the completion time and the due date,
     if the task is completed late.
     """
+    due_dates: list[int]
+
     def __init__(
         self,
         due_dates: Iterable[int] | str = 'due_date',
@@ -277,6 +294,8 @@ class WeightedTardiness(Objective):
     of all tasks. Tardiness is defined as the difference between the completion time and the due
     date, if the task is completed late.
     """
+    job_weights: list[float]
+
     def __init__(
         self,
         due_dates: Iterable[int] | str = 'due_date',
@@ -329,6 +348,8 @@ class TotalEarliness(Objective):
     tasks. Earliness is defined as the difference between the due date and the completion time,
     if the task is completed early.
     """
+    due_dates: list[int]
+
     def __init__(
         self,
         due_dates: Iterable[int] | str = 'due_date',
@@ -350,7 +371,7 @@ class TotalEarliness(Objective):
         tardiness = [
             max(
                 0,
-                due_date - 
+                due_date -
                 max([task.get_end() for task in tasks if task.is_completed(time)], default=0)
             ) for due_date, tasks in zip(self.due_dates, self.tasks.jobs)
         ]
@@ -365,6 +386,9 @@ class WeightedEarliness(Objective):
     The weighted earliness objective function, which aims to minimize the weighted sum of earliness of all tasks.
     Earliness is defined as the difference between the due date and the completion time, if the task is completed early.
     """
+    due_dates: list[int]
+    job_weights: list[float]
+
     def __init__(
         self,
         due_dates: Iterable[int] | str = 'due_date',
@@ -416,6 +440,8 @@ class TotalTardyJobs(Objective):
     The total tardy jobs objective function, which aims to minimize the number of tardy jobs.
     A job is considered tardy if its completion time is greater than its due date.
     """
+    due_dates: list[int]
+
     def __init__(
         self,
         due_dates: Iterable[int] | str = 'due_date',
@@ -452,6 +478,9 @@ class WeightedTardyJobs(Objective):
     The weighted tardy jobs objective function, which aims to minimize the weighted sum of tardy
     jobs. A job is considered tardy if its completion time is greater than its due date.
     """
+    due_dates: list[int]
+    job_weights: list[float]
+
     def __init__(
         self,
         due_dates: Iterable[int] | str = 'due_date',
@@ -503,6 +532,8 @@ class TotalFlowTime(Objective):
     The total flow time objective function, which aims to minimize the sum of flow times of all
     tasks. Flow time is defined as the difference between the completion time and the release time.
     """
+    release_times: list[int]
+
     def __init__(
         self,
         release_times: Iterable[int] | str = 'release_time',

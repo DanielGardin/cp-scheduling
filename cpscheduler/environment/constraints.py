@@ -104,7 +104,7 @@ class PrecedenceConstraint(Constraint):
             If True, the precedence constraint will enforce that tasks must be executed
             back-to-back without any waiting time in between. If False, tasks can have a waiting
             time between them.
-        
+
         name: Optional[str] = None
             An optional name for the constraint.
     """
@@ -231,18 +231,18 @@ class PrecedenceConstraint(Constraint):
 
 class NoWait(PrecedenceConstraint):
     """
-    
+
     No-wait precedence constraint for the scheduling environment.
-    
+
     This constraint is a specialized version of the PrecedenceConstraint that enforces
     that tasks must be executed back-to-back without any waiting time in between.
-    
+
     Arguments:
         precedence: Mapping[int, Iterable[int]]
             A mapping of task IDs to a list of task IDs that must be completed before
             the task can start. For example, if task 1 must be completed before task 2 can start,
             the precedence mapping would be {2: [1]}.
-        
+
         name: Optional[str] = None
             An optional name for the constraint.
     """
@@ -569,6 +569,22 @@ class MachineConstraint(Constraint):
         # Time when the machine is going to be freed
         self.machine_free: dict[int, int] = {}
 
+    def get_tasks_per_machine(self) -> list[list[int]]:
+        """
+        Get the tasks assigned to each machine based on the machine constraint.
+        Returns a list of lists, where each sublist contains the task IDs assigned to that machine.
+        """
+        if self.complete:
+            return [[task_id for task_id in range(len(self.tasks))] for _ in range(self.tasks.n_machines)]
+
+        tasks_per_machine: list[list[int]] = [[] for _ in range(self.tasks.n_machines)]
+
+        for task_id, machines in enumerate(self.machine_constraint):
+            for machine in machines:
+                tasks_per_machine[machine].append(task_id)
+
+        return tasks_per_machine
+
     def set_tasks(self, tasks: Tasks) -> None:
         super().set_tasks(tasks)
 
@@ -605,6 +621,7 @@ class MachineConstraint(Constraint):
                 if task.get_start_lb(machine) < self.machine_free[machine]:
                     task.set_start_lb(self.machine_free[machine], machine)
 
+# TODO: Check literature if the setup time only happens when in the same machine
 class SetupConstraint(Constraint):
     """
     Setup constraint for the scheduling environment.
