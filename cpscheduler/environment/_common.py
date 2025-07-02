@@ -1,5 +1,5 @@
 "Common types and constants used in the environment module."
-from typing import Final, TypeAlias, SupportsInt
+from typing import Any, Final, TypeAlias, SupportsInt, Sequence, Protocol, runtime_checkable
 from collections.abc import Iterable, Mapping
 
 from mypy_extensions import i16, i32, u8
@@ -21,3 +21,17 @@ ProcessTimeAllowedTypes: TypeAlias = (
     Iterable[str]               | # Map columns in data to machines
     None                          # Infer from data
 )
+
+@runtime_checkable
+class DataFrameLike(Protocol):
+    @property
+    def shape(self) -> tuple[int, int]: ...
+
+    @property
+    def columns(self) -> Any: ...
+
+    def __getitem__(self, key: str) -> Any: ...
+
+    def head(self, n: int = ...) -> Any: ...
+
+    def to_dict(self) -> Mapping[str, Sequence[Any]]: ...

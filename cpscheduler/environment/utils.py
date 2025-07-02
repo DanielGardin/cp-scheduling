@@ -12,7 +12,7 @@ from collections import deque
 import numpy as np
 from gymnasium import spaces
 
-from .common import MAX_INT, MIN_INT, TASK_ID
+from ._common import MAX_INT, MIN_INT, TASK_ID
 
 _S = TypeVar("_S")
 _T = TypeVar("_T", bound=Any)

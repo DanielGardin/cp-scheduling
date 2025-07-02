@@ -12,7 +12,7 @@ from gymnasium import ObservationWrapper, Env
 from ..env import ObsType
 from ..tasks import Tasks
 from ..utils import is_iterable_type
-from ..common import MAX_INT as MAX_INT_TIME
+from .._common import MAX_INT as MAX_INT_TIME
 
 MAX_INT = int(MAX_INT_TIME)
 

@@ -4,7 +4,7 @@ from pandas import DataFrame
 
 from gymnasium import Env, Wrapper
 
-from ..common import ProcessTimeAllowedTypes
+from .._common import ProcessTimeAllowedTypes
 
 _Obs = TypeVar("_Obs")
 _Act = TypeVar("_Act")
@@ -45,4 +45,5 @@ class RandomGeneratorWrapper(Wrapper[_Obs, _Act, _Obs, _Act]):
             "processing_times": process_times,
         }
 
-        return super().reset(seed=seed, options=options)
+        obs, info = super().reset(seed=seed, options=options)
+        return obs, info

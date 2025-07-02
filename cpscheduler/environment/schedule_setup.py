@@ -12,7 +12,7 @@ from abc import ABC, abstractmethod
 
 from mypy_extensions import mypyc_attr
 
-from .common import ProcessTimeAllowedTypes, MACHINE_ID, TIME
+from ._common import ProcessTimeAllowedTypes, MACHINE_ID, TIME
 from .tasks import Tasks
 from .constraints import Constraint, DisjunctiveConstraint, PrecedenceConstraint, MachineConstraint
 from .utils import is_iterable_type, convert_to_list, is_iterable_int

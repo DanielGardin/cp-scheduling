@@ -19,7 +19,7 @@ import re
 
 from mypy_extensions import mypyc_attr
 
-from .common import MACHINE_ID, TASK_ID, TIME
+from ._common import MACHINE_ID, TASK_ID, TIME
 from .tasks import Tasks, Status
 from .utils import convert_to_list, topological_sort, binary_search, is_iterable_type
 

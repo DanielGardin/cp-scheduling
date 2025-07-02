@@ -16,7 +16,6 @@ from pathlib import Path
 from typing import Any, TypeAlias, SupportsInt
 from collections.abc import Iterable, Mapping
 from typing_extensions import TypeIs
-from pandas import DataFrame
 import tomllib
 
 from gymnasium import Env
@@ -24,7 +23,7 @@ from gymnasium.spaces import Dict, Tuple, Text, Box, OneOf
 
 from mypy_extensions import u8, i64
 
-from .common import MAX_INT, ProcessTimeAllowedTypes, MACHINE_ID, TASK_ID, PART_ID, TIME
+from ._common import MAX_INT, ProcessTimeAllowedTypes, MACHINE_ID, TASK_ID, PART_ID, TIME, DataFrameLike
 from .tasks import Tasks
 from .instructions import Instruction, Signal, parse_instruction, Action
 from .schedule_setup import ScheduleSetup
@@ -34,7 +33,7 @@ from .utils import convert_to_list, is_iterable_int, infer_list_space
 
 from ._render import Renderer, PlotlyRenderer
 
-InstanceTypes: TypeAlias = DataFrame | Mapping[str, Iterable[Any]]
+InstanceTypes: TypeAlias = DataFrameLike | Mapping[str, Iterable[Any]]
 
 SingleAction: TypeAlias = tuple[str | Instruction, *tuple[SupportsInt, ...]]
 ActionType: TypeAlias   = SingleAction | Iterable[SingleAction] | None

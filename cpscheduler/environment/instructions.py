@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 from mypy_extensions import mypyc_attr, u8
 
-from .common import TASK_ID, TIME, MACHINE_ID
+from ._common import TASK_ID, TIME, MACHINE_ID
 from .tasks import Tasks, Status
 
 # Flags are not supported by mypyc

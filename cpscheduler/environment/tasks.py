@@ -27,7 +27,7 @@ from collections.abc import Iterator
 
 from mypy_extensions import u8
 
-from .common import (
+from ._common import (
     MIN_INT,
     MAX_INT,
     MACHINE_ID,

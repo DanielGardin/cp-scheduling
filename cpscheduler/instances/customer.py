@@ -6,6 +6,8 @@ from numpy.typing import NDArray
 import numpy as np
 import pandas as pd
 
+# TODO: Remove pandas dependency
+
 def mean_point(arr: NDArray[Any]) -> NDArray[Any]:
     a = np.insert(arr, 0, 0)
 
