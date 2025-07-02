@@ -209,7 +209,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         self.constraints[name] = constraint
 
         if self.loaded:
-            self.constraints[name].set_tasks(self.tasks)
+            self.constraints[name].get_data(self.tasks)
 
     def set_objective(self, objective: Objective, minimize: bool | None = None) -> None:
         "Set the objective function for the environment."
@@ -220,7 +220,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         )
 
         if self.loaded:
-            self.objective.set_tasks(self.tasks)
+            self.objective.get_data(self.tasks)
 
     def set_instance(
         self,
@@ -275,14 +275,13 @@ class SchedulingEnv(Env[ObsType, ActionType]):
             n_parts=n_parts
         )
 
-        self.setup.set_tasks(self.tasks)
-        for constraint in self.setup.setup_constraints():
+        for constraint in self.setup.setup_constraints(self.tasks):
             self.add_constraint(constraint, replace=True)
 
         for constraint in self.constraints.values():
-            constraint.set_tasks(self.tasks)
+            constraint.get_data(self.tasks)
 
-        self.objective.set_tasks(self.tasks)
+        self.objective.get_data(self.tasks)
 
         task_feature_space = {
             feature: infer_list_space(values)
@@ -315,7 +314,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
     def get_objective(self) -> float:
         "Get the current value of the objective function."
-        return float(self.objective.get_current(self.current_time))
+        return float(self.objective.get_current(self.current_time, self.tasks))
 
     def is_terminal(self) -> bool:
         "Check if the environment is in a terminal state."
@@ -332,7 +331,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
     def propagate(self) -> None:
         "Propagate the new bounds through the constraints"
         for constraint in self.constraints.values():
-            constraint.propagate(self.current_time)
+            constraint.propagate(self.current_time, self.tasks)
 
     def reset(
         self, *, seed: int | None = None, options: dict[str, Any] | None = None
@@ -366,7 +365,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
         self.tasks.reset()
         for constraint in self.constraints.values():
-            constraint.reset()
+            constraint.reset(self.tasks)
 
         self.propagate()
 

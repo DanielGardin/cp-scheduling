@@ -35,8 +35,6 @@ class Constraint(ABC):
     machines, etc.
     """
     tags: dict[str, str]
-
-    tasks: Tasks
     def __init_subclass__(cls) -> None:
         super().__init_subclass__()
 
@@ -50,38 +48,21 @@ class Constraint(ABC):
             )
 
         self.name = name if name else self.__class__.__name__
-        self.loaded = False
         self.tags = {}
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(name={self.name}, loaded={self.loaded})"
+        return f"{self.name.capitalize()}()"
 
-    def set_tasks(self, tasks: Tasks) -> None:
+    def get_data(self, tasks: Tasks) -> None:
         "Make the constraint aware of the tasks it is applied to."
-        self.tasks = tasks
-        self.loaded = True
 
-    def has_tag(self, tag: str) -> bool:
-        "Check if the constraint have a tag defined to search on the tasks data."
-        has_tag = tag in self.tags
-
-        if has_tag and self.loaded and self.tags[tag] not in self.tasks.data:
-            raise ValueError(f"Tag '{tag}' not found in tasks data.")
-
-        return has_tag
-
-    def get_data(self, feature_or_tag: str) -> list[Any]:
-        "Get the data for a feature or tag from the tasks data."
-        feature = self.tags.get(feature_or_tag, feature_or_tag)
-        return self.tasks.get_data(feature)
-
-    def reset(self) -> None:
+    def reset(self, tasks: Tasks) -> None:
         "Reset the constraint to its initial state."
         return
 
     # Some subclasses may not need to implement this method if the constraints
     # are not time-dependent and are ensured in the reset method.
-    def propagate(self, time: TIME) -> None:
+    def propagate(self, time: TIME, tasks: Tasks) -> None:
         "Propagate the constraint at a given time."
         return
 
@@ -136,7 +117,6 @@ class PrecedenceConstraint(Constraint):
         name: str | None = None
     ) -> Self:
         """
-
         Create a PrecedenceConstraint from a list of edges.
 
         Arguments:
@@ -170,17 +150,16 @@ class PrecedenceConstraint(Constraint):
             if self.topological_order and len(self.precedence[task]) == 0:
                 self.topological_order.remove(task)
 
-    def reset(self) -> None:
+    def reset(self, tasks: Tasks) -> None:
         self.precedence = deepcopy(self.original_precedence)
-        self.topological_order = topological_sort(self.precedence, len(self.tasks))
-        self.propagate(0)
+        self.topological_order = topological_sort(self.precedence, tasks.n_tasks)
 
-    def propagate(self, time: TIME) -> None:
+    def propagate(self, time: TIME, tasks: Tasks) -> None:
         ptr = 0
 
         while ptr < len(self.topological_order):
             task_id = self.topological_order[ptr]
-            task = self.tasks[task_id]
+            task = tasks[task_id]
             status = task.get_status(time)
 
             if status in (Status.AWAITING, Status.PAUSED) and task.get_start_lb() < time:
@@ -190,7 +169,7 @@ class PrecedenceConstraint(Constraint):
 
             if task_id in self.precedence:
                 for child_id in self.precedence[task_id]:
-                    child = self.tasks[child_id]
+                    child = tasks[child_id]
 
                     if child.is_completed(time):
                         self._remove_precedence(task_id, child_id)
@@ -289,11 +268,9 @@ class DisjunctiveConstraint(Constraint):
                 group: convert_to_list(tasks, TASK_ID) for group, tasks in disjunctive_groups.items()
             }
 
-    def set_tasks(self, tasks: Tasks) -> None:
-        super().set_tasks(tasks)
-
-        if self.has_tag('disjunctive_groups'):
-            groups = self.get_data("disjunctive_groups")
+    def get_data(self, tasks: Tasks) -> None:
+        if 'disjunctive_groups' in self.tags:
+            groups = tasks.get_task_level_data(self.tags["disjunctive_groups"])
 
             self.original_disjunctive_groups = {}
             for task_id in range(len(tasks)):
@@ -304,16 +281,16 @@ class DisjunctiveConstraint(Constraint):
 
                 self.original_disjunctive_groups[group].append(task_id)
 
-    def reset(self) -> None:
+    def reset(self, tasks: Tasks) -> None:
         self.disjunctive_groups = deepcopy(self.original_disjunctive_groups)
 
-    def propagate(self, time: TIME) -> None:
+    def propagate(self, time: TIME, tasks: Tasks) -> None:
         for group, task_ids in self.disjunctive_groups.items():
             minimum_start_time = time
 
             # We go in reverse order to avoid errors when removing tasks
             for i in range(len(task_ids)-1, -1, -1):
-                task = self.tasks[task_ids[i]]
+                task = tasks[task_ids[i]]
 
                 if task.is_fixed():
                     end_lb = task.get_end_lb()
@@ -325,7 +302,7 @@ class DisjunctiveConstraint(Constraint):
 
 
             for task_id in self.disjunctive_groups[group]:
-                task = self.tasks[task_id]
+                task = tasks[task_id]
 
                 if task.is_fixed():
                     continue
@@ -367,19 +344,17 @@ class ReleaseDateConstraint(Constraint):
         else:
             self.release_dates = {TASK_ID(task): TIME(date) for task, date in enumerate(release_dates)}
 
-    def set_tasks(self, tasks: Tasks) -> None:
-        super().set_tasks(tasks)
-
-        if self.has_tag('release_time'):
-            release_times = self.get_data("release_time")
+    def get_data(self, tasks: Tasks) -> None:
+        if 'release_time' in self.tags:
+            release_times = tasks.get_task_level_data(self.tags["release_time"])
 
             self.release_dates = {
                 TASK_ID(task_id): TIME(release_time) for task_id, release_time in enumerate(release_times)
             }
 
-    def reset(self) -> None:
+    def reset(self, tasks: Tasks) -> None:
         for task_id, date in self.release_dates.items():
-            self.tasks[task_id].set_start_lb(date)
+            tasks[task_id].set_start_lb(date)
 
     def get_entry(self) -> str:
         return "r_j"
@@ -419,19 +394,17 @@ class DeadlineConstraint(Constraint):
         else:
             self.deadlines = {TASK_ID(task): TIME(date) for task, date in enumerate(deadlines)}
 
-    def set_tasks(self, tasks: Tasks) -> None:
-        super().set_tasks(tasks)
-
-        if self.has_tag('due_date'):
-            due_dates = self.get_data("release_time")
+    def get_data(self, tasks: Tasks) -> None:
+        if 'due_date' in self.tags:
+            due_dates = tasks.get_task_level_data(self.tags["release_time"])
 
             self.deadlines = {
                 TASK_ID(task_id): TIME(due_date) for task_id, due_date in enumerate(due_dates)
             }
 
-    def reset(self) -> None:
+    def reset(self, tasks: Tasks) -> None:
         for task_id, date in self.deadlines.items():
-            self.tasks[task_id].set_end_ub(date)
+            tasks[task_id].set_end_ub(date)
 
     def get_entry(self) -> str:
         return "d_j"
@@ -480,24 +453,26 @@ class ResourceConstraint(Constraint):
                 for resources in resource_usage
             ]
 
-    def set_tasks(self, tasks: Tasks) -> None:
-        super().set_tasks(tasks)
-
+    def get_data(self, tasks: Tasks) -> None:
         self.original_resources = [
-            {TASK_ID(task_id): float(usage)
-            for task_id, usage in enumerate(self.get_data(resource_id))}
+            {
+                TASK_ID(task_id): float(usage)
+                for task_id, usage in enumerate(
+                tasks.get_task_level_data(self.tags[f'resource_{resource_id}'])
+                )
+            }
             for resource_id in self.tags
         ]
 
-    def reset(self) -> None:
+    def reset(self, tasks: Tasks) -> None:
         self.resources = deepcopy(self.original_resources)
 
-    def propagate(self, time: TIME) -> None:
+    def propagate(self, time: TIME, tasks: Tasks) -> None:
         for i, task_resources in enumerate(self.resources):
             minimum_end_time: list[TIME] = []
             resource_taken: list[float] = []
             for task_id in list(task_resources.keys()):
-                task = self.tasks[task_id]
+                task = tasks[task_id]
 
                 if task.is_executing(time):
                     resource = task_resources[task_id]
@@ -523,7 +498,7 @@ class ResourceConstraint(Constraint):
                 available_resources[i] = available_resources[i + 1] - resource_taken[last_task]
 
             for task_id in self.resources[i]:
-                task     = self.tasks[task_id]
+                task     = tasks[task_id]
                 resource = task_resources[task_id]
 
                 if task.is_fixed():
@@ -574,36 +549,34 @@ class MachineConstraint(Constraint):
         # Time when the machine is going to be freed
         self.machine_free: dict[MACHINE_ID, TIME] = {}
 
-    def get_tasks_per_machine(self) -> list[list[TASK_ID]]:
-        """
-        Get the tasks assigned to each machine based on the machine constraint.
-        Returns a list of lists, where each sublist contains the task IDs assigned to that machine.
-        """
-        if self.complete:
-            return [[task.task_id for task in self.tasks] for _ in range(self.tasks.n_machines)]
+    # def get_tasks_per_machine(self) -> list[list[TASK_ID]]:
+    #     """
+    #     Get the tasks assigned to each machine based on the machine constraint.
+    #     Returns a list of lists, where each sublist contains the task IDs assigned to that machine.
+    #     """
+    #     if self.complete:
+    #         return [[task.task_id for task in tasks] for _ in range(tasks.n_machines)]
 
-        tasks_per_machine: list[list[TASK_ID]] = [[] for _ in range(self.tasks.n_machines)]
+    #     tasks_per_machine: list[list[TASK_ID]] = [[] for _ in range(tasks.n_machines)]
 
-        for task_id, machines in enumerate(self.machine_constraint):
-            for machine in machines:
-                tasks_per_machine[machine].append(task_id)
+    #     for task_id, machines in enumerate(self.machine_constraint):
+    #         for machine in machines:
+    #             tasks_per_machine[machine].append(task_id)
 
-        return tasks_per_machine
+    #     return tasks_per_machine
 
-    def set_tasks(self, tasks: Tasks) -> None:
-        super().set_tasks(tasks)
-
+    def get_data(self, tasks: Tasks) -> None:
         # str is only implemented for single machine processing constraint
-        if self.has_tag('machine'):
+        if 'machine' in self.tags:
             self.machine_constraint = [
-                [MACHINE_ID(machine)] for machine in self.get_data("machine")
+                [MACHINE_ID(machine)] for machine in tasks.get_task_level_data(self.tags["machine"])
             ]
 
-    def reset(self) -> None:
+    def reset(self, tasks: Tasks) -> None:
         self.machine_free.clear()
 
-    def propagate(self, time: TIME) -> None:
-        for task in self.tasks:
+    def propagate(self, time: TIME, tasks: Tasks) -> None:
+        for task in tasks:
             if not task.is_fixed():
                 continue
 
@@ -613,7 +586,7 @@ class MachineConstraint(Constraint):
             if machine not in self.machine_free or end_time > self.machine_free[machine]:
                 self.machine_free[machine] = end_time
 
-        for task_id, task in enumerate(self.tasks):
+        for task_id, task in enumerate(tasks):
             if task.is_fixed():
                 continue
 
@@ -658,12 +631,12 @@ class SetupConstraint(Constraint):
             for task, children in setup_times.items()
         }
 
-    def reset(self) -> None:
+    def reset(self, tasks: Tasks) -> None:
         self.setup_times = deepcopy(self.original_setup_times)
 
-    def propagate(self, time: TIME) -> None:
+    def propagate(self, time: TIME, tasks: Tasks) -> None:
         for task_id in list(self.setup_times.keys()):
-            task = self.tasks[task_id]
+            task = tasks[task_id]
 
             if task.is_completed(time):
                 self.setup_times.pop(task_id)
@@ -675,7 +648,7 @@ class SetupConstraint(Constraint):
             children = self.setup_times[task_id]
 
             for child_id, setup_time in children.items():
-                child = self.tasks[child_id]
+                child = tasks[child_id]
 
                 if child.is_fixed():
                     continue

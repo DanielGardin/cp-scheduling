@@ -15,6 +15,9 @@ from mypy_extensions import mypyc_attr, u8
 from ._common import TASK_ID, TIME, MACHINE_ID
 from .tasks import Tasks, Status
 
+SingleAction: TypeAlias = tuple['str | Instruction', Unpack[tuple[SupportsInt, ...]]]
+ActionType: TypeAlias   = SingleAction | Iterable[SingleAction] | None
+
 # Flags are not supported by mypyc
 class Action:
     "Flags for possible actions made by the scheduler in response to an instruction."

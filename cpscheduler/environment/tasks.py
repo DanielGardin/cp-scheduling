@@ -404,6 +404,7 @@ class Tasks:
     n_tasks: int
     n_parts: int
     n_machines: int
+    n_jobs: int
 
     tasks: list[Task]
     jobs: list[list[Task]]
@@ -445,6 +446,8 @@ class Tasks:
         else: # If no job feature is provided, we assume each task is its own job
             job_ids = list(range(self.n_tasks))
             n_jobs  = self.n_tasks
+
+        self.n_jobs = n_jobs
 
         data['job_id'] = job_ids
         self.jobs = [[] for _ in range(n_jobs)]
@@ -503,20 +506,7 @@ class Tasks:
         return iter(self.tasks)
 
     # Getter and setter methods
-    def get_feature(self, task: TASK_ID, feature: str) -> Any:
-        "Get a specific data feature of a task."
-        if feature in self.data:
-            return self.data[feature][task]
-    
-        if feature in self.jobs_data:
-            job_data = self.jobs_data[feature]
-            job_id = self.data['job_id'][task]
-
-            return job_data[job_id]
-
-        raise KeyError(f"Feature '{feature}' not found in tasks or jobs data.")
-
-    def get_data(self, feature: str) -> list[Any]:
+    def get_task_level_data(self, feature: str) -> list[Any]:
         "Get a specific, task or job, data feature for all tasks."
         if feature in self.data:
             return self.data[feature]
@@ -527,6 +517,23 @@ class Tasks:
             return [job_data[job_id] for job_id in self.data['job_id']]
 
         raise KeyError(f"Feature '{feature}' not found in tasks or jobs data.")
+
+    def get_job_level_data(self, feature: str) -> list[Any]:
+        "Get a specific job data feature for all jobs."
+        if feature in self.jobs_data:
+            return self.jobs_data[feature]
+
+        if feature in self.data:
+            if self.n_tasks == self.n_jobs:
+                return self.data[feature]
+
+            job_level_data: list[Any] = [None for _ in range(self.n_jobs)]
+            for task_id, job_id in enumerate(self.data['job_id']):
+                job_level_data[job_id] = self.data[feature][task_id]
+            
+            return job_level_data
+    
+        raise KeyError(f"Feature '{feature}' not found in jobs data.")       
 
     def get_job_tasks(self, job: TASK_ID) -> list[Task]:
         "Get the tasks associated with a specific job."
@@ -581,7 +588,6 @@ class Tasks:
 
             if task.get_end_ub() > max_time:
                 task.set_end_ub(max_time)
-
 
     def get_time_ub(self) -> TIME:
         "Get the upper bound for the time in the tasks."

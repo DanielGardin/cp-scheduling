@@ -37,8 +37,6 @@ class ScheduleSetup(ABC):
         Base class for scheduling setups. It defines the common interface for all scheduling setups
         and provides methods to parse process times, set tasks, and setup constraints.
     """
-    tasks: Tasks
-
     def __init_subclass__(cls) -> None:
         super().__init_subclass__()
 
@@ -63,12 +61,7 @@ class ScheduleSetup(ABC):
         list[dict[MACHINE_ID, TIME]]: List of dictionaries with the machine as key and the process time
         as value.
         """
-
-    def set_tasks(self, tasks: Tasks) -> None:
-        "Make the setup aware of the tasks it is applied to."
-        self.tasks = tasks
-
-    def setup_constraints(self) -> tuple[Constraint, ...]:
+    def setup_constraints(self, tasks: Tasks) -> tuple[Constraint, ...]:
         "Build the constraint for that setup."
         return ()
 
@@ -104,19 +97,18 @@ class SingleMachineSetup(ScheduleSetup):
             "Cannot parse the process time. Please provide an iterable of integers or a string."
         )
 
-    def setup_constraints(self) -> tuple[Constraint, ...]:
+    def setup_constraints(self, tasks: Tasks) -> tuple[Constraint, ...]:
         if not self.disjunctive:
             return ()
 
         disjunctive_tasks = {
-            0: [i for i in range(self.tasks.n_tasks)]
+            0: [i for i in range(tasks.n_tasks)]
         }
 
         return (DisjunctiveConstraint(disjunctive_tasks, name="disjunctive"),)
 
     def get_entry(self) -> str:
         return "1"
-
 
 class IdenticalParallelMachineSetup(ScheduleSetup):
     """
@@ -132,7 +124,7 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
         self.n_machines = n_machines
         self.disjunctive = disjunctive
 
-    def setup_constraints(self) -> tuple[Constraint, ...]:
+    def setup_constraints(self, tasks: Tasks) -> tuple[Constraint, ...]:
         return (MachineConstraint(name="setup_machine_disjunctive"), ) if self.disjunctive else ()
 
     def parse_process_time(
@@ -178,7 +170,7 @@ class UniformParallelMachineSetup(ScheduleSetup):
         self.disjunctive = disjunctive
         self.n_machines  = len(self.speed)
 
-    def setup_constraints(self) -> tuple[Constraint, ...]:
+    def setup_constraints(self, tasks: Tasks) -> tuple[Constraint, ...]:
         return (MachineConstraint(name="setup_machine_disjunctive"), ) if self.disjunctive else ()
 
     def parse_process_time(
@@ -215,7 +207,7 @@ class UnrelatedParallelMachineSetup(ScheduleSetup):
     ):
         self.disjunctive = disjunctive
 
-    def setup_constraints(self) -> tuple[Constraint, ...]:
+    def setup_constraints(self, tasks: Tasks) -> tuple[Constraint, ...]:
         return (MachineConstraint(name="setup_machine_disjunctive"), ) if self.disjunctive else ()
 
     def parse_process_time(
@@ -273,7 +265,7 @@ class JobShopSetup(ScheduleSetup):
         self.operation_order = operation_order
         self.machine_feature = machine_feature
 
-    def setup_constraints(self) -> tuple[Constraint, ...]:
+    def setup_constraints(self, tasks: Tasks) -> tuple[Constraint, ...]:
         disjunctive_constraint = DisjunctiveConstraint(
             self.machine_feature,
             name="setup_disjunctive"
@@ -281,9 +273,9 @@ class JobShopSetup(ScheduleSetup):
 
         edges: list[tuple[int, int]] = []
 
-        operations: list[int] = self.tasks.data[self.operation_order]
+        operations: list[int] = tasks.data[self.operation_order]
 
-        for job_tasks in self.tasks.jobs:
+        for job_tasks in tasks.jobs:
             ops = sorted(
                 [(operations[task.task_id], task.task_id) for task in job_tasks]
             )
@@ -339,9 +331,9 @@ class OpenShopSetup(ScheduleSetup):
         self.machine_feature = machine_feature
         self.disjunctive = disjunctive
 
-    def setup_constraints(self) -> tuple[Constraint, ...]:
+    def setup_constraints(self, tasks: Tasks) -> tuple[Constraint, ...]:
         task_jobs = {
-            job: [int(task.task_id) for task in tasks] for job, tasks in enumerate(self.tasks.jobs)
+            job: [int(task.task_id) for task in tasks] for job, tasks in enumerate(tasks.jobs)
         }
         task_disjunction = DisjunctiveConstraint(task_jobs, name="setup_task_disjunctive")
 
