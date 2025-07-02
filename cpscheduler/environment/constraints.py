@@ -10,7 +10,7 @@
     implementing the required methods.
 
 """
-from typing import Any, TypeVar, Self
+from typing import Any, Self, SupportsInt, SupportsFloat
 from collections.abc import Iterable, Mapping
 from copy import deepcopy
 
@@ -19,8 +19,9 @@ import re
 
 from mypy_extensions import mypyc_attr
 
+from .common import MACHINE_ID, TASK_ID, TIME
 from .tasks import Tasks, Status
-from .utils import convert_to_list, topological_sort, binary_search, is_iterable_type, is_mapping
+from .utils import convert_to_list, topological_sort, binary_search, is_iterable_type
 
 constraints: dict[str, type['Constraint']] = {}
 
@@ -79,7 +80,7 @@ class Constraint(ABC):
 
     # Some subclasses may not need to implement this method if the constraints
     # are not time-dependent and are ensured in the reset method.
-    def propagate(self, time: int) -> None:
+    def propagate(self, time: TIME) -> None:
         "Propagate the constraint at a given time."
         return
 
@@ -109,19 +110,19 @@ class PrecedenceConstraint(Constraint):
             An optional name for the constraint.
     """
     # original_precedence: dict[int, list[int]]
-    precedence: dict[int, list[int]]
-    topological_order: list[int]
+    original_precedence: dict[TASK_ID, list[TASK_ID]]
+    topological_order: list[TASK_ID]
 
     def __init__(
         self,
-        precedence: Mapping[int, Iterable[int]],
+        precedence: Mapping[SupportsInt, Iterable[SupportsInt]],
         no_wait: bool = False,
         name: str | None = None,
     ):
         super().__init__(name)
 
         self.original_precedence = {
-            task: convert_to_list(tasks) for task, tasks in precedence.items()
+            TASK_ID(task): convert_to_list(tasks, TASK_ID) for task, tasks in precedence.items()
         }
 
         self.no_wait = no_wait
@@ -129,7 +130,7 @@ class PrecedenceConstraint(Constraint):
     @classmethod
     def from_edges(
         cls,
-        edges: Iterable[tuple[int, int]],
+        edges: Iterable[tuple[SupportsInt, SupportsInt]],
         no_wait: bool = False,
         name: str | None = None
     ) -> Self:
@@ -151,7 +152,7 @@ class PrecedenceConstraint(Constraint):
             name: Optional[str] = None
                 An optional name for the constraint.
         """
-        precedence: dict[int, list[int]] = {}
+        precedence: dict[SupportsInt, list[SupportsInt]] = {}
 
         for parent, child in edges:
             if parent not in precedence:
@@ -161,7 +162,7 @@ class PrecedenceConstraint(Constraint):
 
         return cls(precedence, no_wait, name)
 
-    def _remove_precedence(self, task: int, child: int) -> None:
+    def _remove_precedence(self, task: TASK_ID, child: TASK_ID) -> None:
         if child in self.precedence[task]:
             self.precedence[task].remove(child)
 
@@ -173,7 +174,7 @@ class PrecedenceConstraint(Constraint):
         self.topological_order = topological_sort(self.precedence, len(self.tasks))
         self.propagate(0)
 
-    def propagate(self, time: int) -> None:
+    def propagate(self, time: TIME) -> None:
         ptr = 0
 
         while ptr < len(self.topological_order):
@@ -205,13 +206,15 @@ class PrecedenceConstraint(Constraint):
                 ptr += 1
 
     def get_entry(self) -> str:
-        n_children = sum(len(tasks) for tasks in self.precedence.values())
-        n_unique_children = len(set(
-            child for tasks in self.precedence.values() for child in tasks
-        ))
+        n_children = 0
+        unique_children: set[TASK_ID] = set()
+        intree = True
+        for tasks in self.precedence.values():
+            intree = intree and len(tasks) <= 1
+            n_children += len(tasks)
+            unique_children.update(tasks)
 
-        intree  = all(len(tasks) <= 1 for tasks in self.precedence.values())
-        outtree = n_children == n_unique_children
+        outtree = n_children == len(unique_children)
 
         graph = "prec"
         if intree and outtree:
@@ -247,11 +250,10 @@ class NoWait(PrecedenceConstraint):
             An optional name for the constraint.
     """
 
-    def __init__(self, precedence: Mapping[int, Iterable[int]], name: str | None = None,):
+    def __init__(self, precedence: Mapping[SupportsInt, Iterable[SupportsInt]], name: str | None = None,):
         super().__init__(precedence, no_wait=True, name=name)
 
 
-_T = TypeVar("_T")
 class DisjunctiveConstraint(Constraint):
     """
     Disjunctive constraint for the scheduling environment.
@@ -269,12 +271,11 @@ class DisjunctiveConstraint(Constraint):
         name: Optional[str] = None
             An optional name for the constraint.
     """
-    original_disjunctive_groups: dict[Any, list[int]]
-    disjunctive_groups: dict[Any, list[int]]
+    original_disjunctive_groups: dict[Any, list[TASK_ID]]
 
     def __init__(
         self,
-        disjunctive_groups: Mapping[_T, Iterable[int]] | str,
+        disjunctive_groups: Mapping[Any, Iterable[SupportsInt]] | str,
         name: str | None = None
     ):
         super().__init__(name)
@@ -284,7 +285,7 @@ class DisjunctiveConstraint(Constraint):
 
         else:
             self.original_disjunctive_groups = {
-                group: convert_to_list(tasks) for group, tasks in disjunctive_groups.items()
+                group: convert_to_list(tasks, TASK_ID) for group, tasks in disjunctive_groups.items()
             }
 
     def set_tasks(self, tasks: Tasks) -> None:
@@ -305,7 +306,7 @@ class DisjunctiveConstraint(Constraint):
     def reset(self) -> None:
         self.disjunctive_groups = deepcopy(self.original_disjunctive_groups)
 
-    def propagate(self, time: int) -> None:
+    def propagate(self, time: TIME) -> None:
         for group, task_ids in self.disjunctive_groups.items():
             minimum_start_time = time
 
@@ -314,7 +315,9 @@ class DisjunctiveConstraint(Constraint):
                 task = self.tasks[task_ids[i]]
 
                 if task.is_fixed():
-                    minimum_start_time = max(minimum_start_time, task.get_end_lb())
+                    end_lb = task.get_end_lb()
+                    if end_lb > minimum_start_time:
+                        minimum_start_time = end_lb
 
                 if task.is_completed(time):
                     self.disjunctive_groups[group].pop(i)
@@ -345,11 +348,11 @@ class ReleaseDateConstraint(Constraint):
         name: Optional[str] = None
             An optional name for the constraint.
     """
-    release_dates: dict[int, int]
+    release_dates: dict[TASK_ID, TIME]
 
     def __init__(
             self,
-            release_dates: Mapping[int, int] | Iterable[int] | str = 'release_time',
+            release_dates: Mapping[SupportsInt, SupportsInt] | Iterable[SupportsInt] | str = 'release_time',
             name: str | None = None
         ):
         super().__init__(name)
@@ -357,11 +360,11 @@ class ReleaseDateConstraint(Constraint):
         if isinstance(release_dates, str):
             self.tags['release_time'] = release_dates
 
-        elif is_mapping(release_dates, int, int):
-            self.release_dates = {task: date for task, date in release_dates.items()}
+        elif isinstance(release_dates, Mapping):
+            self.release_dates = {TASK_ID(task): TIME(date) for task, date in release_dates.items()}
 
         else:
-            self.release_dates = {task: date for task, date in enumerate(release_dates)}
+            self.release_dates = {TASK_ID(task): TIME(date) for task, date in enumerate(release_dates)}
 
     def set_tasks(self, tasks: Tasks) -> None:
         super().set_tasks(tasks)
@@ -370,7 +373,7 @@ class ReleaseDateConstraint(Constraint):
             release_times = self.get_data("release_time")
 
             self.release_dates = {
-                task_id: release_time for task_id, release_time in enumerate(release_times)
+                TASK_ID(task_id): TIME(release_time) for task_id, release_time in enumerate(release_times)
             }
 
     def reset(self) -> None:
@@ -397,11 +400,11 @@ class DeadlineConstraint(Constraint):
         name: Optional[str] = None
             An optional name for the constraint.
     """
-    deadlines: dict[int, int]
+    deadlines: dict[TASK_ID, TIME]
 
     def __init__(
             self,
-            deadlines: Mapping[int, int] | Iterable[int] | str = 'due_dates',
+            deadlines: Mapping[SupportsInt, SupportsInt] | Iterable[SupportsInt] | str = 'due_dates',
             name: str | None = None
         ):
         super().__init__(name)
@@ -409,11 +412,11 @@ class DeadlineConstraint(Constraint):
         if isinstance(deadlines, str):
             self.tags['due_date'] = deadlines
 
-        elif is_mapping(deadlines, int, int):
-            self.deadlines = {task: date for task, date in deadlines.items()}
+        elif isinstance(deadlines, Mapping):
+            self.deadlines = {TASK_ID(task): TIME(date) for task, date in deadlines.items()}
 
         else:
-            self.deadlines = {task: date for task, date in enumerate(deadlines)}
+            self.deadlines = {TASK_ID(task): TIME(date) for task, date in enumerate(deadlines)}
 
     def set_tasks(self, tasks: Tasks) -> None:
         super().set_tasks(tasks)
@@ -422,7 +425,7 @@ class DeadlineConstraint(Constraint):
             due_dates = self.get_data("release_time")
 
             self.deadlines = {
-                task_id: due_date for task_id, due_date in enumerate(due_dates)
+                TASK_ID(task_id): TIME(due_date) for task_id, due_date in enumerate(due_dates)
             }
 
     def reset(self) -> None:
@@ -453,18 +456,18 @@ class ResourceConstraint(Constraint):
         name: Optional[str] = None
             An optional name for the constraint.
     """
-    original_resources: list[dict[int, float]]
-    resources: list[dict[int, float]]
+    capacities: list[float]
+    original_resources: list[dict[TASK_ID, float]]
 
     def __init__(
         self,
-        capacities: Iterable[float],
-        resource_usage: Iterable[Mapping[int, float]] | Iterable[str],
+        capacities: Iterable[SupportsFloat],
+        resource_usage: Iterable[Mapping[SupportsInt, SupportsFloat]] | Iterable[str],
         name: str | None = None
     ) -> None:
         super().__init__(name)
 
-        self.capacities = convert_to_list(capacities)
+        self.capacities = convert_to_list(capacities, float)
 
         if is_iterable_type(resource_usage, str):
             for resource_id, resouce_name in enumerate(resource_usage):
@@ -472,7 +475,7 @@ class ResourceConstraint(Constraint):
 
         else:
             self.original_resources = [
-                {task_id: usage for task_id, usage in resources.items()}
+                {TASK_ID(task_id): float(usage) for task_id, usage in resources.items()}
                 for resources in resource_usage
             ]
 
@@ -480,16 +483,17 @@ class ResourceConstraint(Constraint):
         super().set_tasks(tasks)
 
         self.original_resources = [
-            {task_id: usage for task_id, usage in enumerate(self.get_data(resource_id))}
+            {TASK_ID(task_id): float(usage)
+            for task_id, usage in enumerate(self.get_data(resource_id))}
             for resource_id in self.tags
         ]
 
     def reset(self) -> None:
         self.resources = deepcopy(self.original_resources)
 
-    def propagate(self, time: int) -> None:
+    def propagate(self, time: TIME) -> None:
         for i, task_resources in enumerate(self.resources):
-            minimum_end_time: list[int] = []
+            minimum_end_time: list[TIME] = []
             resource_taken: list[float] = []
             for task_id in list(task_resources.keys()):
                 task = self.tasks[task_id]
@@ -544,11 +548,11 @@ class MachineConstraint(Constraint):
             should be equal to the number of tasks. Finally, if None is provided, then every task
             can be processed on every machine.
     """
-    machine_constraint: list[list[int]]
+    machine_constraint: list[list[MACHINE_ID]]
 
     def __init__(
         self,
-        machine_constraint: Iterable[Iterable[int]] | str | None = None,
+        machine_constraint: Iterable[Iterable[SupportsInt]] | str | None = None,
         name: str | None = None
     ) -> None:
         super().__init__(name)
@@ -563,21 +567,21 @@ class MachineConstraint(Constraint):
 
         else:
             self.machine_constraint = [
-                convert_to_list(tasks) for tasks in machine_constraint
+                convert_to_list(tasks, MACHINE_ID) for tasks in machine_constraint
             ]
 
         # Time when the machine is going to be freed
-        self.machine_free: dict[int, int] = {}
+        self.machine_free: dict[MACHINE_ID, TIME] = {}
 
-    def get_tasks_per_machine(self) -> list[list[int]]:
+    def get_tasks_per_machine(self) -> list[list[TASK_ID]]:
         """
         Get the tasks assigned to each machine based on the machine constraint.
         Returns a list of lists, where each sublist contains the task IDs assigned to that machine.
         """
         if self.complete:
-            return [[task_id for task_id in range(len(self.tasks))] for _ in range(self.tasks.n_machines)]
+            return [[task.task_id for task in self.tasks] for _ in range(self.tasks.n_machines)]
 
-        tasks_per_machine: list[list[int]] = [[] for _ in range(self.tasks.n_machines)]
+        tasks_per_machine: list[list[TASK_ID]] = [[] for _ in range(self.tasks.n_machines)]
 
         for task_id, machines in enumerate(self.machine_constraint):
             for machine in machines:
@@ -591,13 +595,13 @@ class MachineConstraint(Constraint):
         # str is only implemented for single machine processing constraint
         if self.has_tag('machine'):
             self.machine_constraint = [
-                [int(machine)] for machine in self.get_data("machine")
+                [MACHINE_ID(machine)] for machine in self.get_data("machine")
             ]
 
     def reset(self) -> None:
         self.machine_free.clear()
 
-    def propagate(self, time: int) -> None:
+    def propagate(self, time: TIME) -> None:
         for task in self.tasks:
             if not task.is_fixed():
                 continue
@@ -612,7 +616,7 @@ class MachineConstraint(Constraint):
             if task.is_fixed():
                 continue
 
-            machines = task.start_bounds if self.complete else self.machine_constraint[task_id]
+            machines = task.machines if self.complete else self.machine_constraint[task_id]
 
             for machine in machines:
                 if machine not in self.machine_free:
@@ -639,24 +643,24 @@ class SetupConstraint(Constraint):
         name: Optional[str] = None
             An optional name for the constraint.
     """
-    setup_times: dict[int, dict[int, int]]
+    original_setup_times: dict[TASK_ID, dict[TASK_ID, TIME]]
 
     def __init__(
             self,
-            setup_times: Mapping[int, Mapping[int, int]],
+            setup_times: Mapping[SupportsInt, Mapping[SupportsInt, SupportsInt]],
             name: str | None = None
         ) -> None:
         super().__init__(name)
 
         self.original_setup_times = {
-            task: {child: time for child, time in children.items()}
+            TASK_ID(task): {TASK_ID(child): TIME(time) for child, time in children.items()}
             for task, children in setup_times.items()
         }
 
     def reset(self) -> None:
         self.setup_times = deepcopy(self.original_setup_times)
 
-    def propagate(self, time: int) -> None:
+    def propagate(self, time: TIME) -> None:
         for task_id in list(self.setup_times.keys()):
             task = self.tasks[task_id]
 

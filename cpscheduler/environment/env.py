@@ -6,29 +6,33 @@
     It is designed to be modular and extensible, allowing users to define their own scheduling
     problems by specifying the machine setup, constraints, objectives, and instances.
 
-    The environment is based on the OpenAI Gym interface, making it compatible with various 
+    The environment is based on the OpenAI Gym interface, making it compatible with various
     reinforcement learning libraries. It provides methods for resetting the environment, taking
     steps, rendering the environment, and exporting the scheduling model.
 """
 from warnings import warn
+from pathlib import Path
 
 from typing import Any, TypeAlias, SupportsInt
 from collections.abc import Iterable, Mapping
 from typing_extensions import TypeIs
 from pandas import DataFrame
+import tomllib
 
 from gymnasium import Env
 from gymnasium.spaces import Dict, Tuple, Text, Box, OneOf
 
-from .common import MAX_INT, ProcessTimeAllowedTypes
+from mypy_extensions import u8, i64
+
+from .common import MAX_INT, ProcessTimeAllowedTypes, MACHINE_ID, TASK_ID, PART_ID, TIME
 from .tasks import Tasks
 from .instructions import Instruction, Signal, parse_instruction, Action
 from .schedule_setup import ScheduleSetup
 from .constraints import Constraint
 from .objectives import Objective
-from .utils import convert_to_list, is_iterable_type, infer_list_space
+from .utils import convert_to_list, is_iterable_int, infer_list_space
 
-from .render import Renderer, PlotlyRenderer
+from ._render import Renderer, PlotlyRenderer
 
 InstanceTypes: TypeAlias = DataFrame | Mapping[str, Iterable[Any]]
 
@@ -38,8 +42,8 @@ ObsType: TypeAlias      = tuple[dict[str, list[Any]], dict[str, list[Any]]]
 
 # Define the action space for the environment
 InstructionSpace = Text(max_length=10)
-IntSpace = Box(low=0, high=MAX_INT, shape=(), dtype=int) # type: ignore
-                                                         # do not want numpy dependency here
+IntSpace = Box(low=0, high=int(MAX_INT), shape=(), dtype=int) # type: ignore
+                                                                # do not want numpy dependency here
 
 ActionSpace = OneOf([
     Tuple([InstructionSpace]),
@@ -48,15 +52,13 @@ ActionSpace = OneOf([
     Tuple([InstructionSpace, IntSpace, IntSpace, IntSpace]),
 ])
 
-JOB_ID_ALIASES = ["job", "job_id"]
-
 def is_single_action(action: ActionType) -> TypeIs[tuple[str | Instruction, *tuple[SupportsInt, ...]]]:
     "Check if the action is a single instruction or a iterable of instructions."
     if not isinstance(action, tuple):
         return False
 
     if action:
-        return isinstance(action[0], str) and is_iterable_type(action[1:], SupportsInt)
+        return isinstance(action[0], str) and is_iterable_int(action[1:])
 
     return True
 
@@ -124,17 +126,17 @@ class SchedulingEnv(Env[ObsType, ActionType]):
     constraints     : dict[str, Constraint]
     objective       : Objective
     allow_preemption: bool
-    minimize        : bool = True
+    minimize        : bool
 
     # Environment dynamic variables
     tasks                 : Tasks
     data                  : dict[str, list[Any]]
-    scheduled_instructions: dict[int, list[Instruction]]
-    current_time          : int
-    query_times           : list[int]
+    scheduled_instructions: dict[TASK_ID, list[Instruction]]
+    current_time          : TIME
+    query_times           : list[TIME]
 
     loaded      : bool
-    advancing_to: int
+    advancing_to: TIME
 
     renderer: Renderer
     _metadata: dict[str, Any]
@@ -151,7 +153,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         instance        : InstanceTypes | None        = None,
         processing_times: ProcessTimeAllowedTypes     = None,
         job_instance    : InstanceTypes | None        = None,
-        job_ids         : Iterable[int]  | str | None = None,
+        job_feature     : str                         = '',
         n_parts         : int | None                  = None,
     ):
         self.allow_preemption = allow_preemption
@@ -182,8 +184,8 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
         self.action_space      = ActionSpace
         self.observation_space = Tuple([
-            Dict({'task_id': Box(low=0, high=MAX_INT, shape=())}),
-            Dict({'job_id': Box(low=0, high=MAX_INT, shape=())})]
+            Dict({'task_id': Box(low=0, high=int(MAX_INT), shape=())}), # type: ignore
+            Dict({'job_id': Box(low=0, high=int(MAX_INT), shape=())})]  # type: ignore
         ) # Placeholder for observation space
 
         self.advancing_to = 0
@@ -193,15 +195,15 @@ class SchedulingEnv(Env[ObsType, ActionType]):
                 instance,
                 processing_times,
                 job_instance,
-                job_ids,
+                job_feature,
                 n_parts
             )
 
-    def export_environment(self) -> None:
-        """
-        Export the environment to a JSON file.
-        """
-        return
+    def export_environment(self, path: Path | str) -> None:
+        "Export the environment to a toml file."
+        env_repr: dict[str, Any] = {}
+
+        env_repr['setup'] = self.setup.get_entry()
 
     def __repr__(self) -> str:
         if self.loaded:
@@ -240,7 +242,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         instance         : InstanceTypes,
         processing_times : ProcessTimeAllowedTypes = None,
         job_instance     : InstanceTypes | None  = None,
-        job_ids          : Iterable[int] | str | None = None,
+        job_feature      : str = '',
         n_parts          : int | None = None,
     ) -> None:
         """
@@ -273,24 +275,18 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         )
 
         data     = prepare_instance(instance)
-        job_data = prepare_instance(job_instance) if job_instance is not None else None
+        job_data = prepare_instance(job_instance) if job_instance is not None else {}
 
-        parsed_processing_times: list[dict[int, int]] = self.setup.parse_process_time(
+        parsed_processing_times = self.setup.parse_process_time(
             data,
             processing_times
         )
 
-        if job_ids is None:
-            for alias in JOB_ID_ALIASES:
-                if alias in data:
-                    job_ids = alias
-                    break
-
         self.tasks = Tasks(
             data,
             parsed_processing_times,
-            job_ids,
             job_data,
+            job_feature=job_feature,
             n_parts=n_parts
         )
 
@@ -329,7 +325,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         "Retrieve additional information about the environment."
         return {
             "n_queries": len(self.query_times),
-            "current_time": self.current_time,
+            "current_time": int(self.current_time),
         }
 
     def get_objective(self) -> float:
@@ -338,7 +334,11 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
     def is_terminal(self) -> bool:
         "Check if the environment is in a terminal state."
-        return all([task.is_completed(self.current_time) for task in self.tasks])
+        for task in self.tasks:
+            if not task.is_completed(self.current_time):
+                return False
+
+        return True
 
     def truncate(self) -> bool:
         "Check if the environment is in a truncated state. Legacy method"
@@ -355,20 +355,19 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         super().reset(seed=seed)
 
         if options is not None and 'instance' in options:
-            instance         = options['instance']
-            processing_times = options.get('processing_times', None)
-            job_instance     = options.get('job_instance', None)
-            job_ids          = options.get('job_ids', None)
-            n_parts          = options.get('n_parts', None)
+            instance        : InstanceTypes           = options['instance']
+            processing_times: ProcessTimeAllowedTypes = options.get('processing_times', None)
+            job_instance    : InstanceTypes | None    = options.get('job_instance', None)
+            job_feature     : str                     = options.get('job_feature', '')
+            n_parts         : int | None              = options.get('n_parts', None)
 
             self.set_instance(
                 instance,
                 processing_times,
                 job_instance,
-                job_ids,
+                job_feature,
                 n_parts
             )
-
 
         if not self.loaded:
             raise ValueError("Environment not loaded. Please set an instance first.")
@@ -388,69 +387,55 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
         return self.get_state(), self.get_info()
 
-    def instruction_times(self, strict: bool = False) -> list[int]:
-        "Return the next instruction times in the schedule."
-        if strict:
-            instruction_times = [
-                instruction_time for instruction_time in self.scheduled_instructions
-                if instruction_time > self.current_time
-            ]
-
-        else:
-            instruction_times = list(self.scheduled_instructions.keys())
-            instruction_times.remove(-1)
-
-        return instruction_times
-
-    def next_decision_time(self, strict: bool = False) -> int:
+    def next_decision_time(self, strict: bool = False) -> TIME:
         "Obtain the next decision time to advance. If strict, only consider future tasks."
+        next_time = MAX_INT
+
         if strict:
-            operation_points = [
-                task.get_start_lb() for task in self.tasks
-                if task.is_awaiting() and task.get_start_lb() > self.current_time
-            ]
+            for task in self.tasks:
+                start_lb = task.get_start_lb()
+
+                if task.is_awaiting() and self.current_time < start_lb < next_time:
+                    next_time = start_lb
+
+            for instruction_time in self.scheduled_instructions:
+                if self.current_time < instruction_time < next_time:
+                    next_time = instruction_time
 
         else:
-            operation_points = [
-                task.get_start_lb() for task in self.tasks
-                if task.is_awaiting()
-            ]
+            for task in self.tasks:
+                if task.is_awaiting():
+                    start_lb = task.get_start_lb()
+                    if start_lb < next_time:
+                        next_time = start_lb
 
-        if not operation_points and strict:
-            operation_points = [
-                task.get_end() for task in self.tasks
-                if task.is_executing(self.current_time) and task.get_end() > self.current_time
-            ]
+            for instruction_time in self.scheduled_instructions:
+                if self.current_time <= instruction_time < next_time:
+                    next_time = instruction_time
 
-        instruction_times = self.instruction_times(strict)
+        if self.current_time < self.advancing_to < next_time:
+            next_time = self.advancing_to
 
-        time = MAX_INT
-        if operation_points:
-            min_operation_time = min(operation_points)
-            time = min(time, min_operation_time)
-
-        if instruction_times:
-            min_instruction_time = min(instruction_times)
-            time = min(time, min_instruction_time)
-
-        if self.current_time < self.advancing_to:
-            time = min(time, self.advancing_to)
-
-        if time == MAX_INT:
+        if next_time == MAX_INT:
             return self.tasks.get_time_ub()
 
-        return max(time, self.current_time)
+        if next_time < self.current_time:
+            next_time = self.current_time
 
-    def advance_to(self, time: int) -> None:
+        return next_time
+
+    def advance_to(self, time: TIME) -> None:
         "Advance the environment to a specific time."
         self.current_time = time
 
     def advance_to_next_instruction(self) -> None:
         "Advance the environment to the next instruction time."
-        min_instruction_time = min(self.instruction_times(), default=self.advancing_to)
+        next_time = self.advancing_to
+        for instruction_time in self.scheduled_instructions:
+            if self.current_time <= instruction_time < next_time:
+                next_time = instruction_time
 
-        time = min(min_instruction_time, self.advancing_to)
-        self.advance_to(time)
+        self.advance_to(next_time)
 
     def advance_decision_point(self) -> None:
         "Advance the environment to the next decision point."
@@ -474,7 +459,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
                     "Please specify the machine to execute on."
                 )
 
-            args = (task, machines[0], *args[1:])
+            args = (task, int(machines[0]), *args[1:])
 
         if action == "advance" and len(args) == 0:
             args = (-1,)
@@ -494,7 +479,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         self.scheduled_instructions[time].append(instruction)
 
 
-    def resolve_schedule(self, time: int = -1, allow_wait: bool = True) -> tuple[bool, bool]:
+    def resolve_schedule(self, time: TIME = -1, allow_wait: bool = True) -> tuple[bool, bool]:
         """
         Process the next instruction in the schedule at the given time.
         If time is -1, use the current time and if allow_wait is False,
@@ -503,7 +488,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         instruction = Instruction()
         signal      = Signal(Action.SKIPPED)
 
-        i = -1
+        i: i64 = -1
         schedule = self.scheduled_instructions[time]
 
         while signal.action & Action.SKIPPED and i+1 < len(schedule):
@@ -516,7 +501,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
                 self.scheduled_instructions
             )
 
-        action = signal.action
+        action: u8 = signal.action
         halt, change = False, False
 
         if not allow_wait and action == Action.WAIT:
@@ -529,7 +514,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         if action & Action.SKIPPED:
             for task in self.tasks:
                 if task.is_executing(self.current_time):
-                    action |= Action.PROPAGATE | Action.ADVANCE_NEXT
+                    action = action | Action.PROPAGATE | Action.ADVANCE_NEXT
                     break
 
             else:
@@ -552,8 +537,8 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
         if action & Action.ADVANCE:
             previous_time = self.current_time
-            if signal.param > 0:
-                self.advancing_to = signal.param
+            if signal.time > 0:
+                self.advancing_to = signal.time
                 self.advance_to_next_instruction()
                 self.propagate()
                 change = True
@@ -591,7 +576,11 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         elif not self.scheduled_instructions[-1] and len(self.scheduled_instructions) == 1:
             halt, change = True, False
 
-            if all(task.is_fixed() for task in self.tasks):
+            for task in self.tasks:
+                if not task.is_fixed():
+                    break
+
+            else:
                 end_time = self.tasks.get_time_ub()
                 self.advance_to(end_time)
 
@@ -644,7 +633,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         "Get a string representation of the environment's configuration."
         alpha = self.setup.get_entry()
 
-        beta = ", ".join([
+        beta = ",".join([
             constraint.get_entry()
             for name, constraint in self.constraints.items()
             if not name.startswith("setup_") and constraint.get_entry()

@@ -9,30 +9,31 @@ from typing import ClassVar, Final
 
 from dataclasses import dataclass
 
-from mypy_extensions import mypyc_attr
+from mypy_extensions import mypyc_attr, u8
 
+from .common import TASK_ID, TIME, MACHINE_ID
 from .tasks import Tasks, Status
 
 # Flags are not supported by mypyc
 class Action:
     "Flags for possible actions made by the scheduler in response to an instruction."
-    SKIPPED: Final[int]      = 1 # Tell the scheduler the instruction was skiped
-    REEVALUATE: Final[int]   = 2 # The scheduler should reevaluate the current bounds
-    PROPAGATE: Final[int]    = 4 # The scheduler should propagate the constraints further
-    ADVANCE: Final[int]      = 8 # The scheduler should advance the time
-    ADVANCE_NEXT: Final[int] = 16 # The scheduler should advance to the next decision point
-    RAISE: Final[int]        = 32 # The scheduler should raise an exception
-    HALT: Final[int]         = 64 # The scheduler should stop processing instructions
+    SKIPPED: Final[u8]      = 1 # Tell the scheduler the instruction was skiped
+    REEVALUATE: Final[u8]   = 2 # The scheduler should reevaluate the current bounds
+    PROPAGATE: Final[u8]    = 4 # The scheduler should propagate the constraints further
+    ADVANCE: Final[u8]      = 8 # The scheduler should advance the time
+    ADVANCE_NEXT: Final[u8] = 16 # The scheduler should advance to the next decision point
+    RAISE: Final[u8]        = 32 # The scheduler should raise an exception
+    HALT: Final[u8]         = 64 # The scheduler should stop processing instructions
 
-    DONE: Final[int]  = PROPAGATE | ADVANCE
-    ERROR :Final[int] = RAISE | HALT
-    WAIT: Final[int]  = SKIPPED | PROPAGATE | ADVANCE_NEXT
+    DONE: Final[u8]  = PROPAGATE | ADVANCE
+    ERROR :Final[u8] = RAISE | HALT
+    WAIT: Final[u8]  = SKIPPED | PROPAGATE | ADVANCE_NEXT
 
 @dataclass
 class Signal:
     "Action signal with additional parameters."
-    action: int
-    param: int = 0
+    action: u8
+    time: TIME = 0
     info: str = ""
 
 @mypyc_attr(allow_interpreted_subclasses=True)
@@ -52,9 +53,9 @@ class Instruction:
 
     def process(
         self,
-        current_time: int,
+        current_time: TIME,
         tasks: Tasks,
-        scheduled_instructions: dict[int, list["Instruction"]],
+        scheduled_instructions: dict[TIME, list["Instruction"]],
     ) -> Signal:
         "Process the instruction at the given current time."
         raise NotImplementedError
@@ -66,7 +67,7 @@ class Execute(Instruction):
     "Executes a task on a specific machine. If the task cannot be executed, it is waited for."
     name = "execute"
 
-    def __init__(self, task_id: int, machine: int = 0):
+    def __init__(self, task_id: TASK_ID, machine: MACHINE_ID = 0):
         self.task_id = task_id
         self.machine = machine
 
@@ -75,9 +76,9 @@ class Execute(Instruction):
 
     def process(
         self,
-        current_time: int,
+        current_time: TIME,
         tasks: Tasks,
-        scheduled_instructions: dict[int, list[Instruction]],
+        scheduled_instructions: dict[TIME, list[Instruction]],
     ) -> Signal:
         task = tasks[self.task_id]
         if task.is_available(current_time, self.machine):
@@ -99,7 +100,7 @@ class Submit(Instruction):
     "Executes a task on a specific machine. If the task cannot be executed, skips it."
     name = "submit"
 
-    def __init__(self, task_id: int, machine: int = 0):
+    def __init__(self, task_id: TASK_ID, machine: MACHINE_ID = 0):
         self.task_id = task_id
         self.machine = machine
 
@@ -108,9 +109,9 @@ class Submit(Instruction):
 
     def process(
         self,
-        current_time: int,
+        current_time: TIME,
         tasks: Tasks,
-        scheduled_instructions: dict[int, list[Instruction]],
+        scheduled_instructions: dict[TIME, list[Instruction]],
     ) -> Signal:
         task = tasks[self.task_id]
         if task.is_available(current_time, self.machine):
@@ -132,7 +133,7 @@ class Pause(Instruction):
     "Pauses a task if it is currently executing. Can only be used in preemptive scheduling."
     name = "pause"
 
-    def __init__(self, task_id: int):
+    def __init__(self, task_id: TASK_ID):
         self.task_id = task_id
 
     def __repr__(self) -> str:
@@ -140,9 +141,9 @@ class Pause(Instruction):
 
     def process(
         self,
-        current_time: int,
+        current_time: TIME,
         tasks: Tasks,
-        scheduled_instructions: dict[int, list[Instruction]],
+        scheduled_instructions: dict[TIME, list[Instruction]],
     ) -> Signal:
         task = tasks[self.task_id]
         status = task.get_status(current_time)
@@ -162,7 +163,7 @@ class Complete(Instruction):
     "Advances the current time to the end of an executing task."
     name = "complete"
 
-    def __init__(self, task_id: int):
+    def __init__(self, task_id: TASK_ID):
         self.task_id = task_id
 
     def __repr__(self) -> str:
@@ -170,9 +171,9 @@ class Complete(Instruction):
 
     def process(
         self,
-        current_time: int,
+        current_time: TIME,
         tasks: Tasks,
-        scheduled_instructions: dict[int, list[Instruction]],
+        scheduled_instructions: dict[TIME, list[Instruction]],
     ) -> Signal:
         task = tasks[self.task_id]
         if task.is_executing(current_time):
@@ -188,7 +189,7 @@ class Advance(Instruction):
     "Advances the current time by a specified amount or to the next decision point if not specified."
     name = "advance"
 
-    def __init__(self, time: int = -1):
+    def __init__(self, time: TIME = -1):
         self.time = time
 
     def __repr__(self) -> str:
@@ -199,9 +200,9 @@ class Advance(Instruction):
 
     def process(
         self,
-        current_time: int,
+        current_time: TIME,
         tasks: Tasks,
-        scheduled_instructions: dict[int, list[Instruction]],
+        scheduled_instructions: dict[TIME, list[Instruction]],
     ) -> Signal:
         if self.time == -1:
             return Signal(Action.ADVANCE_NEXT)
@@ -215,9 +216,9 @@ class Query(Instruction):
 
     def process(
         self,
-        current_time: int,
+        current_time: TIME,
         tasks: Tasks,
-        scheduled_instructions: dict[int, list[Instruction]],
+        scheduled_instructions: dict[TIME, list[Instruction]],
     ) -> Signal:
         return Signal(Action.HALT)
 
@@ -228,9 +229,9 @@ class Clear(Instruction):
 
     def process(
         self,
-        current_time: int,
+        current_time: TIME,
         tasks: Tasks,
-        scheduled_instructions: dict[int, list[Instruction]],
+        scheduled_instructions: dict[TIME, list[Instruction]],
     ) -> Signal:
         scheduled_instructions.clear()
         scheduled_instructions[-1] = list()
@@ -254,7 +255,7 @@ def parse_args(
         "got {len(args)}."
     )
 
-def parse_instruction(action: str | Instruction, args: tuple[int, ...]) -> tuple[Instruction, int]:
+def parse_instruction(action: str | Instruction, args: tuple[int, ...]) -> tuple[Instruction, TIME]:
     "Parse raw instruction arguments into an Instruction object and the scheduled time."
     instruction: Instruction
 

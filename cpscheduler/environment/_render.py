@@ -56,7 +56,6 @@ class PlotlyRenderer(Renderer):
         start_times: list[int] = []
         durations: list[int]   = []
         machines: list[int]    = []
-        parts: list[int]       = []
         task_ids: list[int]    = []
         palette = glasbey_dark[:len(self.tasks.jobs)] #type: ignore[no-redef]
         template = "Task %{customdata[0]} [Job %{customdata[1]}]:<br>"\
@@ -64,11 +63,6 @@ class PlotlyRenderer(Renderer):
                    "Machine: %{y}<extra></extra>"
 
         for job, tasks in enumerate(self.tasks.jobs):
-            start_times.clear()
-            durations.clear()
-            machines.clear()
-            parts.clear()
-
             for task in tasks:
                 for part in range(task.n_parts):
                     if not task.is_fixed():
@@ -78,7 +72,6 @@ class PlotlyRenderer(Renderer):
                     durations.append(task.durations[part])
                     machines.append(task.assignments[part])
                     task_ids.append(task.task_id)
-                    parts.append(part)
 
             fig.add_trace(go.Bar( # type: ignore[call-arg]
                 x=durations,
@@ -88,7 +81,7 @@ class PlotlyRenderer(Renderer):
                 name=f"Job {job}",
                 customdata=[(
                     task_ids[i],
-                    parts[i],
+                    job,
                     start_times[i],
                     start_times[i] + durations[i]
                 ) for i in range(len(start_times))],
@@ -96,12 +89,17 @@ class PlotlyRenderer(Renderer):
                 marker=dict(color=palette[job], line=dict(color='white', width=0.5)) # type: ignore[arg-type]
             ))
 
+        max_time = int(current_time / 0.95)
+        if max_time < 1:
+            max_time = 1
+
+
         fig.update_layout( # type: ignore[call-arg]
             width=1600,
             height=800,
             barmode='overlay',
             yaxis=dict(title='Assignment', tickvals=list(range(self.tasks.n_machines)), autorange='reversed'),
-            xaxis=dict(title='Time', range=[0, max(current_time / 0.95, 1)], showgrid=True, gridcolor='rgba(0,0,0,0.4)')
+            xaxis=dict(title='Time', range=(0, max_time), showgrid=True, gridcolor='rgba(0,0,0,0.4)')
         )
 
         if len(self.tasks.jobs) <= 30:
