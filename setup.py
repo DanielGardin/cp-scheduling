@@ -1,12 +1,17 @@
 from pathlib import Path
 
-import tomllib
+try:
+    from tomllib import load
+
+except ImportError:
+    from tomli import load
+
 from setuptools import setup
 from mypyc.build import mypycify
 
 # Load metadata from pyproject.toml
 with open('pyproject.toml', 'rb') as f:
-    project_info = tomllib.load(f)['project']
+    project_info = load(f)['project']
 
 compiling_dirs = [
     'cpscheduler/environment',

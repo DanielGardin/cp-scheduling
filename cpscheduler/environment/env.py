@@ -15,8 +15,7 @@ from pathlib import Path
 
 from typing import Any, TypeAlias, SupportsInt
 from collections.abc import Iterable, Mapping
-from typing_extensions import TypeIs
-import tomllib
+from typing_extensions import TypeIs, Unpack
 
 from gymnasium import Env
 from gymnasium.spaces import Dict, Tuple, Text, Box, OneOf
@@ -35,7 +34,7 @@ from ._render import Renderer, PlotlyRenderer
 
 InstanceTypes: TypeAlias = DataFrameLike | Mapping[str, Iterable[Any]]
 
-SingleAction: TypeAlias = tuple[str | Instruction, *tuple[SupportsInt, ...]]
+SingleAction: TypeAlias = tuple[str | Instruction, Unpack[tuple[SupportsInt, ...]]]
 ActionType: TypeAlias   = SingleAction | Iterable[SingleAction] | None
 ObsType: TypeAlias      = tuple[dict[str, list[Any]], dict[str, list[Any]]]
 
@@ -51,7 +50,7 @@ ActionSpace = OneOf([
     Tuple([InstructionSpace, IntSpace, IntSpace, IntSpace]),
 ])
 
-def is_single_action(action: ActionType) -> TypeIs[tuple[str | Instruction, *tuple[SupportsInt, ...]]]:
+def is_single_action(action: ActionType) -> TypeIs[tuple[str | Instruction, Unpack[tuple[SupportsInt, ...]]]]:
     "Check if the action is a single instruction or a iterable of instructions."
     if not isinstance(action, tuple):
         return False
@@ -197,12 +196,6 @@ class SchedulingEnv(Env[ObsType, ActionType]):
                 job_feature,
                 n_parts
             )
-
-    def export_environment(self, path: Path | str) -> None:
-        "Export the environment to a toml file."
-        env_repr: dict[str, Any] = {}
-
-        env_repr['setup'] = self.setup.get_entry()
 
     def __repr__(self) -> str:
         if self.loaded:

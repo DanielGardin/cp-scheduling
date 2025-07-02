@@ -10,8 +10,9 @@
     implementing the required methods.
 
 """
-from typing import Any, Self, SupportsInt, SupportsFloat
+from typing import Any, SupportsInt, SupportsFloat
 from collections.abc import Iterable, Mapping
+from typing_extensions import Self
 from copy import deepcopy
 
 from abc import ABC

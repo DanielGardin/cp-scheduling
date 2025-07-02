@@ -259,45 +259,44 @@ def parse_instruction(action: str | Instruction, args: tuple[int, ...]) -> tuple
     "Parse raw instruction arguments into an Instruction object and the scheduled time."
     instruction: Instruction
 
-    match action:
-        case "execute":
-            (task_id, machine), time = parse_args(action, args, 2)
+    if isinstance(action, Instruction):
+        _, time = parse_args(action.name, args, 0)
+        instruction = action
 
-            instruction = Execute(task_id, machine)
+    elif action == "execute":
+        (task_id, machine), time = parse_args(action, args, 2)
 
-        case "submit":
-            (task_id, machine), time = parse_args(action, args, 2)
+        instruction = Execute(task_id, machine)
 
-            instruction = Submit(task_id, machine)
+    elif action == "submit":
+        (task_id, machine), time = parse_args(action, args, 2)
 
-        case "pause":
-            (task_id,), time = parse_args(action, args, 1)
+        instruction = Submit(task_id, machine)
 
-            instruction = Pause(task_id)
+    elif action == "pause":
+        (task_id,), time = parse_args(action, args, 1)
 
-        case "complete":
-            (task_id,), time = parse_args(action, args, 1)
+        instruction = Pause(task_id)
 
-            instruction = Complete(task_id)
+    elif action == "complete":
+        (task_id,), time = parse_args(action, args, 1)
 
-        case "advance":
-            (to_time,), time = parse_args(action, args, 1)
+        instruction = Complete(task_id)
 
-            instruction = Advance(to_time)
+    elif action == "advance":
+        (to_time,), time = parse_args(action, args, 1)
 
-        case "query":
-            _, time = parse_args(action, args, 0)
-            instruction = Query()
+        instruction = Advance(to_time)
 
-        case "clear":
-            _, time = parse_args(action, args, 0)
-            instruction = Clear()
+    elif action == "query":
+        _, time = parse_args(action, args, 0)
+        instruction = Query()
 
-        case Instruction():
-            _, time = parse_args(action.name, args, 0)
-            instruction = action
+    elif action == "clear":
+        _, time = parse_args(action, args, 0)
+        instruction = Clear()
 
-        case _:
-            raise ValueError(f"Unknown instruction {action}")
+    else:
+        raise ValueError(f"Unknown instruction {action}")
 
     return instruction, time

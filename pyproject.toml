@@ -5,7 +5,8 @@ requires = [
     "wheel",
     "gymnasium >= 1.1.1",
     "mypy>=1.13.0",
-    "mypy_extensions"
+    "mypy_extensions",
+    "tomli"
 ]
 build-backend = "setuptools.build_meta"
 
@@ -17,10 +18,12 @@ authors = [
 ]
 description = "Solving Scheduling Problems with Constraint Programming and Reinforcement Learning"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 classifiers = [
+    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "MIT AND (Apache-2.0 OR BSD-2-Clause)",
     "Operating System :: OS Independent",
 ]
