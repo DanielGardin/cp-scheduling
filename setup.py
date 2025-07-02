@@ -1,10 +1,13 @@
 from pathlib import Path
+from typing import Any
+from collections.abc import Callable
 
+load: Callable[[Any], dict[str, Any]]
 try:
     from tomllib import load
 
 except ImportError:
-    from tomli import load
+    from tomli import load # type: ignore
 
 from setuptools import setup
 from mypyc.build import mypycify

@@ -71,10 +71,11 @@ def test_speed(n: int = 1) -> None:
         table.add_row([
             instance_name,
             f"{bench_time:.2f} s",
-            f"{mean_time:.2f} s ± {std_time:.2f} s"   if std_time > 0    else f"{mean_time:.2f} s",
+            f"{mean_time:.3f} s ± {std_time:.3f} s"   if std_time > 0    else f"{mean_time:.3f} s",
             f"{mean_speedup:.2%} ± {std_speedup:.2%}" if std_speedup > 0 else f"{mean_speedup:.2%}"
         ])
 
+    table._set_markdown_style()
     print(table)
 
 

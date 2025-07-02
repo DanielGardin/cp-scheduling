@@ -41,7 +41,8 @@ rl = [
     "tensordict >= 0.7.0",
     "tqdm >= 4.67.1",
     "wandb >= 0.21.0",
-    "tensorboard >= 2.19.0"
+    "tensorboard >= 2.19.0",
+    "tqdm >= 4.67.1"
 ]
 
 tests = [
