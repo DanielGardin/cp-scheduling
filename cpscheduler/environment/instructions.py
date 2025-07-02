@@ -5,7 +5,8 @@
     Instructions are used to control the execution of tasks, manage their states, and interact
     with the scheduler.
 """
-from typing import ClassVar, Final
+from typing import ClassVar, Final, TypeAlias, SupportsInt, Iterable
+from typing_extensions import Unpack
 
 from dataclasses import dataclass
 

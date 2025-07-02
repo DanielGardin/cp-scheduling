@@ -6,7 +6,7 @@ requires = [
     "gymnasium >= 1.1.1",
     "mypy>=1.13.0",
     "mypy_extensions",
-    "tomli"
+    "tomli; python_version<'3.11'",
 ]
 build-backend = "setuptools.build_meta"
 
@@ -41,6 +41,7 @@ rl = [
     "tensordict >= 0.7.0",
     "tqdm >= 4.67.1",
     "wandb >= 0.21.0",
+    "tensorboard >= 2.19.0"
 ]
 
 tests = [

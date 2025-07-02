@@ -9,13 +9,11 @@ from gymnasium.spaces import Dict, Tuple, Box, OneOf, Space
 
 from gymnasium import ObservationWrapper, Env
 
-from ..env import ObsType
 from ..tasks import Tasks
 from ..utils import is_iterable_type
-from .._common import MAX_INT as MAX_INT_TIME
+from .._common import ObsType, MAX_INT as MAX_INT_TIME
 
 MAX_INT = int(MAX_INT_TIME)
-
 
 def reshape_space(space: Space[Any], shape: tuple[int, ...]) -> Space[Any]:
     """

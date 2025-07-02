@@ -8,7 +8,8 @@ can import ready-to-use environment.
 
 It is meant to be imported using the `make` function provided by gymnasium
 """
-from cpscheduler.environment.env import SchedulingEnv, InstanceTypes
+from cpscheduler.environment._common import InstanceTypes
+from cpscheduler.environment.env import SchedulingEnv
 from cpscheduler.environment.schedule_setup import JobShopSetup
 from cpscheduler.environment.objectives import Makespan
 

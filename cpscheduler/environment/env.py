@@ -11,9 +11,8 @@
     steps, rendering the environment, and exporting the scheduling model.
 """
 from warnings import warn
-from pathlib import Path
 
-from typing import Any, TypeAlias, SupportsInt
+from typing import Any, SupportsInt
 from collections.abc import Iterable, Mapping
 from typing_extensions import TypeIs, Unpack
 
@@ -22,21 +21,15 @@ from gymnasium.spaces import Dict, Tuple, Text, Box, OneOf
 
 from mypy_extensions import u8, i64
 
-from ._common import MAX_INT, ProcessTimeAllowedTypes, MACHINE_ID, TASK_ID, PART_ID, TIME, DataFrameLike
+from ._common import MAX_INT, ProcessTimeAllowedTypes, TASK_ID, TIME, InstanceTypes, ObsType
 from .tasks import Tasks
-from .instructions import Instruction, Signal, parse_instruction, Action
+from .instructions import Instruction, Signal, parse_instruction, Action, ActionType
 from .schedule_setup import ScheduleSetup
 from .constraints import Constraint
 from .objectives import Objective
 from .utils import convert_to_list, is_iterable_int, infer_list_space
 
 from ._render import Renderer, PlotlyRenderer
-
-InstanceTypes: TypeAlias = DataFrameLike | Mapping[str, Iterable[Any]]
-
-SingleAction: TypeAlias = tuple[str | Instruction, Unpack[tuple[SupportsInt, ...]]]
-ActionType: TypeAlias   = SingleAction | Iterable[SingleAction] | None
-ObsType: TypeAlias      = tuple[dict[str, list[Any]], dict[str, list[Any]]]
 
 # Define the action space for the environment
 InstructionSpace = Text(max_length=10)
@@ -66,8 +59,8 @@ def prepare_instance(instance: InstanceTypes) -> dict[str, list[Any]]:
     features = instance.keys() if isinstance(instance, Mapping) else instance.columns
 
     return {
-        feature: convert_to_list(instance[feature]) for feature in features # type: ignore
-    }                                                                       # Dataframes are a pain
+        feature: convert_to_list(instance[feature]) for feature in features
+    }
 
 class SchedulingEnv(Env[ObsType, ActionType]):
     """

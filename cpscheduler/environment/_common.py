@@ -4,6 +4,7 @@ from collections.abc import Iterable, Mapping
 
 from mypy_extensions import i16, i32, u8
 
+# Type aliases for commonly used types and also for performance optimization with mypyc
 MACHINE_ID: TypeAlias = i16
 TASK_ID:    TypeAlias = i32
 PART_ID:    TypeAlias = i16
@@ -12,15 +13,6 @@ TIME:       TypeAlias = i32
 # Reducing upper bounds to avoid numerical issues
 MIN_INT: Final[TIME] = -(2**24 + 1)
 MAX_INT: Final[TIME] = 2**24 - 1
-
-ProcessTimeAllowedTypes: TypeAlias = (
-    Iterable[Mapping[SupportsInt, SupportsInt]] |
-    Iterable[Iterable[SupportsInt]]     |
-    Iterable[SupportsInt]               | # Requires a machine array
-    str                         | # Requires a machine array
-    Iterable[str]               | # Map columns in data to machines
-    None                          # Infer from data
-)
 
 @runtime_checkable
 class DataFrameLike(Protocol):
@@ -35,3 +27,15 @@ class DataFrameLike(Protocol):
     def head(self, n: int = ...) -> Any: ...
 
     def to_dict(self) -> Mapping[str, Sequence[Any]]: ...
+
+ProcessTimeAllowedTypes: TypeAlias = (
+    Iterable[Mapping[SupportsInt, SupportsInt]] |
+    Iterable[Iterable[SupportsInt]]     |
+    Iterable[SupportsInt]               | # Requires a machine array
+    str                         | # Requires a machine array
+    Iterable[str]               | # Map columns in data to machines
+    None                          # Infer from data
+)
+
+ObsType: TypeAlias      = tuple[dict[str, list[Any]], dict[str, list[Any]]]
+InstanceTypes: TypeAlias = DataFrameLike | Mapping[str, Iterable[Any]]
