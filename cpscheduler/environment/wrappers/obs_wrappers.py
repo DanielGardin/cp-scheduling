@@ -1,17 +1,21 @@
-from typing import Any, TypeVar, Callable
+from typing import Any, TypeVar
+from collections.abc import Callable
 from numpy.typing import NDArray
 
 from abc import ABC, abstractmethod
 
 import numpy as np
-from gymnasium.spaces import Dict, Tuple, Box, OneOf, Space, Sequence
+from gymnasium.spaces import Dict, Tuple, Box, OneOf, Space
 
 from gymnasium import ObservationWrapper, Env
 
 from ..env import ObsType
 from ..tasks import Tasks
 from ..utils import is_iterable_type
-from ..common import MAX_INT
+from .._common import MAX_INT as MAX_INT_TIME
+
+MAX_INT = int(MAX_INT_TIME)
+
 
 def reshape_space(space: Space[Any], shape: tuple[int, ...]) -> Space[Any]:
     """
@@ -167,10 +171,13 @@ class PreprocessObservationWrapper(SchedulingObservationWrapper[NDArray[np.float
             self,
             env: Env[ObsType, _Act],
             transform: Callable[[*ObsType], NDArray[np.floating[Any]]],
-            n_features: int
         ):
-        self.n_features = n_features
         self.transform  = transform
+
+        obs, info = env.reset()
+        array_obs = transform(*obs)
+
+        self.n_features = array_obs.shape[-1]
 
         super().__init__(env)
 
@@ -181,9 +188,6 @@ class PreprocessObservationWrapper(SchedulingObservationWrapper[NDArray[np.float
         n_jobs = len(getattr(self.env.get_wrapper_attr("tasks"), "jobs"))
 
         return Box(float("-inf"), float("inf"), shape=(n_jobs, self.n_features))
-
-    def default_observation_space(self) -> Space[NDArray[np.floating[Any]]] | None:
-        return Box(float("-inf"), float("inf"), shape=(0, self.n_features))
 
     def observation(self, observation: ObsType) -> NDArray[np.floating[Any]]:
         task_data, job_data = observation

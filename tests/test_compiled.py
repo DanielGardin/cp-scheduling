@@ -6,7 +6,6 @@ def test_is_tasks_compiled() -> None:
 
     assert tasks.__file__.endswith(".so")
 
-
 @mark.compilation
 def test_is_instructions_compiled() -> None:
     import cpscheduler.environment.instructions as instructions

@@ -1,4 +1,5 @@
-from typing import Any, TypeVar, Iterable, SupportsInt
+from typing import Any, TypeVar, SupportsInt
+from collections.abc import Iterable
 
 from abc import ABC, abstractmethod
 

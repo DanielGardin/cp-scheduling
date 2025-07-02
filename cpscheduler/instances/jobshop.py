@@ -1,13 +1,12 @@
 from pathlib import Path
 
-from typing import Any, Optional, Callable
-from pandas import DataFrame
+from typing import Any
 
 import random as rng
 
 from .common import generate_instance
 
-def read_jsp_instance(path: Path | str) -> tuple[DataFrame, dict[str, Any]]:
+def read_jsp_instance(path: Path | str) -> tuple[dict[str, list[Any]], dict[str, Any]]:
     """
     Reads an instance from a file. The file must be in the Taillard format, with the following structure:
     - The first line contains the number of jobs and the number of machines in the instance.
@@ -36,9 +35,12 @@ def read_jsp_instance(path: Path | str) -> tuple[DataFrame, dict[str, Any]]:
     with open(path, "r") as f:
         n_jobs, n_machines = map(int, f.readline().split())
 
-        # TODO: Allow metadata to be read from the file
-
-        data: list[list[int]] = []
+        instance: dict[str, list[Any]] = {
+            "job": [],
+            "operation": [],
+            "machine": [],
+            "processing_time": []
+        }
 
         for job_id in range(n_jobs):
             job_info = f.readline()
@@ -48,11 +50,10 @@ def read_jsp_instance(path: Path | str) -> tuple[DataFrame, dict[str, Any]]:
             for operation_id, (machine_id, processing_time) in enumerate(
                 zip(job_data[::2], job_data[1::2])
             ):
-                data.append([job_id, operation_id, machine_id, processing_time])
-
-        instance = DataFrame(
-            data, columns=["job", "operation", "machine", "processing_time"]
-        )
+                instance["job"].append(job_id)
+                instance["operation"].append(operation_id)
+                instance["machine"].append(machine_id)
+                instance["processing_time"].append(processing_time)
 
         metadata: dict[str, Any] = {"n_jobs": n_jobs, "n_machines": n_machines}
 
@@ -74,8 +75,8 @@ def read_jsp_instance(path: Path | str) -> tuple[DataFrame, dict[str, Any]]:
 
 
 def generate_taillard_instance(
-    n_jobs: int, n_machines: int, seed: Optional[int] = None
-) -> DataFrame:
+    n_jobs: int, n_machines: int, seed: int | None = None
+) -> dict[str, list[Any]]:
     """
     Generates a random instance following the Taillard method [1]. Processing times are randomly generated between 1 and 99 units,
     and the operations are randomly assigned to the machines, with each job having exactly one operation per machine.
@@ -122,8 +123,8 @@ def generate_taillard_instance(
 
 # TODO: Reference for the Demirkol instance generation method, p ~ U(1, 200)
 def generate_demirkol_instance(
-    n_jobs: int, n_machines: int, seed: Optional[int] = None
-) -> DataFrame:
+    n_jobs: int, n_machines: int, seed: int | None = None
+) -> dict[str, list[Any]]:
     instance, _ = generate_instance(
         n_jobs,
         n_machines,

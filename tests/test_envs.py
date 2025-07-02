@@ -53,7 +53,7 @@ def test_execute(instance_name: str) -> None:
     assert not new_terminated
     assert not new_truncated
     assert new_info['current_time'] == advancing_time
-    assert new_reward == -env.tasks[0].get_duration()
+    assert new_reward == - int(env.tasks[0].get_duration())
     assert new_obs['status'][0] == 'completed'
 
 
@@ -86,7 +86,7 @@ def test_submit(instance_name: str) -> None:
     assert new_obs['status'][2] == 'completed'
 
     assert new_info['current_time'] ==  env.tasks[2].get_end()
-    assert new_reward + reward      == -env.tasks[2].get_end()
+    assert new_reward + reward      == - int(env.tasks[2].get_end())
 
 
 @pytest.mark.env

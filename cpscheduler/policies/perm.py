@@ -1,11 +1,9 @@
-from typing import Any, Iterable, Callable, Optional, reveal_type
+from collections.abc import Callable
 
 from torch import Tensor
 
 import torch
 from torch import nn
-
-import math
 
 class PlackettLucePolicy(nn.Module):
     def __init__(
@@ -16,7 +14,7 @@ class PlackettLucePolicy(nn.Module):
         self.score_model = score_model
     
     def get_score(self, x: Tensor) -> Tensor:
-        logits = torch.squeeze(self.score_model(x))
+        logits = torch.squeeze(self.score_model(x), -1)
 
         return logits - torch.mean(logits, dim=-1, keepdim=True)
 
@@ -24,7 +22,8 @@ class PlackettLucePolicy(nn.Module):
         return self.sample(x)
 
     def greedy(self, x: Tensor) -> Tensor:
-        logits = self.get_score(x)
+        with torch.no_grad():
+            logits = self.get_score(x)
 
         permutation = torch.argsort(logits, dim=-1, descending=True)
 
@@ -42,7 +41,7 @@ class PlackettLucePolicy(nn.Module):
 
         permutation = torch.argsort(perturbed_logits, dim=-1, descending=True)
 
-        log_prob = self.log_prob(logits, permutation)
+        log_prob = self.log_prob(x, permutation)
 
         return permutation, log_prob
 

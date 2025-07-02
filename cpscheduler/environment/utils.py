@@ -3,25 +3,16 @@
 
     This module provides utility functions for the environment and other modules.
 """
-from typing import (
-    Any,
-    TypeVar,
-    Optional,
-    overload,
-    Iterable,
-    Sequence,
-    Mapping
-)
+from typing import Any, TypeVar, overload, SupportsInt
+from collections.abc import Iterable, Mapping, Sequence
 from typing_extensions import TypeIs
 
 from collections import deque
-from fractions import Fraction
-from math import lcm
 
 import numpy as np
 from gymnasium import spaces
 
-from .common import MAX_INT, MIN_INT
+from ._common import MAX_INT, MIN_INT, TASK_ID
 
 _S = TypeVar("_S")
 _T = TypeVar("_T", bound=Any)
@@ -34,9 +25,7 @@ def convert_to_list(array: Iterable[_S], dtype: None = None) -> list[_S]: ...
 @overload
 def convert_to_list(array: Any, dtype: None = None) -> list[Any]: ...
 
-def convert_to_list(
-    array: Iterable[Any], dtype: Optional[type[_T]] = None
-) -> list[Any]:
+def convert_to_list(array: Iterable[Any], dtype: type[_T] | None = None) -> list[Any]:
     """
     Convert an iterable to a list. If a dtype is provided, the elements of the list will be casted
     to that type.
@@ -86,19 +75,34 @@ def is_iterable_type(obj: Any, dtype: type[_T]) -> TypeIs[Iterable[_T]]:
         Whether the object is an iterable containing elements of the specified type.
     """
     try:
-        return all([isinstance(item, dtype) for item in obj])
+        for item in obj:
+            if not isinstance(item, dtype):
+                return False
+        
+        return True
 
     except Exception:
         return False
 
+# Thank you mypy for not supporting Abstract classes with type[T]
+def is_iterable_int(obj: Any) -> TypeIs[Iterable[SupportsInt]]:
+    try:
+        for item in obj:
+            if not isinstance(item, SupportsInt):
+                return False
+        
+        return True
+
+    except Exception:
+        return False
 
 _K = TypeVar("_K")
 _V = TypeVar("_V")
 def is_mapping(
-    obj: dict[Any, Any] | Any, keys_type: type[_K], values_type: type[_V]
+    obj: Mapping[Any, Any] | Any, keys_type: type[_K], values_type: type[_V]
 ) -> TypeIs[Mapping[_K, _V]]:
     """
-    Returns whether the object is a dictionary.
+    Returns whether the object is a mapping.
 
     Parameters
     ----------
@@ -108,19 +112,23 @@ def is_mapping(
     Returns
     -------
     bool
-        Whether the object is a dictionary.
+        Whether the object is a mapping.
     """
+    if not isinstance(obj, Mapping):
+        return False
+
     try:
-        return all([
-                isinstance(key, keys_type) and isinstance(value, values_type)
-                for key, value in obj.items()
-        ])
+        for key, value in obj.items():
+            if not isinstance(key, keys_type) or not isinstance(value, values_type):
+                return False
+
+        return True
 
     except Exception:
         return False
 
 
-def topological_sort(precedence_map: dict[int, list[int]], n_tasks: int) -> list[int]:
+def topological_sort(precedence_map: dict[TASK_ID, list[TASK_ID]], n_tasks: TASK_ID) -> list[TASK_ID]:
     """
     Perform a topological sort on a directed acyclic graph.
 
@@ -221,7 +229,7 @@ def infer_list_space(array: list[Any]) -> spaces.Space[Any]:
         return spaces.Tuple([spaces.Text(max_length=100) for _ in range(n)])
 
     if isinstance(elem, int):
-        return spaces.Box(low=MIN_INT, high=MAX_INT, shape=(n,), dtype=np.int64)
+        return spaces.Box(low=MIN_INT, high=MAX_INT, shape=(n,), dtype=np.int64) # type: ignore
 
     if isinstance(elem, float):
         return spaces.Box(low=-np.inf, high=np.inf, shape=(n,), dtype=np.float64)
@@ -231,15 +239,3 @@ def infer_list_space(array: list[Any]) -> spaces.Space[Any]:
 
     if is_iterable_type(array, str):
         return spaces.Tuple([spaces.Text(max_length=100) for _ in range(n)])
-
-def scale_to_int(float_list: list[float], scale_factor: float = 1000.0) -> list[int]:
-    "Scale a list of floats to integers using a common denominator."
-    fractions = [Fraction(value).limit_denominator() for value in float_list]
-
-    denominators = [fraction.denominator for fraction in fractions]
-    lcm_denominator = lcm(*denominators)
-
-    if lcm_denominator <= scale_factor:
-        scale_factor = float(lcm_denominator)
-
-    return [int(value * scale_factor) for value in float_list]

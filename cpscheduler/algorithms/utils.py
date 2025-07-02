@@ -1,12 +1,9 @@
-from typing import Any, Sequence, Callable
+from torch.types import Device
 
-from pathlib import Path
-
-import torch.optim as optim
 from torch.nn import Module
 import torch
 
-def get_device(device: str = 'auto') -> str:
+def get_device(device: Device = 'auto') -> Device:
     if device == 'auto':
         return 'cuda' if torch.cuda.is_available() else 'cpu'
 

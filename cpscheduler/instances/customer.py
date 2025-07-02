@@ -1,9 +1,12 @@
-from typing import Any, Optional, Iterable
+from typing import Any
+from collections.abc import Iterable
 from pandas import DataFrame
 from numpy.typing import NDArray
 
 import numpy as np
 import pandas as pd
+
+# TODO: Remove pandas dependency
 
 def mean_point(arr: NDArray[Any]) -> NDArray[Any]:
     a = np.insert(arr, 0, 0)
@@ -17,8 +20,8 @@ def customer_scheduling_instance(
     *,
     weight_feature: str = "weight",
     customer_feature: str = "customer",
-    seed: Optional[int] = None,
-) -> tuple[DataFrame, DataFrame]:
+    seed: int | None = None,
+) -> tuple[list[DataFrame], DataFrame]:
     """
     Adapt a set of scheduling instances to a customer scheduling instance.
     The customer scheduling instance is a scheduling instance where the jobs are
@@ -101,9 +104,16 @@ def customer_scheduling_instance(
 
     weight_norm = customer_information[weight_feature].sum()
 
-    base_instance[weight_feature]        = base_instance[weight_feature] / weight_norm
-    customer_information[weight_feature] = customer_information[weight_feature] / weight_norm
+    base_instance[weight_feature] = base_instance[weight_feature] / weight_norm
+
+    customer_information[f"{weight_feature}_original"] = customer_information[weight_feature]
+    customer_information[weight_feature]               = customer_information[weight_feature] / weight_norm
 
     base_instance[customer_feature] = base_instance[customer_feature].astype(int)
 
-    return base_instance, customer_information
+    list_instances = [
+        instance.drop(columns=['instance_id'])
+        for _, instance in base_instance.groupby('instance_id')
+    ]
+
+    return list_instances, customer_information

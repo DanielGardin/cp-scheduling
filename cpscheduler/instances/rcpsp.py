@@ -1,9 +1,8 @@
 from pathlib import Path
 
 from typing import Any
-from pandas import DataFrame
 
-def read_rcpsp_instance(path: Path | str) -> tuple[DataFrame, dict[str, Any]]:
+def read_rcpsp_instance(path: Path | str) -> tuple[dict[str, list[Any]], dict[str, Any]]:
     """
     Reads an instance from a file. The file must be in the Patterson format, with the following structure:
     - The first line contains the number of jobs and the number of resources in the instance.
@@ -61,15 +60,13 @@ def read_rcpsp_instance(path: Path | str) -> tuple[DataFrame, dict[str, Any]]:
 
         f.readline()  # Dummy line (Sink task)
 
-        instance = DataFrame(
-            {
-                "duration": durations,
-                **{
-                    f"resource_{resource_id}": resource_demands[resource_id]
-                    for resource_id in range(n_resources)
-                },
-            }
-        )
+        instance = {
+            "processing_time": durations,
+            **{
+                f"resource_{resource_id}": resource_demands[resource_id]
+                for resource_id in range(n_resources)
+            },
+        }
 
         metadata = {
             "n_tasks": n_tasks,

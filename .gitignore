@@ -2,9 +2,11 @@
 __pycache__/
 *.py[cod]
 *$py.class
+
 /instances/
 logs/
 /__*.py
+data/
 
 # C extensions
 *.so
@@ -134,3 +136,6 @@ cython_debug/
 
 # Ignore VSCode settings
 .vscode/
+
+# Wandb
+wandb/

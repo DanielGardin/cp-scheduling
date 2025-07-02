@@ -54,7 +54,7 @@ for dataset in datasets:
         all_instances.set_description(f"Processing instance {instance_name}")
 
         env = SchedulingEnv(JobShopSetup())
-        env.set_instance(instance, processing_times="processing_time" ,job_ids='job')
+        env.set_instance(instance)
 
         heuristic_results: list[float] = [0] * len(column_names)
 

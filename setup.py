@@ -8,11 +8,6 @@ from mypyc.build import mypycify
 with open('pyproject.toml', 'rb') as f:
     project_info = tomllib.load(f)['project']
 
-
-excluding_files = [
-    '__init__.py',
-]
-
 compiling_dirs = [
     'cpscheduler/environment',
     'cpscheduler/instances',
@@ -24,7 +19,7 @@ compiling_files = [
 ]
 for dir in compiling_dirs:
     compiling_files.extend([
-        str(file) for file in Path(dir).rglob('*.py') if file.name not in excluding_files
+        str(file) for file in Path(dir).rglob('*.py') if not file.name.startswith("_")
     ])
 
 
