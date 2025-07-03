@@ -9,6 +9,10 @@ from cpscheduler import SchedulingEnv, JobShopSetup
 from cpscheduler.instances import read_jsp_instance
 from cpscheduler.heuristics import ShortestProcessingTime
 
+OK = "\033[92m"
+FAIL = "\033[91m"
+WARNING = "\033[93m"
+
 
 benchmark_times = {
     "dmu10": 0.4,
@@ -42,6 +46,11 @@ def is_compiled() -> bool:
 
     return env.__file__.endswith(".so")
 
+
+def is_instance_present() -> bool:
+    root = Path(__file__).parent
+    print(root)
+    return (root / "instances/jobshop").exists()
 
 
 RESET = "\033[0m"
@@ -119,8 +128,18 @@ def test_speed(n: int = 1, full: bool = False) -> None:
         If True, run the benchmark times for all the environment stages.
     """
 
-    print(f"is_compiled={is_compiled()}")
-    print()
+    compiled = is_compiled()
+    instance_present = is_instance_present()
+
+    print(f"{OK + '[PASS]' if compiled else FAIL + '[FAIL]'}{RESET} compiled")
+    print(f"{OK + '[PASS]' if instance_present else FAIL + '[FAIL]'}{RESET} instance directory")
+    print(f"Running \033[;36m{n}{RESET} iteration{'s' if n > 1 else ''} per instance", end='')
+
+    if not instance_present:
+        raise FileNotFoundError(
+            "Could not locate `instances` directory. Maybe you forgot to run `git submodule update --init`?"
+        )
+
 
     if full:
         columns = [
@@ -146,6 +165,7 @@ def test_speed(n: int = 1, full: bool = False) -> None:
     values: list[float] = []
     speedup_strs: list[str] = []
 
+    dots = 0
     for instance_name, bench_time in benchmark_times.items():
         instance_path = root / "instances/jobshop" / f"{instance_name}.txt"
 
@@ -157,6 +177,14 @@ def test_speed(n: int = 1, full: bool = False) -> None:
             "step": [],
             "all": [],
         }
+
+        if dots < 3:
+            print('.', end='', flush=True)
+            dots += 1
+
+        else:
+            print(f'\r{' ' * 100}', end=f"\rRunning \033[;36m{n}{RESET} iteration{'s' if n > 1 else ''} per instance", flush=True)
+            dots = 0
 
         for _ in range(n):
             global_tick = perf_counter()
@@ -254,7 +282,9 @@ def test_speed(n: int = 1, full: bool = False) -> None:
     table.add_column("Speedup", speedup_strs)
 
     table._set_markdown_style()
-    print(table)
+    
+    print('\n')
+    print(table, flush=True)
 
 
 if __name__ == "__main__":
