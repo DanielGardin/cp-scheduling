@@ -37,6 +37,12 @@ benchmark_times = {
     # "kopt_ops10000_m100_1" : 3 * 60
 }
 
+def is_compiled() -> bool:
+    import cpscheduler.environment.env as env
+
+    return env.__file__.endswith(".so")
+
+
 
 RESET = "\033[0m"
 def colormap(
@@ -69,13 +75,6 @@ def colormap(
 
     return color_code
 
-
-def is_compiled() -> bool:
-    import cpscheduler.environment.env as env
-
-    return env.__file__.endswith(".so")
-
-
 def statistics(
     data: list[float],
     unit: str = "s",
@@ -96,7 +95,13 @@ def statistics(
         mean_perc = sum(perc) / len(perc)
         std_perc = (sum((p - mean_perc) ** 2 for p in perc) / len(perc)) ** 0.5
 
-        comp_string += f" ({100*mean_perc:.2f} ± {std_perc:.2%})"
+        if std_perc == 0:
+            comp_string += f" \033[;90m({mean_perc:.2%}"
+
+        else:
+            comp_string += f" \033[;90m({100*mean_perc:.2f} ± {std_perc:.2%}"
+        
+        comp_string += f"){RESET}"
 
     return comp_string
 
@@ -120,12 +125,12 @@ def test_speed(n: int = 1, full: bool = False) -> None:
     if full:
         columns = [
             "Instance",
-            "All time",
             "Instance read time",
             "Setup time",
             "Reset time",
             "PDR time",
             "Step time",
+            "All time",
             "Benchmark",
         ]
     
@@ -214,12 +219,12 @@ def test_speed(n: int = 1, full: bool = False) -> None:
             table.add_row(
                 [
                     instance_name,
-                    datas["all"],
                     datas["instance"],
                     datas["setup"],
                     datas["reset"],
                     datas["pdr"],
                     datas["step"],
+                    datas["all"],
                     f"{bench_time:.2f} s",
                 ]
             )
