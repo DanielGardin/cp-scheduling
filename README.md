@@ -1,12 +1,19 @@
 # Constraint Programming Scheduler
 
-This repository provides a comprehensive environment for applying constraint programming techniques to scheduling problems. It focuses on the learning and optimization of priority dispatch rules, enabling the development and testing of intelligent heuristics for dynamic scheduling scenarios. Designed for researchers and practitioners, the framework supports customization, benchmarking, and integration with machine learning approaches to enhance scheduling performance.
+This repository provides a comprehensive gym environment for applying constraint programming techniques to scheduling problems.
+It focuses on the learning and optimization of priority dispatch rules, enabling the development and testing of intelligent heuristics for dynamic scheduling scenarios.
+Designed for researchers and practitioners, the framework supports customization, benchmarking, and integration with machine learning approaches to enhance scheduling performance.
+
+This work was directly inspired by [another project](https://github.com/ingambe/JobShopCPEnv), which only considers jobshop scheduling problems.
+We expand the previous idea of building an environment that automatically ensure the problem's constraints along the decisions.
+The major contribution here is providing a flexible and expansible framework for enumerous scheduling problems following the scheduling literature (see [Pinedo, 2022](https://link.springer.com/book/10.1007/978-3-031-05921-6) for a complete review).
+
 
 ## Installation
 
 To install the project, clone the repository and install the dependencies:
 
-```bash
+```bash'
 git clone https://github.com/DanielGardin/cp-scheduling.git
 cd cp-scheduling
 pip install -e .
@@ -29,7 +36,7 @@ pip install -e .[solver]
 This project uses `mypyc` to compile the Python code to C extensions for performance. The compiled files are specified in the `setup.py` file. During instalation, mypy and its extension will be installed.
 Due to compilation, we can achieve great performance, for example in jobshop instances,
 
-| Instance | Benchmark |     Time took     |      Speedup      |
+| Instance | Benchmark* |     Time took     |      Speedup      |
 | :------: | :-------: | :---------------: | :---------------: |
 |  dmu10   |   0.40 s  | 0.038 s ± 0.000 s |  955.96% ± 5.60%  |
 |  dmu20   |   0.80 s  | 0.091 s ± 0.000 s |  775.48% ± 2.78%  |

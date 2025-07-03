@@ -1,4 +1,4 @@
-from typing import Any, Literal
+from typing import Any, Literal, TypeAlias
 from collections.abc import Callable
 from torch import Tensor
 
@@ -18,7 +18,7 @@ from ..buffer import Buffer
 from ..protocols import Policy
 from ..utils import get_device
 
-Baselines = Literal['mean', 'greedy', 'none'] | Callable[[Tensor], Tensor]
+Baselines: TypeAlias = Literal['mean', 'greedy', 'none'] | Callable[[Tensor], Tensor]
 
 class Reinforce(BaseAlgorithm):
     def __init__(
