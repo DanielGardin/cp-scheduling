@@ -1,10 +1,11 @@
 """
-    schedule_setup.py
+schedule_setup.py
 
-    This module defines the ScheduleSetup class and its subclasses for different scheduling setups.
-    It provides a framework for creating various scheduling environments, such as single machine,
-    identical parallel machines, uniform parallel machines, job shop, and open shop setups.
+This module defines the ScheduleSetup class and its subclasses for different scheduling setups.
+It provides a framework for creating various scheduling environments, such as single machine,
+identical parallel machines, uniform parallel machines, job shop, and open shop setups.
 """
+
 from typing import Any, SupportsInt
 from collections.abc import Iterable, Mapping
 
@@ -14,12 +15,18 @@ from mypy_extensions import mypyc_attr
 
 from ._common import ProcessTimeAllowedTypes, MACHINE_ID, TIME
 from .tasks import Tasks
-from .constraints import Constraint, DisjunctiveConstraint, PrecedenceConstraint, MachineConstraint
+from .constraints import (
+    Constraint,
+    DisjunctiveConstraint,
+    PrecedenceConstraint,
+    MachineConstraint,
+)
 from .utils import is_iterable_type, convert_to_list, is_iterable_int
 
 PTIME_ALIASES = ["processing_time", "process_time", "processing time"]
 
 setups: dict[str, type["ScheduleSetup"]] = {}
+
 
 # TODO: Expand the inference logic to handle more complex cases
 def infer_processing_time(data: dict[str, list[Any]]) -> ProcessTimeAllowedTypes:
@@ -27,16 +34,16 @@ def infer_processing_time(data: dict[str, list[Any]]) -> ProcessTimeAllowedTypes
         if alias in data:
             return alias
 
-    raise ValueError(
-        f"Cannot infer processing time from the data."
-    )
+    raise ValueError(f"Cannot infer processing time from the data.")
+
 
 @mypyc_attr(allow_interpreted_subclasses=True)
 class ScheduleSetup(ABC):
     """
-        Base class for scheduling setups. It defines the common interface for all scheduling setups
-        and provides methods to parse process times, set tasks, and setup constraints.
+    Base class for scheduling setups. It defines the common interface for all scheduling setups
+    and provides methods to parse process times, set tasks, and setup constraints.
     """
+
     def __init_subclass__(cls) -> None:
         super().__init_subclass__()
 
@@ -61,6 +68,7 @@ class ScheduleSetup(ABC):
         list[dict[MACHINE_ID, TIME]]: List of dictionaries with the machine as key and the process time
         as value.
         """
+
     def setup_constraints(self, tasks: Tasks) -> tuple[Constraint, ...]:
         "Build the constraint for that setup."
         return ()
@@ -76,6 +84,7 @@ class SingleMachineSetup(ScheduleSetup):
 
     This setup is used for scheduling tasks on a single machine.
     """
+
     def __init__(self, disjunctive: bool = True) -> None:
         self.disjunctive = disjunctive
 
@@ -101,14 +110,13 @@ class SingleMachineSetup(ScheduleSetup):
         if not self.disjunctive:
             return ()
 
-        disjunctive_tasks = {
-            0: [i for i in range(tasks.n_tasks)]
-        }
+        disjunctive_tasks = {0: [i for i in range(tasks.n_tasks)]}
 
         return (DisjunctiveConstraint(disjunctive_tasks, name="disjunctive"),)
 
     def get_entry(self) -> str:
         return "1"
+
 
 class IdenticalParallelMachineSetup(ScheduleSetup):
     """
@@ -116,6 +124,7 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
 
     This setup is used for scheduling tasks on multiple machines using the same processing time.
     """
+
     def __init__(
         self,
         n_machines: int,
@@ -125,7 +134,11 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
         self.disjunctive = disjunctive
 
     def setup_constraints(self, tasks: Tasks) -> tuple[Constraint, ...]:
-        return (MachineConstraint(name="setup_machine_disjunctive"), ) if self.disjunctive else ()
+        return (
+            (MachineConstraint(name="setup_machine_disjunctive"),)
+            if self.disjunctive
+            else ()
+        )
 
     def parse_process_time(
         self,
@@ -137,13 +150,19 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
 
         if is_iterable_int(process_time):
             return [
-                {MACHINE_ID(machine): TIME(p_time) for machine in range(self.n_machines)}
+                {
+                    MACHINE_ID(machine): TIME(p_time)
+                    for machine in range(self.n_machines)
+                }
                 for p_time in process_time
             ]
 
         if isinstance(process_time, str):
             return [
-                {MACHINE_ID(machine): TIME(p_time) for machine in range(self.n_machines)}
+                {
+                    MACHINE_ID(machine): TIME(p_time)
+                    for machine in range(self.n_machines)
+                }
                 for p_time in data[process_time]
             ]
 
@@ -154,12 +173,14 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
     def get_entry(self) -> str:
         return f"P{self.n_machines}" if self.n_machines > 1 else "Pm"
 
+
 class UniformParallelMachineSetup(ScheduleSetup):
     """
     Uniform Parallel Machine Scheduling Setup.
 
     This setup is used for scheduling tasks on multiple machines with different speeds.
     """
+
     def __init__(
         self,
         speed: Iterable[SupportsInt],
@@ -168,10 +189,14 @@ class UniformParallelMachineSetup(ScheduleSetup):
         self.speed = convert_to_list(speed, int)
 
         self.disjunctive = disjunctive
-        self.n_machines  = len(self.speed)
+        self.n_machines = len(self.speed)
 
     def setup_constraints(self, tasks: Tasks) -> tuple[Constraint, ...]:
-        return (MachineConstraint(name="setup_machine_disjunctive"), ) if self.disjunctive else ()
+        return (
+            (MachineConstraint(name="setup_machine_disjunctive"),)
+            if self.disjunctive
+            else ()
+        )
 
     def parse_process_time(
         self,
@@ -183,13 +208,19 @@ class UniformParallelMachineSetup(ScheduleSetup):
 
         if is_iterable_int(process_time):
             return [
-                {MACHINE_ID(machine): TIME(p_time) // self.speed[machine] for machine in range(self.n_machines)}
+                {
+                    MACHINE_ID(machine): TIME(p_time) // self.speed[machine]
+                    for machine in range(self.n_machines)
+                }
                 for p_time in process_time
             ]
 
         if isinstance(process_time, str):
             return [
-                {machine: p_time // self.speed[machine] for machine in range(self.n_machines)}
+                {
+                    machine: p_time // self.speed[machine]
+                    for machine in range(self.n_machines)
+                }
                 for p_time in data[process_time]
             ]
 
@@ -200,6 +231,7 @@ class UniformParallelMachineSetup(ScheduleSetup):
     def get_entry(self) -> str:
         return f"U{self.n_machines}" if self.n_machines > 1 else "Um"
 
+
 class UnrelatedParallelMachineSetup(ScheduleSetup):
     def __init__(
         self,
@@ -208,7 +240,11 @@ class UnrelatedParallelMachineSetup(ScheduleSetup):
         self.disjunctive = disjunctive
 
     def setup_constraints(self, tasks: Tasks) -> tuple[Constraint, ...]:
-        return (MachineConstraint(name="setup_machine_disjunctive"), ) if self.disjunctive else ()
+        return (
+            (MachineConstraint(name="setup_machine_disjunctive"),)
+            if self.disjunctive
+            else ()
+        )
 
     def parse_process_time(
         self,
@@ -216,7 +252,9 @@ class UnrelatedParallelMachineSetup(ScheduleSetup):
         process_time: ProcessTimeAllowedTypes,
     ) -> list[dict[MACHINE_ID, TIME]]:
         if process_time is None:
-            raise ValueError("Cannot infer processing time for unrelated parallel machines.")
+            raise ValueError(
+                "Cannot infer processing time for unrelated parallel machines."
+            )
 
         if isinstance(process_time, str):
             raise ValueError(
@@ -227,7 +265,10 @@ class UnrelatedParallelMachineSetup(ScheduleSetup):
             processing_times = zip(*[data[feat] for feat in process_time])
 
             return [
-                {MACHINE_ID(machine): TIME(p_time) for machine, p_time in enumerate(p_times)}
+                {
+                    MACHINE_ID(machine): TIME(p_time)
+                    for machine, p_time in enumerate(p_times)
+                }
                 for p_times in processing_times
             ]
 
@@ -238,17 +279,24 @@ class UnrelatedParallelMachineSetup(ScheduleSetup):
 
         if is_iterable_type(process_time, Mapping):
             return [
-                {MACHINE_ID(machine): TIME(p_time) for machine, p_time in p_times.items()}
+                {
+                    MACHINE_ID(machine): TIME(p_time)
+                    for machine, p_time in p_times.items()
+                }
                 for p_times in process_time
             ]
 
         return [
-            {MACHINE_ID(machine): TIME(p_time) for machine, p_time in enumerate(p_times)}
+            {
+                MACHINE_ID(machine): TIME(p_time)
+                for machine, p_time in enumerate(p_times)
+            }
             for p_times in process_time
         ]
 
     def get_entry(self) -> str:
         return "Rm"
+
 
 class JobShopSetup(ScheduleSetup):
     """
@@ -257,6 +305,7 @@ class JobShopSetup(ScheduleSetup):
     This setup is used for scheduling tasks in a job shop environment where each task has a specific
     operation order and is assigned to a specific machine.
     """
+
     def __init__(
         self,
         operation_order: str = "operation",
@@ -267,8 +316,7 @@ class JobShopSetup(ScheduleSetup):
 
     def setup_constraints(self, tasks: Tasks) -> tuple[Constraint, ...]:
         disjunctive_constraint = DisjunctiveConstraint(
-            self.machine_feature,
-            name="setup_disjunctive"
+            self.machine_feature, name="setup_disjunctive"
         )
 
         edges: list[tuple[int, int]] = []
@@ -281,11 +329,11 @@ class JobShopSetup(ScheduleSetup):
             )
 
             for i in range(len(ops) - 1):
-                edges.append(
-                    (ops[i][1], ops[i + 1][1])
-                )
+                edges.append((ops[i][1], ops[i + 1][1]))
 
-        precedence_constraint = PrecedenceConstraint.from_edges(edges, name="setup_precedence")
+        precedence_constraint = PrecedenceConstraint.from_edges(
+            edges, name="setup_precedence"
+        )
 
         return (disjunctive_constraint, precedence_constraint)
 
@@ -306,7 +354,9 @@ class JobShopSetup(ScheduleSetup):
         if isinstance(process_time, str):
             return [
                 {MACHINE_ID(machine): TIME(p_time)}
-                for machine, p_time in zip(data[self.machine_feature], data[process_time])
+                for machine, p_time in zip(
+                    data[self.machine_feature], data[process_time]
+                )
             ]
 
         raise ValueError(
@@ -316,6 +366,7 @@ class JobShopSetup(ScheduleSetup):
     def get_entry(self) -> str:
         return "Jm"
 
+
 class OpenShopSetup(ScheduleSetup):
     """
     Open Shop Scheduling Setup.
@@ -323,6 +374,7 @@ class OpenShopSetup(ScheduleSetup):
     This setup is used for scheduling tasks in an open shop environment where each task can be
     processed on any machine, and the order of operations is not fixed.
     """
+
     def __init__(
         self,
         machine_feature: str = "machine",
@@ -333,16 +385,18 @@ class OpenShopSetup(ScheduleSetup):
 
     def setup_constraints(self, tasks: Tasks) -> tuple[Constraint, ...]:
         task_jobs = {
-            job: [int(task.task_id) for task in tasks] for job, tasks in enumerate(tasks.jobs)
+            job: [int(task.task_id) for task in tasks]
+            for job, tasks in enumerate(tasks.jobs)
         }
-        task_disjunction = DisjunctiveConstraint(task_jobs, name="setup_task_disjunctive")
+        task_disjunction = DisjunctiveConstraint(
+            task_jobs, name="setup_task_disjunctive"
+        )
 
         if not self.disjunctive:
             return (task_disjunction,)
 
         machine_disjunction = DisjunctiveConstraint(
-            self.machine_feature,
-            name="setup_machine_disjunctive"
+            self.machine_feature, name="setup_machine_disjunctive"
         )
 
         return (task_disjunction, machine_disjunction)
@@ -364,7 +418,9 @@ class OpenShopSetup(ScheduleSetup):
         if isinstance(process_time, str):
             return [
                 {MACHINE_ID(machine): TIME(p_time)}
-                for machine, p_time in zip(data[self.machine_feature], data[process_time])
+                for machine, p_time in zip(
+                    data[self.machine_feature], data[process_time]
+                )
             ]
 
         raise ValueError(

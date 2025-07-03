@@ -6,11 +6,11 @@ from .tasks import PulpVariables, PulpSchedulingVariables, PulpTimetable, get_or
 from .pulp_utils import implication_pulp
 from itertools import repeat
 
-from cpscheduler.environment.env   import SchedulingEnv
+from cpscheduler.environment.env import SchedulingEnv
 from cpscheduler.environment.tasks import Tasks
 
-import cpscheduler.environment.constraints    as constraints
-import cpscheduler.environment.objectives     as objectives
+import cpscheduler.environment.constraints as constraints
+import cpscheduler.environment.objectives as objectives
 import cpscheduler.environment.schedule_setup as setups
 
 ExchangableMachineSetups = (
@@ -18,9 +18,12 @@ ExchangableMachineSetups = (
     setups.IdenticalParallelMachineSetup,
 )
 
+
 def is_constraintless(env: SchedulingEnv) -> bool:
     "Check if the environment has no additional constraints (beta entries)."
-    return all(constraint_name.startswith('setup') for constraint_name in env.constraints)
+    return all(
+        constraint_name.startswith("setup") for constraint_name in env.constraints
+    )
 
 
 def employ_symmetry_breaking_pulp(
@@ -36,14 +39,16 @@ def employ_symmetry_breaking_pulp(
 
     if isinstance(env.setup, ExchangableMachineSetups):
         machine_ordering_symmetry_breaking(env, model, variables)
-    
+
     if isinstance(
-        env.objective, (objectives.WeightedCompletionTime, objectives.TotalCompletionTime)
+        env.objective,
+        (objectives.WeightedCompletionTime, objectives.TotalCompletionTime),
     ):
         smiths_rules_symmetry_breaking(env, model, variables)
 
     elif isinstance(env.objective, objectives.Makespan):
         job_ordering_symmetry_breaking(env, model, variables)
+
 
 def job_ordering_symmetry_breaking(
     env: SchedulingEnv,
@@ -59,24 +64,28 @@ def job_ordering_symmetry_breaking(
             for machine_id in range(tasks.n_machines):
                 implication_pulp(
                     model,
-                    antecedent = (
+                    antecedent=(
                         decision_vars.assignments[i][machine_id],
                         decision_vars.assignments[j][machine_id],
                     ),
-                    consequent = (decision_vars.end_times[i], "<=", decision_vars.start_times[j]),
-                    big_m      = int(tasks[i].get_end_ub() - tasks[j].get_start_lb()),
-                    name       = f"SB_job_{i}_{j}_machine_{machine_id}"
+                    consequent=(
+                        decision_vars.end_times[i],
+                        "<=",
+                        decision_vars.start_times[j],
+                    ),
+                    big_m=int(tasks[i].get_end_ub() - tasks[j].get_start_lb()),
+                    name=f"SB_job_{i}_{j}_machine_{machine_id}",
                 )
 
                 implication_pulp(
                     model,
-                    antecedent = (
+                    antecedent=(
                         decision_vars.assignments[i][machine_id],
                         decision_vars.assignments[j][machine_id],
                     ),
-                    consequent = (decision_vars.orders[i, j], "==", 1),
-                    big_m      = 1,
-                    name       = f"SB_order_{i}_{j}_machine_{machine_id}"
+                    consequent=(decision_vars.orders[i, j], "==", 1),
+                    big_m=1,
+                    name=f"SB_order_{i}_{j}_machine_{machine_id}",
                 )
 
 
@@ -90,31 +99,35 @@ def machine_ordering_symmetry_breaking(
     n_machines = tasks.n_machines
 
     processing_times: list[LpAffineExpression] = [
-        lpSum([
-            task.processing_times[machine_id] * decision_vars.assignments[task_id][machine_id]
-            for task_id, task in enumerate(tasks) if machine_id in task.processing_times
-        ]) for machine_id in range(n_machines)
+        lpSum(
+            [
+                task.processing_times[machine_id]
+                * decision_vars.assignments[task_id][machine_id]
+                for task_id, task in enumerate(tasks)
+                if machine_id in task.processing_times
+            ]
+        )
+        for machine_id in range(n_machines)
     ]
 
-    for machine_id in range(n_machines-1):
+    for machine_id in range(n_machines - 1):
         model.addConstraint(
             processing_times[machine_id] >= processing_times[machine_id + 1],
-            name=f"SB_machine_{machine_id}_order"
+            name=f"SB_machine_{machine_id}_order",
         )
 
+
 def smiths_rules_symmetry_breaking(
-    env: SchedulingEnv,
-    model: LpProblem,
-    decision_vars: PulpSchedulingVariables
+    env: SchedulingEnv, model: LpProblem, decision_vars: PulpSchedulingVariables
 ) -> None:
     "When jobs inside machines are exchangeable, break symmetry by ordering by Smith's rules"
     assert isinstance(env.objective, objectives.WeightedCompletionTime)
-    tasks   = env.tasks
+    tasks = env.tasks
 
     weights: Iterable[float]
     if isinstance(env.objective, objectives.WeightedCompletionTime):
         weights = env.objective.job_weights
-    
+
     elif isinstance(env.objective, objectives.TotalCompletionTime):
         weights = repeat(1.0, len(tasks))
 
@@ -126,24 +139,31 @@ def smiths_rules_symmetry_breaking(
 
     priorities: list[tuple[float, int]]
     for machine_id in range(tasks.n_machines):
-        priorities = sorted([
-            (-weight / int(task.processing_times[machine_id]), task.task_id)
-            for task, weight in zip(tasks, weights) if machine_id in task.processing_times
-        ])
+        priorities = sorted(
+            [
+                (-weight / int(task.processing_times[machine_id]), task.task_id)
+                for task, weight in zip(tasks, weights)
+                if machine_id in task.processing_times
+            ]
+        )
 
         for i, (_, task_id) in enumerate(priorities):
-            S_j = lpSum([
-                tasks[prev_task].processing_times[machine_id] * \
-                decision_vars.assignments[prev_task][machine_id]
-                for _, prev_task in priorities[:i]
-            ])
+            S_j = lpSum(
+                [
+                    tasks[prev_task].processing_times[machine_id]
+                    * decision_vars.assignments[prev_task][machine_id]
+                    for _, prev_task in priorities[:i]
+                ]
+            )
 
             implication_pulp(
                 model,
-                antecedent = decision_vars.assignments[task_id][machine_id],
-                consequent = (decision_vars.start_times[task_id], "==", S_j),
-                big_m      = int(tasks[task_id].get_start_ub() - tasks[task_id].get_start_lb()),
-                name       = f"SB_smiths_{task_id}_machine_{machine_id}"
+                antecedent=decision_vars.assignments[task_id][machine_id],
+                consequent=(decision_vars.start_times[task_id], "==", S_j),
+                big_m=int(
+                    tasks[task_id].get_start_ub() - tasks[task_id].get_start_lb()
+                ),
+                name=f"SB_smiths_{task_id}_machine_{machine_id}",
             )
 
             for _, prev_task in priorities[:i]:
@@ -151,11 +171,11 @@ def smiths_rules_symmetry_breaking(
 
                 implication_pulp(
                     model,
-                    antecedent = (
+                    antecedent=(
                         decision_vars.assignments[task_id][machine_id],
-                        decision_vars.assignments[prev_task][machine_id]
+                        decision_vars.assignments[prev_task][machine_id],
                     ),
-                    consequent = (decision_vars.orders[order], "==", value),
-                    big_m      = 1,
-                    name       = f"SB_smiths_order_{order[0]}_{order[1]}_machine_{machine_id}"
+                    consequent=(decision_vars.orders[order], "==", value),
+                    big_m=1,
+                    name=f"SB_smiths_order_{order[0]}_{order[1]}_machine_{machine_id}",
                 )

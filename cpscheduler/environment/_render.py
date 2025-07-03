@@ -1,10 +1,11 @@
 """
-    render.py
+render.py
 
-    This module defines the Renderer class and its PlotlyRenderer subclass for rendering Gantt
-    charts of task schedules. The Renderer class is an abstract base class that provides a common
-    interface for rendering tasks.
+This module defines the Renderer class and its PlotlyRenderer subclass for rendering Gantt
+charts of task schedules. The Renderer class is an abstract base class that provides a common
+interface for rendering tasks.
 """
+
 from typing import Any
 
 from abc import ABC, abstractmethod
@@ -14,20 +15,19 @@ from mypy_extensions import mypyc_attr
 from .tasks import Tasks
 
 try:
-    from plotly import graph_objects as go # type: ignore[import]
-    from colorcet import glasbey_dark      # type: ignore[import]
+    from plotly import graph_objects as go  # type: ignore[import]
+    from colorcet import glasbey_dark  # type: ignore[import]
 
 except ImportError:
     go = None
     glasbey_dark = None
 
+
 @mypyc_attr(allow_interpreted_subclasses=True)
 class Renderer(ABC):
     "Renderer base class for visualizing task schedules."
-    def __init__(
-            self,
-            tasks: Tasks
-        ):
+
+    def __init__(self, tasks: Tasks):
         self.tasks = tasks
 
     @abstractmethod
@@ -54,13 +54,15 @@ class PlotlyRenderer(Renderer):
         fig = go.Figure()
 
         start_times: list[int] = []
-        durations: list[int]   = []
-        machines: list[int]    = []
-        task_ids: list[int]    = []
-        palette = glasbey_dark[:len(self.tasks.jobs)] #type: ignore[no-redef]
-        template = "Task %{customdata[0]} [Job %{customdata[1]}]:<br>"\
-                   "Period: %{customdata[2]}-%{customdata[3]}<br>"\
-                   "Machine: %{y}<extra></extra>"
+        durations: list[int] = []
+        machines: list[int] = []
+        task_ids: list[int] = []
+        palette = glasbey_dark[: len(self.tasks.jobs)]  # type: ignore[no-redef]
+        template = (
+            "Task %{customdata[0]} [Job %{customdata[1]}]:<br>"
+            "Period: %{customdata[2]}-%{customdata[3]}<br>"
+            "Machine: %{y}<extra></extra>"
+        )
 
         for job, tasks in enumerate(self.tasks.jobs):
             for task in tasks:
@@ -73,37 +75,50 @@ class PlotlyRenderer(Renderer):
                     machines.append(task.assignments[part])
                     task_ids.append(task.task_id)
 
-            fig.add_trace(go.Bar( # type: ignore[call-arg]
-                x=durations,
-                y=machines,
-                base=start_times,
-                orientation='h',
-                name=f"Job {job}",
-                customdata=[(
-                    task_ids[i],
-                    job,
-                    start_times[i],
-                    start_times[i] + durations[i]
-                ) for i in range(len(start_times))],
-                hovertemplate=template,
-                marker=dict(color=palette[job], line=dict(color='white', width=0.5)) # type: ignore[arg-type]
-            ))
+            fig.add_trace(
+                go.Bar(  # type: ignore[call-arg]
+                    x=durations,
+                    y=machines,
+                    base=start_times,
+                    orientation="h",
+                    name=f"Job {job}",
+                    customdata=[
+                        (
+                            task_ids[i],
+                            job,
+                            start_times[i],
+                            start_times[i] + durations[i],
+                        )
+                        for i in range(len(start_times))
+                    ],
+                    hovertemplate=template,
+                    marker=dict(color=palette[job], line=dict(color="white", width=0.5)),  # type: ignore[arg-type]
+                )
+            )
 
         max_time = int(current_time / 0.95)
         if max_time < 1:
             max_time = 1
 
-
-        fig.update_layout( # type: ignore[call-arg]
+        fig.update_layout(  # type: ignore[call-arg]
             width=1600,
             height=800,
-            barmode='overlay',
-            yaxis=dict(title='Assignment', tickvals=list(range(self.tasks.n_machines)), autorange='reversed'),
-            xaxis=dict(title='Time', range=(0, max_time), showgrid=True, gridcolor='rgba(0,0,0,0.4)')
+            barmode="overlay",
+            yaxis=dict(
+                title="Assignment",
+                tickvals=list(range(self.tasks.n_machines)),
+                autorange="reversed",
+            ),
+            xaxis=dict(
+                title="Time",
+                range=(0, max_time),
+                showgrid=True,
+                gridcolor="rgba(0,0,0,0.4)",
+            ),
         )
 
         if len(self.tasks.jobs) <= 30:
-            fig.update_layout(legend_title_text="Task jobs") # type: ignore[call-arg]
+            fig.update_layout(legend_title_text="Task jobs")  # type: ignore[call-arg]
 
         return fig
 

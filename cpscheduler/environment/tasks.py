@@ -22,6 +22,7 @@ can be used in constraints and objectives (i.e. due-dates, customer, type of tas
 We do not reccomend customizing this module, as it's tightly coupled with the other modules
 in the environment, change with caution.
 """
+
 from typing import Any, NamedTuple, ClassVar
 from collections.abc import Iterator
 
@@ -38,31 +39,42 @@ from ._common import (
 
 JOB_ID_ALIASES = ["job", "job_id"]
 
+
 class Status:
     "Possible statuses of a task at a given time."
-    AWAITING : ClassVar[u8] = 0  # time < start_lb[0] or waiting for a machine
-    EXECUTING: ClassVar[u8] = 1  # start_lb[i] <= time < start_lb[i] + duration[i] for some i
-    PAUSED   : ClassVar[u8] = 2  # start_lb[i] + duration[i] < = time < start_lb[i+1] for some i
-    COMPLETED: ClassVar[u8] = 3  # time >= start_lb[-1] + duration[-1]
-    UNKNOWN  : ClassVar[u8] = 4  # unknown status
+
+    # awaiting:  time < start_lb[0] or waiting for a machine
+    AWAITING: ClassVar[u8] = 0
+    # executing: start_lb[i] <= time < start_lb[i] + duration[i] for some i
+    EXECUTING: ClassVar[u8] = 1
+    # paused:    start_lb[i] + duration[i] < = time < start_lb[i+1] for some i
+    PAUSED: ClassVar[u8] = 2
+    # completed: time >= start_lb[-1] + duration[-1]
+    COMPLETED: ClassVar[u8] = 3
+    # unknown status
+    UNKNOWN: ClassVar[u8] = 4
 
 
 status_str = {
-    Status.AWAITING : "awaiting",
+    Status.AWAITING: "awaiting",
     Status.EXECUTING: "executing",
-    Status.PAUSED   : "paused",
+    Status.PAUSED: "paused",
     Status.COMPLETED: "completed",
-    Status.UNKNOWN  : "unknown",
+    Status.UNKNOWN: "unknown",
 }
+
 
 def ceil_div(a: TIME, b: TIME) -> TIME:
     "a divided by b, rounded up to the nearest integer."
     return -(-a // b)
 
+
 class Bounds(NamedTuple):
     "Store the lower and upper bounds for decision variables."
+
     lb: TIME = 0
     ub: TIME = MAX_INT
+
 
 class Task:
     """
@@ -81,10 +93,11 @@ class Task:
     process by modifying the task state.
     The task can be split into multiple parts, each with its own starting time and duration.
     """
+
     processing_times: dict[MACHINE_ID, TIME]
 
-    starts     : list[TIME]
-    durations  : list[TIME]
+    starts: list[TIME]
+    durations: list[TIME]
     assignments: list[MACHINE_ID]
 
     start_bounds: dict[MACHINE_ID, Bounds]
@@ -92,28 +105,24 @@ class Task:
     n_parts: PART_ID
 
     def __init__(
-        self,
-        task_id: TASK_ID,
-        processing_times: dict[MACHINE_ID, TIME]
+        self, task_id: TASK_ID, processing_times: dict[MACHINE_ID, TIME]
     ) -> None:
         self.task_id = task_id
         self.processing_times = processing_times
 
-        self.starts      = []
-        self.durations   = []
+        self.starts = []
+        self.durations = []
         self.assignments = []
 
-        self.start_bounds = {
-            machine: Bounds() for machine in processing_times
-        }
+        self.start_bounds = {machine: Bounds() for machine in processing_times}
 
         self._remaining_times = self.processing_times.copy()
 
-        self.fixed   = False
+        self.fixed = False
         self.n_parts = 0
 
     def __repr__(self) -> str:
-        representation =  f"Task(id={self.task_id}"
+        representation = f"Task(id={self.task_id}"
 
         allocation_times = [
             f"[{self.starts[i]}, {self.starts[i] + self.durations[i]}] @ {self.assignments[i]}"
@@ -132,7 +141,7 @@ class Task:
 
     def reset(self) -> None:
         "Resets the task to its initial state."
-        self.fixed   = False
+        self.fixed = False
         self.n_parts = 0
 
         self.starts.clear()
@@ -205,7 +214,9 @@ class Task:
 
         end_lb = MAX_INT
         for machine in self.processing_times:
-            machine_end_lb = self.start_bounds[machine].lb + self._remaining_times[machine]
+            machine_end_lb = (
+                self.start_bounds[machine].lb + self._remaining_times[machine]
+            )
             if machine_end_lb < end_lb:
                 end_lb = machine_end_lb
 
@@ -218,7 +229,9 @@ class Task:
 
         end_ub = 0
         for machine in self.processing_times:
-            machine_end_ub = self.start_bounds[machine].ub + self._remaining_times[machine]
+            machine_end_ub = (
+                self.start_bounds[machine].ub + self._remaining_times[machine]
+            )
             if machine_end_ub > end_ub:
                 end_ub = machine_end_ub
 
@@ -226,7 +239,8 @@ class Task:
 
     def set_start_lb(self, time: TIME, machine: MACHINE_ID = -1) -> None:
         "Set the lower bound for the starting time in a machine."
-        if time < 0: time = 0
+        if time < 0:
+            time = 0
 
         if machine != -1:
             self.start_bounds[machine] = Bounds(
@@ -243,7 +257,8 @@ class Task:
 
     def set_start_ub(self, time: TIME, machine: MACHINE_ID = -1) -> None:
         "Set the upper bound for the starting time in a machine."
-        if time > MAX_INT: time = MAX_INT
+        if time > MAX_INT:
+            time = MAX_INT
 
         if machine != -1:
             self.start_bounds[machine] = Bounds(
@@ -260,7 +275,8 @@ class Task:
 
     def set_end_lb(self, time: TIME, machine: MACHINE_ID = -1) -> None:
         "Set the lower bound for the ending time in a machine."
-        if time < 0: time = 0
+        if time < 0:
+            time = 0
 
         if machine != -1:
             self.start_bounds[machine] = Bounds(
@@ -277,7 +293,8 @@ class Task:
 
     def set_end_ub(self, time: TIME, machine: MACHINE_ID = -1) -> None:
         "Set the upper bound for the ending time in a machine."
-        if time > MAX_INT: time = MAX_INT
+        if time > MAX_INT:
+            time = MAX_INT
 
         if machine != -1:
             self.start_bounds[machine] = Bounds(
@@ -293,10 +310,10 @@ class Task:
             )
 
     def assign(
-            self,
-            start: TIME,
-            machine: MACHINE_ID,
-        ) -> None:
+        self,
+        start: TIME,
+        machine: MACHINE_ID,
+    ) -> None:
         "Assign the execution of the task to a machine at a given start time."
         self.n_parts += 1
 
@@ -308,23 +325,19 @@ class Task:
         for other_machine in self.processing_times:
             bound = start if other_machine == machine else MIN_INT
 
-            self.start_bounds[other_machine] = Bounds(
-                lb=bound,
-                ub=bound
-            )
+            self.start_bounds[other_machine] = Bounds(lb=bound, ub=bound)
 
     def interrupt(self, time: TIME) -> None:
         "Pauses the task's execution at a given time, splitting it into a new part."
         previous_remaining_time = self.durations[-1]
-        previsous_start         = self.starts[-1]
+        previsous_start = self.starts[-1]
 
-        remaining_time     = self.durations[-1] - time + previsous_start
+        remaining_time = self.durations[-1] - time + previsous_start
         self.durations[-1] = remaining_time
 
         for machine in self.processing_times:
             self._remaining_times[machine] = ceil_div(
-                self._remaining_times[machine] * remaining_time,
-                previous_remaining_time
+                self._remaining_times[machine] * remaining_time, previous_remaining_time
             )
 
         self.fixed = False
@@ -358,7 +371,9 @@ class Task:
     def is_available(self, time: TIME, machine: MACHINE_ID = -1) -> bool:
         "Check if the task is available for execution at a given time."
         if machine != -1:
-            return self.start_bounds[machine].lb <= time <= self.start_bounds[machine].ub
+            return (
+                self.start_bounds[machine].lb <= time <= self.start_bounds[machine].ub
+            )
 
         for machine in self.start_bounds:
             if self.start_bounds[machine].lb <= time <= self.start_bounds[machine].ub:
@@ -399,8 +414,10 @@ class Task:
 
         return buffer
 
+
 class Tasks:
     "Container class for the tasks in the scheduling environment."
+
     n_tasks: int
     n_parts: int
     n_machines: int
@@ -409,21 +426,21 @@ class Tasks:
     tasks: list[Task]
     jobs: list[list[Task]]
 
-    data     : dict[str, list[Any]]
+    data: dict[str, list[Any]]
     jobs_data: dict[str, list[Any]]
 
     def __init__(
         self,
-        data            : dict[str, list[Any]],
+        data: dict[str, list[Any]],
         processing_times: list[dict[MACHINE_ID, TIME]],
-        jobs_data        : dict[str, list[Any]],
-        job_feature     : str = '',
-        n_parts         : int = 1,
+        jobs_data: dict[str, list[Any]],
+        job_feature: str = "",
+        n_parts: int = 1,
     ):
         self.n_parts = n_parts
 
         self.tasks = []
-        self.jobs  = []
+        self.jobs = []
 
         self.n_tasks = 0
         machines: set[MACHINE_ID] = set()
@@ -441,37 +458,32 @@ class Tasks:
         job_ids: list[TASK_ID]
         if job_feature in data:
             job_ids = data.pop(job_feature)
-            n_jobs  = len(set(job_ids))
+            n_jobs = len(set(job_ids))
 
-        else: # If no job feature is provided, we assume each task is its own job
+        else:  # If no job feature is provided, we assume each task is its own job
             job_ids = list(range(self.n_tasks))
-            n_jobs  = self.n_tasks
+            n_jobs = self.n_tasks
 
         self.n_jobs = n_jobs
 
-        data['job_id'] = job_ids
+        data["job_id"] = job_ids
         self.jobs = [[] for _ in range(n_jobs)]
 
         for task_id, job_id in enumerate(job_ids):
             self.jobs[job_id].append(self.tasks[task_id])
 
-
-        if 'job_id' not in jobs_data:
+        if "job_id" not in jobs_data:
             if job_feature in jobs_data:
-                jobs_data['job_id'] = jobs_data[job_feature]
+                jobs_data["job_id"] = jobs_data[job_feature]
                 del jobs_data[job_feature]
 
             else:
-                jobs_data['job_id'] = list(range(n_jobs))
+                jobs_data["job_id"] = list(range(n_jobs))
 
-        self.data      = data
+        self.data = data
         self.jobs_data = jobs_data
 
-
-    def add_job(
-        self,
-        task_ids: list[TASK_ID]
-    ) -> None:
+    def add_job(self, task_ids: list[TASK_ID]) -> None:
         "Add a new job to the tasks container."
         tasks: list[Task] = []
         for task_id in task_ids:
@@ -480,10 +492,7 @@ class Tasks:
 
         self.jobs.append(tasks)
 
-    def add_task(
-        self,
-        processing_times: dict[MACHINE_ID, TIME]
-    ) -> None:
+    def add_task(self, processing_times: dict[MACHINE_ID, TIME]) -> None:
         "Add a new task to the tasks container."
         task_id = self.n_tasks
         task = Task(task_id, processing_times)
@@ -514,7 +523,7 @@ class Tasks:
         if feature in self.jobs_data:
             job_data = self.jobs_data[feature]
 
-            return [job_data[job_id] for job_id in self.data['job_id']]
+            return [job_data[job_id] for job_id in self.data["job_id"]]
 
         raise KeyError(f"Feature '{feature}' not found in tasks or jobs data.")
 
@@ -528,12 +537,12 @@ class Tasks:
                 return self.data[feature]
 
             job_level_data: list[Any] = [None for _ in range(self.n_jobs)]
-            for task_id, job_id in enumerate(self.data['job_id']):
+            for task_id, job_id in enumerate(self.data["job_id"]):
                 job_level_data[job_id] = self.data[feature][task_id]
-            
+
             return job_level_data
-    
-        raise KeyError(f"Feature '{feature}' not found in jobs data.")       
+
+        raise KeyError(f"Feature '{feature}' not found in jobs data.")
 
     def get_job_tasks(self, job: TASK_ID) -> list[Task]:
         "Get the tasks associated with a specific job."
@@ -546,14 +555,16 @@ class Tasks:
                 task_end = task.get_end()
                 if task_end > completion:
                     completion = task_end
-        
+
         return completion
 
     def get_machine_tasks(self, machine: MACHINE_ID) -> list[Task]:
         "Get the tasks that can be processed by a specific machine."
         return [task for task in self.tasks if machine in task.processing_times]
 
-    def get_state(self, current_time: TIME) -> tuple[dict[str, list[Any]], dict[str, list[Any]]]:
+    def get_state(
+        self, current_time: TIME
+    ) -> tuple[dict[str, list[Any]], dict[str, list[Any]]]:
         "Get the state of the tasks and jobs at a given time."
         status = [task.get_buffer(current_time) for task in self.tasks]
 
@@ -574,10 +585,13 @@ class Tasks:
     def tighten_bounds(self, time: int) -> None:
         "Tighten the bounds of the tasks based on the current time."
 
-        max_time = time + sum([
-            max(p_times for p_times in task.processing_times.values())
-            for task in self.tasks if not task.is_fixed()
-        ])
+        max_time = time + sum(
+            [
+                max(p_times for p_times in task.processing_times.values())
+                for task in self.tasks
+                if not task.is_fixed()
+            ]
+        )
 
         for task in self.tasks:
             if task.is_fixed():

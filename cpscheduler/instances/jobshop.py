@@ -6,6 +6,7 @@ import random as rng
 
 from .common import generate_instance
 
+
 def read_jsp_instance(path: Path | str) -> tuple[dict[str, list[Any]], dict[str, Any]]:
     """
     Reads an instance from a file. The file must be in the Taillard format, with the following structure:
@@ -39,7 +40,7 @@ def read_jsp_instance(path: Path | str) -> tuple[dict[str, list[Any]], dict[str,
             "job": [],
             "operation": [],
             "machine": [],
-            "processing_time": []
+            "processing_time": [],
         }
 
         for job_id in range(n_jobs):
@@ -71,7 +72,6 @@ def read_jsp_instance(path: Path | str) -> tuple[dict[str, list[Any]], dict[str,
             metadata[key.strip()] = value.strip()
 
     return instance, metadata
-
 
 
 def generate_taillard_instance(
@@ -112,28 +112,22 @@ def generate_taillard_instance(
     [1] Taillard, É. D. (1993). Benchmarks for basic scheduling problems. European Journal of Operational Research, 64(2), 278-285.
     """
     instance, _ = generate_instance(
-        n_jobs,
-        n_machines,
-        lambda: rng.randint(1, 100),
-        setup="jobshop",
-        seed=seed
+        n_jobs, n_machines, lambda: rng.randint(1, 100), setup="jobshop", seed=seed
     )
 
     return instance
+
 
 # TODO: Reference for the Demirkol instance generation method, p ~ U(1, 200)
 def generate_demirkol_instance(
     n_jobs: int, n_machines: int, seed: int | None = None
 ) -> dict[str, list[Any]]:
     instance, _ = generate_instance(
-        n_jobs,
-        n_machines,
-        lambda: rng.randint(1, 200),
-        setup="jobshop",
-        seed=seed
+        n_jobs, n_machines, lambda: rng.randint(1, 200), setup="jobshop", seed=seed
     )
 
     return instance
+
 
 # The following instances have to be re-implemented in the new version of the library due to the use of numpy
 

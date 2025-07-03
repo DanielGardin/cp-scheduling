@@ -1,15 +1,16 @@
 """
-    env.py
+env.py
 
-    This module defines the SchedulingEnv class, which is a custom environment for generic
-    cheduling problems.
-    It is designed to be modular and extensible, allowing users to define their own scheduling
-    problems by specifying the machine setup, constraints, objectives, and instances.
+This module defines the SchedulingEnv class, which is a custom environment for generic
+cheduling problems.
+It is designed to be modular and extensible, allowing users to define their own scheduling
+problems by specifying the machine setup, constraints, objectives, and instances.
 
-    The environment is based on the OpenAI Gym interface, making it compatible with various
-    reinforcement learning libraries. It provides methods for resetting the environment, taking
-    steps, rendering the environment, and exporting the scheduling model.
+The environment is based on the OpenAI Gym interface, making it compatible with various
+reinforcement learning libraries. It provides methods for resetting the environment, taking
+steps, rendering the environment, and exporting the scheduling model.
 """
+
 from warnings import warn
 
 from typing import Any, SupportsInt
@@ -21,7 +22,14 @@ from gymnasium.spaces import Dict, Tuple, Text, Box, OneOf
 
 from mypy_extensions import u8, i64
 
-from ._common import MAX_INT, ProcessTimeAllowedTypes, TASK_ID, TIME, InstanceTypes, ObsType
+from ._common import (
+    MAX_INT,
+    ProcessTimeAllowedTypes,
+    TASK_ID,
+    TIME,
+    InstanceTypes,
+    ObsType,
+)
 from .tasks import Tasks
 from .instructions import Instruction, Signal, parse_instruction, Action, ActionType
 from .schedule_setup import ScheduleSetup
@@ -33,17 +41,22 @@ from ._render import Renderer, PlotlyRenderer
 
 # Define the action space for the environment
 InstructionSpace = Text(max_length=10)
-IntSpace = Box(low=0, high=int(MAX_INT), shape=(), dtype=int) # type: ignore
-                                                                # do not want numpy dependency here
+IntSpace = Box(low=0, high=int(MAX_INT), shape=(), dtype=int)  # type: ignore
+# do not want numpy dependency here
 
-ActionSpace = OneOf([
-    Tuple([InstructionSpace]),
-    Tuple([InstructionSpace, IntSpace]),
-    Tuple([InstructionSpace, IntSpace, IntSpace]),
-    Tuple([InstructionSpace, IntSpace, IntSpace, IntSpace]),
-])
+ActionSpace = OneOf(
+    [
+        Tuple([InstructionSpace]),
+        Tuple([InstructionSpace, IntSpace]),
+        Tuple([InstructionSpace, IntSpace, IntSpace]),
+        Tuple([InstructionSpace, IntSpace, IntSpace, IntSpace]),
+    ]
+)
 
-def is_single_action(action: ActionType) -> TypeIs[tuple[str | Instruction, Unpack[tuple[SupportsInt, ...]]]]:
+
+def is_single_action(
+    action: ActionType,
+) -> TypeIs[tuple[str | Instruction, Unpack[tuple[SupportsInt, ...]]]]:
     "Check if the action is a single instruction or a iterable of instructions."
     if not isinstance(action, tuple):
         return False
@@ -58,9 +71,8 @@ def prepare_instance(instance: InstanceTypes) -> dict[str, list[Any]]:
     "Prepare the instance data to a standard dictionary format."
     features = instance.keys() if isinstance(instance, Mapping) else instance.columns
 
-    return {
-        feature: convert_to_list(instance[feature]) for feature in features
-    }
+    return {feature: convert_to_list(instance[feature]) for feature in features}
+
 
 class SchedulingEnv(Env[ObsType, ActionType]):
     """
@@ -112,21 +124,22 @@ class SchedulingEnv(Env[ObsType, ActionType]):
             The number of parts to split the tasks into. If None, it defaults to 16 if preemption is
             allowed, otherwise 1.
     """
+
     # Environment static variables
-    setup           : ScheduleSetup
-    constraints     : dict[str, Constraint]
-    objective       : Objective
+    setup: ScheduleSetup
+    constraints: dict[str, Constraint]
+    objective: Objective
     allow_preemption: bool
-    minimize        : bool
+    minimize: bool
 
     # Environment dynamic variables
-    tasks                 : Tasks
-    data                  : dict[str, list[Any]]
+    tasks: Tasks
+    data: dict[str, list[Any]]
     scheduled_instructions: dict[TASK_ID, list[Instruction]]
-    current_time          : TIME
-    query_times           : list[TIME]
+    current_time: TIME
+    query_times: list[TIME]
 
-    loaded      : bool
+    loaded: bool
     advancing_to: TIME
 
     renderer: Renderer
@@ -136,16 +149,16 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         self,
         machine_setup: ScheduleSetup,
         constraints: Iterable[Constraint] | None = None,
-        objective   : Objective | None           = None,
-        render_mode: str | None                  = None,
+        objective: Objective | None = None,
+        render_mode: str | None = None,
         *,
-        minimize        : bool | None                 = None,
-        allow_preemption: bool                        = False,
-        instance        : InstanceTypes | None        = None,
-        processing_times: ProcessTimeAllowedTypes     = None,
-        job_instance    : InstanceTypes | None        = None,
-        job_feature     : str                         = '',
-        n_parts         : int | None                  = None,
+        minimize: bool | None = None,
+        allow_preemption: bool = False,
+        instance: InstanceTypes | None = None,
+        processing_times: ProcessTimeAllowedTypes = None,
+        job_instance: InstanceTypes | None = None,
+        job_feature: str = "",
+        n_parts: int | None = None,
     ):
         self.allow_preemption = allow_preemption
         self.loaded = False
@@ -158,42 +171,41 @@ class SchedulingEnv(Env[ObsType, ActionType]):
                 self.add_constraint(constraint)
 
         self.set_objective(
-            Objective() if objective is None else objective,
-            minimize=minimize
+            Objective() if objective is None else objective, minimize=minimize
         )
 
         self.render_mode = render_mode
         self.scheduled_instructions = {-1: []}
 
         self.current_time = 0
-        self.query_times  = []
+        self.query_times = []
 
         self._metadata = {
             "render_modes": ["human", "rgb_array"],
             "render_fps": 50,
         }
 
-        self.action_space      = ActionSpace
-        self.observation_space = Tuple([
-            Dict({'task_id': Box(low=0, high=int(MAX_INT), shape=())}), # type: ignore
-            Dict({'job_id': Box(low=0, high=int(MAX_INT), shape=())})]  # type: ignore
-        ) # Placeholder for observation space
+        self.action_space = ActionSpace
+        self.observation_space = Tuple(
+            [
+                Dict({"task_id": Box(low=0, high=int(MAX_INT), shape=())}),  # type: ignore
+                Dict({"job_id": Box(low=0, high=int(MAX_INT), shape=())}),
+            ]  # type: ignore
+        )  # Placeholder for observation space
 
         self.advancing_to = 0
 
         if instance is not None:
             self.set_instance(
-                instance,
-                processing_times,
-                job_instance,
-                job_feature,
-                n_parts
+                instance, processing_times, job_instance, job_feature, n_parts
             )
 
     def __repr__(self) -> str:
         if self.loaded:
-            return f"SchedulingEnv({self.get_entry()}, n_tasks={len(self.tasks)}, "\
-                   f"current_time={self.current_time}, loaded=True)"
+            return (
+                f"SchedulingEnv({self.get_entry()}, n_tasks={len(self.tasks)}, "
+                f"current_time={self.current_time}, loaded=True)"
+            )
 
         return f"SchedulingEnv({self.get_entry()}, not loaded)"
 
@@ -214,21 +226,18 @@ class SchedulingEnv(Env[ObsType, ActionType]):
     def set_objective(self, objective: Objective, minimize: bool | None = None) -> None:
         "Set the objective function for the environment."
         self.objective = objective
-        self.minimize  = (
-            objective.default_minimize if minimize is None
-            else minimize
-        )
+        self.minimize = objective.default_minimize if minimize is None else minimize
 
         if self.loaded:
             self.objective.get_data(self.tasks)
 
     def set_instance(
         self,
-        instance         : InstanceTypes,
-        processing_times : ProcessTimeAllowedTypes = None,
-        job_instance     : InstanceTypes | None  = None,
-        job_feature      : str = '',
-        n_parts          : int | None = None,
+        instance: InstanceTypes,
+        processing_times: ProcessTimeAllowedTypes = None,
+        job_instance: InstanceTypes | None = None,
+        job_feature: str = "",
+        n_parts: int | None = None,
     ) -> None:
         """
         Set the instance data for the environment.
@@ -254,25 +263,26 @@ class SchedulingEnv(Env[ObsType, ActionType]):
                 preemption is allowed, otherwise 1.
         """
         n_parts = (
-            n_parts if n_parts is not None   # User-defined number of parts.
-            else 16 if self.allow_preemption # Default number of parts for preemption.
-            else 1                           # Non-preemptive scheduling.
+            n_parts
+            if n_parts is not None  # User-defined number of parts.
+            else (
+                16
+                if self.allow_preemption  # Default number of parts for preemption.
+                else 1
+            )  # Non-preemptive scheduling.
         )
 
-        data     = prepare_instance(instance)
+        data = prepare_instance(instance)
         job_data = prepare_instance(job_instance) if job_instance is not None else {}
 
-        parsed_processing_times = self.setup.parse_process_time(
-            data,
-            processing_times
-        )
+        parsed_processing_times = self.setup.parse_process_time(data, processing_times)
 
         self.tasks = Tasks(
             data,
             parsed_processing_times,
             job_data,
             job_feature=job_feature,
-            n_parts=n_parts
+            n_parts=n_parts,
         )
 
         for constraint in self.setup.setup_constraints(self.tasks):
@@ -293,13 +303,12 @@ class SchedulingEnv(Env[ObsType, ActionType]):
             for feature, values in self.tasks.jobs_data.items()
         }
 
-        self.observation_space = Tuple([
-            Dict(task_feature_space),
-            Dict(job_feature_space)
-        ])
+        self.observation_space = Tuple(
+            [Dict(task_feature_space), Dict(job_feature_space)]
+        )
 
         self.renderer = PlotlyRenderer(self.tasks)
-        self.loaded   = True
+        self.loaded = True
 
     def get_state(self) -> ObsType:
         "Retrieve the current state of the environment from tasks."
@@ -338,19 +347,17 @@ class SchedulingEnv(Env[ObsType, ActionType]):
     ) -> tuple[ObsType, dict[str, Any]]:
         super().reset(seed=seed)
 
-        if options is not None and 'instance' in options:
-            instance        : InstanceTypes           = options['instance']
-            processing_times: ProcessTimeAllowedTypes = options.get('processing_times', None)
-            job_instance    : InstanceTypes | None    = options.get('job_instance', None)
-            job_feature     : str                     = options.get('job_feature', '')
-            n_parts         : int | None              = options.get('n_parts', None)
+        if options is not None and "instance" in options:
+            instance: InstanceTypes = options["instance"]
+            processing_times: ProcessTimeAllowedTypes = options.get(
+                "processing_times", None
+            )
+            job_instance: InstanceTypes | None = options.get("job_instance", None)
+            job_feature: str = options.get("job_feature", "")
+            n_parts: int | None = options.get("n_parts", None)
 
             self.set_instance(
-                instance,
-                processing_times,
-                job_instance,
-                job_feature,
-                n_parts
+                instance, processing_times, job_instance, job_feature, n_parts
             )
 
         if not self.loaded:
@@ -431,7 +438,9 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         time = self.next_decision_time(True)
         self.advance_to(time)
 
-    def schedule_instruction(self, action: str | Instruction, args: tuple[int, ...]) -> None:
+    def schedule_instruction(
+        self, action: str | Instruction, args: tuple[int, ...]
+    ) -> None:
         "Add a single instruction to the schedule."
         if action in ("execute", "submit") and 0 < len(args) < 3:
             task = args[0]
@@ -462,36 +471,33 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
         self.scheduled_instructions[time].append(instruction)
 
-
-    def resolve_schedule(self, time: TIME = -1, allow_wait: bool = True) -> tuple[bool, bool]:
+    def resolve_schedule(
+        self, time: TIME = -1, allow_wait: bool = True
+    ) -> tuple[bool, bool]:
         """
         Process the next instruction in the schedule at the given time.
         If time is -1, use the current time and if allow_wait is False,
         it halts the environment when an instruction is requested to be waited.
         """
         instruction = Instruction()
-        signal      = Signal(Action.SKIPPED)
+        signal = Signal(Action.SKIPPED)
 
         i: i64 = -1
         schedule = self.scheduled_instructions[time]
 
-        while signal.action & Action.SKIPPED and i+1 < len(schedule):
+        while signal.action & Action.SKIPPED and i + 1 < len(schedule):
             i += 1
             instruction = schedule[i]
 
             signal = instruction.process(
-                self.current_time,
-                self.tasks,
-                self.scheduled_instructions
+                self.current_time, self.tasks, self.scheduled_instructions
             )
 
         action: u8 = signal.action
         halt, change = False, False
 
         if not allow_wait and action == Action.WAIT:
-            warn(
-                f"{instruction} is not allowed to wait at {self.current_time}."
-            )
+            warn(f"{instruction} is not allowed to wait at {self.current_time}.")
             schedule.pop(i)
             return True, False
 
@@ -502,8 +508,10 @@ class SchedulingEnv(Env[ObsType, ActionType]):
                     break
 
             else:
-                if i != -1: schedule.pop(i)
-                else:     halt = True
+                if i != -1:
+                    schedule.pop(i)
+                else:
+                    halt = True
 
                 return halt, change
 
@@ -537,7 +545,9 @@ class SchedulingEnv(Env[ObsType, ActionType]):
             change = True
 
         if action & Action.RAISE:
-            warn(f"Error in instruction {instruction} at time {self.current_time}: {signal.info}")
+            warn(
+                f"Error in instruction {instruction} at time {self.current_time}: {signal.info}"
+            )
 
         if action & Action.HALT:
             halt = True
@@ -557,7 +567,10 @@ class SchedulingEnv(Env[ObsType, ActionType]):
             self.advance_to_next_instruction()
             halt, change = False, True
 
-        elif not self.scheduled_instructions[-1] and len(self.scheduled_instructions) == 1:
+        elif (
+            not self.scheduled_instructions[-1]
+            and len(self.scheduled_instructions) == 1
+        ):
             halt, change = True, False
 
             for task in self.tasks:
@@ -580,7 +593,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         action: ActionType = None,
     ) -> tuple[ObsType, float, bool, bool, dict[str, Any]]:
         if is_single_action(action):
-            single_args =  tuple(map(int, action[1:]))
+            single_args = tuple(map(int, action[1:]))
             self.schedule_instruction(action[0], single_args)
 
         elif action is not None:
@@ -612,16 +625,22 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         if self.render_mode == "plot":
             self.renderer.render(self.current_time)
 
-
     def get_entry(self) -> str:
         "Get a string representation of the environment's configuration."
         alpha = self.setup.get_entry()
 
-        beta = ",".join([
-            constraint.get_entry()
-            for name, constraint in self.constraints.items()
-            if not name.startswith("setup_") and constraint.get_entry()
-        ]) + "prmp" if self.allow_preemption else ""
+        beta = (
+            ",".join(
+                [
+                    constraint.get_entry()
+                    for name, constraint in self.constraints.items()
+                    if not name.startswith("setup_") and constraint.get_entry()
+                ]
+            )
+            + "prmp"
+            if self.allow_preemption
+            else ""
+        )
 
         gamma = self.objective.get_entry()
 

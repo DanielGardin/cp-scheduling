@@ -10,6 +10,7 @@ from ..base import BaseAlgorithm
 from ..buffer import Buffer
 from ..protocols import Policy
 
+
 class BehaviorCloning(BaseAlgorithm):
     """
     Behavior Cloning algorithm.
@@ -35,13 +36,14 @@ class BehaviorCloning(BaseAlgorithm):
         The optimizer used to update the actor network.
         It should be an instance of torch.optim.Optimizer or a subclass of it.
     """
+
     def __init__(
         self,
         states: Tensor,
         actions: Tensor,
         actor: Policy[Tensor, Tensor],
         actor_optimizer: Optimizer,
-        device: str = 'auto',
+        device: str = "auto",
     ):
         buffer = Buffer.from_tensors(
             state=states,
@@ -53,19 +55,15 @@ class BehaviorCloning(BaseAlgorithm):
         self.actor = actor
         self.actor_optimizer = actor_optimizer
 
-
     def update(self, batch: TensorDict) -> dict[str, Any]:
-        target_action = batch['action']
+        target_action = batch["action"]
 
-        loss = - torch.mean(self.actor.log_prob(
-            batch['state'],
-            target_action
-        ))
+        loss = -torch.mean(self.actor.log_prob(batch["state"], target_action))
 
         self.actor_optimizer.zero_grad()
         loss.backward()
         self.actor_optimizer.step()
 
         return {
-            "loss/actor" : loss.item(),
+            "loss/actor": loss.item(),
         }

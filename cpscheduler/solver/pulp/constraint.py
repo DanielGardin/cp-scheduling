@@ -23,38 +23,48 @@ from .pulp_utils import implication_pulp
 
 ModelExport: TypeAlias = Callable[[LpProblem, Tasks], None]
 
+
 @multidispatch
 def export_constraint_pulp(setup: Constraint, variables: PulpVariables) -> ModelExport:
     raise NotImplementedError(f"Setup {setup} not implemented for PuLP.")
 
+
 @export_constraint_pulp.register
-def _(constraint: PrecedenceConstraint, variables: PulpSchedulingVariables) -> ModelExport:
+def _(
+    constraint: PrecedenceConstraint, variables: PulpSchedulingVariables
+) -> ModelExport:
     def export_model(model: LpProblem, tasks: Tasks) -> None:
         for task_id, children in constraint.precedence.items():
             for child_id in children:
                 model.addConstraint(
-                    variables.end_times[task_id] == variables.start_times[child_id]
-                    if constraint.no_wait else
-                    variables.end_times[task_id] <= variables.start_times[child_id],
-                    f"precedence_{task_id}_{child_id}"
+                    (
+                        variables.end_times[task_id] == variables.start_times[child_id]
+                        if constraint.no_wait
+                        else variables.end_times[task_id]
+                        <= variables.start_times[child_id]
+                    ),
+                    f"precedence_{task_id}_{child_id}",
                 )
 
                 if task_id < child_id:
                     model.addConstraint(
                         variables.orders[(task_id, child_id)] == 1,
-                        f"order_{task_id}_{child_id}"
+                        f"order_{task_id}_{child_id}",
                     )
 
                 else:
                     model.addConstraint(
                         variables.orders[(task_id, child_id)] == 0,
-                        f"order_{child_id}_{task_id}"
+                        f"order_{child_id}_{task_id}",
                     )
 
     return export_model
 
+
 @export_constraint_pulp.register
-def _(constraint: DisjunctiveConstraint, variables: PulpSchedulingVariables) -> ModelExport:
+def _(
+    constraint: DisjunctiveConstraint, variables: PulpSchedulingVariables
+) -> ModelExport:
     def export_model(model: LpProblem, tasks: Tasks) -> None:
         for _, group_tasks in constraint.disjunctive_groups.items():
             n_group_tasks = len(group_tasks)
@@ -66,35 +76,51 @@ def _(constraint: DisjunctiveConstraint, variables: PulpSchedulingVariables) -> 
 
                     implication_pulp(
                         model,
-                        antecedent = variables.orders[order],
-                        consequent = (variables.end_times[task_i], "<=", variables.start_times[task_j]),
-                        big_m      = int(
-                            tasks[task_i].get_end_ub() -
-                            tasks[task_j].get_start_lb()
+                        antecedent=variables.orders[order],
+                        consequent=(
+                            variables.end_times[task_i],
+                            "<=",
+                            variables.start_times[task_j],
                         ),
-                        name=f"disjunctive_{task_i}_{task_j}_order"
+                        big_m=int(
+                            tasks[task_i].get_end_ub() - tasks[task_j].get_start_lb()
+                        ),
+                        name=f"disjunctive_{task_i}_{task_j}_order",
                     )
 
                     implication_pulp(
                         model,
-                        antecedent = 1 - variables.orders[order],
-                        consequent = (variables.end_times[task_j], "<=", variables.start_times[task_i]),
-                        big_m      = int(
-                            tasks[task_j].get_end_ub() -
-                            tasks[task_i].get_start_lb()
+                        antecedent=1 - variables.orders[order],
+                        consequent=(
+                            variables.end_times[task_j],
+                            "<=",
+                            variables.start_times[task_i],
                         ),
-                        name=f"disjunctive_{task_j}_{task_i}_order"
+                        big_m=int(
+                            tasks[task_j].get_end_ub() - tasks[task_i].get_start_lb()
+                        ),
+                        name=f"disjunctive_{task_j}_{task_i}_order",
                     )
 
     return export_model
 
-@export_constraint_pulp.register
-def _(constraint: ReleaseDateConstraint | DeadlineConstraint, variables: PulpSchedulingVariables) -> ModelExport:
-    return lambda model, tasks: None  # No specific export needed for these constraints
 
 @export_constraint_pulp.register
-def _(constraint: ResourceConstraint, variables: PulpSchedulingVariables) -> ModelExport:
-    raise NotImplementedError("Resource constraints are not available in PuLP at the moment.")
+def _(
+    constraint: ReleaseDateConstraint | DeadlineConstraint,
+    variables: PulpSchedulingVariables,
+) -> ModelExport:
+    return lambda model, tasks: None  # No specific export needed for these constraints
+
+
+@export_constraint_pulp.register
+def _(
+    constraint: ResourceConstraint, variables: PulpSchedulingVariables
+) -> ModelExport:
+    raise NotImplementedError(
+        "Resource constraints are not available in PuLP at the moment."
+    )
+
 
 @export_constraint_pulp.register
 def _(constraint: MachineConstraint, variables: PulpSchedulingVariables) -> ModelExport:
@@ -122,63 +148,73 @@ def _(constraint: MachineConstraint, variables: PulpSchedulingVariables) -> Mode
 
                     implication_pulp(
                         model,
-                        antecedent = (
+                        antecedent=(
                             variables.orders[task_i, task_j],
                             variables.assignments[task_i][machine],
-                            variables.assignments[task_j][machine]
+                            variables.assignments[task_j][machine],
                         ),
-                        consequent = (
-                            variables.end_times[task_i], "<=", variables.start_times[task_j]
+                        consequent=(
+                            variables.end_times[task_i],
+                            "<=",
+                            variables.start_times[task_j],
                         ),
-                        big_m      = int(
-                            tasks[task_i].get_end_ub() -
-                            tasks[task_j].get_start_lb()
+                        big_m=int(
+                            tasks[task_i].get_end_ub() - tasks[task_j].get_start_lb()
                         ),
-                        name=f"machine_{machine}_disjunctive_{task_i}_{task_j}_order"
+                        name=f"machine_{machine}_disjunctive_{task_i}_{task_j}_order",
                     )
 
                     implication_pulp(
                         model,
-                        antecedent = (
+                        antecedent=(
                             1 - variables.orders[task_i, task_j],
                             variables.assignments[task_i][machine],
-                            variables.assignments[task_j][machine]
+                            variables.assignments[task_j][machine],
                         ),
-                        consequent = (
-                            variables.end_times[task_j], "<=", variables.start_times[task_i]
+                        consequent=(
+                            variables.end_times[task_j],
+                            "<=",
+                            variables.start_times[task_i],
                         ),
-                        big_m      = int(
-                            tasks[task_j].get_end_ub() -
-                            tasks[task_i].get_start_lb()
+                        big_m=int(
+                            tasks[task_j].get_end_ub() - tasks[task_i].get_start_lb()
                         ),
-                        name=f"machine_{machine}_disjunctive_{task_j}_{task_i}_order"
+                        name=f"machine_{machine}_disjunctive_{task_j}_{task_i}_order",
                     )
 
     return export_model
+
 
 @export_constraint_pulp.register
 def _(constraint: SetupConstraint, variables: PulpSchedulingVariables) -> ModelExport:
     def export_model(model: LpProblem, tasks: Tasks) -> None:
-            for task_id, setup_times in constraint.setup_times.items():
-                for child_id, setup_time in setup_times.items():
+        for task_id, setup_times in constraint.setup_times.items():
+            for child_id, setup_time in setup_times.items():
 
-                    implication_pulp(
-                        model,
-                        antecedent = (
-                            variables.orders[task_id, child_id] if task_id < child_id else
-                            1 - variables.orders[child_id, task_id],
+                implication_pulp(
+                    model,
+                    antecedent=(
+                        (
+                            variables.orders[task_id, child_id]
+                            if task_id < child_id
+                            else 1 - variables.orders[child_id, task_id]
                         ),
-                        consequent = (
-                            variables.end_times[task_id] + setup_time, "<=", variables.start_times[child_id]
-                        ),
-                        big_m      = int(
-                            tasks[task_id].get_end_ub() + setup_time -
-                            tasks[child_id].get_start_lb()
-                        ),
-                        name=f"setup_{task_id}_{child_id}_order"
-                    )
+                    ),
+                    consequent=(
+                        variables.end_times[task_id] + setup_time,
+                        "<=",
+                        variables.start_times[child_id],
+                    ),
+                    big_m=int(
+                        tasks[task_id].get_end_ub()
+                        + setup_time
+                        - tasks[child_id].get_start_lb()
+                    ),
+                    name=f"setup_{task_id}_{child_id}_order",
+                )
 
     return export_model
+
 
 # Timetable implementations
 
@@ -189,7 +225,6 @@ def _(constraint: SetupConstraint, variables: PulpSchedulingVariables) -> ModelE
 #             for child_id in children:
 #                 for child_start_time in range(variables.T):
 #                     ...
-
 
 
 @export_constraint_pulp.register
@@ -225,12 +260,11 @@ def _(constraint: MachineConstraint, variables: PulpTimetable) -> ModelExport:
                     start_time = max(start_time, start_lb)
 
                     disjunction_group.extend(
-                        variables.start_times[task_id][machine][start_time:time+1]
+                        variables.start_times[task_id][machine][start_time : time + 1]
                     )
 
                 model.addConstraint(
-                    lpSum(disjunction_group) <= 1,
-                    f"machine_{machine}_timetable_{time}"
+                    lpSum(disjunction_group) <= 1, f"machine_{machine}_timetable_{time}"
                 )
 
     return export_model

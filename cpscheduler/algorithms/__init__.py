@@ -1,9 +1,8 @@
 __all__ = [
     # Online RL
     "Reinforce",
-
     # Offline RL
-    "BehaviorCloning"
+    "BehaviorCloning",
 ]
 
 from .online.reinforce import Reinforce

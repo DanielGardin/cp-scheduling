@@ -1,10 +1,11 @@
 """
-    instructions.py
+instructions.py
 
-    This module defines the instructions that can be executed in the scheduling environment.
-    Instructions are used to control the execution of tasks, manage their states, and interact
-    with the scheduler.
+This module defines the instructions that can be executed in the scheduling environment.
+Instructions are used to control the execution of tasks, manage their states, and interact
+with the scheduler.
 """
+
 from typing import ClassVar, Final, TypeAlias, SupportsInt, Iterable
 from typing_extensions import Unpack
 
@@ -15,30 +16,48 @@ from mypy_extensions import mypyc_attr, u8
 from ._common import TASK_ID, TIME, MACHINE_ID
 from .tasks import Tasks, Status
 
-SingleAction: TypeAlias = tuple['str | Instruction', Unpack[tuple[SupportsInt, ...]]]
-ActionType: TypeAlias   = SingleAction | Iterable[SingleAction] | None
+SingleAction: TypeAlias = tuple["str | Instruction", Unpack[tuple[SupportsInt, ...]]]
+ActionType: TypeAlias = SingleAction | Iterable[SingleAction] | None
 
-# Flags are not supported by mypyc
+
+# Flags are not supported by mypyc yet
 class Action:
     "Flags for possible actions made by the scheduler in response to an instruction."
-    SKIPPED: Final[u8]      = 1 # Tell the scheduler the instruction was skiped
-    REEVALUATE: Final[u8]   = 2 # The scheduler should reevaluate the current bounds
-    PROPAGATE: Final[u8]    = 4 # The scheduler should propagate the constraints further
-    ADVANCE: Final[u8]      = 8 # The scheduler should advance the time
-    ADVANCE_NEXT: Final[u8] = 16 # The scheduler should advance to the next decision point
-    RAISE: Final[u8]        = 32 # The scheduler should raise an exception
-    HALT: Final[u8]         = 64 # The scheduler should stop processing instructions
 
-    DONE: Final[u8]  = PROPAGATE | ADVANCE
-    ERROR :Final[u8] = RAISE | HALT
-    WAIT: Final[u8]  = SKIPPED | PROPAGATE | ADVANCE_NEXT
+    # Tell the scheduler the instruction was skiped
+    SKIPPED: Final[u8] = 1
+
+    # The scheduler should reevaluate the current bounds (used when preempting tasks)
+    REEVALUATE: Final[u8] = 2
+
+    # The scheduler should propagate the constraints further
+    PROPAGATE: Final[u8] = 4
+
+    # The scheduler should advance the time
+    ADVANCE: Final[u8] = 8
+
+    # The scheduler should advance to the next decision point
+    ADVANCE_NEXT: Final[u8] = 16
+
+    # The scheduler should raise an exception
+    RAISE: Final[u8] = 32
+
+    # The scheduler should stop processing instructions
+    HALT: Final[u8] = 64
+
+    DONE: Final[u8] = PROPAGATE | ADVANCE
+    ERROR: Final[u8] = RAISE | HALT
+    WAIT: Final[u8] = SKIPPED | PROPAGATE | ADVANCE_NEXT
+
 
 @dataclass
 class Signal:
     "Action signal with additional parameters."
+
     action: u8
     time: TIME = 0
     info: str = ""
+
 
 @mypyc_attr(allow_interpreted_subclasses=True)
 class Instruction:
@@ -53,6 +72,7 @@ class Instruction:
     Caution: Instructions directly manipulate the state of tasks and the scheduler, so
     new ones should be implemented carefully.
     """
+
     name: ClassVar[str]
 
     def process(
@@ -67,8 +87,10 @@ class Instruction:
     def __repr__(self) -> str:
         return f"Instruction: {self.name}"
 
+
 class Execute(Instruction):
     "Executes a task on a specific machine. If the task cannot be executed, it is waited for."
+
     name = "execute"
 
     def __init__(self, task_id: TASK_ID, machine: MACHINE_ID = 0):
@@ -94,7 +116,7 @@ class Execute(Instruction):
         if status == Status.EXECUTING or status == Status.PAUSED:
             return Signal(
                 Action.RAISE,
-                info=f"Task {self.task_id} cannot be executed. It is already being executed or completed"
+                info=f"Task {self.task_id} cannot be executed. It is already being executed or completed",
             )
 
         return Signal(Action.WAIT)
@@ -102,6 +124,7 @@ class Execute(Instruction):
 
 class Submit(Instruction):
     "Executes a task on a specific machine. If the task cannot be executed, skips it."
+
     name = "submit"
 
     def __init__(self, task_id: TASK_ID, machine: MACHINE_ID = 0):
@@ -135,6 +158,7 @@ class Submit(Instruction):
 
 class Pause(Instruction):
     "Pauses a task if it is currently executing. Can only be used in preemptive scheduling."
+
     name = "pause"
 
     def __init__(self, task_id: TASK_ID):
@@ -165,6 +189,7 @@ class Pause(Instruction):
 
 class Complete(Instruction):
     "Advances the current time to the end of an executing task."
+
     name = "complete"
 
     def __init__(self, task_id: TASK_ID):
@@ -191,6 +216,7 @@ class Complete(Instruction):
 
 class Advance(Instruction):
     "Advances the current time by a specified amount or to the next decision point if not specified."
+
     name = "advance"
 
     def __init__(self, time: TIME = -1):
@@ -216,6 +242,7 @@ class Advance(Instruction):
 
 class Query(Instruction):
     "When processed, halts the environment and returns its current state."
+
     name = "query"
 
     def process(
@@ -229,6 +256,7 @@ class Query(Instruction):
 
 class Clear(Instruction):
     "Clears all upcoming instructions and resets the schedule."
+
     name = "clear"
 
     def process(
@@ -241,6 +269,7 @@ class Clear(Instruction):
         scheduled_instructions[-1] = list()
 
         return Signal(Action.DONE)
+
 
 def parse_args(
     instruction_name: str,
@@ -255,11 +284,14 @@ def parse_args(
         return args[:-1], args[-1]
 
     raise ValueError(
-        f"Expected {n_required} or {n_required + 1} arguments for instruction {instruction_name},"\
+        f"Expected {n_required} or {n_required + 1} arguments for instruction {instruction_name},"
         "got {len(args)}."
     )
 
-def parse_instruction(action: str | Instruction, args: tuple[int, ...]) -> tuple[Instruction, TIME]:
+
+def parse_instruction(
+    action: str | Instruction, args: tuple[int, ...]
+) -> tuple[Instruction, TIME]:
     "Parse raw instruction arguments into an Instruction object and the scheduled time."
     instruction: Instruction
 

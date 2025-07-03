@@ -1,6 +1,5 @@
 __all__ = [
     "SchedulingEnv",
-
     # Alpha setups
     "SingleMachineSetup",
     "IdenticalParallelMachineSetup",
@@ -8,7 +7,6 @@ __all__ = [
     "UnrelatedParallelMachineSetup",
     "JobShopSetup",
     "OpenShopSetup",
-
     # Beta constraints
     "PrecedenceConstraint",
     "DisjunctiveConstraint",
@@ -17,7 +15,6 @@ __all__ = [
     "ResourceConstraint",
     "MachineConstraint",
     "SetupConstraint",
-
     # Gamma objectives
     "ComposedObjective",
     "Makespan",
@@ -41,7 +38,7 @@ from .schedule_setup import (
     UniformParallelMachineSetup,
     UnrelatedParallelMachineSetup,
     JobShopSetup,
-    OpenShopSetup
+    OpenShopSetup,
 )
 
 from .constraints import (
@@ -66,5 +63,5 @@ from .objectives import (
     WeightedEarliness,
     TotalTardyJobs,
     WeightedTardyJobs,
-    TotalFlowTime
+    TotalFlowTime,
 )

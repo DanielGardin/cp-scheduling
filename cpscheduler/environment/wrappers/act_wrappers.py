@@ -12,6 +12,7 @@ from cpscheduler.environment.instructions import ActionType
 _Obs = TypeVar("_Obs")
 _Act = TypeVar("_Act")
 
+
 class SchedulingActionWrapper(ActionWrapper[_Obs, _Act, ActionType], ABC):
     def __init__(self, env: Env[_Obs, ActionType]):
         super().__init__(env)
@@ -51,15 +52,13 @@ class SchedulingActionWrapper(ActionWrapper[_Obs, _Act, ActionType], ABC):
         """
         return None
 
+
 class PermutationActionWrapper(SchedulingActionWrapper[_Obs, Iterable[SupportsInt]]):
     """
     A wrapper that converts the action space to a permutation of the job IDs.
     """
-    def __init__(
-            self,
-            env: Env[_Obs, ActionType],
-            strict: bool = True
-        ):
+
+    def __init__(self, env: Env[_Obs, ActionType], strict: bool = True):
         super().__init__(env)
 
         self.instruction = "execute" if strict else "submit"
@@ -67,9 +66,7 @@ class PermutationActionWrapper(SchedulingActionWrapper[_Obs, Iterable[SupportsIn
     def get_action_space(self) -> Space[Iterable[SupportsInt]]:
         n_jobs = len(getattr(self.env.get_wrapper_attr("tasks"), "jobs"))
 
-        return Sequence(
-            Box(low=0, high=n_jobs - 1, shape=(1,)), stack=True
-        )
+        return Sequence(Box(low=0, high=n_jobs - 1, shape=(1,)), stack=True)
 
     def action(self, action: Iterable[SupportsInt]) -> ActionType:
         return [(self.instruction, job_id) for job_id in action]

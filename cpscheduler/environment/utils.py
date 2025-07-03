@@ -1,8 +1,9 @@
 """
-    utils.py
+utils.py
 
-    This module provides utility functions for the environment and other modules.
+This module provides utility functions for the environment and other modules.
 """
+
 from typing import Any, TypeVar, overload, SupportsInt
 from collections.abc import Iterable, Mapping, Sequence
 from typing_extensions import TypeIs
@@ -16,14 +17,19 @@ from ._common import MAX_INT, MIN_INT, TASK_ID
 
 _S = TypeVar("_S")
 _T = TypeVar("_T", bound=Any)
+
+
 @overload
 def convert_to_list(array: Any, dtype: type[_T]) -> list[_T]: ...
+
 
 @overload
 def convert_to_list(array: Iterable[_S], dtype: None = None) -> list[_S]: ...
 
+
 @overload
 def convert_to_list(array: Any, dtype: None = None) -> list[Any]: ...
+
 
 def convert_to_list(array: Iterable[Any], dtype: type[_T] | None = None) -> list[Any]:
     """
@@ -57,6 +63,7 @@ def convert_to_list(array: Iterable[Any], dtype: type[_T] | None = None) -> list
     except TypeError:
         return [array] if dtype is None else [dtype(array)]
 
+
 def is_iterable_type(obj: Any, dtype: type[_T]) -> TypeIs[Iterable[_T]]:
     """
     Returns whether the object is an iterable containing elements of the specified type.
@@ -78,11 +85,12 @@ def is_iterable_type(obj: Any, dtype: type[_T]) -> TypeIs[Iterable[_T]]:
         for item in obj:
             if not isinstance(item, dtype):
                 return False
-        
+
         return True
 
     except Exception:
         return False
+
 
 # Thank you mypy for not supporting Abstract classes with type[T]
 def is_iterable_int(obj: Any) -> TypeIs[Iterable[SupportsInt]]:
@@ -90,14 +98,17 @@ def is_iterable_int(obj: Any) -> TypeIs[Iterable[SupportsInt]]:
         for item in obj:
             if not isinstance(item, SupportsInt):
                 return False
-        
+
         return True
 
     except Exception:
         return False
 
+
 _K = TypeVar("_K")
 _V = TypeVar("_V")
+
+
 def is_mapping(
     obj: Mapping[Any, Any] | Any, keys_type: type[_K], values_type: type[_V]
 ) -> TypeIs[Mapping[_K, _V]]:
@@ -128,7 +139,9 @@ def is_mapping(
         return False
 
 
-def topological_sort(precedence_map: dict[TASK_ID, list[TASK_ID]], n_tasks: TASK_ID) -> list[TASK_ID]:
+def topological_sort(
+    precedence_map: dict[TASK_ID, list[TASK_ID]], n_tasks: TASK_ID
+) -> list[TASK_ID]:
     """
     Perform a topological sort on a directed acyclic graph.
 
@@ -216,6 +229,7 @@ def binary_search(
 
     return left
 
+
 def infer_list_space(array: list[Any]) -> spaces.Space[Any]:
     "Infer the Gymnasium space for a list based on its elements."
     n = len(array)
@@ -229,7 +243,7 @@ def infer_list_space(array: list[Any]) -> spaces.Space[Any]:
         return spaces.Tuple([spaces.Text(max_length=100) for _ in range(n)])
 
     if isinstance(elem, int):
-        return spaces.Box(low=MIN_INT, high=MAX_INT, shape=(n,), dtype=np.int64) # type: ignore
+        return spaces.Box(low=MIN_INT, high=MAX_INT, shape=(n,), dtype=np.int64)  # type: ignore
 
     if isinstance(elem, float):
         return spaces.Box(low=-np.inf, high=np.inf, shape=(n,), dtype=np.float64)

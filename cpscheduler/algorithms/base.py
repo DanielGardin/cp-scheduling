@@ -28,35 +28,37 @@ from .utils import set_seed, get_device
 
 logging.basicConfig(
     level=logging.INFO,
-    format="[%(asctime)s] [%(name)s] [%(filename)s(%(lineno)d)] [%(levelname)s] %(message)s"
+    format="[%(asctime)s] [%(name)s] [%(filename)s(%(lineno)d)] [%(levelname)s] %(message)s",
 )
 
 logger = logging.getLogger(__name__)
+
 
 # This is used to get the number of batches in the minibatch update
 def ceildiv(a: int, b: int) -> int:
     return -(a // -b)
 
+
 def summary_logs(logs: dict[str, Any], tag: str | None = None) -> dict[str, str]:
     summary: dict[str, str] = {}
 
     for key, value in logs.items():
-        if tag: key = f"{tag}/{key}"
+        if tag:
+            key = f"{tag}/{key}"
 
         try:
             mean = np.mean(value)
-            std  = np.std(value)
+            std = np.std(value)
 
-            summary[key] = (
-                f"{mean:.4f}" + ("" if std <= 1e-8 else f" ± {std:.4f}")
-            )
-        
+            summary[key] = f"{mean:.4f}" + ("" if std <= 1e-8 else f" ± {std:.4f}")
+
         except TypeError:
             warn(f"Could not summarize log {key} with type {type(value)}.")
             # If value is not a sequence, we handle it separately
             pass
 
     return summary
+
 
 def extend_logs(logs: dict[str, list[Any]], new_logs: dict[str, Any]) -> None:
     for key, value in new_logs.items():
@@ -83,7 +85,7 @@ class BaseAlgorithm(Module, ABC):
 
         self.metric: str = ""
         self.minimize: bool = True
-        self.best_running_metric: float = float('inf')
+        self.best_running_metric: float = float("inf")
         self.checkpoint_path: Path | None = None
 
     @property
@@ -95,32 +97,28 @@ class BaseAlgorithm(Module, ABC):
             return
 
         for key, value in logs.items():
-            if tag: key = f"{tag}/{key}"
+            if tag:
+                key = f"{tag}/{key}"
 
             try:
                 mean = np.mean(value)
 
-                self.writer.add_scalar(
-                    key,
-                    mean,
-                    global_step=self.global_step
-                )
+                self.writer.add_scalar(key, mean, global_step=self.global_step)
 
             except TypeError:
                 warn(f"Could not summarize log {key} with type {type(value)}.")
                 # If value is not a sequence, we handle it separately
                 pass
 
-
     def begin_experiment(
-            self,
-            project_name: str,
-            experiment_name: str = "experiment",
-            log_dir: str | Path | None = None,
-            use_wandb: bool = False,
-            config: dict[str, Any] | None = None,
-            save_model: bool = True
-        ) -> None:
+        self,
+        project_name: str,
+        experiment_name: str = "experiment",
+        log_dir: str | Path | None = None,
+        use_wandb: bool = False,
+        config: dict[str, Any] | None = None,
+        save_model: bool = True,
+    ) -> None:
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
         experiment_name = f"{experiment_name}_{timestamp}"
@@ -132,7 +130,9 @@ class BaseAlgorithm(Module, ABC):
                 import wandb
 
             except ImportError:
-                logger.error("wandb is not installed, please install it to use this feature.")
+                logger.error(
+                    "wandb is not installed, please install it to use this feature."
+                )
                 return
 
             self.run = wandb.init(
@@ -140,7 +140,7 @@ class BaseAlgorithm(Module, ABC):
                 name=experiment_name,
                 dir=log_dir,
                 config=config,
-                sync_tensorboard=True
+                sync_tensorboard=True,
             )
 
         self.writer = SummaryWriter(log_dir=log_dir)
@@ -151,7 +151,7 @@ class BaseAlgorithm(Module, ABC):
         self,
         objective_metric: str,
         minimize: bool = True,
-        checkpoint_path: str | Path | None = None
+        checkpoint_path: str | Path | None = None,
     ) -> None:
         self.metric = objective_metric
         self.minimize = minimize
@@ -164,14 +164,14 @@ class BaseAlgorithm(Module, ABC):
             self.checkpoint_path = Path(checkpoint_path)
 
     def learn(
-            self,
-            num_updates: int,
-            steps_per_update: int,
-            batch_size: int,
-            validation_freq: int | None = 1,
-            lr_scheduler: LRScheduler | None = None,
-            seed: int | None = None
-        ) -> None:
+        self,
+        num_updates: int,
+        steps_per_update: int,
+        batch_size: int,
+        validation_freq: int | None = 1,
+        lr_scheduler: LRScheduler | None = None,
+        seed: int | None = None,
+    ) -> None:
         if not hasattr(self, "writer"):
             logger.info(
                 "Calling learn before begin_experiment, no logging will be done"
@@ -186,7 +186,7 @@ class BaseAlgorithm(Module, ABC):
         self.on_session_start(num_updates, steps_per_update, batch_size)
 
         update_logs: dict[str, list[Any]] = {}
-        for update in range(1, num_updates+1):
+        for update in range(1, num_updates + 1):
             self.train()
 
             start_logs = self.on_epoch_start()
@@ -199,7 +199,7 @@ class BaseAlgorithm(Module, ABC):
                 total=n_steps,
                 unit=" steps",
                 dynamic_ncols=True,
-                leave=validation_freq is not None and update % validation_freq == 0
+                leave=validation_freq is not None and update % validation_freq == 0,
             ) as pbar:
                 pbar.set_description(f"Epoch {update}/{num_updates}")
 
@@ -208,9 +208,7 @@ class BaseAlgorithm(Module, ABC):
                         train_logs = self.update(batch)
 
                         pbar.update()
-                        pbar.set_postfix(
-                            summary_logs(train_logs)
-                        )
+                        pbar.set_postfix(summary_logs(train_logs))
 
                         extend_logs(update_logs, train_logs)
 
@@ -227,17 +225,20 @@ class BaseAlgorithm(Module, ABC):
                         val_logs = self.validate()
                         self._write_logs(val_logs, tag="val")
 
-                    pbar.set_postfix({
-                        **summary_logs(start_logs, tag="start"),
-                        **summary_logs(update_logs, tag="update"),
-                        **summary_logs(end_logs, tag="end"),
-                        **summary_logs(val_logs, tag="val")
-                    })
+                    pbar.set_postfix(
+                        {
+                            **summary_logs(start_logs, tag="start"),
+                            **summary_logs(update_logs, tag="update"),
+                            **summary_logs(end_logs, tag="end"),
+                            **summary_logs(val_logs, tag="val"),
+                        }
+                    )
 
             if self.metric:
                 log: dict[str, Any] = {}
                 for log in [update_logs, end_logs, val_logs]:
-                    if self.metric not in log: continue
+                    if self.metric not in log:
+                        continue
 
                     metric_value = float(np.mean(log[self.metric]))
                     if self.minimize:
@@ -250,11 +251,8 @@ class BaseAlgorithm(Module, ABC):
                 lr_scheduler.step()
 
     def on_session_start(
-            self,
-            num_updates: int,
-            steps_per_update: int,
-            batch_size: int
-        ) -> None:
+        self, num_updates: int, steps_per_update: int, batch_size: int
+    ) -> None:
         pass
 
     def on_epoch_start(self) -> dict[str, Any]:
@@ -284,20 +282,21 @@ class BaseAlgorithm(Module, ABC):
             config_path = Path(self.writer.get_logdir()) / "config.json"
             with open(config_path, "w") as f:
                 import json
+
                 json.dump(self.config, f, indent=4)
-            
+
             # This is the implementation of writer.add_hparams, but for some reason,
             # it creates a new SummaryWriter instead of using the existing one.
             metric_dict = self.get_last_metrics()
-            
+
             exp, ssi, sei = hparams(
                 hparam_dict=self.config,
                 metric_dict=metric_dict,
             )
 
-            self.writer.file_writer.add_summary(exp) # type: ignore
-            self.writer.file_writer.add_summary(ssi) # type: ignore
-            self.writer.file_writer.add_summary(sei) # type: ignore
+            self.writer.file_writer.add_summary(exp)  # type: ignore
+            self.writer.file_writer.add_summary(ssi)  # type: ignore
+            self.writer.file_writer.add_summary(sei)  # type: ignore
 
             for tag, value in metric_dict.items():
                 self.writer.add_scalar(tag, value, global_step=self.global_step)
@@ -324,10 +323,7 @@ class BaseAlgorithm(Module, ABC):
         tags = event_acc.Tags()["scalars"]
 
         return {
-            tag: {
-                event.step: event.value
-                for event in event_acc.Scalars(tag)
-            }
+            tag: {event.step: event.value for event in event_acc.Scalars(tag)}
             for tag in tags
         }
 
@@ -336,7 +332,4 @@ class BaseAlgorithm(Module, ABC):
         if not logs:
             return {}
 
-        return {
-            tag: values[max(values.keys())]
-            for tag, values in logs.items()
-        }
+        return {tag: values[max(values.keys())] for tag, values in logs.items()}

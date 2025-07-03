@@ -2,7 +2,10 @@ from pathlib import Path
 
 from typing import Any
 
-def read_rcpsp_instance(path: Path | str) -> tuple[dict[str, list[Any]], dict[str, Any]]:
+
+def read_rcpsp_instance(
+    path: Path | str,
+) -> tuple[dict[str, list[Any]], dict[str, Any]]:
     """
     Reads an instance from a file. The file must be in the Patterson format, with the following structure:
     - The first line contains the number of jobs and the number of resources in the instance.

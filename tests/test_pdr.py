@@ -2,20 +2,25 @@ import pytest
 
 from common import env_setup
 
-from cpscheduler.heuristics import ShortestProcessingTime, MostOperationsRemaining, MostWorkRemaining, PriorityDispatchingRule
+from cpscheduler.heuristics import (
+    ShortestProcessingTime,
+    MostOperationsRemaining,
+    MostWorkRemaining,
+    PriorityDispatchingRule,
+)
 
 pdr_expected_results = {
     # 15x15
-    "ta01":  [1462, 1438, 1491],
-    "ta05":  [1618, 1448, 1494],
+    "ta01": [1462, 1438, 1491],
+    "ta05": [1618, 1448, 1494],
     "ta10": [1697, 1582, 1534],
     # 20x15
     "ta15": [1835, 1682, 1696],
     "ta20": [1710, 1622, 1689],
-    # 20x20 
+    # 20x20
     "ta25": [1950, 1957, 1941],
     "ta30": [1999, 2017, 1935],
-    # 30x15 
+    # 30x15
     "ta35": [2497, 2255, 2226],
     "ta40": [2301, 2028, 2205],
     # 30x20
@@ -30,10 +35,11 @@ pdr_expected_results = {
 }
 
 heuristics: dict[str, PriorityDispatchingRule] = {
-    "SPT"  : ShortestProcessingTime(),
+    "SPT": ShortestProcessingTime(),
     "MOPNR": MostOperationsRemaining(),
-    "MWKR" : MostWorkRemaining()
+    "MWKR": MostWorkRemaining(),
 }
+
 
 @pytest.mark.heuristics
 @pytest.mark.parametrize("instance_name", pdr_expected_results)
@@ -48,9 +54,10 @@ def test_pdr(instance_name: str) -> None:
         action = heuristic(obs)
         obs, reward, terminated, truncated, info = env.step(action)
 
-        result[name] = info['current_time']
+        result[name] = info["current_time"]
         assert terminated
 
     assert result == {
-        name: pdr_expected_results[instance_name][i] for i, name in enumerate(heuristics)
+        name: pdr_expected_results[instance_name][i]
+        for i, name in enumerate(heuristics)
     }

@@ -5,6 +5,7 @@ from torch import Tensor
 import torch
 from torch import nn
 
+
 class PlackettLucePolicy(nn.Module):
     def __init__(
         self,
@@ -12,7 +13,7 @@ class PlackettLucePolicy(nn.Module):
     ):
         super().__init__()
         self.score_model = score_model
-    
+
     def get_score(self, x: Tensor) -> Tensor:
         logits = torch.squeeze(self.score_model(x), -1)
 
@@ -32,10 +33,10 @@ class PlackettLucePolicy(nn.Module):
     def sample(
         self,
         x: Tensor,
-        temperature: float = 1.,
+        temperature: float = 1.0,
     ) -> tuple[Tensor, Tensor]:
         logits = self.get_score(x)
-        gumbel_noise = torch.distributions.Gumbel(0, 1).sample(logits.shape).to(logits.device) # type: ignore
+        gumbel_noise = torch.distributions.Gumbel(0, 1).sample(logits.shape).to(logits.device)  # type: ignore
 
         perturbed_logits = logits / temperature + gumbel_noise
 
@@ -48,15 +49,13 @@ class PlackettLucePolicy(nn.Module):
     def get_action(self, x: Tensor) -> tuple[Tensor, Tensor]:
         return self.sample(x)
 
-    def log_prob(
-        self,
-        x: Tensor,
-        action: Tensor
-    ) -> Tensor:
+    def log_prob(self, x: Tensor, action: Tensor) -> Tensor:
         scores = self.get_score(x)
         permuted_scores = scores.gather(1, action)
 
-        logcumsum = torch.logcumsumexp(permuted_scores.flip(dims=[1]), dim=1).flip(dims=[1])
+        logcumsum = torch.logcumsumexp(permuted_scores.flip(dims=[1]), dim=1).flip(
+            dims=[1]
+        )
 
         logits = torch.sum(permuted_scores - logcumsum, dim=1)
 

@@ -18,7 +18,8 @@ from ..buffer import Buffer
 from ..protocols import Policy
 from ..utils import get_device
 
-Baselines: TypeAlias = Literal['mean', 'greedy', 'none'] | Callable[[Tensor], Tensor]
+Baselines: TypeAlias = Literal["mean", "greedy", "none"] | Callable[[Tensor], Tensor]
+
 
 class Reinforce(BaseAlgorithm):
     def __init__(
@@ -33,9 +34,9 @@ class Reinforce(BaseAlgorithm):
         mc_samples: int = 1,
         n_steps: int = 1,
         baseline_decay: float = 0.99,
-        device: str = 'auto',
+        device: str = "auto",
     ):
-        self.obs_shape    = obs_shape
+        self.obs_shape = obs_shape
         self.action_shape = action_shape
 
         buffer_size = n_steps * envs.num_envs * mc_samples
@@ -43,47 +44,47 @@ class Reinforce(BaseAlgorithm):
         buffer = Buffer(
             buffer_size,
             buffer_shapes={
-                'obs': obs_shape,
-                'action': action_shape,
-                'returns': (1,),
-                'greedy_return': (1,)
+                "obs": obs_shape,
+                "action": action_shape,
+                "returns": (1,),
+                "greedy_return": (1,),
             },
-            allow_grad=True
+            allow_grad=True,
         )
 
         super().__init__(buffer, get_device(device))
 
-        self.envs            = envs
-        self.actor           = actor
+        self.envs = envs
+        self.actor = actor
         self.actor_optimizer = actor_optimizer
 
-        self.mc_samples      = mc_samples
-        self.baseline        = baseline
-        self.running_mean    = torch.tensor(0)
-        self.baseline_decay  = baseline_decay
+        self.mc_samples = mc_samples
+        self.baseline = baseline
+        self.running_mean = torch.tensor(0)
+        self.baseline_decay = baseline_decay
 
     def compute_baseline(self, batch: TensorDict) -> Tensor:
-        if self.baseline is None or self.baseline == 'none':
+        if self.baseline is None or self.baseline == "none":
             return torch.tensor(0)
 
         if isinstance(self.baseline, str):
-            if self.baseline == 'mean':
-                batch_mean = torch.mean(batch['returns'])
+            if self.baseline == "mean":
+                batch_mean = torch.mean(batch["returns"])
 
                 self.running_mean = (
-                    self.baseline_decay  * self.running_mean +
-                    (1 - self.baseline_decay) * batch_mean
+                    self.baseline_decay * self.running_mean
+                    + (1 - self.baseline_decay) * batch_mean
                 )
 
                 return self.running_mean
 
-            if self.baseline == 'greedy':
-                return batch['greedy_return']
+            if self.baseline == "greedy":
+                return batch["greedy_return"]
 
             raise ValueError(f"Unknown baseline type: {self.baseline}")
 
         with torch.no_grad():
-            return self.baseline(batch['obs'])
+            return self.baseline(batch["obs"])
 
     def on_epoch_start(self) -> dict[str, Any]:
         self.buffer.clear()
@@ -112,20 +113,20 @@ class Reinforce(BaseAlgorithm):
                 all_greedy_returns[:, i] = greedy_returns
 
                 self.buffer.add(
-                    obs           = observations,
-                    action        = actions,
-                    returns       = torch.tensor(returns).reshape(n_envs, 1),
-                    greedy_return = torch.tensor(greedy_returns).reshape(n_envs, 1)
+                    obs=observations,
+                    action=actions,
+                    returns=torch.tensor(returns).reshape(n_envs, 1),
+                    greedy_return=torch.tensor(greedy_returns).reshape(n_envs, 1),
                 )
 
         return {
-            'rewards' : all_greedy_returns,
+            "rewards": all_greedy_returns,
         }
 
     def update(self, batch: TensorDict) -> dict[str, Any]:
-        returns   = batch['returns']
+        returns = batch["returns"]
 
-        log_probs = self.actor.log_prob(batch['obs'], batch['action'])
+        log_probs = self.actor.log_prob(batch["obs"], batch["action"])
 
         baseline = self.compute_baseline(batch)
 

@@ -9,19 +9,20 @@ from .._common import ProcessTimeAllowedTypes
 _Obs = TypeVar("_Obs")
 _Act = TypeVar("_Act")
 
+
 class RandomGeneratorWrapper(Wrapper[_Obs, _Act, _Obs, _Act]):
     """
-        A wrapper that generates a random instance of the scheduling problem every
-        time the environment is reset.
+    A wrapper that generates a random instance of the scheduling problem every
+    time the environment is reset.
 
-        Parameters
-        ----------
-        env : Env
-            The scheduling environment to wrap.
+    Parameters
+    ----------
+    env : Env
+        The scheduling environment to wrap.
 
-        generator : Callable[[int | None], tuple[DataFrame, ProcessTimeAllowedTypes]]
-            A callable that generates a random instance and processing times.
-            It should accept an optional seed as input.
+    generator : Callable[[int | None], tuple[DataFrame, ProcessTimeAllowedTypes]]
+        A callable that generates a random instance and processing times.
+        It should accept an optional seed as input.
     """
 
     def __init__(

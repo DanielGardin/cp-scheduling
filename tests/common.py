@@ -18,6 +18,7 @@ TEST_INSTANCES = [
 
 PROJECT_ROOT = Path(__file__).parent.parent
 
+
 def env_setup(instance_name: str) -> SchedulingEnv:
     path = PROJECT_ROOT / f"instances/jobshop/{instance_name}.txt"
 

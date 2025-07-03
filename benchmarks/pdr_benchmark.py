@@ -7,29 +7,38 @@ from time import perf_counter
 
 from cpscheduler.environment import SchedulingEnv, JobShopSetup
 from cpscheduler.instances import read_jsp_instance
-from cpscheduler.heuristics import ShortestProcessingTime, MostOperationsRemaining, MostWorkRemaining, PriorityDispatchingRule
+from cpscheduler.heuristics import (
+    ShortestProcessingTime,
+    MostOperationsRemaining,
+    MostWorkRemaining,
+    PriorityDispatchingRule,
+)
 
 root = Path(__file__).parent.parent
 
 heuristics: dict[str, PriorityDispatchingRule] = {
-    "SPT"  : ShortestProcessingTime(),
+    "SPT": ShortestProcessingTime(),
     "MOPNR": MostOperationsRemaining(),
-    "MWKR" : MostWorkRemaining()
+    "MWKR": MostWorkRemaining(),
 }
 
 datasets = {
-    "taillard"     : "ta",
-    "demirkol"     : "dmu",
-    "lawrence"     : "la",
-    "applegate"    : "orb",
-    "storer"       : "swv",
-    "yamada"       : "yn",
-    "large-TA"     : "lta",
+    "taillard": "ta",
+    "demirkol": "dmu",
+    "lawrence": "la",
+    "applegate": "orb",
+    "storer": "swv",
+    "yamada": "yn",
+    "large-TA": "lta",
     "known optimal": "kopt",
 }
 
-index_names = ['dataset', 'size', 'name']
-column_names = [(heuristic_name, metric) for heuristic_name in heuristics.keys() for metric in ('makespan', 'time')]
+index_names = ["dataset", "size", "name"]
+column_names = [
+    (heuristic_name, metric)
+    for heuristic_name in heuristics.keys()
+    for metric in ("makespan", "time")
+]
 
 
 data: list[list[float]] = []
@@ -38,9 +47,11 @@ indices: list[tuple[str, tuple[int, int], str]] = []
 for dataset in datasets:
     dataset_code = datasets[dataset]
 
-    all_instances = tqdm(sorted([
-        path for path in (root / 'instances/jobshop').glob(f'{dataset_code}*.txt')
-    ]))
+    all_instances = tqdm(
+        sorted(
+            [path for path in (root / "instances/jobshop").glob(f"{dataset_code}*.txt")]
+        )
+    )
 
     if not all_instances:
         continue
@@ -48,7 +59,7 @@ for dataset in datasets:
     for instance_path in all_instances:
         instance, metadata = read_jsp_instance(instance_path)
 
-        instance_size = (int(metadata['n_jobs']), int(metadata['n_machines']))
+        instance_size = (int(metadata["n_jobs"]), int(metadata["n_machines"]))
         instance_name = instance_path.stem
 
         all_instances.set_description(f"Processing instance {instance_name}")
@@ -66,18 +77,18 @@ for dataset in datasets:
             obs, reward, terminated, truncated, info = env.step(action)
             tock = perf_counter()
 
-            heuristic_results[2*i:2*(i+1)] = (info['current_time'], tock - tick)
+            heuristic_results[2 * i : 2 * (i + 1)] = (info["current_time"], tock - tick)
 
         indices.append((dataset, instance_size, instance_name))
         data.append(heuristic_results)
 
     dict_data = {
-        'index'      : indices,
-        'columns'    : column_names,
-        'data'       : data,
-        'index_names': index_names,
-        'column_names': ['heuristic', 'metric']
+        "index": indices,
+        "columns": column_names,
+        "data": data,
+        "index_names": index_names,
+        "column_names": ["heuristic", "metric"],
     }
 
-    results = pd.DataFrame.from_dict(dict_data, orient='tight')
-    results.to_csv(root / 'benchmarks' / 'pdr_benchmark.csv')
+    results = pd.DataFrame.from_dict(dict_data, orient="tight")
+    results.to_csv(root / "benchmarks" / "pdr_benchmark.csv")
