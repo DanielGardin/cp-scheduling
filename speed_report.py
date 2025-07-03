@@ -133,9 +133,9 @@ def test_speed(n: int = 1, full: bool = False) -> None:
 
     print(f"{OK + '[PASS]' if compiled else FAIL + '[FAIL]'}{RESET} compiled")
     print(f"{OK + '[PASS]' if instance_present else FAIL + '[FAIL]'}{RESET} instance directory")
-    print(f"Running \033[;36m{n}{RESET} iteration{'s' if n > 1 else ''} per instance", end='')
 
     if not instance_present:
+        print()
         raise FileNotFoundError(
             "Could not locate `instances` directory. Maybe you forgot to run `git submodule update --init`?"
         )
@@ -166,6 +166,7 @@ def test_speed(n: int = 1, full: bool = False) -> None:
     speedup_strs: list[str] = []
 
     dots = 0
+    print(f"Running \033[;36m{n}{RESET} iteration{'s' if n > 1 else ''} per instance", end='')
     for instance_name, bench_time in benchmark_times.items():
         instance_path = root / "instances/jobshop" / f"{instance_name}.txt"
 
