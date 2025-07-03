@@ -5,6 +5,8 @@ from pulp import LpProblem, LpVariable, lpSum
 
 from multimethod import multidispatch
 
+from cpscheduler.environment._common import MACHINE_ID
+from cpscheduler.environment.tasks import Tasks
 from cpscheduler.environment.constraints import (
     Constraint,
     PrecedenceConstraint,
@@ -16,10 +18,10 @@ from cpscheduler.environment.constraints import (
     SetupConstraint,
 )
 
-from .tasks import PulpVariables, PulpSchedulingVariables, PulpTimetable
-from .pulp_utils import indicator_constraint
+from .tasks import PulpVariables, PulpSchedulingVariables, PulpTimetable, get_order
+from .pulp_utils import implication_pulp
 
-ModelExport: TypeAlias = Callable[[LpProblem], None]
+ModelExport: TypeAlias = Callable[[LpProblem, Tasks], None]
 
 @multidispatch
 def export_constraint_pulp(setup: Constraint, variables: PulpVariables) -> ModelExport:
@@ -27,7 +29,7 @@ def export_constraint_pulp(setup: Constraint, variables: PulpVariables) -> Model
 
 @export_constraint_pulp.register
 def _(constraint: PrecedenceConstraint, variables: PulpSchedulingVariables) -> ModelExport:
-    def export_model(model: LpProblem) -> None:
+    def export_model(model: LpProblem, tasks: Tasks) -> None:
         for task_id, children in constraint.precedence.items():
             for child_id in children:
                 model.addConstraint(
@@ -53,37 +55,33 @@ def _(constraint: PrecedenceConstraint, variables: PulpSchedulingVariables) -> M
 
 @export_constraint_pulp.register
 def _(constraint: DisjunctiveConstraint, variables: PulpSchedulingVariables) -> ModelExport:
-    def export_model(model: LpProblem) -> None:
-        for _, tasks in constraint.disjunctive_groups.items():
-            n_tasks = len(tasks)
+    def export_model(model: LpProblem, tasks: Tasks) -> None:
+        for _, group_tasks in constraint.disjunctive_groups.items():
+            n_group_tasks = len(group_tasks)
 
-            for i in range(n_tasks):
+            for i in range(n_group_tasks):
                 for j in range(i):
-                    task_i = min(tasks[i], tasks[j])
-                    task_j = max(tasks[i], tasks[j])
+                    order, _ = get_order(group_tasks[i], group_tasks[j])
+                    task_i, task_j = order
 
-                    indicator_constraint(
+                    implication_pulp(
                         model,
-                        lhs        = variables.end_times[task_i],
-                        operator   = "<=",
-                        rhs        = variables.start_times[task_j],
-                        indicators = variables.orders[task_i, task_j],
-                        big_m      = (
-                            constraint.tasks[task_i].get_end_ub() -
-                            constraint.tasks[task_j].get_start_lb()
+                        antecedent = variables.orders[order],
+                        consequent = (variables.end_times[task_i], "<=", variables.start_times[task_j]),
+                        big_m      = int(
+                            tasks[task_i].get_end_ub() -
+                            tasks[task_j].get_start_lb()
                         ),
                         name=f"disjunctive_{task_i}_{task_j}_order"
                     )
 
-                    indicator_constraint(
+                    implication_pulp(
                         model,
-                        lhs        = variables.end_times[task_j],
-                        operator   = "<=",
-                        rhs        = variables.start_times[task_i],
-                        indicators = 1 - variables.orders[task_i, task_j],
-                        big_m      = (
-                            constraint.tasks[task_j].get_end_ub() -
-                            constraint.tasks[task_i].get_start_lb()
+                        antecedent = 1 - variables.orders[order],
+                        consequent = (variables.end_times[task_j], "<=", variables.start_times[task_i]),
+                        big_m      = int(
+                            tasks[task_j].get_end_ub() -
+                            tasks[task_i].get_start_lb()
                         ),
                         name=f"disjunctive_{task_j}_{task_i}_order"
                     )
@@ -92,7 +90,7 @@ def _(constraint: DisjunctiveConstraint, variables: PulpSchedulingVariables) -> 
 
 @export_constraint_pulp.register
 def _(constraint: ReleaseDateConstraint | DeadlineConstraint, variables: PulpSchedulingVariables) -> ModelExport:
-    return lambda model: None  # No specific export needed for these constraints
+    return lambda model, tasks: None  # No specific export needed for these constraints
 
 @export_constraint_pulp.register
 def _(constraint: ResourceConstraint, variables: PulpSchedulingVariables) -> ModelExport:
@@ -100,13 +98,13 @@ def _(constraint: ResourceConstraint, variables: PulpSchedulingVariables) -> Mod
 
 @export_constraint_pulp.register
 def _(constraint: MachineConstraint, variables: PulpSchedulingVariables) -> ModelExport:
-    def export_model(model: LpProblem) -> None:
-        tasks_per_machine: dict[int, list[int]] = {}
+    def export_model(model: LpProblem, tasks: Tasks) -> None:
+        tasks_per_machine: dict[MACHINE_ID, list[int]] = {}
 
         if constraint.complete:
             tasks_per_machine = {
-                machine: list(range(constraint.tasks.n_tasks))
-                for machine in range(constraint.tasks.n_machines)
+                machine: list(range(tasks.n_tasks))
+                for machine in range(tasks.n_machines)
             }
 
         for task_id, machines in enumerate(constraint.machine_constraint):
@@ -116,42 +114,42 @@ def _(constraint: MachineConstraint, variables: PulpSchedulingVariables) -> Mode
 
                 tasks_per_machine[machine].append(task_id)
 
-        for machine, tasks in tasks_per_machine.items():
+        for machine, machine_tasks in tasks_per_machine.items():
             for i in range(len(tasks)):
                 for j in range(i):
-                    task_i = min(tasks[i], tasks[j])
-                    task_j = max(tasks[i], tasks[j])
+                    order, _ = get_order(machine_tasks[i], machine_tasks[j])
+                    task_i, task_j = order
 
-                    indicator_constraint(
+                    implication_pulp(
                         model,
-                        lhs        = variables.end_times[task_i],
-                        operator   = "<=",
-                        rhs        = variables.start_times[task_j],
-                        indicators = (
+                        antecedent = (
                             variables.orders[task_i, task_j],
                             variables.assignments[task_i][machine],
                             variables.assignments[task_j][machine]
                         ),
-                        big_m      = (
-                            constraint.tasks[task_i].get_end_ub() -
-                            constraint.tasks[task_j].get_start_lb()
+                        consequent = (
+                            variables.end_times[task_i], "<=", variables.start_times[task_j]
+                        ),
+                        big_m      = int(
+                            tasks[task_i].get_end_ub() -
+                            tasks[task_j].get_start_lb()
                         ),
                         name=f"machine_{machine}_disjunctive_{task_i}_{task_j}_order"
                     )
 
-                    indicator_constraint(
+                    implication_pulp(
                         model,
-                        lhs        = variables.end_times[task_j],
-                        operator   = "<=",
-                        rhs        = variables.start_times[task_i],
-                        indicators = (
+                        antecedent = (
                             1 - variables.orders[task_i, task_j],
                             variables.assignments[task_i][machine],
                             variables.assignments[task_j][machine]
                         ),
-                        big_m      = (
-                            constraint.tasks[task_j].get_end_ub() -
-                            constraint.tasks[task_i].get_start_lb()
+                        consequent = (
+                            variables.end_times[task_j], "<=", variables.start_times[task_i]
+                        ),
+                        big_m      = int(
+                            tasks[task_j].get_end_ub() -
+                            tasks[task_i].get_start_lb()
                         ),
                         name=f"machine_{machine}_disjunctive_{task_j}_{task_i}_order"
                     )
@@ -160,22 +158,22 @@ def _(constraint: MachineConstraint, variables: PulpSchedulingVariables) -> Mode
 
 @export_constraint_pulp.register
 def _(constraint: SetupConstraint, variables: PulpSchedulingVariables) -> ModelExport:
-    def export_model(model: LpProblem) -> None:
+    def export_model(model: LpProblem, tasks: Tasks) -> None:
             for task_id, setup_times in constraint.setup_times.items():
                 for child_id, setup_time in setup_times.items():
 
-                    indicator_constraint(
+                    implication_pulp(
                         model,
-                        lhs        = variables.end_times[task_id] + setup_time,
-                        operator   = "<=",
-                        rhs        = variables.start_times[child_id],
-                        indicators = (
+                        antecedent = (
                             variables.orders[task_id, child_id] if task_id < child_id else
                             1 - variables.orders[child_id, task_id],
                         ),
-                        big_m      = (
-                            constraint.tasks[task_id].get_end_ub() + setup_time -
-                            constraint.tasks[child_id].get_start_lb()
+                        consequent = (
+                            variables.end_times[task_id] + setup_time, "<=", variables.start_times[child_id]
+                        ),
+                        big_m      = int(
+                            tasks[task_id].get_end_ub() + setup_time -
+                            tasks[child_id].get_start_lb()
                         ),
                         name=f"setup_{task_id}_{child_id}_order"
                     )
@@ -186,7 +184,7 @@ def _(constraint: SetupConstraint, variables: PulpSchedulingVariables) -> ModelE
 
 # @export_constraint_pulp.register
 # def _(constraint: PrecedenceConstraint, variables: PulpTimetable) -> ModelExport:
-#     def export_model(model: LpProblem) -> None:
+#     def export_model(model: LpProblem, tasks: Tasks) -> None:
 #         for task_id, children in constraint.precedence.items():
 #             for child_id in children:
 #                 for child_start_time in range(variables.T):
@@ -196,13 +194,13 @@ def _(constraint: SetupConstraint, variables: PulpSchedulingVariables) -> ModelE
 
 @export_constraint_pulp.register
 def _(constraint: MachineConstraint, variables: PulpTimetable) -> ModelExport:
-    def export_model(model: LpProblem) -> None:
+    def export_model(model: LpProblem, tasks: Tasks) -> None:
         tasks_per_machine: dict[int, list[int]] = {}
 
         if constraint.complete:
             tasks_per_machine = {
-                machine: list(range(constraint.tasks.n_tasks))
-                for machine in range(constraint.tasks.n_machines)
+                machine: list(range(tasks.n_tasks))
+                for machine in range(tasks.n_machines)
             }
 
         for task_id, machines in enumerate(constraint.machine_constraint):
@@ -212,12 +210,12 @@ def _(constraint: MachineConstraint, variables: PulpTimetable) -> ModelExport:
 
                 tasks_per_machine[machine].append(task_id)
 
-        for machine, tasks in tasks_per_machine.items():
+        for machine, machine_tasks in tasks_per_machine.items():
             for time in range(variables.T):
                 disjunction_group: list[LpVariable] = []
 
-                for task_id in tasks:
-                    task = constraint.tasks[task_id]
+                for task_id in machine_tasks:
+                    task = tasks[task_id]
                     start_lb = task.get_start_lb()
 
                     if time < start_lb or time >= task.get_start_ub():

@@ -1,25 +1,33 @@
-from typing import Literal
+from collections.abc import Iterable, Sequence
 from abc import ABC, abstractmethod
 
 from pulp import LpVariable, LpProblem, LpBinary, LpAffineExpression, lpSum
 
 from cpscheduler.environment.tasks import Tasks
 
+from .pulp_utils import implication_pulp
+
+def get_order(task_i: int, task_j: int) -> tuple[tuple[int, int], int]:
+    "Util function to get the proper order of tasks in the ordering variable."
+    if task_i < task_j:
+        return (task_i, task_j), 1
+    else:
+        return (task_j, task_i), 0
 
 class PulpVariables(ABC):
-    def __init__(self, model: LpProblem, tasks: Tasks):
-        self.model = model
-        self.tasks = tasks
+    def __init__(self, model: LpProblem, tasks: Tasks, integral: bool):
+        self.model    = model
+        self.tasks    = tasks
+        self.integral = integral
 
     @property
     @abstractmethod
-    def end_times(self) -> list[LpVariable | LpAffineExpression]:
+    def end_times(self) -> Sequence[LpVariable | LpAffineExpression]:
         """
         Expression for the end time of a task.
         Returns:
             A list of LpAffineExpression representing the end times of tasks.
         """
-
 
     @abstractmethod
     def get_assignments(self) -> list[tuple[int, int]]:
@@ -45,12 +53,13 @@ class PulpVariables(ABC):
 
 
 class PulpSchedulingVariables(PulpVariables):
-    def __init__(
-            self,
-            model: LpProblem,
-            tasks: Tasks
-        ):
-        super().__init__(model, tasks)
+    start_times: list[LpVariable]
+    _end_times: list[LpVariable]
+    assignments: list[list[LpVariable]]
+    orders: dict[tuple[int, int], LpVariable]
+
+    def __init__(self, model: LpProblem, tasks: Tasks, integral: bool):
+        super().__init__(model, tasks, integral)
 
         # By considering the start and end times as continuous variables,
         # we can get a speedup in the branch-and-bound algorithm.
@@ -90,7 +99,7 @@ class PulpSchedulingVariables(PulpVariables):
         }
 
     @property
-    def end_times(self) -> list[LpVariable | LpAffineExpression]:
+    def end_times(self) -> list[LpVariable]:
         return self._end_times
 
     def get_assignments(self) -> list[tuple[int, int]]:
@@ -109,12 +118,59 @@ class PulpSchedulingVariables(PulpVariables):
 
         return assignments
 
+    def set_order(
+            self,
+            model: LpProblem,
+            task_prec: int,
+            task_succ: int,
+            conditions: Iterable[LpVariable] | None = None,
+            prefix: str = "",
+        ) -> None:
+        """
+        Set the order of two tasks based on the conditions provided.
+        If the conditions are met, the order variable is set to 1, otherwise it is set to 0.
+        """
+        order, value = get_order(task_prec, task_succ)
+
+        if conditions is None:
+            model.addConstraint(
+                self.end_times[task_prec] <= self.start_times[task_succ],
+                f"{prefix}_C_{task_prec}_le_S_{task_succ}"
+            )
+
+            model.addConstraint(
+                self.orders[order] == value,
+                f"{prefix}_{task_prec}_prec_{task_succ}"
+            )
+
+        else:
+            implication_pulp(
+                model,
+                antecedent=conditions,
+                consequent = (self.end_times[task_prec], "<=", self.start_times[task_succ]),
+                big_m      = int(
+                    self.tasks[task_prec].get_end_ub() - self.tasks[task_succ].get_start_lb()
+                ),
+                name=f"{prefix}_{task_prec}_prec_{task_succ}"
+            )
+
+            implication_pulp(
+                model,
+                antecedent=conditions,
+                consequent=(self.orders[order], "==", value),
+                big_m=1,
+                name=f"{prefix}_{task_prec}_prec_{task_succ}"
+            )
+
 class PulpTimetable(PulpVariables):
-    def __init__(self, model: LpProblem, tasks: Tasks):
-        super().__init__(model, tasks)
+    T: int
+    start_times: list[dict[int, list[LpVariable]]]
+
+    def __init__(self, model: LpProblem, tasks: Tasks, integral: bool):
+        super().__init__(model, tasks, integral)
 
         self.T = tasks.get_time_ub() + 1
-        self.start_times: list[dict[int, list[LpVariable]]] = [{
+        self.start_times = [{
                 machine_id: [
                     LpVariable(
                         name=f"start_{task_id}_{machine_id}_{time}",
@@ -141,14 +197,13 @@ class PulpTimetable(PulpVariables):
             )
 
     def x(self, task_id: int, machine_id: int, time: int) -> LpVariable | int:
-        start_lb = self.tasks[task_id].get_start_lb(machine_id)
-        start_ub = self.tasks[task_id].get_start_ub(machine_id)
+        start_lb: int = self.tasks[task_id].get_start_lb(machine_id)
+        start_ub: int = self.tasks[task_id].get_start_ub(machine_id)
 
         if time < start_lb or time >= start_ub:
             return 0
 
         return self.start_times[task_id][machine_id][time - start_lb]
-
 
     @property
     def end_times(self) -> list[LpVariable | LpAffineExpression]:
@@ -170,20 +225,5 @@ class PulpTimetable(PulpVariables):
                 for time in range(task.get_start_lb(machine_id), task.get_start_ub(machine_id) + 1):
                     if self.start_times[task_id][machine_id][time].value():
                         assignments.append((machine_id, time))
-        
+
         return assignments
-
-
-    # def get_assignments(self) -> list[tuple[int, int]]:
-    #     assignments: list[tuple[int, int]] = []
-
-    #     for task_id in range(self.tasks.n_tasks):
-
-
-    #         for machine_id in range(self.tasks.n_machines):
-    #             for time in range(len(self.start_times)):
-
-    #                 if [machine_id][time].value() == 1:
-    #                     assignments.append((machine_id, time))
-
-    #     return assignments

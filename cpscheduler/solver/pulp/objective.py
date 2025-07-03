@@ -5,6 +5,7 @@ from pulp import LpProblem, lpSum, LpVariable, LpInteger, lpDot, LpAffineExpress
 
 from multimethod import multidispatch
 
+from cpscheduler.environment.tasks import Tasks
 from cpscheduler.environment.objectives import (
     Objective,
     ComposedObjective,
@@ -21,11 +22,12 @@ from cpscheduler.environment.objectives import (
     TotalFlowTime
 )
 
-from .tasks import PulpVariables, PulpSchedulingVariables, PulpTimetable
-from .pulp_utils import max_pulp, indicator_constraint
+from .tasks import PulpVariables
+from .pulp_utils import max_pulp
+from ..utils import scale_to_int
 
 ObjectiveVar: TypeAlias = LpVariable | LpAffineExpression
-ModelExport: TypeAlias  = Callable[[LpProblem], ObjectiveVar]
+ModelExport: TypeAlias  = Callable[[LpProblem, Tasks], ObjectiveVar]
 
 @multidispatch
 def export_objective_pulp(setup: Objective, variables: PulpVariables) -> ModelExport:
@@ -34,17 +36,22 @@ def export_objective_pulp(setup: Objective, variables: PulpVariables) -> ModelEx
 
 @export_objective_pulp.register
 def _(objective: ComposedObjective, variables: PulpVariables) -> ModelExport:
-    def export_model(model: LpProblem) -> ObjectiveVar:
+    def export_model(model: LpProblem, tasks: Tasks) -> ObjectiveVar:
         composed_objective = LpVariable("composed_objective")
 
         sub_objectives = [
-            export_objective_pulp(sub_objective, variables)(model)
+            export_objective_pulp(sub_objective, variables)(model, tasks)
             for sub_objective in objective.objectives
         ]
 
+        coefficients = (
+            scale_to_int(objective.coefficients) if variables.integral else
+            objective.coefficients
+        )
+
         model.addConstraint(
             composed_objective == lpDot(
-                objective.coefficients,
+                coefficients,
                 sub_objectives
             ),
             name="composed_objective_constraint"
@@ -56,7 +63,7 @@ def _(objective: ComposedObjective, variables: PulpVariables) -> ModelExport:
 
 @export_objective_pulp.register
 def _(objective: Makespan, variables: PulpVariables) -> ModelExport:
-    def export_model(model: LpProblem) -> ObjectiveVar:
+    def export_model(model: LpProblem, tasks: Tasks) -> ObjectiveVar:
         makespan = max_pulp(
             model,
             variables.end_times,
@@ -70,7 +77,7 @@ def _(objective: Makespan, variables: PulpVariables) -> ModelExport:
 
 @export_objective_pulp.register
 def _(objective: TotalCompletionTime, variables: PulpVariables) -> ModelExport:
-    def export_model(model: LpProblem) -> ObjectiveVar:
+    def export_model(model: LpProblem, tasks: Tasks) -> ObjectiveVar:
         jobs_makespan = [
             max_pulp(
                 model,
@@ -78,7 +85,7 @@ def _(objective: TotalCompletionTime, variables: PulpVariables) -> ModelExport:
                 cat=LpInteger,
                 name=f"job_{job_id}_makespan"
             )
-            for job_id, tasks in enumerate(objective.tasks.jobs)
+            for job_id, tasks in enumerate(tasks.jobs)
         ]
 
         return lpSum(jobs_makespan)
@@ -87,7 +94,7 @@ def _(objective: TotalCompletionTime, variables: PulpVariables) -> ModelExport:
 
 @export_objective_pulp.register
 def _(objective: WeightedCompletionTime, variables: PulpVariables) -> ModelExport:
-    def export_model(model: LpProblem) -> ObjectiveVar:
+    def export_model(model: LpProblem, tasks: Tasks) -> ObjectiveVar:
         jobs_makespan = [
             max_pulp(
                 model,
@@ -95,16 +102,21 @@ def _(objective: WeightedCompletionTime, variables: PulpVariables) -> ModelExpor
                 cat=LpInteger,
                 name=f"job_{job_id}_makespan"
             )
-            for job_id, tasks in enumerate(objective.tasks.jobs)
+            for job_id, tasks in enumerate(tasks.jobs)
         ]
 
-        return lpDot(objective.job_weights, jobs_makespan)
+        weights = (
+            scale_to_int(objective.job_weights)[0] if variables.integral else
+            objective.job_weights
+        )
+
+        return lpDot(weights, jobs_makespan)
 
     return export_model
 
 @export_objective_pulp.register
 def _(objective: MaximumLateness, variables: PulpVariables) -> ModelExport:
-    def export_model(model: LpProblem) -> ObjectiveVar:
+    def export_model(model: LpProblem, tasks: Tasks) -> ObjectiveVar:
         lateness = [
             end_time - due_date
             for end_time, due_date in zip(variables.end_times, objective.due_dates)
@@ -123,12 +135,12 @@ def _(objective: MaximumLateness, variables: PulpVariables) -> ModelExport:
 
 @export_objective_pulp.register
 def _(objective: TotalTardiness, variables: PulpVariables) -> ModelExport:
-    def export_model(model: LpProblem) -> ObjectiveVar:
+    def export_model(model: LpProblem, tasks: Tasks) -> ObjectiveVar:
         total_tardiness = 0
-        for job_id, tasks in enumerate(objective.tasks.jobs):
+        for job_id, job_tasks in enumerate(tasks.jobs):
             tardiness = [
                 variables.end_times[task.task_id] - objective.due_dates[job_id]
-                for task in tasks
+                for task in job_tasks
             ]
 
             max_tardiness = LpVariable(
@@ -151,12 +163,17 @@ def _(objective: TotalTardiness, variables: PulpVariables) -> ModelExport:
 
 @export_objective_pulp.register
 def _(objective: WeightedTardiness, variables: PulpVariables) -> ModelExport:
-    def export_model(model: LpProblem) -> ObjectiveVar:
-        weighted_tardiness = 0
-        for job_id, tasks in enumerate(objective.tasks.jobs):
+    def export_model(model: LpProblem, tasks: Tasks) -> ObjectiveVar:
+        weights = (
+            scale_to_int(objective.job_weights)[0] if variables.integral else
+            objective.job_weights
+        )
+
+        weighted_tardiness = LpAffineExpression()
+        for job_id, job_tasks in enumerate(tasks.jobs):
             tardiness = [
                 variables.end_times[task.task_id] - objective.due_dates[job_id]
-                for task in tasks
+                for task in job_tasks
             ]
 
             max_tardiness = LpVariable(
@@ -165,26 +182,25 @@ def _(objective: WeightedTardiness, variables: PulpVariables) -> ModelExport:
                 cat=LpInteger
             )
 
-            weighted_tardiness += objective.job_weights[job_id] * max_pulp(
+            weighted_tardiness += weights[job_id] * max_pulp(
                 model,
                 tardiness,
                 max_tardiness,
                 name=f"job_{job_id}_tardiness"
             )
 
-        assert isinstance(weighted_tardiness, ObjectiveVar)
         return weighted_tardiness
 
     return export_model
 
 @export_objective_pulp.register
 def _(objective: TotalEarliness, variables: PulpVariables) -> ModelExport:
-    def export_model(model: LpProblem) -> ObjectiveVar:
-        total_earliness = 0
-        for job_id, tasks in enumerate(objective.tasks.jobs):
+    def export_model(model: LpProblem, tasks: Tasks) -> ObjectiveVar:
+        total_earliness = LpAffineExpression()
+        for job_id, job_tasks in enumerate(tasks.jobs):
             earliness = [
                 objective.due_dates[job_id] - variables.end_times[task.task_id]
-                for task in tasks
+                for task in job_tasks
             ]
 
             max_earliness = LpVariable(
@@ -200,19 +216,23 @@ def _(objective: TotalEarliness, variables: PulpVariables) -> ModelExport:
                 name=f"job_{job_id}_earliness"
             )
 
-        assert isinstance(total_earliness, ObjectiveVar)
         return total_earliness
 
     return export_model
 
 @export_objective_pulp.register
 def _(objective: WeightedEarliness, variables: PulpVariables) -> ModelExport:
-    def export_model(model: LpProblem) -> ObjectiveVar:
-        weighted_earliness = 0
-        for job_id, tasks in enumerate(objective.tasks.jobs):
+    def export_model(model: LpProblem, tasks: Tasks) -> ObjectiveVar:
+        weights = (
+            scale_to_int(objective.job_weights)[0] if variables.integral else
+            objective.job_weights
+        )
+
+        weighted_earliness = LpAffineExpression()
+        for job_id, job_tasks in enumerate(tasks.jobs):
             earliness = [
                 objective.due_dates[job_id] - variables.end_times[task.task_id]
-                for task in tasks
+                for task in job_tasks
             ]
 
             max_earliness = LpVariable(
@@ -221,46 +241,45 @@ def _(objective: WeightedEarliness, variables: PulpVariables) -> ModelExport:
                 cat=LpInteger
             )
 
-            weighted_earliness += objective.job_weights[job_id] * max_pulp(
+            weighted_earliness += weights[job_id] * max_pulp(
                 model,
                 earliness,
                 max_earliness,
                 name=f"job_{job_id}_earliness"
             )
 
-        assert isinstance(weighted_earliness, ObjectiveVar)
         return weighted_earliness
 
     return export_model
 
-@export_objective_pulp.register
-def _(objective: TotalTardyJobs, variables: PulpVariables) -> ModelExport:
-    def export_model(model: LpProblem) -> ObjectiveVar:
-        tardy_indicator: list[LpVariable] = []
+# @export_objective_pulp.register
+# def _(objective: TotalTardyJobs, variables: PulpVariables) -> ModelExport:
+#     def export_model(model: LpProblem, tasks: Tasks) -> ObjectiveVar:
+#         tardy_indicator: list[LpVariable] = []
 
-        for tasks, due_date in zip(objective.tasks.jobs, objective.due_dates):
-            max_tardiness = max_pulp(
-                model,
-                [
-                    variables.end_times[task.task_id] - due_date for task in tasks
-                ] + [0],
-                cat=LpInteger,
-                name=f"job_{tasks[0]}_tardiness"
-            )
+#         for tasks, due_date in zip(tasks.jobs, objective.due_dates):
+#             max_tardiness = max_pulp(
+#                 model,
+#                 [
+#                     variables.end_times[task.task_id] - due_date for task in tasks
+#                 ] + [0],
+#                 cat=LpInteger,
+#                 name=f"job_{tasks[0]}_tardiness"
+#             )
 
-            tardy_indicator.append(
-                    indicator_constraint(
-                    model,
-                    lhs=max_tardiness,
-                    operator=">=",
-                    rhs=1,
-                    big_m=1
-                )
-            )
+#             tardy_indicator.append(
+#                     indicator_constraint(
+#                     model,
+#                     lhs=max_tardiness,
+#                     operator=">=",
+#                     rhs=1,
+#                     big_m=1
+#                 )
+#             )
 
-        return lpSum(tardy_indicator)
+#         return lpSum(tardy_indicator)
 
-    return export_model
+#     return export_model
 
 @export_objective_pulp.register
 def _(objective: WeightedTardyJobs, variables: PulpVariables) -> ModelExport:

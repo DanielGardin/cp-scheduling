@@ -5,7 +5,8 @@ from pulp import LpProblem, lpSum, LpVariable
 
 from multimethod import multidispatch
 
-from ...environment.schedule_setup import (
+from cpscheduler.environment.tasks import Tasks
+from cpscheduler.environment.schedule_setup import (
     ScheduleSetup,
     SingleMachineSetup,
     IdenticalParallelMachineSetup,
@@ -15,19 +16,20 @@ from ...environment.schedule_setup import (
     OpenShopSetup
 )
 
+from .common import PULP_PARAM
 from .tasks import PulpVariables, PulpSchedulingVariables, PulpTimetable
 
-ModelExport: TypeAlias = Callable[[LpProblem], None]
+ModelExport: TypeAlias = Callable[[LpProblem, Tasks], None]
 
 def non_preemptive_constraint(
     model: LpProblem,
     start_time: LpVariable,
     end_time: LpVariable,
-    processing_time: int | float,
+    processing_time: PULP_PARAM,
     task_id: int
 ) -> None:
     model.addConstraint(
-        end_time ==start_time + processing_time,
+        end_time == start_time + processing_time,
         f"non_preemptive_{task_id}"
     )
 
@@ -40,12 +42,12 @@ def export_setup_pulp(setup: ScheduleSetup, variables: PulpVariables) -> ModelEx
 # gathered at the setup stage.
 @export_setup_pulp.register
 def _(setup: ScheduleSetup, variables: PulpTimetable) -> ModelExport:
-    return lambda model: None
+    return lambda model, tasks: None
 
 @export_setup_pulp.register
 def _(setup: SingleMachineSetup, variables: PulpSchedulingVariables) -> ModelExport:
-    def export_model(model: LpProblem) -> None:
-        for task_id, task in enumerate(setup.tasks):
+    def export_model(model: LpProblem, tasks: Tasks) -> None:
+        for task_id, task in enumerate(tasks):
             processing_time = task.processing_times[0]
 
             non_preemptive_constraint(
@@ -56,12 +58,17 @@ def _(setup: SingleMachineSetup, variables: PulpSchedulingVariables) -> ModelExp
                 task_id
             )
 
+            model.addConstraint(
+                variables.assignments[task_id][0] == 1,
+                f"assignment_{task_id}"
+            )
+
     return export_model
 
 @export_setup_pulp.register
 def _(setup: IdenticalParallelMachineSetup, variables: PulpSchedulingVariables) -> ModelExport:
-    def export_model(model: LpProblem) -> None:
-        for task_id, task in enumerate(setup.tasks):
+    def export_model(model: LpProblem, tasks: Tasks) -> None:
+        for task_id, task in enumerate(tasks):
             processing_time = task.processing_times[0]
 
             non_preemptive_constraint(
@@ -83,8 +90,8 @@ def _(setup: IdenticalParallelMachineSetup, variables: PulpSchedulingVariables) 
 
 @export_setup_pulp.register
 def _(setup: UniformParallelMachineSetup, variables: PulpSchedulingVariables) -> ModelExport:
-    def export_model(model: LpProblem) -> None:
-        for task_id, task in enumerate(setup.tasks):
+    def export_model(model: LpProblem, tasks: Tasks) -> None:
+        for task_id, task in enumerate(tasks):
             model.addConstraint(lpSum(
                 variables.assignments[task_id][machine_id]
                 for machine_id in task.processing_times
@@ -109,8 +116,8 @@ def _(setup: UniformParallelMachineSetup, variables: PulpSchedulingVariables) ->
 
 @export_setup_pulp.register
 def _(setup: UnrelatedParallelMachineSetup, variables: PulpSchedulingVariables) -> ModelExport:
-    def export_model(model: LpProblem) -> None:
-        for task_id, task in enumerate(setup.tasks):
+    def export_model(model: LpProblem, tasks: Tasks) -> None:
+        for task_id, task in enumerate(tasks):
             model.addConstraint(lpSum(
                 variables.assignments[task_id][machine_id]
                 for machine_id in task.processing_times
@@ -135,9 +142,9 @@ def _(setup: UnrelatedParallelMachineSetup, variables: PulpSchedulingVariables) 
 
 @export_setup_pulp.register
 def _(setup: JobShopSetup, variables: PulpSchedulingVariables) -> ModelExport:
-    def export_model(model: LpProblem) -> None:
-        for task_id, task in enumerate(setup.tasks):
-            processing_time =  task.processing_times[setup.get_machine(task_id)]
+    def export_model(model: LpProblem, tasks: Tasks) -> None:
+        for task_id, task in enumerate(tasks):
+            processing_time = next(iter(task.processing_times.values()))
 
             non_preemptive_constraint(
                 model,
@@ -151,9 +158,9 @@ def _(setup: JobShopSetup, variables: PulpSchedulingVariables) -> ModelExport:
 
 @export_setup_pulp.register
 def _(setup: OpenShopSetup, variables: PulpSchedulingVariables) -> ModelExport:
-    def export_model(model: LpProblem) -> None:
-        for task_id, task in enumerate(setup.tasks):
-            processing_time =  task.processing_times[setup.get_machine(task_id)]
+    def export_model(model: LpProblem, tasks: Tasks) -> None:
+        for task_id, task in enumerate(tasks):
+            processing_time = next(iter(task.processing_times.values()))
 
             non_preemptive_constraint(
                 model,
