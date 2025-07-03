@@ -1,0 +1,3 @@
+[submodule "instances"]
+	path = instances
+	url = git@github.com:DanielGardin/scheduling-instances.git

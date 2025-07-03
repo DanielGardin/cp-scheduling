@@ -11,14 +11,17 @@ The major contribution here is providing a flexible and expansible framework for
 
 ## Installation
 
-To install the project, clone the repository and install the dependencies:
+ We use a submodule for storing the scheduling instances in this [standalone repository](https://github.com/DanielGardin/scheduling-instances).
+To install the project, clone the repository and install the dependencies, along with the scheduling instances, run
 
 ```bash'
-git clone https://github.com/DanielGardin/cp-scheduling.git
+git clone --recurse-submodules https://github.com/DanielGardin/cp-scheduling.git
 cd cp-scheduling
 pip install -e .
 ```
+You can also install the project without the scheduling instances (note that the tests and benchmarks directly look for the instances/ directory) by dropping the `--recurse-submodules` argument.
 
+We separetely distribute the module according to the use case, the installation above only install minimal dependencies for running the environment.
 To install the reinforcement learning dependencies, run:
 
 ```bash
@@ -30,37 +33,6 @@ To install the solver dependencies with CP and MILP formulations for the schedul
 ```bash
 pip install -e .[solver]
 ```
-
-## Compilation
-
-This project uses `mypyc` to compile the Python code to C extensions for performance. The compiled files are specified in the `setup.py` file. During instalation, mypy and its extension will be installed.
-Due to compilation, we can achieve great performance, for example in jobshop instances,
-
-| Instance | Benchmark* |     Time took     |      Speedup      |
-| :------: | :-------: | :---------------: | :---------------: |
-|  dmu10   |   0.40 s  | 0.038 s ± 0.000 s |  955.96% ± 5.60%  |
-|  dmu20   |   0.80 s  | 0.091 s ± 0.000 s |  775.48% ± 2.78%  |
-|  dmu30   |   1.40 s  | 0.169 s ± 0.001 s |  730.00% ± 3.62%  |
-|  dmu40   |   2.10 s  | 0.271 s ± 0.002 s |  675.35% ± 5.74%  |
-|  dmu50   |   0.40 s  | 0.039 s ± 0.000 s |  934.69% ± 3.53%  |
-|  dmu60   |   0.80 s  | 0.092 s ± 0.001 s |  765.36% ± 4.99%  |
-|  dmu70   |   1.60 s  | 0.174 s ± 0.001 s |  818.09% ± 3.50%  |
-|  dmu80   |   2.20 s  | 0.280 s ± 0.001 s |  686.81% ± 3.49%  |
-|   la10   |   0.05 s  | 0.001 s ± 0.000 s | 3489.12% ± 20.70% |
-|   la20   |   0.05 s  | 0.002 s ± 0.000 s | 1990.04% ± 10.30% |
-|   la30   |   0.18 s  | 0.009 s ± 0.000 s |  1920.84% ± 7.75% |
-|   la40   |   0.18 s  | 0.012 s ± 0.000 s | 1463.21% ± 11.46% |
-|  orb10   |   0.05 s  | 0.002 s ± 0.000 s |  1916.23% ± 5.79% |
-|  swv10   |   0.30 s  | 0.022 s ± 0.000 s |  1291.80% ± 6.46% |
-|  swv20   |   1.00 s  | 0.062 s ± 0.000 s |  1520.93% ± 6.27% |
-|   ta10   |   0.16 s  | 0.011 s ± 0.000 s |  1294.56% ± 6.80% |
-|   ta20   |   0.30 s  | 0.021 s ± 0.000 s |  1308.55% ± 9.41% |
-|   ta30   |   0.40 s  | 0.039 s ± 0.000 s |  935.56% ± 3.80%  |
-|   ta40   |   0.60 s  | 0.050 s ± 0.000 s |  1101.11% ± 5.13% |
-|   ta50   |   0.80 s  | 0.094 s ± 0.001 s |  754.69% ± 4.57%  |
-|   ta60   |   1.60 s  | 0.151 s ± 0.000 s |  962.86% ± 3.23%  |
-|   ta70   |   2.00 s  | 0.276 s ± 0.001 s |  624.76% ± 1.67%  |
-|   ta80   |   7.80 s  | 1.185 s ± 0.007 s |  558.02% ± 4.09%  |
 
 ## High-Level Structure
 
@@ -132,3 +104,37 @@ obs, reward, terminated, truncated, info = env.step(action)
 # Print the makespan
 print(info["current_time"])
 ```
+
+
+## Compilation
+
+This project uses `mypyc` to compile the Python code to C extensions for performance automatically via `pip install`.
+If the installation fail due to compilation issues, guarantee a C compiler is available and python-dev is installed in your machine.
+For any issues with mypyc, we refer to the [original project](https://github.com/mypyc/mypyc). 
+Due to compilation, we can achieve great performance, for example in jobshop instances,
+
+| Instance | Benchmark* |     Time took     |      Speedup      |
+| :------: | :-------: | :---------------: | :---------------: |
+|  dmu10   |   0.40 s  | 0.038 s ± 0.000 s |  955.96% ± 5.60%  |
+|  dmu20   |   0.80 s  | 0.091 s ± 0.000 s |  775.48% ± 2.78%  |
+|  dmu30   |   1.40 s  | 0.169 s ± 0.001 s |  730.00% ± 3.62%  |
+|  dmu40   |   2.10 s  | 0.271 s ± 0.002 s |  675.35% ± 5.74%  |
+|  dmu50   |   0.40 s  | 0.039 s ± 0.000 s |  934.69% ± 3.53%  |
+|  dmu60   |   0.80 s  | 0.092 s ± 0.001 s |  765.36% ± 4.99%  |
+|  dmu70   |   1.60 s  | 0.174 s ± 0.001 s |  818.09% ± 3.50%  |
+|  dmu80   |   2.20 s  | 0.280 s ± 0.001 s |  686.81% ± 3.49%  |
+|   la10   |   0.05 s  | 0.001 s ± 0.000 s | 3489.12% ± 20.70% |
+|   la20   |   0.05 s  | 0.002 s ± 0.000 s | 1990.04% ± 10.30% |
+|   la30   |   0.18 s  | 0.009 s ± 0.000 s |  1920.84% ± 7.75% |
+|   la40   |   0.18 s  | 0.012 s ± 0.000 s | 1463.21% ± 11.46% |
+|  orb10   |   0.05 s  | 0.002 s ± 0.000 s |  1916.23% ± 5.79% |
+|  swv10   |   0.30 s  | 0.022 s ± 0.000 s |  1291.80% ± 6.46% |
+|  swv20   |   1.00 s  | 0.062 s ± 0.000 s |  1520.93% ± 6.27% |
+|   ta10   |   0.16 s  | 0.011 s ± 0.000 s |  1294.56% ± 6.80% |
+|   ta20   |   0.30 s  | 0.021 s ± 0.000 s |  1308.55% ± 9.41% |
+|   ta30   |   0.40 s  | 0.039 s ± 0.000 s |  935.56% ± 3.80%  |
+|   ta40   |   0.60 s  | 0.050 s ± 0.000 s |  1101.11% ± 5.13% |
+|   ta50   |   0.80 s  | 0.094 s ± 0.001 s |  754.69% ± 4.57%  |
+|   ta60   |   1.60 s  | 0.151 s ± 0.000 s |  962.86% ± 3.23%  |
+|   ta70   |   2.00 s  | 0.276 s ± 0.001 s |  624.76% ± 1.67%  |
+|   ta80   |   7.80 s  | 1.185 s ± 0.007 s |  558.02% ± 4.09%  |
