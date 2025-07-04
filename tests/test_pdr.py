@@ -11,27 +11,76 @@ from cpscheduler.heuristics import (
 
 pdr_expected_results = {
     # 15x15
-    "ta01": [1462, 1438, 1491],
-    "ta05": [1618, 1448, 1494],
-    "ta10": [1697, 1582, 1534],
-    # 20x15
-    "ta15": [1835, 1682, 1696],
-    "ta20": [1710, 1622, 1689],
-    # 20x20
-    "ta25": [1950, 1957, 1941],
-    "ta30": [1999, 2017, 1935],
-    # 30x15
-    "ta35": [2497, 2255, 2226],
-    "ta40": [2301, 2028, 2205],
-    # 30x20
-    "ta45": [2640, 2487, 2524],
-    "ta50": [2429, 2469, 2493],
-    # 50x15
-    "ta60": [3500, 3044, 3122],
-    # 50x20
-    "ta70": [3801, 3590, 3482],
-    # 100x20
-    "ta80": [5848, 5707, 5505],
+    "ta01": {
+        "SPT": 1462,
+        "MOPNR": 1438,
+        "MWKR": 1491,
+    },
+    "ta05": {
+        "SPT": 1618,
+        "MOPNR": 1448,
+        "MWKR": 1494,
+    },
+    "ta10": {
+        "SPT":1697,
+        "MOPNR": 1582,
+        "MWKR": 1534
+        },
+    "ta15": {
+        "SPT":1835,
+        "MOPNR": 1682,
+        "MWKR": 1696
+        },
+    "ta20": {
+        "SPT":1710,
+        "MOPNR": 1622,
+        "MWKR": 1689
+        },
+    "ta25": {
+        "SPT":1950,
+        "MOPNR": 1957,
+        "MWKR": 1941
+        },
+    "ta30": {
+        "SPT":1999,
+        "MOPNR": 2017,
+        "MWKR": 1935
+        },
+    "ta35": {
+        "SPT":2497,
+        "MOPNR": 2255,
+        "MWKR": 2226
+        },
+    "ta40": {
+        "SPT":2301,
+        "MOPNR": 2028,
+        "MWKR": 2205
+        },
+    "ta45": {
+        "SPT":2640,
+        "MOPNR": 2487,
+        "MWKR": 2524
+        },
+    "ta50": {
+        "SPT":2429,
+        "MOPNR": 2469,
+        "MWKR": 2493
+        },
+    "ta60": {
+        "SPT":3500,
+        "MOPNR": 3044,
+        "MWKR": 3122
+        },
+    "ta70": {
+        "SPT":3801,
+        "MOPNR": 3590,
+        "MWKR": 3482
+        },
+    "ta80": {
+        "SPT":5848,
+        "MOPNR": 5707,
+        "MWKR": 5505
+        },
 }
 
 heuristics: dict[str, PriorityDispatchingRule] = {
@@ -43,21 +92,14 @@ heuristics: dict[str, PriorityDispatchingRule] = {
 
 @pytest.mark.heuristics
 @pytest.mark.parametrize("instance_name", pdr_expected_results)
-def test_pdr(instance_name: str) -> None:
+@pytest.mark.parametrize("heuristic", heuristics)
+def test_pdr(instance_name: str, heuristic: str) -> None:
     env = env_setup(instance_name)
 
-    result = {}
+    obs, info = env.reset()
 
-    for name, heuristic in heuristics.items():
-        obs, info = env.reset()
+    action = heuristics[heuristic](obs)
+    obs, reward, terminated, truncated, info = env.step(action)
 
-        action = heuristic(obs)
-        obs, reward, terminated, truncated, info = env.step(action)
-
-        result[name] = info["current_time"]
-        assert terminated
-
-    assert result == {
-        name: pdr_expected_results[instance_name][i]
-        for i, name in enumerate(heuristics)
-    }
+    assert info["current_time"] == pdr_expected_results[instance_name][heuristic]
+    assert terminated

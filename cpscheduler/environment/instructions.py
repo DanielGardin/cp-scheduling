@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from mypy_extensions import mypyc_attr, u8
 
 from ._common import TASK_ID, TIME, MACHINE_ID
-from .tasks import Tasks, Status
+from .tasks import Tasks
 
 SingleAction: TypeAlias = tuple["str | Instruction", Unpack[tuple[SupportsInt, ...]]]
 ActionType: TypeAlias = SingleAction | Iterable[SingleAction] | None
@@ -24,7 +24,8 @@ ActionType: TypeAlias = SingleAction | Iterable[SingleAction] | None
 class Action:
     "Flags for possible actions made by the scheduler in response to an instruction."
 
-    # Tell the scheduler the instruction was skiped
+    # Tell the scheduler the instruction was skiped, the default behavior is to remove
+    # the instruction after processing it, but this flag disables that
     SKIPPED: Final[u8] = 1
 
     # The scheduler should reevaluate the current bounds (used when preempting tasks)
@@ -108,12 +109,11 @@ class Execute(Instruction):
     ) -> Signal:
         task = tasks[self.task_id]
         if task.is_available(current_time, self.machine):
-            task.assign(current_time, self.machine)
+            tasks.fix_task(self.task_id, self.machine, current_time)
 
             return Signal(Action.DONE)
 
-        status = task.get_status(current_time)
-        if status == Status.EXECUTING or status == Status.PAUSED:
+        if task.is_fixed():
             return Signal(
                 Action.RAISE,
                 info=f"Task {self.task_id} cannot be executed. It is already being executed or completed",
@@ -142,12 +142,11 @@ class Submit(Instruction):
     ) -> Signal:
         task = tasks[self.task_id]
         if task.is_available(current_time, self.machine):
-            task.assign(current_time, self.machine)
+            tasks.fix_task(self.task_id, self.machine, current_time)
 
             return Signal(Action.DONE)
 
-        status = task.get_status(current_time)
-        if status == Status.EXECUTING or status == Status.PAUSED:
+        if task.is_fixed():
             return Signal(
                 Action.ERROR,
                 info=f"Task {self.task_id} cannot be executed. It is already being executed or completed",
@@ -174,14 +173,13 @@ class Pause(Instruction):
         scheduled_instructions: dict[TIME, list[Instruction]],
     ) -> Signal:
         task = tasks[self.task_id]
-        status = task.get_status(current_time)
 
-        if status == Status.EXECUTING:
-            task.interrupt(current_time)
+        if task.is_executing(current_time):
+            tasks.unfix_task(self.task_id, current_time)
 
             return Signal(Action.DONE | Action.REEVALUATE)
 
-        if status == Status.COMPLETED:
+        if task.is_completed(current_time):
             return Signal(Action.ERROR, info=f"Task {self.task_id} already terminated")
 
         return Signal(Action.WAIT)

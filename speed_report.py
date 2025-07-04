@@ -116,7 +116,7 @@ def statistics(
 
 root = Path(__file__).parent
 
-def test_speed(n: int = 1, full: bool = False) -> None:
+def test_speed(n: int = 1, full: bool = False, quiet: bool = False) -> None:
     """
     Test the speed of the Shortest Processing Time heuristic on various job shop instances.
     Parameters
@@ -131,8 +131,9 @@ def test_speed(n: int = 1, full: bool = False) -> None:
     compiled = is_compiled()
     instance_present = is_instance_present()
 
-    print(f"{OK + '[PASS]' if compiled else FAIL + '[FAIL]'}{RESET} compiled")
-    print(f"{OK + '[PASS]' if instance_present else FAIL + '[FAIL]'}{RESET} instance directory")
+    if not quiet:
+        print(f"{OK + '[PASS]' if compiled else FAIL + '[FAIL]'}{RESET} compiled")
+        print(f"{OK + '[PASS]' if instance_present else FAIL + '[FAIL]'}{RESET} instance directory")
 
     if not instance_present:
         print()
@@ -166,7 +167,8 @@ def test_speed(n: int = 1, full: bool = False) -> None:
     speedup_strs: list[str] = []
 
     dots = 0
-    print(f"Running \033[;36m{n}{RESET} iteration{'s' if n > 1 else ''} per instance", end='')
+    if not quiet:
+        print(f"Running \033[;36m{n}{RESET} iteration{'s' if n > 1 else ''} per instance", end='')
     for instance_name, bench_time in benchmark_times.items():
         instance_path = root / "instances/jobshop" / f"{instance_name}.txt"
 
@@ -179,13 +181,14 @@ def test_speed(n: int = 1, full: bool = False) -> None:
             "all": [],
         }
 
-        if dots < 3:
-            print('.', end='', flush=True)
-            dots += 1
+        if not quiet:
+            if dots < 3:
+                print('.', end='', flush=True)
+                dots += 1
 
-        else:
-            print(f'\r{' ' * 100}', end=f"\rRunning \033[;36m{n}{RESET} iteration{'s' if n > 1 else ''} per instance", flush=True)
-            dots = 0
+            else:
+                print(f'\r{' ' * 100}', end=f"\rRunning \033[;36m{n}{RESET} iteration{'s' if n > 1 else ''} per instance", flush=True)
+                dots = 0
 
         for _ in range(n):
             global_tick = perf_counter()

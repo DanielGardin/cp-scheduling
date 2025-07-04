@@ -315,9 +315,10 @@ class JobShopSetup(ScheduleSetup):
         self.machine_feature = machine_feature
 
     def setup_constraints(self, tasks: Tasks) -> tuple[Constraint, ...]:
-        disjunctive_constraint = DisjunctiveConstraint(
-            self.machine_feature, name="setup_disjunctive"
-        )
+        # disjunctive_constraint = DisjunctiveConstraint(
+        #     self.machine_feature, name="setup_disjunctive"
+        # )
+        disjunctive_constraint = MachineConstraint(name="setup_machine_disjunctive")
 
         edges: list[tuple[int, int]] = []
 

@@ -25,6 +25,7 @@ in the environment, change with caution.
 
 from typing import Any, NamedTuple, ClassVar
 from collections.abc import Iterator
+from typing_extensions import Self
 
 from mypy_extensions import u8
 
@@ -39,21 +40,24 @@ from ._common import (
 
 JOB_ID_ALIASES = ["job", "job_id"]
 
+global_count: int = 0
 
 class Status:
     "Possible statuses of a task at a given time."
-
     # awaiting:  time < start_lb[0] or waiting for a machine
     AWAITING: ClassVar[u8] = 0
+
     # executing: start_lb[i] <= time < start_lb[i] + duration[i] for some i
     EXECUTING: ClassVar[u8] = 1
+
     # paused:    start_lb[i] + duration[i] < = time < start_lb[i+1] for some i
     PAUSED: ClassVar[u8] = 2
+
     # completed: time >= start_lb[-1] + duration[-1]
     COMPLETED: ClassVar[u8] = 3
+
     # unknown status
     UNKNOWN: ClassVar[u8] = 4
-
 
 status_str = {
     Status.AWAITING: "awaiting",
@@ -63,18 +67,20 @@ status_str = {
     Status.UNKNOWN: "unknown",
 }
 
-
 def ceil_div(a: TIME, b: TIME) -> TIME:
     "a divided by b, rounded up to the nearest integer."
     return -(-a // b)
 
-
-class Bounds(NamedTuple):
+class Bounds:
     "Store the lower and upper bounds for decision variables."
+    def __init__(self, lb: TIME = 0, ub: TIME = MAX_INT) -> None:
+        self.lb = lb
+        self.ub = ub
 
-    lb: TIME = 0
-    ub: TIME = MAX_INT
-
+    @classmethod
+    def null(cls) -> Self:
+        "Create a null bounds object."
+        return cls(lb=MAX_INT, ub=MIN_INT)
 
 class Task:
     """
@@ -84,16 +90,11 @@ class Task:
     The task is defined by:
         - task_id: unique identifier for the task, usually its position in the list of tasks
         - processing_times: time required to complete the task
-        - job: job id for the task
-        - start_bounds: lower and upper bounds for the starting time of the task
-        - durations: time required to complete the task
-        - assignments: machine assigned to the task
 
     The environment has complete information about every task and orchestrates the scheduling
     process by modifying the task state.
     The task can be split into multiple parts, each with its own starting time and duration.
     """
-
     processing_times: dict[MACHINE_ID, TIME]
 
     starts: list[TIME]
@@ -148,13 +149,8 @@ class Task:
         self.durations.clear()
         self.assignments.clear()
 
-        self._new_part(0)
-
-    def _new_part(self, time: TIME) -> None:
         for machine in self.processing_times:
-            self.start_bounds[machine] = Bounds(
-                lb=time,
-            )
+            self.start_bounds[machine] = Bounds()
 
     @property
     def machines(self) -> list[MACHINE_ID]:
@@ -323,9 +319,14 @@ class Task:
 
         self.fixed = True
         for other_machine in self.processing_times:
-            bound = start if other_machine == machine else MIN_INT
+            if other_machine  == machine:
+                self.start_bounds[other_machine] = Bounds(
+                    lb=start,
+                    ub=start,
+                )
 
-            self.start_bounds[other_machine] = Bounds(lb=bound, ub=bound)
+            else:
+                self.start_bounds[other_machine] = Bounds.null()
 
     def interrupt(self, time: TIME) -> None:
         "Pauses the task's execution at a given time, splitting it into a new part."
@@ -341,7 +342,8 @@ class Task:
             )
 
         self.fixed = False
-        self._new_part(time)
+        for machine in self.processing_times:
+            self.start_bounds[machine] = Bounds(lb=time)
 
     def get_status(self, time: TIME) -> u8:
         "Get the status of the task at a given time."
@@ -426,6 +428,10 @@ class Tasks:
     tasks: list[Task]
     jobs: list[list[Task]]
 
+    awaiting_tasks: set[TASK_ID]
+    transition_tasks: set[TASK_ID]
+    fixed_tasks: set[TASK_ID]
+
     data: dict[str, list[Any]]
     jobs_data: dict[str, list[Any]]
 
@@ -438,17 +444,23 @@ class Tasks:
         n_parts: int = 1,
     ):
         self.n_parts = n_parts
+        self.n_tasks = 0
 
         self.tasks = []
         self.jobs = []
 
-        self.n_tasks = 0
+        self.awaiting_tasks = set()
+        self.transition_tasks = set()
+        self.fixed_tasks = set()
+
         machines: set[MACHINE_ID] = set()
         for processing_time in processing_times:
             self.add_task(processing_time)
             machines.update(processing_time.keys())
 
         self.n_machines = len(machines)
+
+        # TODO: move Data to a separate class
 
         if not job_feature:
             for alias in JOB_ID_ALIASES:
@@ -498,12 +510,39 @@ class Tasks:
         task = Task(task_id, processing_times)
 
         self.tasks.append(task)
+        self.awaiting_tasks.add(task_id)
+
         self.n_tasks += 1
 
     def reset(self) -> None:
         "Reset all tasks to their initial state."
+        self.awaiting_tasks.clear()
+        self.fixed_tasks.clear()
+
         for task in self.tasks:
             task.reset()
+            self.awaiting_tasks.add(task.task_id)
+
+    def fix_task(self, task_id: TASK_ID, machine_id: MACHINE_ID, time: TIME) -> None:
+        "Fix the decision variables of a task, making it immutable."
+        task = self.tasks[task_id]
+
+        task.assign(time, machine_id)
+        self.awaiting_tasks.discard(task_id)
+        self.transition_tasks.add(task_id)
+        self.fixed_tasks.add(task_id)
+
+    def unfix_task(self, task_id: TASK_ID, time: TIME) -> None:
+        task = self.tasks[task_id]
+
+        task.interrupt(time)
+        self.awaiting_tasks.add(task_id)
+        self.transition_tasks.add(task_id)
+        self.fixed_tasks.discard(task_id)
+
+    def finish_propagation(self) -> None:
+        "Ensure that all tasks are in a consistent state after propagation."
+        self.transition_tasks.clear()
 
     def __len__(self) -> int:
         return self.n_tasks
@@ -513,36 +552,6 @@ class Tasks:
 
     def __iter__(self) -> Iterator[Task]:
         return iter(self.tasks)
-
-    # Getter and setter methods
-    def get_task_level_data(self, feature: str) -> list[Any]:
-        "Get a specific, task or job, data feature for all tasks."
-        if feature in self.data:
-            return self.data[feature]
-
-        if feature in self.jobs_data:
-            job_data = self.jobs_data[feature]
-
-            return [job_data[job_id] for job_id in self.data["job_id"]]
-
-        raise KeyError(f"Feature '{feature}' not found in tasks or jobs data.")
-
-    def get_job_level_data(self, feature: str) -> list[Any]:
-        "Get a specific job data feature for all jobs."
-        if feature in self.jobs_data:
-            return self.jobs_data[feature]
-
-        if feature in self.data:
-            if self.n_tasks == self.n_jobs:
-                return self.data[feature]
-
-            job_level_data: list[Any] = [None for _ in range(self.n_jobs)]
-            for task_id, job_id in enumerate(self.data["job_id"]):
-                job_level_data[job_id] = self.data[feature][task_id]
-
-            return job_level_data
-
-        raise KeyError(f"Feature '{feature}' not found in jobs data.")
 
     def get_job_tasks(self, job: TASK_ID) -> list[Task]:
         "Get the tasks associated with a specific job."
@@ -561,25 +570,6 @@ class Tasks:
     def get_machine_tasks(self, machine: MACHINE_ID) -> list[Task]:
         "Get the tasks that can be processed by a specific machine."
         return [task for task in self.tasks if machine in task.processing_times]
-
-    def get_state(
-        self, current_time: TIME
-    ) -> tuple[dict[str, list[Any]], dict[str, list[Any]]]:
-        "Get the state of the tasks and jobs at a given time."
-        status = [task.get_buffer(current_time) for task in self.tasks]
-
-        task_state: dict[str, list[Any]] = {
-            "task_id": list(range(self.n_tasks)),
-            **self.data,
-            "status": status,
-        }
-
-        job_state: dict[str, list[Any]] = {
-            "job_id": list(range(len(self.jobs))),
-            **self.jobs_data,
-        }
-
-        return task_state, job_state
 
     # TODO: This bound is environment-specific, should be moved to the environment for better estimation
     def tighten_bounds(self, time: int) -> None:
@@ -613,3 +603,53 @@ class Tasks:
                 upper_bound = end_time
 
         return upper_bound
+
+    # TODO: Data access methods should be moved to a separate class
+
+    def get_task_level_data(self, feature: str) -> list[Any]:
+        "Get a specific, task or job, data feature for all tasks."
+        if feature in self.data:
+            return self.data[feature]
+
+        if feature in self.jobs_data:
+            job_data = self.jobs_data[feature]
+
+            return [job_data[job_id] for job_id in self.data["job_id"]]
+
+        raise KeyError(f"Feature '{feature}' not found in tasks or jobs data.")
+
+    def get_job_level_data(self, feature: str) -> list[Any]:
+        "Get a specific job data feature for all jobs."
+        if feature in self.jobs_data:
+            return self.jobs_data[feature]
+
+        if feature in self.data:
+            if self.n_tasks == self.n_jobs:
+                return self.data[feature]
+
+            job_level_data: list[Any] = [None for _ in range(self.n_jobs)]
+            for task_id, job_id in enumerate(self.data["job_id"]):
+                job_level_data[job_id] = self.data[feature][task_id]
+
+            return job_level_data
+
+        raise KeyError(f"Feature '{feature}' not found in jobs data.")
+
+    def get_state(
+        self, current_time: TIME
+    ) -> tuple[dict[str, list[Any]], dict[str, list[Any]]]:
+        "Get the state of the tasks and jobs at a given time."
+        status = [task.get_buffer(current_time) for task in self.tasks]
+
+        task_state: dict[str, list[Any]] = {
+            "task_id": list(range(self.n_tasks)),
+            **self.data,
+            "status": status,
+        }
+
+        job_state: dict[str, list[Any]] = {
+            "job_id": list(range(len(self.jobs))),
+            **self.jobs_data,
+        }
+
+        return task_state, job_state

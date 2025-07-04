@@ -53,7 +53,6 @@ ActionSpace = OneOf(
     ]
 )
 
-
 def is_single_action(
     action: ActionType,
 ) -> TypeIs[tuple[str | Instruction, Unpack[tuple[SupportsInt, ...]]]]:
@@ -65,7 +64,6 @@ def is_single_action(
         return isinstance(action[0], str) and is_iterable_int(action[1:])
 
     return True
-
 
 def prepare_instance(instance: InstanceTypes) -> dict[str, list[Any]]:
     "Prepare the instance data to a standard dictionary format."
@@ -327,6 +325,9 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
     def is_terminal(self) -> bool:
         "Check if the environment is in a terminal state."
+        if len(self.tasks.awaiting_tasks) > 0:
+            return False
+
         for task in self.tasks:
             if not task.is_completed(self.current_time):
                 return False
@@ -341,6 +342,8 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         "Propagate the new bounds through the constraints"
         for constraint in self.constraints.values():
             constraint.propagate(self.current_time, self.tasks)
+        
+        self.tasks.finish_propagation()
 
     def reset(
         self, *, seed: int | None = None, options: dict[str, Any] | None = None
@@ -383,7 +386,10 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         next_time = MAX_INT
 
         if strict:
-            for task in self.tasks:
+            # assert set([task.task_id for task in self.tasks if task.is_awaiting()]) == self.tasks.awaiting_tasks
+
+            for task_id in self.tasks.awaiting_tasks:
+                task = self.tasks[task_id]
                 start_lb = task.get_start_lb()
 
                 if task.is_awaiting() and self.current_time < start_lb < next_time:
@@ -394,11 +400,10 @@ class SchedulingEnv(Env[ObsType, ActionType]):
                     next_time = instruction_time
 
         else:
-            for task in self.tasks:
-                if task.is_awaiting():
-                    start_lb = task.get_start_lb()
-                    if start_lb < next_time:
-                        next_time = start_lb
+            for task_id in self.tasks.awaiting_tasks:
+                start_lb = self.tasks[task_id].get_start_lb()
+                if start_lb < next_time:
+                    next_time = start_lb
 
             for instruction_time in self.scheduled_instructions:
                 if self.current_time <= instruction_time < next_time:
@@ -504,24 +509,18 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         if action & Action.SKIPPED:
             for task in self.tasks:
                 if task.is_executing(self.current_time):
-                    action = action | Action.PROPAGATE | Action.ADVANCE_NEXT
+                    action = Action.WAIT
                     break
 
             else:
-                if i != -1:
-                    schedule.pop(i)
-                else:
-                    halt = True
+                halt = True
 
-                return halt, change
-
-        elif i != -1:
+        if not (action & Action.SKIPPED) and i != -1:
             schedule.pop(i)
 
         if action & Action.REEVALUATE:
-            for task in self.tasks:
-                if not task.is_fixed():
-                    task.set_start_lb(self.current_time)
+            for task_id in self.tasks.awaiting_tasks:
+                self.tasks[task_id].set_start_lb(self.current_time)
 
         if action & Action.PROPAGATE:
             self.propagate()
@@ -533,7 +532,6 @@ class SchedulingEnv(Env[ObsType, ActionType]):
                 self.advancing_to = signal.time
                 self.advance_to_next_instruction()
                 self.propagate()
-                change = True
 
             else:
                 self.advance_decision_point()
@@ -563,8 +561,8 @@ class SchedulingEnv(Env[ObsType, ActionType]):
                 self.scheduled_instructions.pop(self.current_time)
 
         elif self.current_time < self.advancing_to:
-            self.propagate()
             self.advance_to_next_instruction()
+            self.propagate()
             halt, change = False, True
 
         elif (
