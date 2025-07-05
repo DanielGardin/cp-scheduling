@@ -43,7 +43,7 @@ class Objective:
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}()"
 
-    def get_data(self, tasks: Tasks) -> None:
+    def import_data(self, tasks: Tasks) -> None:
         "Make the objective aware of the tasks it is applied to."
 
     def get_current(self, time: TIME, tasks: Tasks) -> float:
@@ -93,9 +93,9 @@ class ComposedObjective(Objective):
             else convert_to_list(coefficients, float)
         )
 
-    def get_data(self, tasks: Tasks) -> None:
+    def import_data(self, tasks: Tasks) -> None:
         for objective in self.objectives:
-            objective.get_data(tasks)
+            objective.import_data(tasks)
 
     def get_current(self, time: TIME, tasks: Tasks) -> float:
         current_value = 0.0
@@ -135,7 +135,9 @@ class Makespan(Objective):
 
     def get_current(self, time: TIME, tasks: Tasks) -> int:
         makespan = 0
-        for task in tasks:
+        for task_id in tasks.fixed_tasks:
+            task = tasks[task_id]
+
             if not task.is_completed(time):
                 continue
 
@@ -187,7 +189,7 @@ class WeightedCompletionTime(Objective):
         else:
             self.job_weights = convert_to_list(job_weights, float)
 
-    def get_data(self, tasks: Tasks) -> None:
+    def import_data(self, tasks: Tasks) -> None:
         if "job_weights" in self.tags:
             self.job_weights = tasks.get_job_level_data(self.tags["job_weights"])
 
@@ -224,7 +226,7 @@ class MaximumLateness(Objective):
         else:
             self.due_dates = convert_to_list(due_dates, TIME)
 
-    def get_data(self, tasks: Tasks) -> None:
+    def import_data(self, tasks: Tasks) -> None:
         if "due_dates" in self.tags:
             self.due_dates = tasks.get_job_level_data(self.tags["due_dates"])
 
@@ -264,7 +266,7 @@ class TotalTardiness(Objective):
         else:
             self.due_dates = convert_to_list(due_dates, TIME)
 
-    def get_data(self, tasks: Tasks) -> None:
+    def import_data(self, tasks: Tasks) -> None:
         if "due_dates" in self.tags:
             self.due_dates = tasks.get_job_level_data(self.tags["due_dates"])
 
@@ -314,7 +316,7 @@ class WeightedTardiness(Objective):
         else:
             self.job_weights = convert_to_list(job_weights, float)
 
-    def get_data(self, tasks: Tasks) -> None:
+    def import_data(self, tasks: Tasks) -> None:
         if "due_dates" in self.tags:
             self.due_dates = tasks.get_job_level_data(self.tags["due_dates"])
 
@@ -360,7 +362,7 @@ class TotalEarliness(Objective):
         else:
             self.due_dates = convert_to_list(due_dates, TIME)
 
-    def get_data(self, tasks: Tasks) -> None:
+    def import_data(self, tasks: Tasks) -> None:
         if "due_dates" in self.tags:
             self.due_dates = tasks.get_job_level_data(self.tags["due_dates"])
 
@@ -409,7 +411,7 @@ class WeightedEarliness(Objective):
         else:
             self.job_weights = convert_to_list(job_weights, float)
 
-    def get_data(self, tasks: Tasks) -> None:
+    def import_data(self, tasks: Tasks) -> None:
         if "due_dates" in self.tags:
             self.due_dates = tasks.get_job_level_data(self.tags["due_dates"])
 
@@ -454,7 +456,7 @@ class TotalTardyJobs(Objective):
         else:
             self.due_dates = convert_to_list(due_dates, TIME)
 
-    def get_data(self, tasks: Tasks) -> None:
+    def import_data(self, tasks: Tasks) -> None:
         if "due_dates" in self.tags:
             self.due_dates = convert_to_list(
                 tasks.get_job_level_data(self.tags["due_dates"]), TIME
@@ -502,7 +504,7 @@ class WeightedTardyJobs(Objective):
         else:
             self.job_weights = convert_to_list(job_weights, float)
 
-    def get_data(self, tasks: Tasks) -> None:
+    def import_data(self, tasks: Tasks) -> None:
         if "due_dates" in self.tags:
             self.due_dates = tasks.get_job_level_data(self.tags["due_dates"])
 
@@ -544,7 +546,7 @@ class TotalFlowTime(Objective):
         else:
             self.release_times = convert_to_list(release_times, TIME)
 
-    def get_data(self, tasks: Tasks) -> None:
+    def import_data(self, tasks: Tasks) -> None:
         if "release_times" in self.tags:
             self.release_times = tasks.get_job_level_data(self.tags["release_times"])
 

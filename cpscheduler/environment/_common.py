@@ -48,5 +48,7 @@ ProcessTimeAllowedTypes: TypeAlias = (
     | None  # Infer from data
 )
 
-ObsType: TypeAlias = tuple[dict[str, list[Any]], dict[str, list[Any]]]
 InstanceTypes: TypeAlias = DataFrameLike | Mapping[str, Iterable[Any]]
+
+ObsType: TypeAlias = tuple[dict[str, list[Any]], dict[str, list[Any]]]
+InfoType: TypeAlias = dict[str, Any]

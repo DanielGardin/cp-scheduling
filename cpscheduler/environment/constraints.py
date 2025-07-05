@@ -54,8 +54,8 @@ class Constraint(ABC):
     def __repr__(self) -> str:
         return f"{self.name.capitalize()}()"
 
-    def get_data(self, tasks: Tasks) -> None:
-        "Make the constraint aware of the tasks it is applied to."
+    def import_data(self, tasks: Tasks) -> None:
+        "Import data from the instance when necessary."
 
     def reset(self, tasks: Tasks) -> None:
         "Reset the constraint to its initial state."
@@ -64,7 +64,7 @@ class Constraint(ABC):
     # Some subclasses may not need to implement this method if the constraints
     # are not time-dependent and are ensured in the reset method.
     def propagate(self, time: TIME, tasks: Tasks) -> None:
-        "Propagate the constraint at a given time."
+        "Ensure the constraint is satisfied."
         return
 
     def get_entry(self) -> str:
@@ -276,7 +276,7 @@ class DisjunctiveConstraint(Constraint):
                 for group, tasks in disjunctive_groups.items()
             }
 
-    def get_data(self, tasks: Tasks) -> None:
+    def import_data(self, tasks: Tasks) -> None:
         if "disjunctive_groups" in self.tags:
             groups = tasks.get_task_level_data(self.tags["disjunctive_groups"])
 
@@ -361,7 +361,7 @@ class ReleaseDateConstraint(Constraint):
                 TASK_ID(task): TIME(date) for task, date in enumerate(release_dates)
             }
 
-    def get_data(self, tasks: Tasks) -> None:
+    def import_data(self, tasks: Tasks) -> None:
         if "release_time" in self.tags:
             release_times = tasks.get_task_level_data(self.tags["release_time"])
 
@@ -419,7 +419,7 @@ class DeadlineConstraint(Constraint):
                 TASK_ID(task): TIME(date) for task, date in enumerate(deadlines)
             }
 
-    def get_data(self, tasks: Tasks) -> None:
+    def import_data(self, tasks: Tasks) -> None:
         if "due_date" in self.tags:
             due_dates = tasks.get_task_level_data(self.tags["release_time"])
 
@@ -480,7 +480,7 @@ class ResourceConstraint(Constraint):
                 for resources in resource_usage
             ]
 
-    def get_data(self, tasks: Tasks) -> None:
+    def import_data(self, tasks: Tasks) -> None:
         self.original_resources = [
             {
                 TASK_ID(task_id): float(usage)
@@ -598,7 +598,7 @@ class MachineConstraint(Constraint):
 
     #     return tasks_per_machine
 
-    def get_data(self, tasks: Tasks) -> None:
+    def import_data(self, tasks: Tasks) -> None:
         self.machine_free = [0 for _ in range(tasks.n_machines)]
 
     def reset(self, tasks: Tasks) -> None:

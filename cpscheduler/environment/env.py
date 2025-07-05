@@ -28,6 +28,7 @@ from ._common import (
     TASK_ID,
     TIME,
     InstanceTypes,
+    InfoType,
     ObsType,
 )
 from .tasks import Tasks
@@ -219,7 +220,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         self.constraints[name] = constraint
 
         if self.loaded:
-            self.constraints[name].get_data(self.tasks)
+            self.constraints[name].import_data(self.tasks)
 
     def set_objective(self, objective: Objective, minimize: bool | None = None) -> None:
         "Set the objective function for the environment."
@@ -227,7 +228,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         self.minimize = objective.default_minimize if minimize is None else minimize
 
         if self.loaded:
-            self.objective.get_data(self.tasks)
+            self.objective.import_data(self.tasks)
 
     def set_instance(
         self,
@@ -287,9 +288,9 @@ class SchedulingEnv(Env[ObsType, ActionType]):
             self.add_constraint(constraint, replace=True)
 
         for constraint in self.constraints.values():
-            constraint.get_data(self.tasks)
+            constraint.import_data(self.tasks)
 
-        self.objective.get_data(self.tasks)
+        self.objective.import_data(self.tasks)
 
         task_feature_space = {
             feature: infer_list_space(values)
@@ -312,7 +313,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         "Retrieve the current state of the environment from tasks."
         return self.tasks.get_state(self.current_time)
 
-    def get_info(self) -> dict[str, Any]:
+    def get_info(self) -> InfoType:
         "Retrieve additional information about the environment."
         return {
             "n_queries": len(self.query_times),
@@ -328,8 +329,8 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         if len(self.tasks.awaiting_tasks) > 0:
             return False
 
-        for task in self.tasks:
-            if not task.is_completed(self.current_time):
+        for task_id in self.tasks.fixed_tasks:
+            if not self.tasks[task_id].is_completed(self.current_time):
                 return False
 
         return True
@@ -347,7 +348,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
     def reset(
         self, *, seed: int | None = None, options: dict[str, Any] | None = None
-    ) -> tuple[ObsType, dict[str, Any]]:
+    ) -> tuple[ObsType, InfoType]:
         super().reset(seed=seed)
 
         if options is not None and "instance" in options:
@@ -386,13 +387,11 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         next_time = MAX_INT
 
         if strict:
-            # assert set([task.task_id for task in self.tasks if task.is_awaiting()]) == self.tasks.awaiting_tasks
-
             for task_id in self.tasks.awaiting_tasks:
                 task = self.tasks[task_id]
                 start_lb = task.get_start_lb()
 
-                if task.is_awaiting() and self.current_time < start_lb < next_time:
+                if self.current_time < start_lb < next_time:
                     next_time = start_lb
 
             for instruction_time in self.scheduled_instructions:
@@ -401,7 +400,8 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
         else:
             for task_id in self.tasks.awaiting_tasks:
-                start_lb = self.tasks[task_id].get_start_lb()
+                task = self.tasks[task_id]
+                start_lb = task.get_start_lb()
                 if start_lb < next_time:
                     next_time = start_lb
 
@@ -507,8 +507,8 @@ class SchedulingEnv(Env[ObsType, ActionType]):
             return True, False
 
         if action & Action.SKIPPED:
-            for task in self.tasks:
-                if task.is_executing(self.current_time):
+            for task_id in self.tasks.fixed_tasks:
+                if self.tasks[task_id].is_executing(self.current_time):
                     action = Action.WAIT
                     break
 
@@ -571,11 +571,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         ):
             halt, change = True, False
 
-            for task in self.tasks:
-                if not task.is_fixed():
-                    break
-
-            else:
+            if not self.tasks.awaiting_tasks:
                 end_time = self.tasks.get_time_ub()
                 self.advance_to(end_time)
 
@@ -589,7 +585,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
     def step(
         self,
         action: ActionType = None,
-    ) -> tuple[ObsType, float, bool, bool, dict[str, Any]]:
+    ) -> tuple[ObsType, float, bool, bool, InfoType]:
         if is_single_action(action):
             single_args = tuple(map(int, action[1:]))
             self.schedule_instruction(action[0], single_args)

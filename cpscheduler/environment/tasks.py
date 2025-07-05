@@ -23,7 +23,7 @@ We do not reccomend customizing this module, as it's tightly coupled with the ot
 in the environment, change with caution.
 """
 
-from typing import Any, NamedTuple, ClassVar
+from typing import Any, ClassVar
 from collections.abc import Iterator
 from typing_extensions import Self
 
@@ -419,7 +419,6 @@ class Task:
 
 class Tasks:
     "Container class for the tasks in the scheduling environment."
-
     n_tasks: int
     n_parts: int
     n_machines: int
@@ -577,15 +576,13 @@ class Tasks:
 
         max_time = time + sum(
             [
-                max(p_times for p_times in task.processing_times.values())
-                for task in self.tasks
-                if not task.is_fixed()
+                max(p_times for p_times in self.tasks[task_id].processing_times.values())
+                for task_id in self.awaiting_tasks
             ]
         )
 
-        for task in self.tasks:
-            if task.is_fixed():
-                continue
+        for task_id in self.awaiting_tasks:
+            task = self.tasks[task_id]
 
             if task.get_start_lb() < time:
                 task.set_start_lb(time)
