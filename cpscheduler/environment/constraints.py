@@ -11,7 +11,7 @@ implementing the required methods.
 
 """
 from typing import Any, SupportsInt, SupportsFloat
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from typing_extensions import Self
 
 from abc import ABC
@@ -20,6 +20,7 @@ import re
 from mypy_extensions import mypyc_attr
 
 from ._common import MACHINE_ID, TASK_ID, TIME
+from .data import SchedulingData
 from .tasks import Tasks
 from .utils import convert_to_list, topological_sort, binary_search, is_iterable_type
 
@@ -54,7 +55,7 @@ class Constraint(ABC):
     def __repr__(self) -> str:
         return f"{self.name.capitalize()}()"
 
-    def import_data(self, tasks: Tasks) -> None:
+    def import_data(self, data: SchedulingData) -> None:
         "Import data from the instance when necessary."
 
     def reset(self, tasks: Tasks) -> None:
@@ -100,7 +101,7 @@ class PrecedenceConstraint(Constraint):
 
     def __init__(
         self,
-        precedence: Mapping[SupportsInt, Iterable[SupportsInt]],
+        precedence: Mapping[SupportsInt, Sequence[SupportsInt]],
         no_wait: bool = False,
         name: str | None = None,
     ):
@@ -155,7 +156,7 @@ class PrecedenceConstraint(Constraint):
 
     def reset(self, tasks: Tasks) -> None:
         self.precedence = {
-            task_id: [child_id for child_id in children if child_id < tasks.n_tasks]
+            task_id: [child_id for child_id in children]
             for task_id, children in self.original_precedence.items()
         }
 
@@ -234,7 +235,7 @@ class NoWait(PrecedenceConstraint):
 
     def __init__(
         self,
-        precedence: Mapping[SupportsInt, Iterable[SupportsInt]],
+        precedence: Mapping[SupportsInt, Sequence[SupportsInt]],
         name: str | None = None,
     ):
         super().__init__(precedence, no_wait=True, name=name)
@@ -276,12 +277,12 @@ class DisjunctiveConstraint(Constraint):
                 for group, tasks in disjunctive_groups.items()
             }
 
-    def import_data(self, tasks: Tasks) -> None:
+    def import_data(self, data: SchedulingData) -> None:
         if "disjunctive_groups" in self.tags:
-            groups = tasks.get_task_level_data(self.tags["disjunctive_groups"])
+            groups = data.get_task_level_data(self.tags["disjunctive_groups"])
 
             self.original_disjunctive_groups = {}
-            for task_id in range(len(tasks)):
+            for task_id in range(data.n_tasks):
                 group = groups[task_id]
 
                 if group not in self.original_disjunctive_groups:
@@ -361,9 +362,9 @@ class ReleaseDateConstraint(Constraint):
                 TASK_ID(task): TIME(date) for task, date in enumerate(release_dates)
             }
 
-    def import_data(self, tasks: Tasks) -> None:
+    def import_data(self, data: SchedulingData) -> None:
         if "release_time" in self.tags:
-            release_times = tasks.get_task_level_data(self.tags["release_time"])
+            release_times = data.get_task_level_data(self.tags["release_time"])
 
             self.release_dates = {
                 TASK_ID(task_id): TIME(release_time)
@@ -419,9 +420,9 @@ class DeadlineConstraint(Constraint):
                 TASK_ID(task): TIME(date) for task, date in enumerate(deadlines)
             }
 
-    def import_data(self, tasks: Tasks) -> None:
+    def import_data(self, data: SchedulingData) -> None:
         if "due_date" in self.tags:
-            due_dates = tasks.get_task_level_data(self.tags["release_time"])
+            due_dates = data.get_task_level_data(self.tags["release_time"])
 
             self.deadlines = {
                 TASK_ID(task_id): TIME(due_date)
@@ -480,12 +481,12 @@ class ResourceConstraint(Constraint):
                 for resources in resource_usage
             ]
 
-    def import_data(self, tasks: Tasks) -> None:
+    def import_data(self, data: SchedulingData) -> None:
         self.original_resources = [
             {
                 TASK_ID(task_id): float(usage)
                 for task_id, usage in enumerate(
-                    tasks.get_task_level_data(self.tags[f"resource_{resource_id}"])
+                    data.get_task_level_data(self.tags[f"resource_{resource_id}"])
                 )
             }
             for resource_id in self.tags
@@ -582,27 +583,11 @@ class MachineConstraint(Constraint):
                 convert_to_list(tasks, MACHINE_ID) for tasks in machine_constraint
             ]
 
-    # def get_tasks_per_machine(self) -> list[list[TASK_ID]]:
-    #     """
-    #     Get the tasks assigned to each machine based on the machine constraint.
-    #     Returns a list of lists, where each sublist contains the task IDs assigned to that machine.
-    #     """
-    #     if self.complete:
-    #         return [[task.task_id for task in tasks] for _ in range(tasks.n_machines)]
-
-    #     tasks_per_machine: list[list[TASK_ID]] = [[] for _ in range(tasks.n_machines)]
-
-    #     for task_id, machines in enumerate(self.machine_constraint):
-    #         for machine in machines:
-    #             tasks_per_machine[machine].append(task_id)
-
-    #     return tasks_per_machine
-
-    def import_data(self, tasks: Tasks) -> None:
-        self.machine_free = [0 for _ in range(tasks.n_machines)]
+    def import_data(self, data: SchedulingData) -> None:
+        self.machine_free = [0 for _ in range(data.n_machines)]
 
     def reset(self, tasks: Tasks) -> None:
-        for machine in range(tasks.n_machines):
+        for machine in range(len(self.machine_free)):
             self.machine_free[machine] = 0
 
     def propagate(self, time: TIME, tasks: Tasks) -> None:

@@ -15,17 +15,14 @@ from gymnasium import spaces
 
 from ._common import MAX_INT, MIN_INT, TASK_ID
 
-_S = TypeVar("_S")
 _T = TypeVar("_T", bound=Any)
 
 
 @overload
 def convert_to_list(array: Any, dtype: type[_T]) -> list[_T]: ...
 
-
 @overload
-def convert_to_list(array: Iterable[_S], dtype: None = None) -> list[_S]: ...
-
+def convert_to_list(array: Iterable[_T], dtype: None = None) -> list[_T]: ...
 
 @overload
 def convert_to_list(array: Any, dtype: None = None) -> list[Any]: ...
@@ -229,14 +226,18 @@ def binary_search(
 
     return left
 
+@overload
+def infer_list_space(array: list[str]) -> spaces.Tuple: ...
+
+@overload
+def infer_list_space(array: list[int] | list[float]) -> spaces.Box: ...
+
+@overload
+def infer_list_space(array: list[bool]) -> spaces.MultiBinary: ...
 
 def infer_list_space(array: list[Any]) -> spaces.Space[Any]:
     "Infer the Gymnasium space for a list based on its elements."
     n = len(array)
-
-    if n == 0:
-        return spaces.Tuple([])
-
     elem = array[0]
 
     if isinstance(elem, str):
@@ -250,6 +251,7 @@ def infer_list_space(array: list[Any]) -> spaces.Space[Any]:
 
     if isinstance(elem, bool):
         return spaces.MultiBinary(n)
-
-    if is_iterable_type(array, str):
-        return spaces.Tuple([spaces.Text(max_length=100) for _ in range(n)])
+    
+    raise TypeError(
+        f"Unsupported type {type(elem)} for inferring Gymnasium space."
+    )

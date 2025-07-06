@@ -14,7 +14,7 @@ from abc import ABC, abstractmethod
 from mypy_extensions import mypyc_attr
 
 from ._common import ProcessTimeAllowedTypes, MACHINE_ID, TIME
-from .tasks import Tasks
+from .data import SchedulingData
 from .constraints import (
     Constraint,
     DisjunctiveConstraint,
@@ -69,7 +69,7 @@ class ScheduleSetup(ABC):
         as value.
         """
 
-    def setup_constraints(self, tasks: Tasks) -> tuple[Constraint, ...]:
+    def setup_constraints(self, data: SchedulingData) -> tuple[Constraint, ...]:
         "Build the constraint for that setup."
         return ()
 
@@ -106,11 +106,11 @@ class SingleMachineSetup(ScheduleSetup):
             "Cannot parse the process time. Please provide an iterable of integers or a string."
         )
 
-    def setup_constraints(self, tasks: Tasks) -> tuple[Constraint, ...]:
+    def setup_constraints(self, data: SchedulingData) -> tuple[Constraint, ...]:
         if not self.disjunctive:
             return ()
 
-        disjunctive_tasks = {0: [i for i in range(tasks.n_tasks)]}
+        disjunctive_tasks = {0: [i for i in range(data.n_tasks)]}
 
         return (DisjunctiveConstraint(disjunctive_tasks, name="disjunctive"),)
 
@@ -133,7 +133,7 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
         self.n_machines = n_machines
         self.disjunctive = disjunctive
 
-    def setup_constraints(self, tasks: Tasks) -> tuple[Constraint, ...]:
+    def setup_constraints(self, data: SchedulingData) -> tuple[Constraint, ...]:
         return (
             (MachineConstraint(name="setup_machine_disjunctive"),)
             if self.disjunctive
@@ -191,7 +191,7 @@ class UniformParallelMachineSetup(ScheduleSetup):
         self.disjunctive = disjunctive
         self.n_machines = len(self.speed)
 
-    def setup_constraints(self, tasks: Tasks) -> tuple[Constraint, ...]:
+    def setup_constraints(self, data: SchedulingData) -> tuple[Constraint, ...]:
         return (
             (MachineConstraint(name="setup_machine_disjunctive"),)
             if self.disjunctive
@@ -239,7 +239,7 @@ class UnrelatedParallelMachineSetup(ScheduleSetup):
     ):
         self.disjunctive = disjunctive
 
-    def setup_constraints(self, tasks: Tasks) -> tuple[Constraint, ...]:
+    def setup_constraints(self, data: SchedulingData) -> tuple[Constraint, ...]:
         return (
             (MachineConstraint(name="setup_machine_disjunctive"),)
             if self.disjunctive
@@ -314,27 +314,28 @@ class JobShopSetup(ScheduleSetup):
         self.operation_order = operation_order
         self.machine_feature = machine_feature
 
-    def setup_constraints(self, tasks: Tasks) -> tuple[Constraint, ...]:
-        # disjunctive_constraint = DisjunctiveConstraint(
-        #     self.machine_feature, name="setup_disjunctive"
-        # )
+    def setup_constraints(self, data: SchedulingData) -> tuple[Constraint, ...]:
         disjunctive_constraint = MachineConstraint(name="setup_machine_disjunctive")
 
-        edges: list[tuple[int, int]] = []
+        operations: list[int] = data[self.operation_order]
+        precedence_mapping: dict[SupportsInt, list[SupportsInt]] = {}
+  
+        task_orders: list[list[int]] = [[] for _ in range(data.n_jobs)]
 
-        operations: list[int] = tasks.data[self.operation_order]
+        for task_id, (job_id, operation) in enumerate(zip(data.job_ids, operations)):
+            if len(task_orders[job_id]) <= operation:
+                task_orders[job_id].extend([-1] * (operation - len(task_orders[job_id]) + 1))
+            
+            task_orders[job_id][operation] = task_id
 
-        for job_tasks in tasks.jobs:
-            ops = sorted(
-                [(operations[task.task_id], task.task_id) for task in job_tasks]
-            )
+        for tasks in task_orders:
+            prec = tasks[0]
+            for task_id in tasks[1:]:
+                precedence_mapping[prec] = [task_id]
+            
+                prec = task_id
 
-            for i in range(len(ops) - 1):
-                edges.append((ops[i][1], ops[i + 1][1]))
-
-        precedence_constraint = PrecedenceConstraint.from_edges(
-            edges, name="setup_precedence"
-        )
+        precedence_constraint = PrecedenceConstraint(precedence_mapping, name="setup_precedence")
 
         return (disjunctive_constraint, precedence_constraint)
 
@@ -384,11 +385,14 @@ class OpenShopSetup(ScheduleSetup):
         self.machine_feature = machine_feature
         self.disjunctive = disjunctive
 
-    def setup_constraints(self, tasks: Tasks) -> tuple[Constraint, ...]:
-        task_jobs = {
-            job: [int(task.task_id) for task in tasks]
-            for job, tasks in enumerate(tasks.jobs)
+    def setup_constraints(self, data: SchedulingData) -> tuple[Constraint, ...]:
+        task_jobs: dict[int, list[int]] = {
+            job: [] for job in range(data.n_jobs)
         }
+
+        for task_id, job_id in enumerate(data.job_ids):
+            task_jobs[job_id].append(task_id)
+
         task_disjunction = DisjunctiveConstraint(
             task_jobs, name="setup_task_disjunctive"
         )

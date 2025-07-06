@@ -23,6 +23,8 @@ TIME: TypeAlias = i32
 MIN_INT: Final[TIME] = -(2**24 + 1)
 MAX_INT: Final[TIME] = 2**24 - 1
 
+# Allowed types for task and job data
+ScalarType: TypeAlias = bool | int | float | str
 
 @runtime_checkable
 class DataFrameLike(Protocol):

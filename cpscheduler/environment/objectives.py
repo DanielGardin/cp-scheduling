@@ -13,6 +13,7 @@ from collections.abc import Iterable
 from mypy_extensions import mypyc_attr
 
 from ._common import TIME
+from .data import SchedulingData
 from .tasks import Tasks
 from .utils import convert_to_list
 
@@ -43,7 +44,7 @@ class Objective:
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}()"
 
-    def import_data(self, tasks: Tasks) -> None:
+    def import_data(self, data: SchedulingData) -> None:
         "Make the objective aware of the tasks it is applied to."
 
     def get_current(self, time: TIME, tasks: Tasks) -> float:
@@ -93,9 +94,9 @@ class ComposedObjective(Objective):
             else convert_to_list(coefficients, float)
         )
 
-    def import_data(self, tasks: Tasks) -> None:
+    def import_data(self, data: SchedulingData) -> None:
         for objective in self.objectives:
-            objective.import_data(tasks)
+            objective.import_data(data)
 
     def get_current(self, time: TIME, tasks: Tasks) -> float:
         current_value = 0.0
@@ -189,9 +190,9 @@ class WeightedCompletionTime(Objective):
         else:
             self.job_weights = convert_to_list(job_weights, float)
 
-    def import_data(self, tasks: Tasks) -> None:
+    def import_data(self, data: SchedulingData) -> None:
         if "job_weights" in self.tags:
-            self.job_weights = tasks.get_job_level_data(self.tags["job_weights"])
+            self.job_weights = data.get_job_level_data(self.tags["job_weights"])
 
     def get_current(self, time: TIME, tasks: Tasks) -> float:
         weighted_completion_time = 0.0
@@ -226,9 +227,9 @@ class MaximumLateness(Objective):
         else:
             self.due_dates = convert_to_list(due_dates, TIME)
 
-    def import_data(self, tasks: Tasks) -> None:
+    def import_data(self, data: SchedulingData) -> None:
         if "due_dates" in self.tags:
-            self.due_dates = tasks.get_job_level_data(self.tags["due_dates"])
+            self.due_dates = data.get_job_level_data(self.tags["due_dates"])
 
     def get_current(self, time: TIME, tasks: Tasks) -> int:
         max_lateness = 0
@@ -266,9 +267,9 @@ class TotalTardiness(Objective):
         else:
             self.due_dates = convert_to_list(due_dates, TIME)
 
-    def import_data(self, tasks: Tasks) -> None:
+    def import_data(self, data: SchedulingData) -> None:
         if "due_dates" in self.tags:
-            self.due_dates = tasks.get_job_level_data(self.tags["due_dates"])
+            self.due_dates = data.get_job_level_data(self.tags["due_dates"])
 
     def get_current(self, time: TIME, tasks: Tasks) -> int:
         total_tardiness = 0
@@ -316,12 +317,12 @@ class WeightedTardiness(Objective):
         else:
             self.job_weights = convert_to_list(job_weights, float)
 
-    def import_data(self, tasks: Tasks) -> None:
+    def import_data(self, data: SchedulingData) -> None:
         if "due_dates" in self.tags:
-            self.due_dates = tasks.get_job_level_data(self.tags["due_dates"])
+            self.due_dates = data.get_job_level_data(self.tags["due_dates"])
 
         if "job_weights" in self.tags:
-            self.job_weights = tasks.get_job_level_data(self.tags["job_weights"])
+            self.job_weights = data.get_job_level_data(self.tags["job_weights"])
 
     def get_current(self, time: TIME, tasks: Tasks) -> float:
         weighted_tardiness = 0.0
@@ -362,9 +363,9 @@ class TotalEarliness(Objective):
         else:
             self.due_dates = convert_to_list(due_dates, TIME)
 
-    def import_data(self, tasks: Tasks) -> None:
+    def import_data(self, data: SchedulingData) -> None:
         if "due_dates" in self.tags:
-            self.due_dates = tasks.get_job_level_data(self.tags["due_dates"])
+            self.due_dates = data.get_job_level_data(self.tags["due_dates"])
 
     def get_current(self, time: TIME, tasks: Tasks) -> int:
         total_earliness = 0
@@ -411,12 +412,12 @@ class WeightedEarliness(Objective):
         else:
             self.job_weights = convert_to_list(job_weights, float)
 
-    def import_data(self, tasks: Tasks) -> None:
+    def import_data(self, data: SchedulingData) -> None:
         if "due_dates" in self.tags:
-            self.due_dates = tasks.get_job_level_data(self.tags["due_dates"])
+            self.due_dates = data.get_job_level_data(self.tags["due_dates"])
 
         if "job_weights" in self.tags:
-            self.job_weights = tasks.get_job_level_data(self.tags["job_weights"])
+            self.job_weights = data.get_job_level_data(self.tags["job_weights"])
 
     def get_current(self, time: TIME, tasks: Tasks) -> float:
         weighted_earliness = 0.0
@@ -456,10 +457,10 @@ class TotalTardyJobs(Objective):
         else:
             self.due_dates = convert_to_list(due_dates, TIME)
 
-    def import_data(self, tasks: Tasks) -> None:
+    def import_data(self, data: SchedulingData) -> None:
         if "due_dates" in self.tags:
             self.due_dates = convert_to_list(
-                tasks.get_job_level_data(self.tags["due_dates"]), TIME
+                data.get_job_level_data(self.tags["due_dates"]), TIME
             )
 
     def get_current(self, time: TIME, tasks: Tasks) -> int:
@@ -504,12 +505,12 @@ class WeightedTardyJobs(Objective):
         else:
             self.job_weights = convert_to_list(job_weights, float)
 
-    def import_data(self, tasks: Tasks) -> None:
+    def import_data(self, data: SchedulingData) -> None:
         if "due_dates" in self.tags:
-            self.due_dates = tasks.get_job_level_data(self.tags["due_dates"])
+            self.due_dates = data.get_job_level_data(self.tags["due_dates"])
 
         if "job_weights" in self.tags:
-            self.job_weights = tasks.get_job_level_data(self.tags["job_weights"])
+            self.job_weights = data.get_job_level_data(self.tags["job_weights"])
 
     def get_current(self, time: TIME, tasks: Tasks) -> float:
         weighted_tardy_jobs = 0.0
@@ -546,9 +547,9 @@ class TotalFlowTime(Objective):
         else:
             self.release_times = convert_to_list(release_times, TIME)
 
-    def import_data(self, tasks: Tasks) -> None:
+    def import_data(self, data: SchedulingData) -> None:
         if "release_times" in self.tags:
-            self.release_times = tasks.get_job_level_data(self.tags["release_times"])
+            self.release_times = data.get_job_level_data(self.tags["release_times"])
 
     def get_current(self, time: TIME, tasks: Tasks) -> int:
         total_flowtime = 0

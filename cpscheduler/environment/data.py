@@ -1,0 +1,186 @@
+"""
+    data.py
+
+This module contains functions to handle data management for the constraints, setups and objectives
+within the CPScheduler environment.
+"""
+
+from typing import Any
+from typing_extensions import Self
+
+from gymnasium.spaces import Space, Dict, Tuple, Box, Text
+
+from ._common import (
+    ObsType,
+    MACHINE_ID,
+    TASK_ID,
+    TIME,
+)
+
+from .utils import infer_list_space, convert_to_list
+
+JOB_ID_ALIASES = ["job", "job_id"]
+
+class SchedulingData:
+    "A class to hold static scheduling data for the CPScheduler environment."
+
+    task_data: dict[str, list[Any]]
+    jobs_data: dict[str, list[Any]]
+
+    job_ids: list[TASK_ID]
+
+    def __init__(
+            self,
+            task_data: dict[str, list[Any]],
+            processing_times: list[dict[MACHINE_ID, TIME]],
+            jobs_data: dict[str, list[Any]],
+            job_feature: str = "",
+        ) -> None:
+        self.task_data = task_data.copy()
+        self.jobs_data = jobs_data.copy()
+        self.processing_times = processing_times.copy()
+
+        self.n_tasks = len(processing_times)
+        for feature, values in self.task_data.items():
+            if len(values) != self.n_tasks:
+                raise ValueError(
+                    f"Feature '{feature}' must have length equal to the number of tasks,"
+                    f"expected {self.n_tasks}, got {len(values)}."
+                )
+
+        machines: set[MACHINE_ID] = set()
+        for processing_time in processing_times:
+            machines.update(processing_time.keys())
+
+        self.n_machines = len(machines)
+
+        if not job_feature:
+            for alias in JOB_ID_ALIASES:
+                if alias in self.task_data:
+                    job_feature = alias
+
+        job_ids: list[TASK_ID]
+        if job_feature in self.task_data:
+            job_ids = self.task_data.pop(job_feature)
+            self.n_jobs = len(set(job_ids))
+
+        else:  # If no job feature is provided, we assume each task is its own job
+            job_ids = list(range(self.n_tasks))
+            self.n_jobs = self.n_tasks
+
+        self.job_ids = convert_to_list(job_ids, TASK_ID)
+
+    @classmethod
+    def empty(cls) -> Self:
+        "Create an empty SchedulingData instance."
+        return cls(
+            task_data={"job_id": []},
+            jobs_data={"job_id": []},
+            processing_times=[],
+        )
+
+    def __getitem__(self, key: str) -> list[Any]:
+        "Get a specific data feature for all tasks or jobs."
+        if key in self.task_data:
+            return self.task_data[key]
+
+        if key in self.jobs_data:
+            return self.jobs_data[key]
+
+        raise KeyError(f"Feature '{key}' not found in tasks or jobs data.")
+
+    def __setitem__(self, key: str, value: list[Any]) -> None:
+        "Set a specific data feature for all tasks or jobs."
+        if key in self.task_data:
+            if len(value) != self.n_tasks:
+                raise ValueError(
+                    f"Feature '{key}' must have length equal to the number of tasks,"
+                    f"expected {self.n_tasks}, got {len(value)}."
+                )
+            self.task_data[key] = value
+        
+        elif key in self.jobs_data:
+            if len(value) != self.n_jobs:
+                raise ValueError(
+                    f"Feature '{key}' must have length equal to the number of jobs,"
+                    f"expected {self.n_jobs}, got {len(value)}."
+                )
+            self.jobs_data[key] = value
+
+        else:
+            raise KeyError(f"Feature '{key}' not found in tasks or jobs data.")
+
+    def get_task_level_data(self, feature: str) -> list[Any]:
+        "Get a specific, task or job, data feature for all tasks."
+        if feature in self.task_data:
+            return self.task_data[feature]
+
+        if feature in self.jobs_data:
+            job_data = self.jobs_data[feature]
+
+            return [job_data[job_id] for job_id in self.task_data["job_id"]]
+
+        raise KeyError(f"Feature '{feature}' not found in tasks or jobs data.")
+
+    def get_job_level_data(self, feature: str) -> list[Any]:
+        "Get a specific job data feature for all jobs."
+        if feature in self.jobs_data:
+            return self.jobs_data[feature]
+
+        if feature in self.task_data:
+            if self.n_tasks == self.n_jobs:
+                return self.task_data[feature]
+
+            job_level_data: list[Any] = [None for _ in range(self.n_jobs)]
+            for task_id, job_id in enumerate(self.task_data["job_id"]):
+                job_level_data[job_id] = self.task_data[feature][task_id]
+
+            return job_level_data
+
+        raise KeyError(f"Feature '{feature}' not found in jobs data.")
+
+    def get_gym_space(self) -> Space[ObsType]:
+        "Infer the gym space for the task data."
+        user_defined_task_data = {
+            feature: infer_list_space(values)
+            for feature, values in self.task_data.items()
+        }
+
+        user_defined_job_data = {
+            feature: infer_list_space(values)
+            for feature, values in self.jobs_data.items()
+        }
+
+        task_feature_space = {
+            'task_id': Box(low=0, high=self.n_tasks, shape=(self.n_tasks,), dtype=int), # type: ignore
+            'job_id': Box(low=0, high=self.n_jobs, shape=(self.n_tasks,), dtype=int), # type: ignore
+            **user_defined_task_data,
+            'status': Tuple([Text(max_length=100) for _ in range(self.n_tasks)])
+        }
+
+        job_feature_space = {
+            'job_id': Box(low=0, high=self.n_jobs, shape=(self.n_jobs,), dtype=int), # type: ignore
+            **user_defined_job_data,
+        }
+
+        return Tuple(
+            [
+                Dict(task_feature_space),
+                Dict(job_feature_space)
+            ]
+        )
+
+    def export_state(self) -> ObsType:
+        "Export the status of the tasks in a dictionary format."
+        task_state = {
+            'task_id': [i for i in range(self.n_tasks)],
+            'job_id': self.job_ids.copy(),
+            **{feature: self.task_data[feature] for feature in self.task_data},
+        }
+
+        job_state = {
+            'job_id': [i for i in range(self.n_jobs)],
+            **{feature: self.jobs_data[feature] for feature in self.jobs_data},
+        }
+
+        return task_state, job_state

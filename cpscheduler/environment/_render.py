@@ -8,11 +8,10 @@ interface for rendering tasks.
 
 from typing import Any
 
-from abc import ABC, abstractmethod
-
 from mypy_extensions import mypyc_attr
 
 from .tasks import Tasks
+from .data import SchedulingData
 
 try:
     from plotly import graph_objects as go  # type: ignore[import]
@@ -24,25 +23,19 @@ except ImportError:
 
 
 @mypyc_attr(allow_interpreted_subclasses=True)
-class Renderer(ABC):
+class Renderer:
     "Renderer base class for visualizing task schedules."
-
-    def __init__(self, tasks: Tasks):
-        self.tasks = tasks
-
-    @abstractmethod
-    def build_gantt(self, current_time: int) -> Any:
+    def build_gantt(self, current_time: int, tasks: Tasks, data: SchedulingData) -> Any:
         "Build a figure-like object representing the Gantt chart."
 
-    @abstractmethod
-    def render(self, current_time: int) -> None:
+    def render(self, current_time: int, tasks: Tasks, data: SchedulingData) -> None:
         "Render the built Gantt chart."
 
 
 class PlotlyRenderer(Renderer):
     "Renderer for visualizing task schedules using the Plotly backend."
 
-    def build_gantt(self, current_time: int) -> Any:
+    def build_gantt(self, current_time: int, tasks: Tasks, data: SchedulingData) -> Any:
         if go is None or glasbey_dark is None:
             raise ImportError(
                 "Plotly and Colorcet are required for rendering Gantt charts with PlotlyRenderer. "
@@ -57,15 +50,15 @@ class PlotlyRenderer(Renderer):
         durations: list[int] = []
         machines: list[int] = []
         task_ids: list[int] = []
-        palette = glasbey_dark[: len(self.tasks.jobs)]  # type: ignore[no-redef]
+        palette = glasbey_dark[: len(tasks.jobs)]  # type: ignore[no-redef]
         template = (
             "Task %{customdata[0]} [Job %{customdata[1]}]:<br>"
             "Period: %{customdata[2]}-%{customdata[3]}<br>"
             "Machine: %{y}<extra></extra>"
         )
 
-        for job, tasks in enumerate(self.tasks.jobs):
-            for task in tasks:
+        for job, job_tasks in enumerate(tasks.jobs):
+            for task in job_tasks:
                 for part in range(task.n_parts):
                     if not task.is_fixed():
                         break
@@ -106,7 +99,7 @@ class PlotlyRenderer(Renderer):
             barmode="overlay",
             yaxis=dict(
                 title="Assignment",
-                tickvals=list(range(self.tasks.n_machines)),
+                tickvals=list(range(data.n_machines)),
                 autorange="reversed",
             ),
             xaxis=dict(
@@ -117,24 +110,11 @@ class PlotlyRenderer(Renderer):
             ),
         )
 
-        if len(self.tasks.jobs) <= 30:
+        if len(tasks.jobs) <= 30:
             fig.update_layout(legend_title_text="Task jobs")  # type: ignore[call-arg]
 
         return fig
 
-    def render(self, current_time: int) -> None:
-        fig = self.build_gantt(current_time)
+    def render(self, current_time: int, tasks: Tasks, data: SchedulingData) -> None:
+        fig = self.build_gantt(current_time, tasks, data)
         fig.show()
-
-    # This method is
-    # def image(self, current_time: int) -> NDArray[floating[Any]]:
-    #     if 'PIL' not in modules:
-    #         raise ImportError(
-    #             "PIL is required for rendering Gantt charts with PlotlyRenderer. "
-    #             "Please install them using 'pip install pillow'."
-    #         )
-
-    #     fig = self.build_gantt(current_time)
-    #     img_bytes = fig.to_image(format="png")
-
-    #     return array(Image.open(BytesIO(img_bytes)))

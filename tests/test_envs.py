@@ -139,7 +139,7 @@ def test_pause(instance_name: str) -> None:
 
     env.reset()
 
-    processing_time = env.tasks.data["processing_time"][0]
+    processing_time = env.data["processing_time"][0]
 
     actions: list[tuple[str, *tuple[int, ...]]] = [
         ("execute", 0),

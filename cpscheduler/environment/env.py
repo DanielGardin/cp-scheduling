@@ -13,12 +13,12 @@ steps, rendering the environment, and exporting the scheduling model.
 
 from warnings import warn
 
-from typing import Any, SupportsInt
+from typing import Any
 from collections.abc import Iterable, Mapping
-from typing_extensions import TypeIs, Unpack
+from typing_extensions import TypeIs
 
 from gymnasium import Env
-from gymnasium.spaces import Dict, Tuple, Text, Box, OneOf
+from gymnasium.spaces import Tuple, Text, Box, OneOf
 
 from mypy_extensions import u8, i64
 
@@ -31,12 +31,13 @@ from ._common import (
     InfoType,
     ObsType,
 )
+from .data import SchedulingData
 from .tasks import Tasks
-from .instructions import Instruction, Signal, parse_instruction, Action, ActionType
+from .instructions import Instruction, Signal, parse_instruction, Action, ActionType, SingleAction
 from .schedule_setup import ScheduleSetup
 from .constraints import Constraint
 from .objectives import Objective
-from .utils import convert_to_list, is_iterable_int, infer_list_space
+from .utils import convert_to_list, is_iterable_int
 
 from ._render import Renderer, PlotlyRenderer
 
@@ -56,7 +57,7 @@ ActionSpace = OneOf(
 
 def is_single_action(
     action: ActionType,
-) -> TypeIs[tuple[str | Instruction, Unpack[tuple[SupportsInt, ...]]]]:
+) -> TypeIs[SingleAction]:
     "Check if the action is a single instruction or a iterable of instructions."
     if not isinstance(action, tuple):
         return False
@@ -133,7 +134,6 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
     # Environment dynamic variables
     tasks: Tasks
-    data: dict[str, list[Any]]
     scheduled_instructions: dict[TASK_ID, list[Instruction]]
     current_time: TIME
     query_times: list[TIME]
@@ -149,7 +149,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         machine_setup: ScheduleSetup,
         constraints: Iterable[Constraint] | None = None,
         objective: Objective | None = None,
-        render_mode: str | None = None,
+        render_mode: Renderer | str | None = None,
         *,
         minimize: bool | None = None,
         allow_preemption: bool = False,
@@ -173,24 +173,24 @@ class SchedulingEnv(Env[ObsType, ActionType]):
             Objective() if objective is None else objective, minimize=minimize
         )
 
-        self.render_mode = render_mode
         self.scheduled_instructions = {-1: []}
 
         self.current_time = 0
         self.query_times = []
 
         self._metadata = {
-            "render_modes": ["human", "rgb_array"],
+            "render_modes": ["human"],
             "render_fps": 50,
         }
 
+        self.renderer =(
+            render_mode
+            if isinstance(render_mode, Renderer) else
+            self._dispatch_render(render_mode)
+        )
+
         self.action_space = ActionSpace
-        self.observation_space = Tuple(
-            [
-                Dict({"task_id": Box(low=0, high=int(MAX_INT), shape=())}),  # type: ignore
-                Dict({"job_id": Box(low=0, high=int(MAX_INT), shape=())}),
-            ]  # type: ignore
-        )  # Placeholder for observation space
+        # self.observation_space = SchedulingData.empty().get_gym_space() # Dummy space
 
         self.advancing_to = 0
 
@@ -199,14 +199,24 @@ class SchedulingEnv(Env[ObsType, ActionType]):
                 instance, processing_times, job_instance, job_feature, n_parts
             )
 
+    def _dispatch_render(self, render_model: str | None) -> Renderer:
+        "Dispatch the renderer based on the render model."
+        if render_model is None:
+            return Renderer()
+
+        if render_model == "human":
+            return PlotlyRenderer()
+
+        raise ValueError(f"Unknown render model: {render_model}. Supported: 'human'.")
+
     def __repr__(self) -> str:
         if self.loaded:
             return (
-                f"SchedulingEnv({self.get_entry()}, n_tasks={len(self.tasks)}, "
-                f"current_time={self.current_time}, loaded=True)"
+                f"SchedulingEnv({self.get_entry()}, n_tasks={self.tasks.n_tasks}, "
+                f"current_time={self.current_time})"
             )
 
-        return f"SchedulingEnv({self.get_entry()}, not loaded)"
+        return f"SchedulingEnv({self.get_entry()}, n_tasks=0)"
 
     def add_constraint(self, constraint: Constraint, replace: bool = False) -> None:
         "Add a constraint to the environment."
@@ -220,7 +230,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         self.constraints[name] = constraint
 
         if self.loaded:
-            self.constraints[name].import_data(self.tasks)
+            self.constraints[name].import_data(self.data)
 
     def set_objective(self, objective: Objective, minimize: bool | None = None) -> None:
         "Set the objective function for the environment."
@@ -228,7 +238,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         self.minimize = objective.default_minimize if minimize is None else minimize
 
         if self.loaded:
-            self.objective.import_data(self.tasks)
+            self.objective.import_data(self.data)
 
     def set_instance(
         self,
@@ -276,42 +286,31 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
         parsed_processing_times = self.setup.parse_process_time(data, processing_times)
 
-        self.tasks = Tasks(
-            data,
-            parsed_processing_times,
-            job_data,
-            job_feature=job_feature,
-            n_parts=n_parts,
-        )
+        self.data = SchedulingData(data, parsed_processing_times, job_data, job_feature)
 
-        for constraint in self.setup.setup_constraints(self.tasks):
+        self.tasks = Tasks(self.data.job_ids, parsed_processing_times, n_parts)
+
+        for constraint in self.setup.setup_constraints(self.data):
             self.add_constraint(constraint, replace=True)
 
         for constraint in self.constraints.values():
-            constraint.import_data(self.tasks)
+            constraint.import_data(self.data)
 
-        self.objective.import_data(self.tasks)
+        self.objective.import_data(self.data)
 
-        task_feature_space = {
-            feature: infer_list_space(values)
-            for feature, values in self.tasks.data.items()
-        }
+        self.observation_space = self.data.get_gym_space()
 
-        job_feature_space = {
-            feature: infer_list_space(values)
-            for feature, values in self.tasks.jobs_data.items()
-        }
-
-        self.observation_space = Tuple(
-            [Dict(task_feature_space), Dict(job_feature_space)]
-        )
-
-        self.renderer = PlotlyRenderer(self.tasks)
         self.loaded = True
 
     def get_state(self) -> ObsType:
         "Retrieve the current state of the environment from tasks."
-        return self.tasks.get_state(self.current_time)
+        static_task_data, static_job_data = self.data.export_state()
+        dynamic_task_data, dynamic_job_data = self.tasks.export_state(self.current_time)
+
+        task_data = static_task_data | dynamic_task_data
+        job_data = static_job_data | dynamic_job_data
+
+        return task_data, job_data
 
     def get_info(self) -> InfoType:
         "Retrieve additional information about the environment."
@@ -326,7 +325,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
     def is_terminal(self) -> bool:
         "Check if the environment is in a terminal state."
-        if len(self.tasks.awaiting_tasks) > 0:
+        if self.tasks.awaiting_tasks:
             return False
 
         for task_id in self.tasks.fixed_tasks:
@@ -617,7 +616,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
     def render(self) -> None:
         if self.render_mode == "plot":
-            self.renderer.render(self.current_time)
+            self.renderer.render(self.current_time, self.tasks, self.data)
 
     def get_entry(self) -> str:
         "Get a string representation of the environment's configuration."
