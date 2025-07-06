@@ -38,7 +38,7 @@ benchmark_times = {
     "ta60": 1.6,
     "ta70": 2.0,
     "ta80": 7.8,
-    "kopt_ops10000_m100_1" : 3 * 60
+    # "kopt_ops10000_m100_1" : 3 * 60
 }
 
 def is_compiled() -> bool:
@@ -277,7 +277,8 @@ def test_speed(n: int = 1, full: bool = False, quiet: bool = False) -> None:
                 ]
             )
 
-    # RECORDS: 44x speedup for small instances
+    # RECORDS: 49x speedup for small instances
+    #           8x speedup for large instances
     speedup_strs = [
         colormap(value, min_value=0, max_value=8) + speed + RESET
         for value, speed in zip(values, speedup_strs)
