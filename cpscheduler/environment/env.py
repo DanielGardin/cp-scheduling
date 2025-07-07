@@ -10,7 +10,6 @@ The environment is based on the OpenAI Gym interface, making it compatible with 
 reinforcement learning libraries. It provides methods for resetting the environment, taking
 steps, rendering the environment, and exporting the scheduling model.
 """
-
 from warnings import warn
 
 from typing import Any
@@ -124,26 +123,27 @@ class SchedulingEnv(Env[ObsType, ActionType]):
             The number of parts to split the tasks into. If None, it defaults to 16 if preemption is
             allowed, otherwise 1.
     """
-
     # Environment static variables
+    data: SchedulingData
     setup: ScheduleSetup
     constraints: dict[str, Constraint]
     objective: Objective
     allow_preemption: bool
     minimize: bool
+    loaded: bool
 
     # Environment dynamic variables
     tasks: Tasks
     scheduled_instructions: dict[TASK_ID, list[Instruction]]
     current_time: TIME
+    advancing_to: TIME
     query_times: list[TIME]
 
-    loaded: bool
-    advancing_to: TIME
-
+    # Gymnasium support variables
     renderer: Renderer
     _metadata: dict[str, Any]
 
+    # Environment constructor methods
     def __init__(
         self,
         machine_setup: ScheduleSetup,
@@ -190,7 +190,6 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         )
 
         self.action_space = ActionSpace
-        # self.observation_space = SchedulingData.empty().get_gym_space() # Dummy space
 
         self.advancing_to = 0
 
@@ -198,6 +197,15 @@ class SchedulingEnv(Env[ObsType, ActionType]):
             self.set_instance(
                 instance, processing_times, job_instance, job_feature, n_parts
             )
+
+    def __repr__(self) -> str:
+        if self.loaded:
+            return (
+                f"SchedulingEnv({self.get_entry()}, n_tasks={self.tasks.n_tasks}, "
+                f"current_time={self.current_time})"
+            )
+
+        return f"SchedulingEnv({self.get_entry()}, n_tasks=0)"
 
     def _dispatch_render(self, render_model: str | None) -> Renderer:
         "Dispatch the renderer based on the render model."
@@ -209,15 +217,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
         raise ValueError(f"Unknown render model: {render_model}. Supported: 'human'.")
 
-    def __repr__(self) -> str:
-        if self.loaded:
-            return (
-                f"SchedulingEnv({self.get_entry()}, n_tasks={self.tasks.n_tasks}, "
-                f"current_time={self.current_time})"
-            )
-
-        return f"SchedulingEnv({self.get_entry()}, n_tasks=0)"
-
+    # Environment configuration public methods
     def add_constraint(self, constraint: Constraint, replace: bool = False) -> None:
         "Add a constraint to the environment."
         name = constraint.name
@@ -281,13 +281,12 @@ class SchedulingEnv(Env[ObsType, ActionType]):
             )  # Non-preemptive scheduling.
         )
 
-        data = prepare_instance(instance)
+        task_data = prepare_instance(instance)
         job_data = prepare_instance(job_instance) if job_instance is not None else {}
 
-        parsed_processing_times = self.setup.parse_process_time(data, processing_times)
+        parsed_processing_times = self.setup.parse_process_time(task_data, processing_times)
 
-        self.data = SchedulingData(data, parsed_processing_times, job_data, job_feature)
-
+        self.data = SchedulingData(task_data, parsed_processing_times, job_data, job_feature)
         self.tasks = Tasks(self.data.job_ids, parsed_processing_times, n_parts)
 
         for constraint in self.setup.setup_constraints(self.data):
@@ -302,7 +301,8 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
         self.loaded = True
 
-    def get_state(self) -> ObsType:
+    ## Environment state retrieval methods
+    def _get_state(self) -> ObsType:
         "Retrieve the current state of the environment from tasks."
         static_task_data, static_job_data = self.data.export_state()
         dynamic_task_data, dynamic_job_data = self.tasks.export_state(self.current_time)
@@ -312,39 +312,26 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
         return task_data, job_data
 
-    def get_info(self) -> InfoType:
+    def _get_info(self) -> InfoType:
         "Retrieve additional information about the environment."
         return {
             "n_queries": len(self.query_times),
             "current_time": int(self.current_time),
         }
 
-    def get_objective(self) -> float:
-        "Get the current value of the objective function."
-        return float(self.objective.get_current(self.current_time, self.tasks))
-
-    def is_terminal(self) -> bool:
-        "Check if the environment is in a terminal state."
-        if self.tasks.awaiting_tasks:
-            return False
-
-        for task_id in self.tasks.fixed_tasks:
-            if not self.tasks[task_id].is_completed(self.current_time):
-                return False
-
-        return True
-
-    def truncate(self) -> bool:
-        "Check if the environment is in a truncated state. Legacy method"
-        return False
-
-    def propagate(self) -> None:
+    def _propagate(self) -> None:
         "Propagate the new bounds through the constraints"
+        for task_id in self.tasks.awaiting_tasks:
+            task = self.tasks[task_id]
+            if task.get_start_lb() < self.current_time:
+                task.set_start_lb(self.current_time)
+
         for constraint in self.constraints.values():
             constraint.propagate(self.current_time, self.tasks)
-        
+
         self.tasks.finish_propagation()
 
+    # Environment API methods
     def reset(
         self, *, seed: int | None = None, options: dict[str, Any] | None = None
     ) -> tuple[ObsType, InfoType]:
@@ -377,11 +364,30 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         for constraint in self.constraints.values():
             constraint.reset(self.tasks)
 
-        self.propagate()
+        self._propagate()
 
-        return self.get_state(), self.get_info()
+        return self._get_state(), self._get_info()
 
-    def next_decision_time(self, strict: bool = False) -> TIME:
+    ## Environment utility private methods
+    def _get_objective(self) -> float:
+        "Get the current value of the objective function."
+        return float(self.objective.get_current(self.current_time, self.tasks))
+
+    def _is_terminal(self) -> bool:
+        "Check if the environment is in a terminal state."
+        if self.tasks.awaiting_tasks:
+            return False
+
+        for task_id in self.tasks.fixed_tasks:
+            if not self.tasks[task_id].is_completed(self.current_time):
+                return False
+
+        return True
+
+    def _is_schedule_empty(self) -> bool:
+        return not self.scheduled_instructions[-1] and len(self.scheduled_instructions) == 1
+
+    def _next_decision_time(self, strict: bool = False) -> TIME:
         "Obtain the next decision time to advance. If strict, only consider future tasks."
         next_time = MAX_INT
 
@@ -419,32 +425,21 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
         return next_time
 
-    def advance_to(self, time: TIME) -> None:
-        "Advance the environment to a specific time."
-        self.current_time = time
-
-    def advance_to_next_instruction(self) -> None:
+    def _advance_to_next_instruction(self) -> None:
         "Advance the environment to the next instruction time."
         next_time = self.advancing_to
         for instruction_time in self.scheduled_instructions:
             if self.current_time <= instruction_time < next_time:
                 next_time = instruction_time
 
-        self.advance_to(next_time)
+        self.current_time = next_time
 
-    def advance_decision_point(self) -> None:
+    def _advance_to_decision_point(self, strict: bool) -> None:
         "Advance the environment to the next decision point."
-        time = self.next_decision_time(False)
-        self.advance_to(time)
+        next_time = self._next_decision_time(strict)
+        self.current_time = next_time
 
-    def skip_to_next_decision_point(self) -> None:
-        "Skip to the next decision point in the future."
-        time = self.next_decision_time(True)
-        self.advance_to(time)
-
-    def schedule_instruction(
-        self, action: str | Instruction, args: tuple[int, ...]
-    ) -> None:
+    def _schedule_instruction(self, action: str | Instruction, args: tuple[int, ...]) -> None:
         "Add a single instruction to the schedule."
         if action in ("execute", "submit") and 0 < len(args) < 3:
             task = args[0]
@@ -475,9 +470,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
         self.scheduled_instructions[time].append(instruction)
 
-    def resolve_schedule(
-        self, time: TIME = -1, allow_wait: bool = True
-    ) -> tuple[bool, bool]:
+    def _process_next_instruction(self, scheduled_time: TIME = -1, allow_wait: bool = True) -> bool:
         """
         Process the next instruction in the schedule at the given time.
         If time is -1, use the current time and if allow_wait is False,
@@ -487,7 +480,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         signal = Signal(Action.SKIPPED)
 
         i: i64 = -1
-        schedule = self.scheduled_instructions[time]
+        schedule = self.scheduled_instructions[scheduled_time]
 
         while signal.action & Action.SKIPPED and i + 1 < len(schedule):
             i += 1
@@ -498,13 +491,12 @@ class SchedulingEnv(Env[ObsType, ActionType]):
             )
 
         action: u8 = signal.action
-        halt, change = False, False
-
         if not allow_wait and action == Action.WAIT:
             warn(f"{instruction} is not allowed to wait at {self.current_time}.")
             schedule.pop(i)
-            return True, False
+            return True
 
+        halt = False
         if action & Action.SKIPPED:
             for task_id in self.tasks.fixed_tasks:
                 if self.tasks[task_id].is_executing(self.current_time):
@@ -522,24 +514,18 @@ class SchedulingEnv(Env[ObsType, ActionType]):
                 self.tasks[task_id].set_start_lb(self.current_time)
 
         if action & Action.PROPAGATE:
-            self.propagate()
-            change = True
+            self._propagate()
 
         if action & Action.ADVANCE:
-            previous_time = self.current_time
             if signal.time > 0:
                 self.advancing_to = signal.time
-                self.advance_to_next_instruction()
-                self.propagate()
+                self._advance_to_next_instruction()
 
             else:
-                self.advance_decision_point()
-
-            change = self.current_time != previous_time
+                self._advance_to_decision_point(strict=False)
 
         if action & Action.ADVANCE_NEXT:
-            self.skip_to_next_decision_point()
-            change = True
+            self._advance_to_decision_point(strict=True)
 
         if action & Action.RAISE:
             warn(
@@ -549,37 +535,29 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         if action & Action.HALT:
             halt = True
 
-        return halt, change
+        return halt
 
-    def execute_next_instruction(self) -> tuple[bool, bool]:
+    def _dispatch_instruction(self) -> bool:
         "Dispatch the next instruction in the schedule depending on the current state."
         if self.current_time in self.scheduled_instructions:
-            halt, change = self.resolve_schedule(self.current_time, False)
+            halt = self._process_next_instruction(self.current_time, False)
 
             if not self.scheduled_instructions[self.current_time]:
                 self.scheduled_instructions.pop(self.current_time)
 
-        elif self.current_time < self.advancing_to:
-            self.advance_to_next_instruction()
-            self.propagate()
-            halt, change = False, True
+            return halt
 
-        elif (
-            not self.scheduled_instructions[-1]
-            and len(self.scheduled_instructions) == 1
-        ):
-            halt, change = True, False
+        if self.current_time < self.advancing_to:
+            self._advance_to_next_instruction()
+            return False
 
+        if self._is_schedule_empty():
             if not self.tasks.awaiting_tasks:
-                end_time = self.tasks.get_time_ub()
-                self.advance_to(end_time)
+                self.current_time = self.tasks.get_time_ub()
 
-                change = end_time != self.current_time
+            return True
 
-        else:
-            halt, change = self.resolve_schedule()
-
-        return halt, change
+        return self._process_next_instruction()
 
     def step(
         self,
@@ -587,32 +565,35 @@ class SchedulingEnv(Env[ObsType, ActionType]):
     ) -> tuple[ObsType, float, bool, bool, InfoType]:
         if is_single_action(action):
             single_args = tuple(map(int, action[1:]))
-            self.schedule_instruction(action[0], single_args)
+            self._schedule_instruction(action[0], single_args)
 
         elif action is not None:
             for instruction in action:
                 args = tuple(map(int, instruction[1:]))
-                self.schedule_instruction(instruction[0], args)
+                self._schedule_instruction(instruction[0], args)
 
-        previous_objective = self.get_objective()
+        previous_objective = self._get_objective()
 
-        stop = False
-        while not stop:
-            stop, change = self.execute_next_instruction()
-            if change and self.render_mode is not None:
+        while True:
+            if self._dispatch_instruction():
+                break
+
+            if self.render_mode is not None:
                 self.render()
 
         self.query_times.append(self.current_time)
 
-        obs = self.get_state()
+        obs = self._get_state()
 
-        reward = self.get_objective() - previous_objective
+        reward = self._get_objective() - previous_objective
         if self.minimize:
             reward *= -1
 
-        info = self.get_info()
+        truncated = False
+        terminal = self._is_terminal()
+        info = self._get_info()
 
-        return obs, reward, self.is_terminal(), self.truncate(), info
+        return obs, reward, terminal, truncated, info
 
     def render(self) -> None:
         if self.render_mode == "plot":
