@@ -126,9 +126,15 @@ class SchedulingData:
         length = TASK_ID(len(values))
 
         if length == self.n_tasks:
+            if feature in self.task_data:
+                return
+
             self.task_data[feature] = values
 
         elif length == self.n_jobs:
+            if feature in self.jobs_data:
+                return
+
             self.jobs_data[feature] = values
 
         else:

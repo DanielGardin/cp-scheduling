@@ -528,6 +528,9 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         if action & Action.REEVALUATE:
             for task_id in self.tasks.awaiting_tasks:
                 self.tasks[task_id].set_start_lb(self.current_time)
+            
+            for constraint in self.constraints.values():
+                constraint.reevaluate(self.current_time, self.tasks)
 
         if action & Action.PROPAGATE:
             self._propagate()
