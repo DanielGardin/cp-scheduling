@@ -10,6 +10,7 @@ The environment is based on the OpenAI Gym interface, making it compatible with 
 reinforcement learning libraries. It provides methods for resetting the environment, taking
 steps, rendering the environment, and exporting the scheduling model.
 """
+
 from warnings import warn
 
 from typing import Any
@@ -25,6 +26,7 @@ from ._common import (
     MAX_INT,
     ProcessTimeAllowedTypes,
     TASK_ID,
+    PART_ID,
     TIME,
     InstanceTypes,
     InfoType,
@@ -32,7 +34,14 @@ from ._common import (
 )
 from .data import SchedulingData
 from .tasks import Tasks
-from .instructions import Instruction, Signal, parse_instruction, Action, ActionType, SingleAction
+from .instructions import (
+    Instruction,
+    Signal,
+    parse_instruction,
+    Action,
+    ActionType,
+    SingleAction,
+)
 from .schedule_setup import ScheduleSetup
 from .constraints import Constraint
 from .objectives import Objective
@@ -54,6 +63,7 @@ ActionSpace = OneOf(
     ]
 )
 
+
 def is_single_action(
     action: ActionType,
 ) -> TypeIs[SingleAction]:
@@ -66,11 +76,13 @@ def is_single_action(
 
     return True
 
+
 def prepare_instance(instance: InstanceTypes) -> dict[str, list[Any]]:
     "Prepare the instance data to a standard dictionary format."
     features = instance.keys() if isinstance(instance, Mapping) else instance.columns
 
     return {feature: convert_to_list(instance[feature]) for feature in features}
+
 
 class SchedulingEnv(Env[ObsType, ActionType]):
     """
@@ -122,6 +134,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
             The number of parts to split the tasks into. If None, it defaults to 16 if preemption is
             allowed, otherwise 1.
     """
+
     # Environment static variables
     data: SchedulingData
     setup: ScheduleSetup
@@ -182,10 +195,10 @@ class SchedulingEnv(Env[ObsType, ActionType]):
             "render_fps": 50,
         }
 
-        self.renderer =(
+        self.renderer = (
             render_mode
-            if isinstance(render_mode, Renderer) else
-            self._dispatch_render(render_mode)
+            if isinstance(render_mode, Renderer)
+            else self._dispatch_render(render_mode)
         )
 
         self.action_space = ActionSpace
@@ -263,7 +276,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
                 The number of parts to split the tasks into. If None, it defaults to 16 if
                 preemption is allowed, otherwise 1.
         """
-        n_parts = (
+        num_parts: PART_ID = (
             n_parts
             if n_parts is not None  # User-defined number of parts.
             else (
@@ -276,10 +289,14 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         task_data = prepare_instance(instance)
         job_data = prepare_instance(job_instance) if job_instance is not None else {}
 
-        parsed_processing_times = self.setup.parse_process_time(task_data, processing_times)
+        parsed_processing_times = self.setup.parse_process_time(
+            task_data, processing_times
+        )
 
-        self.data = SchedulingData(task_data, parsed_processing_times, job_data, job_feature)
-        self.tasks = Tasks(self.data.job_ids, parsed_processing_times, n_parts)
+        self.data = SchedulingData(
+            task_data, parsed_processing_times, job_data, job_feature
+        )
+        self.tasks = Tasks(self.data.job_ids, parsed_processing_times, num_parts)
 
         for constraint in self.setup.setup_constraints(self.data):
             self.add_constraint(constraint, replace=True)
@@ -436,7 +453,9 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         next_time = self._next_decision_time(strict)
         self.current_time = next_time
 
-    def _schedule_instruction(self, action: str | Instruction, args: tuple[int, ...]) -> None:
+    def _schedule_instruction(
+        self, action: str | Instruction, args: tuple[int, ...]
+    ) -> None:
         "Add a single instruction to the schedule."
         if action in ("execute", "submit") and 0 < len(args) < 3:
             task = args[0]
@@ -467,7 +486,9 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
         self.schedule[time].append(instruction)
 
-    def _process_next_instruction(self, scheduled_time: TIME = -1, allow_wait: bool = True) -> bool:
+    def _process_next_instruction(
+        self, scheduled_time: TIME = -1, allow_wait: bool = True
+    ) -> bool:
         """
         Process the next instruction in the schedule at the given time.
         If time is -1, use the current time and if allow_wait is False,
@@ -483,9 +504,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
             i += 1
             instruction = schedule[i]
 
-            signal = instruction.process(
-                self.current_time, self.tasks, self.schedule
-            )
+            signal = instruction.process(self.current_time, self.tasks, self.schedule)
 
         action: u8 = signal.action
         if not allow_wait and action == Action.WAIT:

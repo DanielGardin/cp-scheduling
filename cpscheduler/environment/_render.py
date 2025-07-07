@@ -25,6 +25,7 @@ except ImportError:
 @mypyc_attr(allow_interpreted_subclasses=True)
 class Renderer:
     "Renderer base class for visualizing task schedules."
+
     def build_gantt(self, current_time: int, tasks: Tasks, data: SchedulingData) -> Any:
         "Build a figure-like object representing the Gantt chart."
 

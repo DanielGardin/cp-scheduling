@@ -6,14 +6,14 @@ It provides a framework for creating various scheduling environments, such as si
 identical parallel machines, uniform parallel machines, job shop, and open shop setups.
 """
 
-from typing import Any, SupportsInt
+from typing import Any
 from collections.abc import Iterable, Mapping
 
 from abc import ABC, abstractmethod
 
 from mypy_extensions import mypyc_attr
 
-from ._common import ProcessTimeAllowedTypes, MACHINE_ID, TIME
+from ._common import ProcessTimeAllowedTypes, MACHINE_ID, TIME, Int
 from .data import SchedulingData
 from .constraints import (
     Constraint,
@@ -183,7 +183,7 @@ class UniformParallelMachineSetup(ScheduleSetup):
 
     def __init__(
         self,
-        speed: Iterable[SupportsInt],
+        speed: Iterable[Int],
         disjunctive: bool = True,
     ):
         self.speed = convert_to_list(speed, int)
@@ -318,24 +318,28 @@ class JobShopSetup(ScheduleSetup):
         disjunctive_constraint = MachineConstraint(name="setup_machine_disjunctive")
 
         operations: list[int] = data[self.operation_order]
-        precedence_mapping: dict[SupportsInt, list[SupportsInt]] = {}
-  
+        precedence_mapping: dict[Int, list[Int]] = {}
+
         task_orders: list[list[int]] = [[] for _ in range(data.n_jobs)]
 
         for task_id, (job_id, operation) in enumerate(zip(data.job_ids, operations)):
             if len(task_orders[job_id]) <= operation:
-                task_orders[job_id].extend([-1] * (operation - len(task_orders[job_id]) + 1))
-            
+                task_orders[job_id].extend(
+                    [-1] * (operation - len(task_orders[job_id]) + 1)
+                )
+
             task_orders[job_id][operation] = task_id
 
         for tasks in task_orders:
             prec = tasks[0]
             for task_id in tasks[1:]:
                 precedence_mapping[prec] = [task_id]
-            
+
                 prec = task_id
 
-        precedence_constraint = PrecedenceConstraint(precedence_mapping, name="setup_precedence")
+        precedence_constraint = PrecedenceConstraint(
+            precedence_mapping, name="setup_precedence"
+        )
 
         return (disjunctive_constraint, precedence_constraint)
 
@@ -350,7 +354,9 @@ class JobShopSetup(ScheduleSetup):
         if is_iterable_int(process_time):
             return [
                 {MACHINE_ID(machine): TIME(p_time)}
-                for machine, p_time in zip(task_data[self.machine_feature], process_time)
+                for machine, p_time in zip(
+                    task_data[self.machine_feature], process_time
+                )
             ]
 
         if isinstance(process_time, str):
@@ -386,9 +392,7 @@ class OpenShopSetup(ScheduleSetup):
         self.disjunctive = disjunctive
 
     def setup_constraints(self, data: SchedulingData) -> tuple[Constraint, ...]:
-        task_jobs: dict[int, list[int]] = {
-            job: [] for job in range(data.n_jobs)
-        }
+        task_jobs: dict[int, list[int]] = {job: [] for job in range(data.n_jobs)}
 
         for task_id, job_id in enumerate(data.job_ids):
             task_jobs[job_id].append(task_id)
@@ -417,7 +421,9 @@ class OpenShopSetup(ScheduleSetup):
         if is_iterable_int(process_time):
             return [
                 {MACHINE_ID(machine): TIME(p_time)}
-                for machine, p_time in zip(task_data[self.machine_feature], process_time)
+                for machine, p_time in zip(
+                    task_data[self.machine_feature], process_time
+                )
             ]
 
         if isinstance(process_time, str):

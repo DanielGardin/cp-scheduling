@@ -7,12 +7,11 @@ and can be used to guide the search for an optimal schedule by providing a numer
 that represents the quality of the schedule.
 """
 
-from typing import SupportsInt, SupportsFloat
 from collections.abc import Iterable
 
 from mypy_extensions import mypyc_attr
 
-from ._common import TIME
+from ._common import TIME, Int, Float
 from .data import SchedulingData
 from .tasks import Tasks
 from .utils import convert_to_list
@@ -86,7 +85,7 @@ class ComposedObjective(Objective):
     def __init__(
         self,
         objectives: Iterable[Objective],
-        coefficients: Iterable[SupportsFloat] | None = None,
+        coefficients: Iterable[Float] | None = None,
     ):
         super().__init__()
         self.objectives = list(objectives)
@@ -184,7 +183,7 @@ class WeightedCompletionTime(Objective):
 
     def __init__(
         self,
-        job_weights: Iterable[SupportsFloat] | str = "weight",
+        job_weights: Iterable[Float] | str = "weight",
     ):
         super().__init__()
         if isinstance(job_weights, str):
@@ -196,6 +195,10 @@ class WeightedCompletionTime(Objective):
     def import_data(self, data: SchedulingData) -> None:
         if "job_weights" in self.tags:
             self.job_weights = data.get_job_level_data(self.tags["job_weights"])
+
+    def export_data(self, data: SchedulingData) -> None:
+        if not self.tags:
+            data.add_data("weight", self.job_weights)
 
     def get_current(self, time: TIME, tasks: Tasks) -> float:
         weighted_completion_time = 0.0
@@ -221,7 +224,7 @@ class MaximumLateness(Objective):
 
     def __init__(
         self,
-        due_dates: Iterable[SupportsInt] | str = "due_date",
+        due_dates: Iterable[Int] | str = "due_date",
     ):
         super().__init__()
         if isinstance(due_dates, str):
@@ -233,6 +236,10 @@ class MaximumLateness(Objective):
     def import_data(self, data: SchedulingData) -> None:
         if "due_dates" in self.tags:
             self.due_dates = data.get_job_level_data(self.tags["due_dates"])
+
+    def export_data(self, data: SchedulingData) -> None:
+        if not self.tags:
+            data.add_data("due_date", self.due_dates)
 
     def get_current(self, time: TIME, tasks: Tasks) -> int:
         max_lateness = 0
@@ -261,7 +268,7 @@ class TotalTardiness(Objective):
 
     def __init__(
         self,
-        due_dates: Iterable[SupportsInt] | str = "due_date",
+        due_dates: Iterable[Int] | str = "due_date",
     ):
         super().__init__()
         if isinstance(due_dates, str):
@@ -273,6 +280,10 @@ class TotalTardiness(Objective):
     def import_data(self, data: SchedulingData) -> None:
         if "due_dates" in self.tags:
             self.due_dates = data.get_job_level_data(self.tags["due_dates"])
+
+    def export_data(self, data: SchedulingData) -> None:
+        if not self.tags:
+            data.add_data("due_date", self.due_dates)
 
     def get_current(self, time: TIME, tasks: Tasks) -> int:
         total_tardiness = 0
@@ -304,8 +315,8 @@ class WeightedTardiness(Objective):
 
     def __init__(
         self,
-        due_dates: Iterable[SupportsInt] | str = "due_date",
-        job_weights: Iterable[SupportsFloat] | str = "weight",
+        due_dates: Iterable[Int] | str = "due_date",
+        job_weights: Iterable[Float] | str = "weight",
     ):
         super().__init__()
         if isinstance(due_dates, str):
@@ -326,6 +337,13 @@ class WeightedTardiness(Objective):
 
         if "job_weights" in self.tags:
             self.job_weights = data.get_job_level_data(self.tags["job_weights"])
+
+    def export_data(self, data: SchedulingData) -> None:
+        if 'due_dates' not in self.tags:
+            data.add_data("due_date", self.due_dates)
+        
+        if 'job_weights' not in self.tags:
+            data.add_data("weight", self.job_weights)
 
     def get_current(self, time: TIME, tasks: Tasks) -> float:
         weighted_tardiness = 0.0
@@ -357,7 +375,7 @@ class TotalEarliness(Objective):
 
     def __init__(
         self,
-        due_dates: Iterable[SupportsInt] | str = "due_date",
+        due_dates: Iterable[Int] | str = "due_date",
     ):
         super().__init__()
         if isinstance(due_dates, str):
@@ -369,6 +387,10 @@ class TotalEarliness(Objective):
     def import_data(self, data: SchedulingData) -> None:
         if "due_dates" in self.tags:
             self.due_dates = data.get_job_level_data(self.tags["due_dates"])
+
+    def export_data(self, data: SchedulingData) -> None:
+        if not self.tags:
+            data.add_data("due_date", self.due_dates)
 
     def get_current(self, time: TIME, tasks: Tasks) -> int:
         total_earliness = 0
@@ -399,8 +421,8 @@ class WeightedEarliness(Objective):
 
     def __init__(
         self,
-        due_dates: Iterable[SupportsInt] | str = "due_date",
-        job_weights: Iterable[SupportsFloat] | str = "weight",
+        due_dates: Iterable[Int] | str = "due_date",
+        job_weights: Iterable[Float] | str = "weight",
     ):
         super().__init__()
         if isinstance(due_dates, str):
@@ -421,6 +443,13 @@ class WeightedEarliness(Objective):
 
         if "job_weights" in self.tags:
             self.job_weights = data.get_job_level_data(self.tags["job_weights"])
+
+    def export_data(self, data: SchedulingData) -> None:
+        if 'due_dates' not in self.tags:
+            data.add_data("due_date", self.due_dates)
+        
+        if 'job_weights' not in self.tags:
+            data.add_data("weight", self.job_weights)
 
     def get_current(self, time: TIME, tasks: Tasks) -> float:
         weighted_earliness = 0.0
@@ -451,7 +480,7 @@ class TotalTardyJobs(Objective):
 
     def __init__(
         self,
-        due_dates: Iterable[SupportsInt] | str = "due_date",
+        due_dates: Iterable[Int] | str = "due_date",
     ):
         super().__init__()
         if isinstance(due_dates, str):
@@ -465,6 +494,10 @@ class TotalTardyJobs(Objective):
             self.due_dates = convert_to_list(
                 data.get_job_level_data(self.tags["due_dates"]), TIME
             )
+        
+    def export_data(self, data: SchedulingData) -> None:
+        if not self.tags:
+            data.add_data("due_date", self.due_dates)
 
     def get_current(self, time: TIME, tasks: Tasks) -> int:
         tardy_jobs = 0
@@ -492,8 +525,8 @@ class WeightedTardyJobs(Objective):
 
     def __init__(
         self,
-        due_dates: Iterable[SupportsInt] | str = "due_date",
-        job_weights: Iterable[SupportsFloat] | str = "weight",
+        due_dates: Iterable[Int] | str = "due_date",
+        job_weights: Iterable[Float] | str = "weight",
     ):
         super().__init__()
         if isinstance(due_dates, str):
@@ -514,6 +547,13 @@ class WeightedTardyJobs(Objective):
 
         if "job_weights" in self.tags:
             self.job_weights = data.get_job_level_data(self.tags["job_weights"])
+
+    def export_data(self, data: SchedulingData) -> None:
+        if 'due_dates' not in self.tags:
+            data.add_data("due_date", self.due_dates)
+        
+        if 'job_weights' not in self.tags:
+            data.add_data("weight", self.job_weights)
 
     def get_current(self, time: TIME, tasks: Tasks) -> float:
         weighted_tardy_jobs = 0.0
@@ -541,7 +581,7 @@ class TotalFlowTime(Objective):
 
     def __init__(
         self,
-        release_times: Iterable[SupportsInt] | str = "release_time",
+        release_times: Iterable[Int] | str = "release_time",
     ):
         super().__init__()
         if isinstance(release_times, str):
@@ -553,6 +593,10 @@ class TotalFlowTime(Objective):
     def import_data(self, data: SchedulingData) -> None:
         if "release_times" in self.tags:
             self.release_times = data.get_job_level_data(self.tags["release_times"])
+
+    def export_data(self, data: SchedulingData) -> None:
+        if not self.tags:
+            data.add_data("release_time", self.release_times)
 
     def get_current(self, time: TIME, tasks: Tasks) -> int:
         total_flowtime = 0

@@ -21,8 +21,10 @@ _T = TypeVar("_T", bound=Any)
 @overload
 def convert_to_list(array: Any, dtype: type[_T]) -> list[_T]: ...
 
+
 @overload
 def convert_to_list(array: Iterable[_T], dtype: None = None) -> list[_T]: ...
+
 
 @overload
 def convert_to_list(array: Any, dtype: None = None) -> list[Any]: ...
@@ -226,14 +228,18 @@ def binary_search(
 
     return left
 
+
 @overload
 def infer_list_space(array: list[str]) -> spaces.Tuple: ...
+
 
 @overload
 def infer_list_space(array: list[int] | list[float]) -> spaces.Box: ...
 
+
 @overload
 def infer_list_space(array: list[bool]) -> spaces.MultiBinary: ...
+
 
 def infer_list_space(array: list[Any]) -> spaces.Space[Any]:
     "Infer the Gymnasium space for a list based on its elements."
@@ -251,7 +257,5 @@ def infer_list_space(array: list[Any]) -> spaces.Space[Any]:
 
     if isinstance(elem, bool):
         return spaces.MultiBinary(n)
-    
-    raise TypeError(
-        f"Unsupported type {type(elem)} for inferring Gymnasium space."
-    )
+
+    raise TypeError(f"Unsupported type {type(elem)} for inferring Gymnasium space.")

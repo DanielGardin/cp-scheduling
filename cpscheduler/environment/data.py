@@ -21,8 +21,13 @@ from .utils import infer_list_space, convert_to_list
 
 JOB_ID_ALIASES = ["job", "job_id"]
 
+
 class SchedulingData:
     "A class to hold static scheduling data for the CPScheduler environment."
+
+    n_tasks: TASK_ID
+    n_jobs: TASK_ID
+    n_machines: MACHINE_ID
 
     task_data: dict[str, list[Any]]
     jobs_data: dict[str, list[Any]]
@@ -30,19 +35,21 @@ class SchedulingData:
     job_ids: list[TASK_ID]
 
     def __init__(
-            self,
-            task_data: dict[str, list[Any]],
-            processing_times: list[dict[MACHINE_ID, TIME]],
-            jobs_data: dict[str, list[Any]],
-            job_feature: str = "",
-        ) -> None:
+        self,
+        task_data: dict[str, list[Any]],
+        processing_times: list[dict[MACHINE_ID, TIME]],
+        jobs_data: dict[str, list[Any]],
+        job_feature: str = "",
+    ) -> None:
         self.task_data = task_data.copy()
         self.jobs_data = jobs_data.copy()
         self.processing_times = processing_times.copy()
 
-        self.n_tasks = len(processing_times)
+        self.n_tasks = TASK_ID(len(processing_times))
         for feature, values in self.task_data.items():
-            if len(values) != self.n_tasks:
+            length = TASK_ID(len(values))
+
+            if length != self.n_tasks:
                 raise ValueError(
                     f"Feature '{feature}' must have length equal to the number of tasks,"
                     f"expected {self.n_tasks}, got {len(values)}."
@@ -52,23 +59,20 @@ class SchedulingData:
         for processing_time in processing_times:
             machines.update(processing_time.keys())
 
-        self.n_machines = len(machines)
+        self.n_machines = MACHINE_ID(len(machines))
 
         if not job_feature:
             for alias in JOB_ID_ALIASES:
                 if alias in self.task_data:
                     job_feature = alias
 
-        job_ids: list[TASK_ID]
         if job_feature in self.task_data:
-            job_ids = self.task_data.pop(job_feature)
-            self.n_jobs = len(set(job_ids))
+            self.job_ids = convert_to_list(self.task_data.pop(job_feature), TASK_ID)
+            self.n_jobs = TASK_ID(len(set(self.job_ids)))
 
         else:  # If no job feature is provided, we assume each task is its own job
-            job_ids = list(range(self.n_tasks))
+            self.job_ids = [task_id for task_id in range(self.n_tasks)]
             self.n_jobs = self.n_tasks
-
-        self.job_ids = convert_to_list(job_ids, TASK_ID)
 
     @classmethod
     def empty(cls) -> Self:
@@ -119,16 +123,18 @@ class SchedulingData:
         raise KeyError(f"Feature '{feature}' not found in jobs data.")
 
     def add_data(self, feature: str, values: list[Any]) -> None:
-        if len(values) == self.n_tasks:
+        length = TASK_ID(len(values))
+
+        if length == self.n_tasks:
             self.task_data[feature] = values
 
-        elif len(values) == self.n_jobs:
+        elif length == self.n_jobs:
             self.jobs_data[feature] = values
 
         else:
             raise ValueError(
                 f"Feature '{feature}' must have length equal to the number of tasks or jobs,"
-                f"expected {self.n_tasks} or {self.n_jobs}, got {len(values)}."
+                f"expected {self.n_tasks} or {self.n_jobs}, got {length}."
             )
 
     def get_gym_space(self) -> Space[ObsType]:
@@ -144,34 +150,29 @@ class SchedulingData:
         }
 
         task_feature_space = {
-            'task_id': Box(low=0, high=self.n_tasks, shape=(self.n_tasks,), dtype=int), # type: ignore
-            'job_id': Box(low=0, high=self.n_jobs, shape=(self.n_tasks,), dtype=int), # type: ignore
+            "task_id": Box(low=0, high=self.n_tasks, shape=(self.n_tasks,), dtype=int),  # type: ignore
+            "job_id": Box(low=0, high=self.n_jobs, shape=(self.n_tasks,), dtype=int),  # type: ignore
             **user_defined_task_data,
-            'status': Tuple([Text(max_length=100) for _ in range(self.n_tasks)])
+            "status": Tuple([Text(max_length=100) for _ in range(self.n_tasks)]),
         }
 
         job_feature_space = {
-            'job_id': Box(low=0, high=self.n_jobs, shape=(self.n_jobs,), dtype=int), # type: ignore
+            "job_id": Box(low=0, high=self.n_jobs, shape=(self.n_jobs,), dtype=int),  # type: ignore
             **user_defined_job_data,
         }
 
-        return Tuple(
-            [
-                Dict(task_feature_space),
-                Dict(job_feature_space)
-            ]
-        )
+        return Tuple([Dict(task_feature_space), Dict(job_feature_space)])
 
     def export_state(self) -> ObsType:
         "Export the status of the tasks in a dictionary format."
         task_state = {
-            'task_id': [i for i in range(self.n_tasks)],
-            'job_id': self.job_ids.copy(),
+            "task_id": [task_id for task_id in range(self.n_tasks)],
+            "job_id": self.job_ids.copy(),
             **{feature: self.task_data[feature] for feature in self.task_data},
         }
 
         job_state = {
-            'job_id': [i for i in range(self.n_jobs)],
+            "job_id": [job_id for job_id in range(self.n_jobs)],
             **{feature: self.jobs_data[feature] for feature in self.jobs_data},
         }
 

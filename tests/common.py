@@ -24,7 +24,7 @@ def env_setup(instance_name: str) -> SchedulingEnv:
 
     try:
         instance, _ = read_jsp_instance(path)
-    
+
     except FileNotFoundError as e:
         if not (path / "instances").exists():
             raise FileNotFoundError(

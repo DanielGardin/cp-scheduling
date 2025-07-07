@@ -4,14 +4,16 @@ from typing import (
     Any,
     Final,
     TypeAlias,
+    TypeVar,
     SupportsInt,
+    SupportsFloat,
     Sequence,
     Protocol,
     runtime_checkable,
 )
 from collections.abc import Iterable, Mapping
 
-from mypy_extensions import i16, i32, u8
+from mypy_extensions import i64, i32, i16, u8
 
 # Type aliases for commonly used types and also for performance optimization with mypyc
 MACHINE_ID: TypeAlias = i16
@@ -19,12 +21,16 @@ TASK_ID: TypeAlias = i32
 PART_ID: TypeAlias = i16
 TIME: TypeAlias = i32
 
+Int: TypeAlias = SupportsInt | int | i64 | i32 | i16 | u8
+Float: TypeAlias = SupportsFloat | float | i64 | i32 | i16 | u8
+
 # Reducing upper bounds to avoid numerical issues
 MIN_INT: Final[TIME] = -(2**24 + 1)
 MAX_INT: Final[TIME] = 2**24 - 1
 
 # Allowed types for task and job data
 ScalarType: TypeAlias = bool | int | float | str
+
 
 @runtime_checkable
 class DataFrameLike(Protocol):

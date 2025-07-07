@@ -6,17 +6,17 @@ Instructions are used to control the execution of tasks, manage their states, an
 with the scheduler.
 """
 
-from typing import ClassVar, Final, TypeAlias, SupportsInt, Iterable
+from typing import ClassVar, Final, TypeAlias, Iterable
 from typing_extensions import Unpack
 
 from dataclasses import dataclass
 
 from mypy_extensions import mypyc_attr, u8
 
-from ._common import TASK_ID, TIME, MACHINE_ID
+from ._common import TASK_ID, TIME, MACHINE_ID, Int
 from .tasks import Tasks
 
-SingleAction: TypeAlias = tuple["str | Instruction", Unpack[tuple[SupportsInt, ...]]]
+SingleAction: TypeAlias = tuple["str | Instruction", Unpack[tuple[Int, ...]]]
 ActionType: TypeAlias = SingleAction | Iterable[SingleAction] | None
 
 
@@ -48,7 +48,7 @@ class Action:
 
     DONE: Final[u8] = PROPAGATE | ADVANCE
     ERROR: Final[u8] = RAISE | HALT
-    WAIT: Final[u8] = SKIPPED | PROPAGATE | ADVANCE_NEXT
+    WAIT: Final[u8] = SKIPPED | ADVANCE_NEXT
 
 
 @dataclass

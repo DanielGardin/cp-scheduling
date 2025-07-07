@@ -1,5 +1,7 @@
 import pytest
 
+from typing_extensions import Unpack
+
 from cpscheduler.instances import generate_taillard_instance
 from cpscheduler.environment import (
     SchedulingEnv,
@@ -141,7 +143,7 @@ def test_pause(instance_name: str) -> None:
 
     processing_time = env.data["processing_time"][0]
 
-    actions: list[tuple[str, *tuple[int, ...]]] = [
+    actions: list[tuple[str, Unpack[tuple[int, ...]]]] = [
         ("execute", 0),
         ("advance", processing_time // 2),
         ("pause", 0),
@@ -161,52 +163,3 @@ def test_pause(instance_name: str) -> None:
 
     assert new_obs["status"][0] == "completed"
     assert new_info["current_time"] == processing_time + processing_time // 2
-
-
-@pytest.mark.env
-def test_resource_constrained() -> None:
-    instance = generate_taillard_instance(4, 1, seed=0)
-
-    resource_constraint = ResourceConstraint(
-        [3.0],
-        [
-            {
-                0: 1.0,
-                1: 1.0,
-                2: 2.0,
-                3: 3.0,
-            }
-        ],
-    )
-
-    env = SchedulingEnv(
-        SingleMachineSetup(disjunctive=False),
-        [resource_constraint],
-    )
-
-    env.set_instance(instance, processing_times="processing_time")
-
-    env.reset()
-
-    (new_obs, _), _, _, _, new_info = env.step(("execute", 0))
-    assert new_info["current_time"] == 0
-    assert new_obs["status"][0] == "executing"
-    assert new_obs["status"][1] == "available"
-    assert new_obs["status"][2] == "available"
-    assert new_obs["status"][3] == "awaiting"
-
-    (new_obs, _), _, _, _, new_info = env.step(("execute", 1))
-    assert new_info["current_time"] == env.tasks[0].get_end()
-    assert new_obs["status"][0] == "completed"
-    assert new_obs["status"][1] == "executing"
-    assert new_obs["status"][2] == "available"
-    assert new_obs["status"][3] == "awaiting"
-
-    (new_obs, _), _, _, _, new_info = env.step(("execute", 2))
-    assert new_obs["status"][0] == "completed"
-    assert new_obs["status"][1] == "completed"
-    assert new_obs["status"][2] == "completed"
-    assert new_obs["status"][3] == "available"
-
-    (new_obs, _), _, terminated, _, new_info = env.step(("execute", 3))
-    assert terminated

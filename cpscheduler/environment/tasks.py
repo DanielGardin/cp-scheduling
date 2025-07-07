@@ -29,18 +29,12 @@ from typing_extensions import Self
 
 from mypy_extensions import u8
 
-from ._common import (
-    MIN_INT,
-    MAX_INT,
-    MACHINE_ID,
-    TASK_ID,
-    PART_ID,
-    TIME,
-    ObsType
-)
+from ._common import MIN_INT, MAX_INT, MACHINE_ID, TASK_ID, PART_ID, TIME, ObsType
+
 
 class Status:
     "Possible statuses of a task at a given time."
+
     # awaiting:  time < start_lb[0] or waiting for a machine
     AWAITING: ClassVar[u8] = 0
 
@@ -56,6 +50,7 @@ class Status:
     # unknown status
     UNKNOWN: ClassVar[u8] = 4
 
+
 status_str = {
     Status.AWAITING: "awaiting",
     Status.EXECUTING: "executing",
@@ -64,12 +59,15 @@ status_str = {
     Status.UNKNOWN: "unknown",
 }
 
+
 def ceil_div(a: TIME, b: TIME) -> TIME:
     "a divided by b, rounded up to the nearest integer."
     return -(-a // b)
 
+
 class Bounds:
     "Store the lower and upper bounds for decision variables."
+
     def __init__(self, lb: TIME = 0, ub: TIME = MAX_INT) -> None:
         self.lb = lb
         self.ub = ub
@@ -93,6 +91,9 @@ class Bounds:
         "Create a null bounds object."
         return cls(lb=MAX_INT, ub=MIN_INT)
 
+    def __repr__(self) -> str:
+        return f"Bounds(lb={self.lb}, ub={self.ub})"
+
 class Task:
     """
     Minimal unit of work that can be scheduled. The task does not know anything about the
@@ -106,6 +107,7 @@ class Task:
     process by modifying the task state.
     The task can be split into multiple parts, each with its own starting time and duration.
     """
+
     _remaining_times: dict[MACHINE_ID, TIME]
 
     starts: list[TIME]
@@ -117,7 +119,10 @@ class Task:
     n_parts: PART_ID
 
     def __init__(
-        self, task_id: TASK_ID, job_id: TASK_ID, processing_times: dict[MACHINE_ID, TIME]
+        self,
+        task_id: TASK_ID,
+        job_id: TASK_ID,
+        processing_times: dict[MACHINE_ID, TIME],
     ) -> None:
         self.task_id = task_id
         self.job_id = job_id
@@ -307,7 +312,7 @@ class Task:
 
         self.fixed = True
         for other_machine in self.start_bounds:
-            if other_machine  == machine:
+            if other_machine == machine:
                 self.start_bounds[other_machine].fix(start)
 
             else:
@@ -405,9 +410,10 @@ class Task:
 
 class Tasks:
     "Container class for the tasks in the scheduling environment."
-    n_tasks: int
-    n_parts: int
-    n_jobs: int
+
+    n_tasks: TASK_ID
+    n_parts: PART_ID
+    n_jobs: TASK_ID
 
     tasks: list[Task]
     jobs: list[list[Task]]
@@ -417,7 +423,10 @@ class Tasks:
     fixed_tasks: set[TASK_ID]
 
     def __init__(
-        self, job_ids: list[TASK_ID], processing_times: list[dict[MACHINE_ID, TIME]], n_parts: int,
+        self,
+        job_ids: list[TASK_ID],
+        processing_times: list[dict[MACHINE_ID, TIME]],
+        n_parts: PART_ID,
     ):
         self.n_parts = n_parts
         self.n_tasks = 0
@@ -432,7 +441,9 @@ class Tasks:
         for job_id, processing_time in zip(job_ids, processing_times):
             self.add_task(job_id, processing_time)
 
-    def add_task(self, job_id: TASK_ID, processing_times: dict[MACHINE_ID, TIME]) -> None:
+    def add_task(
+        self, job_id: TASK_ID, processing_times: dict[MACHINE_ID, TIME]
+    ) -> None:
         "Add a new task to the tasks container."
         task_id = self.n_tasks
         task = Task(task_id, job_id, processing_times)
@@ -502,12 +513,14 @@ class Tasks:
         return [task for task in self.tasks if machine in task.start_bounds]
 
     # TODO: This bound is environment-specific, should be moved to the environment for better estimation
-    def tighten_bounds(self, time: int) -> None:
+    def tighten_bounds(self, time: TIME) -> None:
         "Tighten the bounds of the tasks based on the current time."
 
         max_time = time + sum(
             [
-                max(p_times for p_times in self.tasks[task_id]._remaining_times.values())
+                max(
+                    p_times for p_times in self.tasks[task_id]._remaining_times.values()
+                )
                 for task_id in self.awaiting_tasks
             ]
         )
@@ -534,7 +547,7 @@ class Tasks:
 
     def export_state(self, time: TIME) -> ObsType:
         task_state = {
-            'status': [task.get_buffer(time) for task in self.tasks],
+            "status": [task.get_buffer(time) for task in self.tasks],
         }
 
         job_state: dict[str, list[Any]] = {}

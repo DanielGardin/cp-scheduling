@@ -10,7 +10,6 @@ from cpscheduler.heuristics import (
 )
 
 pdr_expected_results = {
-    # 15x15
     "ta01": {
         "SPT": 1462,
         "MOPNR": 1438,
@@ -21,66 +20,18 @@ pdr_expected_results = {
         "MOPNR": 1448,
         "MWKR": 1494,
     },
-    "ta10": {
-        "SPT":1697,
-        "MOPNR": 1582,
-        "MWKR": 1534
-        },
-    "ta15": {
-        "SPT":1835,
-        "MOPNR": 1682,
-        "MWKR": 1696
-        },
-    "ta20": {
-        "SPT":1710,
-        "MOPNR": 1622,
-        "MWKR": 1689
-        },
-    "ta25": {
-        "SPT":1950,
-        "MOPNR": 1957,
-        "MWKR": 1941
-        },
-    "ta30": {
-        "SPT":1999,
-        "MOPNR": 2017,
-        "MWKR": 1935
-        },
-    "ta35": {
-        "SPT":2497,
-        "MOPNR": 2255,
-        "MWKR": 2226
-        },
-    "ta40": {
-        "SPT":2301,
-        "MOPNR": 2028,
-        "MWKR": 2205
-        },
-    "ta45": {
-        "SPT":2640,
-        "MOPNR": 2487,
-        "MWKR": 2524
-        },
-    "ta50": {
-        "SPT":2429,
-        "MOPNR": 2469,
-        "MWKR": 2493
-        },
-    "ta60": {
-        "SPT":3500,
-        "MOPNR": 3044,
-        "MWKR": 3122
-        },
-    "ta70": {
-        "SPT":3801,
-        "MOPNR": 3590,
-        "MWKR": 3482
-        },
-    "ta80": {
-        "SPT":5848,
-        "MOPNR": 5707,
-        "MWKR": 5505
-        },
+    "ta10": {"SPT": 1697, "MOPNR": 1582, "MWKR": 1534},
+    "ta15": {"SPT": 1835, "MOPNR": 1682, "MWKR": 1696},
+    "ta20": {"SPT": 1710, "MOPNR": 1622, "MWKR": 1689},
+    "ta25": {"SPT": 1950, "MOPNR": 1957, "MWKR": 1941},
+    "ta30": {"SPT": 1999, "MOPNR": 2017, "MWKR": 1935},
+    "ta35": {"SPT": 2497, "MOPNR": 2255, "MWKR": 2226},
+    "ta40": {"SPT": 2301, "MOPNR": 2028, "MWKR": 2205},
+    "ta45": {"SPT": 2640, "MOPNR": 2487, "MWKR": 2524},
+    "ta50": {"SPT": 2429, "MOPNR": 2469, "MWKR": 2493},
+    "ta60": {"SPT": 3500, "MOPNR": 3044, "MWKR": 3122},
+    "ta70": {"SPT": 3801, "MOPNR": 3590, "MWKR": 3482},
+    "ta80": {"SPT": 5848, "MOPNR": 5707, "MWKR": 5505},
 }
 
 heuristics: dict[str, PriorityDispatchingRule] = {
