@@ -72,7 +72,6 @@ def prepare_instance(instance: InstanceTypes) -> dict[str, list[Any]]:
 
     return {feature: convert_to_list(instance[feature]) for feature in features}
 
-
 class SchedulingEnv(Env[ObsType, ActionType]):
     """
     SchedulingEnv is a custom environment for generic scheduling problems. It is designed to be
@@ -134,7 +133,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
     # Environment dynamic variables
     tasks: Tasks
-    scheduled_instructions: dict[TASK_ID, list[Instruction]]
+    schedule: dict[TASK_ID, list[Instruction]]
     current_time: TIME
     advancing_to: TIME
     query_times: list[TIME]
@@ -173,7 +172,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
             Objective() if objective is None else objective, minimize=minimize
         )
 
-        self.scheduled_instructions = {-1: []}
+        self.schedule = {-1: []}
 
         self.current_time = 0
         self.query_times = []
@@ -198,15 +197,6 @@ class SchedulingEnv(Env[ObsType, ActionType]):
                 instance, processing_times, job_instance, job_feature, n_parts
             )
 
-    def __repr__(self) -> str:
-        if self.loaded:
-            return (
-                f"SchedulingEnv({self.get_entry()}, n_tasks={self.tasks.n_tasks}, "
-                f"current_time={self.current_time})"
-            )
-
-        return f"SchedulingEnv({self.get_entry()}, n_tasks=0)"
-
     def _dispatch_render(self, render_model: str | None) -> Renderer:
         "Dispatch the renderer based on the render model."
         if render_model is None:
@@ -227,18 +217,20 @@ class SchedulingEnv(Env[ObsType, ActionType]):
                 f"Constraint with name {name} already exists. Please use a different name."
             )
 
-        self.constraints[name] = constraint
-
         if self.loaded:
-            self.constraints[name].import_data(self.data)
+            constraint.import_data(self.data)
+            constraint.export_data(self.data)
+
+        self.constraints[name] = constraint
 
     def set_objective(self, objective: Objective, minimize: bool | None = None) -> None:
         "Set the objective function for the environment."
+        if self.loaded:
+            objective.import_data(self.data)
+            objective.export_data(self.data)
+
         self.objective = objective
         self.minimize = objective.default_minimize if minimize is None else minimize
-
-        if self.loaded:
-            self.objective.import_data(self.data)
 
     def set_instance(
         self,
@@ -294,8 +286,11 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
         for constraint in self.constraints.values():
             constraint.import_data(self.data)
+            if not constraint.name.startswith("setup_"):
+                constraint.export_data(self.data)
 
         self.objective.import_data(self.data)
+        self.objective.export_data(self.data)
 
         self.observation_space = self.data.get_gym_space()
 
@@ -304,11 +299,11 @@ class SchedulingEnv(Env[ObsType, ActionType]):
     ## Environment state retrieval methods
     def _get_state(self) -> ObsType:
         "Retrieve the current state of the environment from tasks."
-        static_task_data, static_job_data = self.data.export_state()
+        task_data, job_data = self.data.export_state()
         dynamic_task_data, dynamic_job_data = self.tasks.export_state(self.current_time)
 
-        task_data = static_task_data | dynamic_task_data
-        job_data = static_job_data | dynamic_job_data
+        task_data.update(dynamic_task_data)
+        job_data.update(dynamic_job_data)
 
         return task_data, job_data
 
@@ -321,10 +316,12 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
     def _propagate(self) -> None:
         "Propagate the new bounds through the constraints"
-        for task_id in self.tasks.awaiting_tasks:
-            task = self.tasks[task_id]
-            if task.get_start_lb() < self.current_time:
-                task.set_start_lb(self.current_time)
+        # Currently not sure if this is needed, but keeping it for future reference.
+
+        # for task_id in self.tasks.awaiting_tasks:
+        #     task = self.tasks[task_id]
+        #     if task.get_start_lb() < self.current_time:
+        #         task.set_start_lb(self.current_time)
 
         for constraint in self.constraints.values():
             constraint.propagate(self.current_time, self.tasks)
@@ -353,8 +350,8 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         if not self.loaded:
             raise ValueError("Environment not loaded. Please set an instance first.")
 
-        self.scheduled_instructions.clear()
-        self.scheduled_instructions[-1] = []
+        self.schedule.clear()
+        self.schedule[-1] = []
 
         self.current_time = 0
         self.advancing_to = 0
@@ -385,7 +382,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         return True
 
     def _is_schedule_empty(self) -> bool:
-        return not self.scheduled_instructions[-1] and len(self.scheduled_instructions) == 1
+        return not self.schedule[-1] and len(self.schedule) == 1
 
     def _next_decision_time(self, strict: bool = False) -> TIME:
         "Obtain the next decision time to advance. If strict, only consider future tasks."
@@ -399,7 +396,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
                 if self.current_time < start_lb < next_time:
                     next_time = start_lb
 
-            for instruction_time in self.scheduled_instructions:
+            for instruction_time in self.schedule:
                 if self.current_time < instruction_time < next_time:
                     next_time = instruction_time
 
@@ -410,7 +407,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
                 if start_lb < next_time:
                     next_time = start_lb
 
-            for instruction_time in self.scheduled_instructions:
+            for instruction_time in self.schedule:
                 if self.current_time <= instruction_time < next_time:
                     next_time = instruction_time
 
@@ -428,7 +425,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
     def _advance_to_next_instruction(self) -> None:
         "Advance the environment to the next instruction time."
         next_time = self.advancing_to
-        for instruction_time in self.scheduled_instructions:
+        for instruction_time in self.schedule:
             if self.current_time <= instruction_time < next_time:
                 next_time = instruction_time
 
@@ -465,10 +462,10 @@ class SchedulingEnv(Env[ObsType, ActionType]):
             )
             time = self.current_time
 
-        if time not in self.scheduled_instructions:
-            self.scheduled_instructions[time] = []
+        if time not in self.schedule:
+            self.schedule[time] = []
 
-        self.scheduled_instructions[time].append(instruction)
+        self.schedule[time].append(instruction)
 
     def _process_next_instruction(self, scheduled_time: TIME = -1, allow_wait: bool = True) -> bool:
         """
@@ -480,14 +477,14 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         signal = Signal(Action.SKIPPED)
 
         i: i64 = -1
-        schedule = self.scheduled_instructions[scheduled_time]
+        schedule = self.schedule[scheduled_time]
 
         while signal.action & Action.SKIPPED and i + 1 < len(schedule):
             i += 1
             instruction = schedule[i]
 
             signal = instruction.process(
-                self.current_time, self.tasks, self.scheduled_instructions
+                self.current_time, self.tasks, self.schedule
             )
 
         action: u8 = signal.action
@@ -539,11 +536,11 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
     def _dispatch_instruction(self) -> bool:
         "Dispatch the next instruction in the schedule depending on the current state."
-        if self.current_time in self.scheduled_instructions:
+        if self.current_time in self.schedule:
             halt = self._process_next_instruction(self.current_time, False)
 
-            if not self.scheduled_instructions[self.current_time]:
-                self.scheduled_instructions.pop(self.current_time)
+            if not self.schedule[self.current_time]:
+                self.schedule.pop(self.current_time)
 
             return halt
 
@@ -595,6 +592,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
         return obs, reward, terminal, truncated, info
 
+    # Environment rendering and representation methods
     def render(self) -> None:
         if self.render_mode == "plot":
             self.renderer.render(self.current_time, self.tasks, self.data)
@@ -619,3 +617,12 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         gamma = self.objective.get_entry()
 
         return f"{alpha}|{beta}|{gamma}"
+
+    def __repr__(self) -> str:
+        if self.loaded:
+            return (
+                f"SchedulingEnv({self.get_entry()}, n_tasks={self.tasks.n_tasks}, "
+                f"current_time={self.current_time})"
+            )
+
+        return f"SchedulingEnv({self.get_entry()}, n_tasks=0)"

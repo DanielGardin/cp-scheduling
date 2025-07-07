@@ -52,7 +52,7 @@ class ScheduleSetup(ABC):
     @abstractmethod
     def parse_process_time(
         self,
-        data: dict[str, list[Any]],
+        task_data: dict[str, list[Any]],
         process_time: ProcessTimeAllowedTypes,
     ) -> list[dict[MACHINE_ID, TIME]]:
         """
@@ -90,17 +90,17 @@ class SingleMachineSetup(ScheduleSetup):
 
     def parse_process_time(
         self,
-        data: dict[str, list[Any]],
+        task_data: dict[str, list[Any]],
         process_time: ProcessTimeAllowedTypes,
     ) -> list[dict[MACHINE_ID, TIME]]:
         if process_time is None:
-            process_time = infer_processing_time(data)
+            process_time = infer_processing_time(task_data)
 
         if is_iterable_int(process_time):
             return [{0: TIME(p_time)} for p_time in process_time]
 
         if isinstance(process_time, str):
-            return [{0: TIME(p_time)} for p_time in data[process_time]]
+            return [{0: TIME(p_time)} for p_time in task_data[process_time]]
 
         raise ValueError(
             "Cannot parse the process time. Please provide an iterable of integers or a string."
@@ -112,7 +112,7 @@ class SingleMachineSetup(ScheduleSetup):
 
         disjunctive_tasks = {0: [i for i in range(data.n_tasks)]}
 
-        return (DisjunctiveConstraint(disjunctive_tasks, name="disjunctive"),)
+        return (DisjunctiveConstraint(disjunctive_tasks, name="setup_disjunctive"),)
 
     def get_entry(self) -> str:
         return "1"
@@ -142,11 +142,11 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
 
     def parse_process_time(
         self,
-        data: dict[str, list[Any]],
+        task_data: dict[str, list[Any]],
         process_time: ProcessTimeAllowedTypes,
     ) -> list[dict[MACHINE_ID, TIME]]:
         if process_time is None:
-            process_time = infer_processing_time(data)
+            process_time = infer_processing_time(task_data)
 
         if is_iterable_int(process_time):
             return [
@@ -163,7 +163,7 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
                     MACHINE_ID(machine): TIME(p_time)
                     for machine in range(self.n_machines)
                 }
-                for p_time in data[process_time]
+                for p_time in task_data[process_time]
             ]
 
         raise ValueError(
@@ -200,11 +200,11 @@ class UniformParallelMachineSetup(ScheduleSetup):
 
     def parse_process_time(
         self,
-        data: dict[str, list[Any]],
+        task_data: dict[str, list[Any]],
         process_time: ProcessTimeAllowedTypes,
     ) -> list[dict[MACHINE_ID, TIME]]:
         if process_time is None:
-            process_time = infer_processing_time(data)
+            process_time = infer_processing_time(task_data)
 
         if is_iterable_int(process_time):
             return [
@@ -221,7 +221,7 @@ class UniformParallelMachineSetup(ScheduleSetup):
                     machine: p_time // self.speed[machine]
                     for machine in range(self.n_machines)
                 }
-                for p_time in data[process_time]
+                for p_time in task_data[process_time]
             ]
 
         raise ValueError(
@@ -248,7 +248,7 @@ class UnrelatedParallelMachineSetup(ScheduleSetup):
 
     def parse_process_time(
         self,
-        data: dict[str, list[Any]],
+        task_data: dict[str, list[Any]],
         process_time: ProcessTimeAllowedTypes,
     ) -> list[dict[MACHINE_ID, TIME]]:
         if process_time is None:
@@ -262,7 +262,7 @@ class UnrelatedParallelMachineSetup(ScheduleSetup):
             )
 
         if is_iterable_type(process_time, str):
-            processing_times = zip(*[data[feat] for feat in process_time])
+            processing_times = zip(*[task_data[feat] for feat in process_time])
 
             return [
                 {
@@ -341,23 +341,23 @@ class JobShopSetup(ScheduleSetup):
 
     def parse_process_time(
         self,
-        data: dict[str, list[Any]],
+        task_data: dict[str, list[Any]],
         process_time: ProcessTimeAllowedTypes,
     ) -> list[dict[MACHINE_ID, TIME]]:
         if process_time is None:
-            process_time = infer_processing_time(data)
+            process_time = infer_processing_time(task_data)
 
         if is_iterable_int(process_time):
             return [
                 {MACHINE_ID(machine): TIME(p_time)}
-                for machine, p_time in zip(data[self.machine_feature], process_time)
+                for machine, p_time in zip(task_data[self.machine_feature], process_time)
             ]
 
         if isinstance(process_time, str):
             return [
                 {MACHINE_ID(machine): TIME(p_time)}
                 for machine, p_time in zip(
-                    data[self.machine_feature], data[process_time]
+                    task_data[self.machine_feature], task_data[process_time]
                 )
             ]
 
@@ -408,23 +408,23 @@ class OpenShopSetup(ScheduleSetup):
 
     def parse_process_time(
         self,
-        data: dict[str, list[Any]],
+        task_data: dict[str, list[Any]],
         process_time: ProcessTimeAllowedTypes,
     ) -> list[dict[MACHINE_ID, TIME]]:
         if process_time is None:
-            process_time = infer_processing_time(data)
+            process_time = infer_processing_time(task_data)
 
         if is_iterable_int(process_time):
             return [
                 {MACHINE_ID(machine): TIME(p_time)}
-                for machine, p_time in zip(data[self.machine_feature], process_time)
+                for machine, p_time in zip(task_data[self.machine_feature], process_time)
             ]
 
         if isinstance(process_time, str):
             return [
                 {MACHINE_ID(machine): TIME(p_time)}
                 for machine, p_time in zip(
-                    data[self.machine_feature], data[process_time]
+                    task_data[self.machine_feature], task_data[process_time]
                 )
             ]
 

@@ -58,6 +58,9 @@ class Constraint(ABC):
     def import_data(self, data: SchedulingData) -> None:
         "Import data from the instance when necessary."
 
+    def export_data(self, data: SchedulingData) -> None:
+        "Export data to the instance when necessary."
+
     def reset(self, tasks: Tasks) -> None:
         "Reset the constraint to its initial state."
         return
@@ -154,6 +157,43 @@ class PrecedenceConstraint(Constraint):
         if self.topological_order and len(self.precedence[task]) == 0:
             self.topological_order.remove(task)
 
+    def is_intree(self) -> bool:
+        "Check if the precedence graph is an in-tree."
+        for tasks in self.original_precedence.values():
+            if len(tasks) > 1:
+                return False
+        
+        return True
+
+    def is_outtree(self) -> bool:
+        "Check if the precedence graph is an out-tree."
+        n_children = 0
+        unique_children: set[TASK_ID] = set()
+
+        for tasks in self.original_precedence.values():
+            n_children += len(tasks)
+            unique_children.update(tasks)
+
+        return n_children == len(unique_children)
+
+    def export_data(self, data: SchedulingData) -> None:
+        if self.is_intree():
+            successors = [
+                self.original_precedence[task_id][0] if task_id in self.original_precedence else -1
+                for task_id in range(data.n_tasks)
+            ]
+
+            data.add_data("successor", successors)
+
+        if self.is_outtree():
+            predecessors = [-1 for _ in range(data.n_tasks)]
+            for task_id, children in self.original_precedence.items():
+                for child_id in children:
+                    predecessors[child_id] = task_id
+            
+            data.add_data("predecessor", predecessors)
+
+
     def reset(self, tasks: Tasks) -> None:
         self.precedence = {
             task_id: [child_id for child_id in children]
@@ -189,15 +229,8 @@ class PrecedenceConstraint(Constraint):
                 ptr += 1
 
     def get_entry(self) -> str:
-        n_children = 0
-        unique_children: set[TASK_ID] = set()
-        intree = True
-        for tasks in self.precedence.values():
-            intree = intree and len(tasks) <= 1
-            n_children += len(tasks)
-            unique_children.update(tasks)
-
-        outtree = n_children == len(unique_children)
+        intree = self.is_intree()
+        outtree = self.is_outtree()
 
         graph = "prec"
         if intree and outtree:
@@ -371,6 +404,13 @@ class ReleaseDateConstraint(Constraint):
                 for task_id, release_time in enumerate(release_times)
             }
 
+    def export_data(self, data: SchedulingData) -> None:
+        if not self.release_dates:
+            data.add_data(
+                "release_time",
+                [self.release_dates.get(TASK_ID(task), TIME(0)) for task in range(data.n_tasks)]
+            )
+
     def reset(self, tasks: Tasks) -> None:
         for task_id, date in self.release_dates.items():
             tasks[task_id].set_start_lb(date)
@@ -422,12 +462,19 @@ class DeadlineConstraint(Constraint):
 
     def import_data(self, data: SchedulingData) -> None:
         if "due_date" in self.tags:
-            due_dates = data.get_task_level_data(self.tags["release_time"])
+            due_dates = data.get_task_level_data(self.tags["due_date"])
 
             self.deadlines = {
                 TASK_ID(task_id): TIME(due_date)
                 for task_id, due_date in enumerate(due_dates)
             }
+
+    def export_data(self, data: SchedulingData) -> None:
+        if not self.deadlines:
+            data.add_data(
+                "due_date",
+                [self.deadlines.get(TASK_ID(task), TIME(0)) for task in range(data.n_tasks)]
+            )
 
     def reset(self, tasks: Tasks) -> None:
         for task_id, date in self.deadlines.items():

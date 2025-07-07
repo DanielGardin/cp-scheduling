@@ -45,7 +45,10 @@ class Objective:
         return f"{self.__class__.__name__}()"
 
     def import_data(self, data: SchedulingData) -> None:
-        "Make the objective aware of the tasks it is applied to."
+        "Import data from the instance when necessary."
+
+    def export_data(self, data: SchedulingData) -> None:
+        "Export data to the instance when necessary."
 
     def get_current(self, time: TIME, tasks: Tasks) -> float:
         """

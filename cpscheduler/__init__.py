@@ -1,7 +1,6 @@
 from gymnasium import register
 
 from .environment import *
-from . import aliases
 
 register(
     id="Scheduling-v0",

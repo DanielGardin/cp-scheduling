@@ -9,14 +9,11 @@ import asyncio
 
 TimeUnits = Literal["ms", "s", "m", "h", "d"]
 
-
 @overload
 def resolve_timeout(timeout: int, timeout_unit: TimeUnits) -> timedelta: ...
 
-
 @overload
 def resolve_timeout(timeout: None, timeout_unit: TimeUnits) -> None: ...
-
 
 def resolve_timeout(
     timeout: int | None,
@@ -40,14 +37,7 @@ def resolve_timeout(
     if timeout_unit == "d":
         return timedelta(days=timeout)
 
-    raise ValueError(
-        f"Time unit {timeout_unit} not recognized. Use 'ms', 's', 'm', 'h', or 'd'."
-    )
-
-
 _T = TypeVar("_T")
-
-
 def run_couroutine(coro: Coroutine[Any, Any, _T]) -> _T:
     loop = asyncio.get_event_loop()
 
@@ -58,7 +48,6 @@ def run_couroutine(coro: Coroutine[Any, Any, _T]) -> _T:
         nest_asyncio.apply()
 
     return asyncio.run(coro)
-
 
 def scale_to_int(
     coefficients: Iterable[float], constant: float = 1.0, max_scale: int = 1000

@@ -89,27 +89,6 @@ class SchedulingData:
 
         raise KeyError(f"Feature '{key}' not found in tasks or jobs data.")
 
-    def __setitem__(self, key: str, value: list[Any]) -> None:
-        "Set a specific data feature for all tasks or jobs."
-        if key in self.task_data:
-            if len(value) != self.n_tasks:
-                raise ValueError(
-                    f"Feature '{key}' must have length equal to the number of tasks,"
-                    f"expected {self.n_tasks}, got {len(value)}."
-                )
-            self.task_data[key] = value
-        
-        elif key in self.jobs_data:
-            if len(value) != self.n_jobs:
-                raise ValueError(
-                    f"Feature '{key}' must have length equal to the number of jobs,"
-                    f"expected {self.n_jobs}, got {len(value)}."
-                )
-            self.jobs_data[key] = value
-
-        else:
-            raise KeyError(f"Feature '{key}' not found in tasks or jobs data.")
-
     def get_task_level_data(self, feature: str) -> list[Any]:
         "Get a specific, task or job, data feature for all tasks."
         if feature in self.task_data:
@@ -138,6 +117,19 @@ class SchedulingData:
             return job_level_data
 
         raise KeyError(f"Feature '{feature}' not found in jobs data.")
+
+    def add_data(self, feature: str, values: list[Any]) -> None:
+        if len(values) == self.n_tasks:
+            self.task_data[feature] = values
+
+        elif len(values) == self.n_jobs:
+            self.jobs_data[feature] = values
+
+        else:
+            raise ValueError(
+                f"Feature '{feature}' must have length equal to the number of tasks or jobs,"
+                f"expected {self.n_tasks} or {self.n_jobs}, got {len(values)}."
+            )
 
     def get_gym_space(self) -> Space[ObsType]:
         "Infer the gym space for the task data."
