@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from collections.abc import Sequence
+
 from time import perf_counter
 from prettytable import PrettyTable
 
@@ -38,7 +40,6 @@ benchmark_times = {
     "ta60": 1.6,
     "ta70": 2.0,
     "ta80": 7.8,
-    # "kopt_ops10000_m100_1" : 3 * 60
 }
 
 def is_compiled() -> bool:
@@ -116,7 +117,7 @@ def statistics(
 
 root = Path(__file__).parent
 
-def test_speed(n: int = 1, full: bool = False, quiet: bool = False) -> None:
+def test_speed(n: int = 1, full: bool = False, quiet: bool = False, plot: bool = False) -> None:
     """
     Test the speed of the Shortest Processing Time heuristic on various job shop instances.
     Parameters
@@ -166,6 +167,12 @@ def test_speed(n: int = 1, full: bool = False, quiet: bool = False) -> None:
     values: list[float] = []
     speedup_strs: list[str] = []
 
+    task_numbers: list[int] = []
+    perf: list[float] = []
+    perf_err: list[float] = []
+
+    times: dict[str, dict[str, float]] = {}
+
     dots = 0
     if not quiet:
         print(f"Running \033[;36m{n}{RESET} iteration{'s' if n > 1 else ''} per instance", end='')
@@ -190,7 +197,8 @@ def test_speed(n: int = 1, full: bool = False, quiet: bool = False) -> None:
                 print(f'\r{' ' * 100}', end=f"\rRunning \033[;36m{n}{RESET} iteration{'s' if n > 1 else ''} per instance", flush=True)
                 dots = 0
 
-        for _ in range(n):
+        n_tasks = 0
+        for i in range(n):
             global_tick = perf_counter()
 
             tick = perf_counter()
@@ -223,12 +231,25 @@ def test_speed(n: int = 1, full: bool = False, quiet: bool = False) -> None:
             global_tock = perf_counter()
             time_dict["all"].append(global_tock - global_tick)
 
+            n_tasks = env.tasks.n_tasks
+
             del env
 
+        times[instance_name] = {
+            stage: sum(time_dict[stage]) / n for stage in time_dict
+        }
+
+        mean_time = sum(time_dict["all"]) / n
+        std_time = (sum((t - mean_time) ** 2 for t in time_dict["all"]) / n) ** 0.5
+
+        task_numbers.append(n_tasks)
+        perf.append(mean_time)
+        perf_err.append(std_time)
+
         speedups = [bench_time / t - 1 for t in time_dict["step"]]
-        mean_speedup = sum(speedups) / len(speedups)
+        mean_speedup = sum(speedups) / n
         std_speedup = (
-            sum((s - mean_speedup) ** 2 for s in speedups) / len(speedups)
+            sum((s - mean_speedup) ** 2 for s in speedups) / n
         ) ** 0.5
 
         values.append(mean_speedup)
@@ -262,8 +283,8 @@ def test_speed(n: int = 1, full: bool = False, quiet: bool = False) -> None:
             )
 
         else:
-            mean_time = sum(time_dict["step"]) / len(time_dict["step"])
-            std_time = (sum((t - mean_time) ** 2 for t in time_dict["step"]) / len(time_dict["step"])) ** 0.5
+            mean_time = sum(time_dict["step"]) / n
+            std_time = (sum((t - mean_time) ** 2 for t in time_dict["step"]) / n) ** 0.5
 
             table.add_row(
                 [
@@ -280,7 +301,7 @@ def test_speed(n: int = 1, full: bool = False, quiet: bool = False) -> None:
     # RECORDS: 49x speedup for small instances
     #           8x speedup for large instances
     speedup_strs = [
-        colormap(value, min_value=0, max_value=8) + speed + RESET
+        colormap(value, min_value=0, max_value=10) + speed + RESET
         for value, speed in zip(values, speedup_strs)
     ]
 
@@ -290,6 +311,103 @@ def test_speed(n: int = 1, full: bool = False, quiet: bool = False) -> None:
     
     print('\n')
     print(table, flush=True)
+
+    if plot:
+        from matplotlib.axes import Axes
+
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+
+        sns.set_theme(style="whitegrid", palette="Set2", font_scale=1.2)
+
+
+        ax: Sequence[Axes]
+        fig, ax = plt.subplots(ncols=2, figsize=(20, 6))
+        # sns.barplot(
+        #     x=list(benchmark_times.keys()),
+        #     y=values,
+        #     hue=np.array(values),
+        #     hue_norm=(0, 10),
+        #     palette="rocket",
+        #     ax=ax[0],
+        #     edgecolor='black',
+        #     linewidth=1,
+        #     legend=False,
+        # )
+
+        # Stacked bar plot for time in each stage
+        stages = ["instance", "setup", "reset", "pdr", "step"]
+        stage_times = np.array([[time_dict[stage] for stage in time_dict]
+                               for time_dict in times.values()])
+
+        stage_times = stage_times.T  # Transpose to have stages as rows
+
+        for i, stage in enumerate(stages):
+            ax[0].bar(
+                list(times.keys()),
+                stage_times[i],
+                label=stage,
+                linewidth=0,
+                bottom=np.sum(stage_times[:i], axis=0) if i > 0 else None,
+            )
+
+        ax[0].set_title("Time per stage for each instance")
+        ax[0].set_xlabel("Instance")
+        ax[0].set_ylabel("Time (s)")
+        ax[0].legend(title="Stage", loc='upper left')
+        ax[0].set_xticks(list(times.keys()))
+        ax[0].set_xticklabels(list(times.keys()), rotation=90)
+
+        ax[1].set_title("Average time vs Number of Tasks")
+        ax[1].set_xlabel("Number of Tasks")
+        ax[1].set_ylabel("Average time (s)")
+
+        # Fit a quadratic curve to the data
+        fit_coef, ang_coef, lin_coef = np.polyfit(task_numbers, perf, 2)
+
+        x = np.linspace(0, max(task_numbers), 100)
+        ax[1].plot(
+            x,
+            lin_coef + x * (ang_coef + x * fit_coef),
+            color='red',
+            label='Quadratic Fit',
+            zorder=1,
+        )
+
+        sup_coef = max((perf - (ang_coef * n_tasks + lin_coef)) / n_tasks**2 for perf, n_tasks in zip(perf, task_numbers))
+        inf_coef = min((perf - (ang_coef * n_tasks + lin_coef)) / n_tasks**2 for perf, n_tasks in zip(perf, task_numbers))
+
+        # Plot the area between the curves
+        ax[1].fill_between(
+            x,
+            lin_coef + x * (ang_coef + x * inf_coef),
+            lin_coef + x * (ang_coef + x * sup_coef),
+            color='lightblue',
+            alpha=0.5,
+            label='Quadratic Growth Area',
+            zorder=0,
+        )
+
+        # Scatter plot with error bars
+        ax[1].errorbar(
+            task_numbers,
+            perf,
+            yerr=perf_err,
+            color='black',
+            fmt='o',
+            ecolor='black',
+            elinewidth=2,
+            capsize=4,
+            label='Measured Times',
+            zorder=2
+        )
+
+        # ax[1].set_xscale('log')
+        # ax[1].set_yscale('log')
+
+        ax[1].legend()
+        plt.tight_layout()
+        plt.show()
 
 
 if __name__ == "__main__":
