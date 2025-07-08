@@ -67,10 +67,6 @@ class Constraint(ABC):
         "Reset the constraint to its initial state."
         return
 
-    def reevaluate(self, time: TIME, tasks: Tasks) -> None:
-        "Reevaluate the constraint based on the current state of the tasks."
-        return
-
     # Some subclasses may not need to implement this method if the constraints
     # are not time-dependent and are ensured in the reset method.
     def propagate(self, time: TIME, tasks: Tasks) -> None:
@@ -647,9 +643,14 @@ class MachineConstraint(Constraint):
         for machine in range(len(self.machine_free)):
             self.machine_free[machine] = 0
 
-    def reevaluate(self, time: TIME, tasks: Tasks) -> None:
-        for machine in range(len(self.machine_free)):
-            self.machine_free[machine] = time
+    # def reevaluate(self, time: TIME, tasks: Tasks) -> None:
+    #     for task_id in tasks.transition_tasks:
+    #         task = tasks[task_id]
+
+    #         machine = task.get_assignment()
+    #         end_time = task.get_end()
+
+    #         self.machine_free[machine] = end_time
 
     def propagate(self, time: TIME, tasks: Tasks) -> None:
         for task_id in tasks.transition_tasks:
@@ -658,8 +659,7 @@ class MachineConstraint(Constraint):
             machine = task.get_assignment()
             end_time = task.get_end()
 
-            if end_time > self.machine_free[machine]:
-                self.machine_free[machine] = end_time
+            self.machine_free[machine] = end_time
 
         for task_id in tasks.awaiting_tasks:
             task = tasks[task_id]
