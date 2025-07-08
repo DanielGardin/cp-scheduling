@@ -4,30 +4,23 @@ utils.py
 This module provides utility functions for the environment and other modules.
 """
 
-from typing import Any, TypeVar, overload, SupportsInt
+from typing import Any, TypeVar, overload
 from collections.abc import Iterable, Sequence
 from typing_extensions import TypeIs
 
 from collections import deque
 
-from ._common import TASK_ID
+from ._common import TASK_ID, Int
 
-_T = TypeVar("_T", bound=Any)
-
-
+_T = TypeVar("_T")
 @overload
 def convert_to_list(array: Any, dtype: type[_T]) -> list[_T]: ...
-
-
 @overload
-def convert_to_list(array: Iterable[_T], dtype: None = None) -> list[_T]: ...
-
-
+def convert_to_list(array: Iterable[_T], dtype: None = ...) -> list[_T]: ...
 @overload
-def convert_to_list(array: Any, dtype: None = None) -> list[Any]: ...
+def convert_to_list(array: Any, dtype: None = ...) -> list[Any]: ...
 
-
-def convert_to_list(array: Iterable[Any], dtype: type[_T] | None = None) -> list[Any]:
+def convert_to_list(array: Iterable[Any], dtype: type[Any] | None = None) -> list[Any]:
     """
     Convert an iterable to a list. If a dtype is provided, the elements of the list will be casted
     to that type.
@@ -60,7 +53,9 @@ def convert_to_list(array: Iterable[Any], dtype: type[_T] | None = None) -> list
         return [array] if dtype is None else [dtype(array)]
 
 
-def is_iterable_type(obj: Any, dtype: type[_T], lazy: bool = True) -> TypeIs[Iterable[_T]]:
+def is_iterable_type(
+    obj: Any, dtype: type[_T], lazy: bool = True
+) -> TypeIs[Iterable[_T]]:
     """
     Returns whether the object is an iterable containing elements of the specified type.
 
@@ -83,26 +78,35 @@ def is_iterable_type(obj: Any, dtype: type[_T], lazy: bool = True) -> TypeIs[Ite
         Whether the object is an iterable containing elements of the specified type.
     """
     try:
-        for item in obj:
-            if not isinstance(item, dtype):
-                return False
+        if lazy:
+            first_item = next(iter(obj))
+            return isinstance(first_item, dtype)
 
-        return True
-
-    except Exception:
+        return all(isinstance(item, dtype) for item in obj)
+    
+    # except StopIteration:
+    #     # If the iterable is empty, we consider it to be of the specified type
+    #     return True
+    
+    except TypeError:
+        # If the iterable is not a collection, it will raise a TypeError
         return False
 
 
-# Thank you mypy for not supporting Abstract classes with type[T]
-def is_iterable_int(obj: Any) -> TypeIs[Iterable[SupportsInt]]:
+def is_iterable_int(obj: Any, lazy: bool = True) -> TypeIs[Iterable[Int]]:
     try:
-        for item in obj:
-            if not isinstance(item, SupportsInt):
-                return False
+        if lazy:
+            first_item = next(iter(obj))
+            return isinstance(first_item, Int)
 
-        return True
-
-    except Exception:
+        return all(isinstance(item, Int) for item in obj)
+    
+    # except StopIteration:
+    #     # If the iterable is empty, we consider it to be of the specified type
+    #     return True
+    
+    except TypeError:
+        # If the iterable is not a collection, it will raise a TypeError
         return False
 
 

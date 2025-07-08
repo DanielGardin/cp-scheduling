@@ -60,6 +60,7 @@ InstanceTypes: TypeAlias = DataFrameLike | Mapping[Any, Iterable[Any]]
 ObsType: TypeAlias = tuple[dict[str, list[Any]], dict[str, list[Any]]]
 InfoType: TypeAlias = dict[str, Any]
 
+
 class InstanceConfig(TypedDict):
     "Instance configuration for the environment."
 

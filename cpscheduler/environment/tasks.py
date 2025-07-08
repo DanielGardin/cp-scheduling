@@ -94,6 +94,7 @@ class Bounds:
     def __repr__(self) -> str:
         return f"Bounds(lb={self.lb}, ub={self.ub})"
 
+
 class Task:
     """
     Minimal unit of work that can be scheduled. The task does not know anything about the
@@ -553,3 +554,10 @@ class Tasks:
         job_state: dict[str, list[Any]] = {}
 
         return task_state, job_state
+
+    def __repr__(self) -> str:
+        return (
+            f"Tasks(n_tasks={self.n_tasks}, awaiting={len(self.awaiting_tasks)}, "
+            f"fixed={len(self.fixed_tasks)}, transition={len(self.transition_tasks)})"
+        )
+    

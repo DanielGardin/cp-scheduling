@@ -27,7 +27,7 @@ from ._common import (
     InstanceTypes,
     InfoType,
     ObsType,
-    InstanceConfig
+    InstanceConfig,
 )
 from .data import SchedulingData
 from .tasks import Tasks
@@ -37,7 +37,7 @@ from .instructions import (
     parse_instruction,
     Action,
     ActionType,
-    is_single_action
+    is_single_action,
 )
 from .schedule_setup import ScheduleSetup
 from .constraints import Constraint
@@ -45,6 +45,7 @@ from .objectives import Objective
 from .utils import convert_to_list
 
 from ._render import Renderer, PlotlyRenderer
+
 
 def prepare_instance(instance: InstanceTypes) -> dict[str, list[Any]]:
     "Prepare the instance data to a standard dictionary format."
@@ -118,7 +119,6 @@ class SchedulingEnv:
 
     # Gymnasium support variables
 
-
     # Environment constructor methods
     def __init__(
         self,
@@ -150,7 +150,6 @@ class SchedulingEnv:
         self.current_time = 0
         self.advancing_to = 0
         self.query_times: list[TIME] = []
-
 
         self.renderer = (
             render_mode
@@ -570,7 +569,7 @@ class SchedulingEnv:
         if self.loaded:
             return (
                 f"SchedulingEnv({self.get_entry()}, n_tasks={self.tasks.n_tasks}, "
-                f"current_time={self.current_time})"
+                f"current_time={self.current_time}, objective={self._get_objective()})"
             )
 
         return f"SchedulingEnv({self.get_entry()}, n_tasks=0)"
