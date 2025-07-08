@@ -29,7 +29,8 @@ class Objective:
     that represents the quality of the schedule.
     """
 
-    default_minimize: bool = True
+    minimize: bool
+
     tags: dict[str, str]
 
     def __init_subclass__(cls) -> None:
@@ -37,7 +38,8 @@ class Objective:
 
         objectives[cls.__name__] = cls
 
-    def __init__(self) -> None:
+    def __init__(self, minimize: bool = True) -> None:
+        self.minimize = minimize
         self.tags = {}
 
     def __repr__(self) -> str:
@@ -77,6 +79,9 @@ class ComposedObjective(Objective):
         coefficients: Iterable[float], optional
             An iterable of coefficients for each objective. If not provided, all objectives
             are assumed to have a coefficient of 1.0.
+
+        minimize: bool, default=True
+            Whether to minimize or maximize the objective function.
     """
 
     objectives: list[Objective]
@@ -86,8 +91,9 @@ class ComposedObjective(Objective):
         self,
         objectives: Iterable[Objective],
         coefficients: Iterable[Float] | None = None,
+        minimize: bool = True,
     ):
-        super().__init__()
+        super().__init__(minimize)
         self.objectives = list(objectives)
 
         self.coefficients = (
@@ -184,8 +190,9 @@ class WeightedCompletionTime(Objective):
     def __init__(
         self,
         job_weights: Iterable[Float] | str = "weight",
+        minimize: bool = True,
     ):
-        super().__init__()
+        super().__init__(minimize)
         if isinstance(job_weights, str):
             self.tags["job_weights"] = job_weights
 
@@ -225,8 +232,9 @@ class MaximumLateness(Objective):
     def __init__(
         self,
         due_dates: Iterable[Int] | str = "due_date",
+        minimize: bool = True,
     ):
-        super().__init__()
+        super().__init__(minimize)
         if isinstance(due_dates, str):
             self.tags["due_dates"] = due_dates
 
@@ -269,8 +277,9 @@ class TotalTardiness(Objective):
     def __init__(
         self,
         due_dates: Iterable[Int] | str = "due_date",
+        minimize: bool = True,
     ):
-        super().__init__()
+        super().__init__(minimize)
         if isinstance(due_dates, str):
             self.tags["due_dates"] = due_dates
 
@@ -317,8 +326,9 @@ class WeightedTardiness(Objective):
         self,
         due_dates: Iterable[Int] | str = "due_date",
         job_weights: Iterable[Float] | str = "weight",
+        minimize: bool = True,
     ):
-        super().__init__()
+        super().__init__(minimize)
         if isinstance(due_dates, str):
             self.tags["due_dates"] = due_dates
 
@@ -339,10 +349,10 @@ class WeightedTardiness(Objective):
             self.job_weights = data.get_job_level_data(self.tags["job_weights"])
 
     def export_data(self, data: SchedulingData) -> None:
-        if 'due_dates' not in self.tags:
+        if "due_dates" not in self.tags:
             data.add_data("due_date", self.due_dates)
-        
-        if 'job_weights' not in self.tags:
+
+        if "job_weights" not in self.tags:
             data.add_data("weight", self.job_weights)
 
     def get_current(self, time: TIME, tasks: Tasks) -> float:
@@ -376,8 +386,9 @@ class TotalEarliness(Objective):
     def __init__(
         self,
         due_dates: Iterable[Int] | str = "due_date",
+        minimize: bool = True,
     ):
-        super().__init__()
+        super().__init__(minimize)
         if isinstance(due_dates, str):
             self.tags["due_dates"] = due_dates
 
@@ -423,8 +434,9 @@ class WeightedEarliness(Objective):
         self,
         due_dates: Iterable[Int] | str = "due_date",
         job_weights: Iterable[Float] | str = "weight",
+        minimize: bool = True,
     ):
-        super().__init__()
+        super().__init__(minimize)
         if isinstance(due_dates, str):
             self.tags["due_dates"] = due_dates
 
@@ -445,10 +457,10 @@ class WeightedEarliness(Objective):
             self.job_weights = data.get_job_level_data(self.tags["job_weights"])
 
     def export_data(self, data: SchedulingData) -> None:
-        if 'due_dates' not in self.tags:
+        if "due_dates" not in self.tags:
             data.add_data("due_date", self.due_dates)
-        
-        if 'job_weights' not in self.tags:
+
+        if "job_weights" not in self.tags:
             data.add_data("weight", self.job_weights)
 
     def get_current(self, time: TIME, tasks: Tasks) -> float:
@@ -481,8 +493,9 @@ class TotalTardyJobs(Objective):
     def __init__(
         self,
         due_dates: Iterable[Int] | str = "due_date",
+        minimize: bool = True,
     ):
-        super().__init__()
+        super().__init__(minimize)
         if isinstance(due_dates, str):
             self.tags["due_dates"] = due_dates
 
@@ -494,7 +507,7 @@ class TotalTardyJobs(Objective):
             self.due_dates = convert_to_list(
                 data.get_job_level_data(self.tags["due_dates"]), TIME
             )
-        
+
     def export_data(self, data: SchedulingData) -> None:
         if not self.tags:
             data.add_data("due_date", self.due_dates)
@@ -527,8 +540,9 @@ class WeightedTardyJobs(Objective):
         self,
         due_dates: Iterable[Int] | str = "due_date",
         job_weights: Iterable[Float] | str = "weight",
+        minimize: bool = True,
     ):
-        super().__init__()
+        super().__init__(minimize)
         if isinstance(due_dates, str):
             self.tags["due_dates"] = due_dates
 
@@ -549,10 +563,10 @@ class WeightedTardyJobs(Objective):
             self.job_weights = data.get_job_level_data(self.tags["job_weights"])
 
     def export_data(self, data: SchedulingData) -> None:
-        if 'due_dates' not in self.tags:
+        if "due_dates" not in self.tags:
             data.add_data("due_date", self.due_dates)
-        
-        if 'job_weights' not in self.tags:
+
+        if "job_weights" not in self.tags:
             data.add_data("weight", self.job_weights)
 
     def get_current(self, time: TIME, tasks: Tasks) -> float:
@@ -582,8 +596,9 @@ class TotalFlowTime(Objective):
     def __init__(
         self,
         release_times: Iterable[Int] | str = "release_time",
+        minimize: bool = True,
     ):
-        super().__init__()
+        super().__init__(minimize)
         if isinstance(release_times, str):
             self.tags["release_times"] = release_times
 

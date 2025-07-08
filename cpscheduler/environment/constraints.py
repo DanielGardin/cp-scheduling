@@ -65,13 +65,11 @@ class Constraint(ABC):
 
     def reset(self, tasks: Tasks) -> None:
         "Reset the constraint to its initial state."
-        return
 
     # Some subclasses may not need to implement this method if the constraints
     # are not time-dependent and are ensured in the reset method.
     def propagate(self, time: TIME, tasks: Tasks) -> None:
         "Ensure the constraint is satisfied."
-        return
 
     def get_entry(self) -> str:
         "Produce the β entry for the constraint."
@@ -201,7 +199,7 @@ class PrecedenceConstraint(Constraint):
 
     def reset(self, tasks: Tasks) -> None:
         self.precedence = {
-            task_id: [child_id for child_id in children]
+            task_id: children.copy()
             for task_id, children in self.original_precedence.items()
         }
 
@@ -330,7 +328,7 @@ class DisjunctiveConstraint(Constraint):
 
     def reset(self, tasks: Tasks) -> None:
         self.disjunctive_groups = {
-            group: [task for task in group_tasks]
+            group: group_tasks.copy()
             for group, group_tasks in self.original_disjunctive_groups.items()
         }
 
@@ -548,10 +546,7 @@ class ResourceConstraint(Constraint):
         ]
 
     def reset(self, tasks: Tasks) -> None:
-        self.resources = [
-            {task_id: usage for task_id, usage in resources.items()}
-            for resources in self.original_resources
-        ]
+        self.resources = [resources.copy() for resources in self.original_resources]
 
     def propagate(self, time: TIME, tasks: Tasks) -> None:
         for i, task_resources in enumerate(self.resources):
@@ -640,7 +635,7 @@ class MachineConstraint(Constraint):
         self.machine_free = [0 for _ in range(data.n_machines)]
 
     def reset(self, tasks: Tasks) -> None:
-        for machine in range(len(self.machine_free)):
+        for machine, _ in enumerate(self.machine_free):
             self.machine_free[machine] = 0
 
     # def reevaluate(self, time: TIME, tasks: Tasks) -> None:
@@ -710,7 +705,7 @@ class SetupConstraint(Constraint):
 
     def reset(self, tasks: Tasks) -> None:
         self.setup_times = {
-            task_id: {child_id: time for child_id, time in children.items()}
+            task_id: children.copy()
             for task_id, children in self.original_setup_times.items()
         }
 

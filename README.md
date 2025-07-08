@@ -49,6 +49,7 @@ The project is organized into the following main directories inside `cpscheduler
 │
 ├── 🏭 environment
 │   ├── constraints
+│   ├── data
 │   ├── env
 │   ├── instructions
 │   ├── objectives

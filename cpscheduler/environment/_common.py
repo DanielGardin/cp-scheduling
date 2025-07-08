@@ -4,10 +4,10 @@ from typing import (
     Any,
     Final,
     TypeAlias,
-    TypeVar,
     SupportsInt,
     SupportsFloat,
-    Sequence,
+    Hashable,
+    Iterator,
     Protocol,
     runtime_checkable,
 )
@@ -35,16 +35,14 @@ ScalarType: TypeAlias = bool | int | float | str
 @runtime_checkable
 class DataFrameLike(Protocol):
     @property
-    def shape(self) -> tuple[int, int]: ...
+    def shape(self) -> tuple[int, ...]: ...
 
     @property
     def columns(self) -> Any: ...
 
-    def __getitem__(self, key: str) -> Any: ...
+    def __getitem__(self, key: Hashable) -> Any: ...
 
-    def head(self, n: int = ...) -> Any: ...
-
-    def to_dict(self) -> Mapping[str, Sequence[Any]]: ...
+    def __iter__(self) -> Iterator[Hashable]: ...
 
 
 ProcessTimeAllowedTypes: TypeAlias = (
@@ -56,7 +54,7 @@ ProcessTimeAllowedTypes: TypeAlias = (
     | None  # Infer from data
 )
 
-InstanceTypes: TypeAlias = DataFrameLike | Mapping[str, Iterable[Any]]
+InstanceTypes: TypeAlias = DataFrameLike | Mapping[Hashable, Iterable[Any]]
 
 ObsType: TypeAlias = tuple[dict[str, list[Any]], dict[str, list[Any]]]
 InfoType: TypeAlias = dict[str, Any]
