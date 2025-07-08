@@ -12,6 +12,7 @@ from typing import (
     runtime_checkable,
 )
 from collections.abc import Iterable, Mapping
+from typing_extensions import NotRequired, TypedDict, TypeAlias
 
 from mypy_extensions import i64, i32, i16, u8
 
@@ -54,7 +55,15 @@ ProcessTimeAllowedTypes: TypeAlias = (
     | None  # Infer from data
 )
 
-InstanceTypes: TypeAlias = DataFrameLike | Mapping[Hashable, Iterable[Any]]
+InstanceTypes: TypeAlias = DataFrameLike | Mapping[Any, Iterable[Any]]
 
 ObsType: TypeAlias = tuple[dict[str, list[Any]], dict[str, list[Any]]]
 InfoType: TypeAlias = dict[str, Any]
+
+class InstanceConfig(TypedDict):
+    "Instance configuration for the environment."
+
+    instance: NotRequired[InstanceTypes]
+    processing_times: NotRequired[ProcessTimeAllowedTypes]
+    job_instance: NotRequired[InstanceTypes]
+    job_feature: NotRequired[str]

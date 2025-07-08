@@ -13,12 +13,8 @@ steps, rendering the environment, and exporting the scheduling model.
 
 from warnings import warn
 
-from typing import Any, TypedDict
+from typing import Any
 from collections.abc import Iterable
-from typing_extensions import TypeIs, NotRequired
-
-from gymnasium import Env
-from gymnasium.spaces import Tuple, Text, Box, OneOf
 
 from mypy_extensions import u8, i64
 
@@ -31,6 +27,7 @@ from ._common import (
     InstanceTypes,
     InfoType,
     ObsType,
+    InstanceConfig
 )
 from .data import SchedulingData
 from .tasks import Tasks
@@ -40,51 +37,14 @@ from .instructions import (
     parse_instruction,
     Action,
     ActionType,
-    SingleAction,
+    is_single_action
 )
 from .schedule_setup import ScheduleSetup
 from .constraints import Constraint
 from .objectives import Objective
-from .utils import convert_to_list, is_iterable_int
+from .utils import convert_to_list
 
 from ._render import Renderer, PlotlyRenderer
-
-# Define the action space for the environment
-InstructionSpace = Text(max_length=10)
-IntSpace = Box(low=0, high=int(MAX_INT), shape=(), dtype=int)  # type: ignore
-# do not want numpy dependency here
-
-ActionSpace = OneOf(
-    [
-        Tuple([InstructionSpace]),
-        Tuple([InstructionSpace, IntSpace]),
-        Tuple([InstructionSpace, IntSpace, IntSpace]),
-        Tuple([InstructionSpace, IntSpace, IntSpace, IntSpace]),
-    ]
-)
-
-
-class InstanceConfig(TypedDict):
-    "Instance configuration for the environment."
-
-    instance: NotRequired[InstanceTypes]
-    processing_times: NotRequired[ProcessTimeAllowedTypes]
-    job_instance: NotRequired[InstanceTypes]
-    job_feature: NotRequired[str]
-
-
-def is_single_action(
-    action: ActionType,
-) -> TypeIs[SingleAction]:
-    "Check if the action is a single instruction or a iterable of instructions."
-    if not isinstance(action, tuple):
-        return False
-
-    if action:
-        return isinstance(action[0], str) and is_iterable_int(action[1:])
-
-    return True
-
 
 def prepare_instance(instance: InstanceTypes) -> dict[str, list[Any]]:
     "Prepare the instance data to a standard dictionary format."
@@ -93,7 +53,7 @@ def prepare_instance(instance: InstanceTypes) -> dict[str, list[Any]]:
     return {str(feature): convert_to_list(instance[feature]) for feature in instance}
 
 
-class SchedulingEnv(Env[ObsType, ActionType]):
+class SchedulingEnv:
     """
     SchedulingEnv is a custom environment for generic scheduling problems. It is designed to be
     modular and extensible, allowing users to define their own scheduling problems by specifying
@@ -157,7 +117,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
     current_time: TIME
 
     # Gymnasium support variables
-    _metadata: dict[str, Any]
+
 
     # Environment constructor methods
     def __init__(
@@ -191,18 +151,12 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         self.advancing_to = 0
         self.query_times: list[TIME] = []
 
-        self._metadata = {
-            "render_modes": ["human"],
-            "render_fps": 50,
-        }
 
         self.renderer = (
             render_mode
             if isinstance(render_mode, Renderer)
             else self._dispatch_render(render_mode)
         )
-
-        self.action_space = ActionSpace
 
         if instance_config is not None:
             instance = instance_config.get("instance", {})
@@ -299,8 +253,6 @@ class SchedulingEnv(Env[ObsType, ActionType]):
         self.objective.import_data(self.data)
         self.objective.export_data(self.data)
 
-        self.observation_space = self.data.get_gym_space()
-
         self.loaded = True
 
     ## Environment state retrieval methods
@@ -337,13 +289,8 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
     # Environment API methods
     def reset(
-        self,
-        *,
-        seed: int | None = None,
-        options: dict[str, Any] | InstanceConfig | None = None,
+        self, *, options: dict[str, Any] | InstanceConfig | None = None
     ) -> tuple[ObsType, InfoType]:
-        super().reset(seed=seed)
-
         if options is not None:
             instance = options.get("instance", {})
             processing_times = options.get("processing_times", None)
@@ -579,7 +526,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
             if self._dispatch_instruction():
                 break
 
-            if self.render_mode is not None:
+            if type(self.renderer) is not Renderer:
                 self.render()
 
         obs = self._get_state()
@@ -596,8 +543,7 @@ class SchedulingEnv(Env[ObsType, ActionType]):
 
     # Environment rendering and representation methods
     def render(self) -> None:
-        if self.render_mode == "plot":
-            self.renderer.render(self.current_time, self.tasks, self.data)
+        self.renderer.render(self.current_time, self.tasks, self.data)
 
     def get_entry(self) -> str:
         "Get a string representation of the environment's configuration."

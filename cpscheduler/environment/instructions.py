@@ -7,7 +7,7 @@ with the scheduler.
 """
 
 from typing import ClassVar, Final, TypeAlias, Iterable
-from typing_extensions import Unpack
+from typing_extensions import Unpack, TypeIs
 
 from dataclasses import dataclass
 
@@ -19,6 +19,14 @@ from .tasks import Tasks
 SingleAction: TypeAlias = tuple["str | Instruction", Unpack[tuple[Int, ...]]]
 ActionType: TypeAlias = SingleAction | Iterable[SingleAction] | None
 
+def is_single_action(
+    action: ActionType,
+) -> TypeIs[SingleAction]:
+    "Check if the action is a single instruction or a iterable of instructions."
+    if not isinstance(action, tuple):
+        return False
+
+    return isinstance(action[0], str) and all(isinstance(arg, Int) for arg in action[1:])
 
 # Flags are not supported by mypyc yet
 class Action:

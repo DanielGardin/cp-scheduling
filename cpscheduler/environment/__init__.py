@@ -1,6 +1,7 @@
 __all__ = [
     "SchedulingEnv",
     # Alpha setups
+    "ScheduleSetup",
     "SingleMachineSetup",
     "IdenticalParallelMachineSetup",
     "UniformParallelMachineSetup",
@@ -8,6 +9,7 @@ __all__ = [
     "JobShopSetup",
     "OpenShopSetup",
     # Beta constraints
+    "Constraint",
     "PrecedenceConstraint",
     "DisjunctiveConstraint",
     "ReleaseDateConstraint",
@@ -16,6 +18,7 @@ __all__ = [
     "MachineConstraint",
     "SetupConstraint",
     # Gamma objectives
+    "Objective",
     "ComposedObjective",
     "Makespan",
     "TotalCompletionTime",
@@ -33,6 +36,7 @@ __all__ = [
 from .env import SchedulingEnv
 
 from .schedule_setup import (
+    ScheduleSetup,
     SingleMachineSetup,
     IdenticalParallelMachineSetup,
     UniformParallelMachineSetup,
@@ -42,6 +46,7 @@ from .schedule_setup import (
 )
 
 from .constraints import (
+    Constraint,
     PrecedenceConstraint,
     DisjunctiveConstraint,
     ReleaseDateConstraint,
@@ -52,6 +57,7 @@ from .constraints import (
 )
 
 from .objectives import (
+    Objective,
     ComposedObjective,
     Makespan,
     TotalCompletionTime,

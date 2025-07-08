@@ -8,8 +8,6 @@ within the CPScheduler environment.
 from typing import Any
 from typing_extensions import Self
 
-from gymnasium.spaces import Space, Dict, Tuple, Box, Text
-
 from ._common import (
     ObsType,
     MACHINE_ID,
@@ -17,7 +15,7 @@ from ._common import (
     TIME,
 )
 
-from .utils import infer_list_space, convert_to_list
+from .utils import convert_to_list
 
 JOB_ID_ALIASES = ["job", "job_id"]
 
@@ -142,32 +140,6 @@ class SchedulingData:
                 f"Feature '{feature}' must have length equal to the number of tasks or jobs,"
                 f"expected {self.n_tasks} or {self.n_jobs}, got {length}."
             )
-
-    def get_gym_space(self) -> Space[ObsType]:
-        "Infer the gym space for the task data."
-        user_defined_task_data = {
-            feature: infer_list_space(values)
-            for feature, values in self.task_data.items()
-        }
-
-        user_defined_job_data = {
-            feature: infer_list_space(values)
-            for feature, values in self.jobs_data.items()
-        }
-
-        task_feature_space = {
-            "task_id": Box(low=0, high=self.n_tasks, shape=(self.n_tasks,), dtype=int),  # type: ignore
-            "job_id": Box(low=0, high=self.n_jobs, shape=(self.n_tasks,), dtype=int),  # type: ignore
-            **user_defined_task_data,
-            "status": Tuple([Text(max_length=100) for _ in range(self.n_tasks)]),
-        }
-
-        job_feature_space = {
-            "job_id": Box(low=0, high=self.n_jobs, shape=(self.n_jobs,), dtype=int),  # type: ignore
-            **user_defined_job_data,
-        }
-
-        return Tuple([Dict(task_feature_space), Dict(job_feature_space)])
 
     def export_state(self) -> ObsType:
         "Export the status of the tasks in a dictionary format."
