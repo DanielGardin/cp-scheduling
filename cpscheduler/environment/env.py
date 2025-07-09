@@ -392,15 +392,16 @@ class SchedulingEnv:
         "Add a single instruction to the schedule."
         if action in ("execute", "submit") and 0 < len(args) < 3:
             task = args[0]
-
             machines = self.tasks[task].machines
-            if len(machines) > 1:
+
+            if len(machines) == 1:
+                args = (task, int(machines[0]), *args[1:])
+
+            elif len(args) != 2:
                 raise ValueError(
                     f"Task {task} has multiple machines assigned: {machines}. "
                     "Please specify the machine to execute on."
                 )
-
-            args = (task, int(machines[0]), *args[1:])
 
         if action == "advance" and len(args) == 0:
             args = (-1,)
