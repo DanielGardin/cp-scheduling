@@ -20,12 +20,12 @@ def read_rcpsp_instance(
 
     Returns
     -------
-    instance : pandas.DataFrame
-        DataFrame with the instance data in the following columns:
-        - job: Job ID.
-        - operation: Operation ID.
-        - processing_time: Processing time for the operation.
-        - resource: Resource ID.
+    instance : dict[str, list[Any]]
+        Dictionary with the following keys:
+        - job: Job IDs.
+        - operation: Operation IDs.
+        - processing_time: Processing time for each task.
+        - resource_{id}: Usage of each resource for each task.
 
     metadata : dict
         Dictionary with metadata about the instance.

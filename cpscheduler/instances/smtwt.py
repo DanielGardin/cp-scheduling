@@ -25,14 +25,20 @@ def read_smtwt_instance(
 
     Returns
     -------
-    instance : pandas.DataFrame
-        DataFrame with the instance data in the following columns:
-        - processing_time: Processing time of the task.
-        - weight: Weight of the task.
-        - due_date: Due date of the task.
+    instance : dict[str, list[Any]]
+        Dictionary with the following keys:
+        - processing_time: Processing time of each task.
+        - weight: Weight of each task.
+        - due_date: Due date of each task.
 
-    metadata : dict
+    metadata : dict[str, Any]
         Dictionary with metadata about the instance.
+        Metadata keys can include:
+        - "WT UB": Upper bound on the weighted tardiness.
+        - "WT Optimal": Whether the upper bound is optimal.
+
+        Metadata can be read from the file after the instance data,
+        starting with a "---" separator
     """
     with open(path, "r") as f:
         n_jobs = int(f.readline().strip())
@@ -48,6 +54,7 @@ def read_smtwt_instance(
 
             if line == "---":
                 break
+
             processing_time, weight, due_date = map(int, line.split())
             instance["processing_time"].append(processing_time)
             instance["weight"].append(weight)
