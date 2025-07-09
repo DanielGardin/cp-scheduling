@@ -4,16 +4,76 @@ utils.py
 Utility model for easy modeling with PuLP.
 """
 
-from typing import Literal
+from typing import Literal, TypeAlias
 from collections.abc import Iterable
 
-from pulp import LpProblem, lpSum, LpVariable, LpContinuous
+from pulp import (
+    LpProblem,
+    lpSum,
+    LpVariable,
+    LpAffineExpression,
+    LpContinuous,
+    LpConstraint,
+)
 
-from .common import PULP_EXPRESSION, PULP_PARAM
+PULP_EXPRESSION: TypeAlias = LpVariable | LpAffineExpression
+PULP_PARAM: TypeAlias = PULP_EXPRESSION | int | float
 
 GLOBAL_BIG_M = (
     1e6  # Default value for big-M method, can be adjusted based on problem scale
 )
+
+
+def get_value(param: PULP_PARAM) -> float | int:
+    """
+    Get the value of a PULP parameter or expression.
+
+    Args:
+        param: A PULP parameter or expression.
+
+    Returns:
+        The float value of the parameter or expression.
+    """
+    if isinstance(param, (int, float)):
+        return param
+
+    value = param.value()
+
+    if value is None:
+        return 0
+
+    if isinstance(value, (int, float)):
+        return value
+
+    raise ValueError(f"Unexpected type: {type(param)}")
+
+
+def pulp_add_constraint(
+    model: LpProblem, constraint: LpConstraint | bool, name: str
+) -> None:
+    """
+    Adds a constraint to the PuLP model.
+
+    Parameters:
+        model (LpProblem): The PuLP problem instance.
+        constraint (LpConstraint | bool): The constraint to add. If it's a boolean, asserts that
+        it is True and ignores the addition to the model.
+    """
+
+    if isinstance(constraint, bool):
+        if not constraint:
+            raise ValueError(
+                f"The constraint {name} you are trying to add is False, making the model infeasible."
+                "Aborting the model creation."
+            )
+
+        return
+
+    model.addConstraint(
+        constraint,
+        name=name,
+    )
+
 
 global_max_id = 0
 
@@ -55,8 +115,8 @@ def max_pulp(
 
 def implication_pulp(
     model: LpProblem,
-    antecedent: Iterable[LpVariable] | LpVariable,
-    consequent: tuple[PULP_EXPRESSION, Literal["==", "<=", ">="], PULP_PARAM],
+    antecedent: Iterable[PULP_PARAM] | PULP_PARAM,
+    consequent: tuple[PULP_PARAM, Literal["==", "<=", ">="], PULP_PARAM],
     big_m: float = GLOBAL_BIG_M,
     name: str | None = None,
 ) -> None:
@@ -78,7 +138,7 @@ def implication_pulp(
         When choosing a value for `big_m`, ensure it is large enough to not constrain the model unnecessarily,
         the ideal value is typically upper_bound(lhs) - lower_bound(rhs) if known.
     """
-    if isinstance(antecedent, LpVariable):
+    if isinstance(antecedent, PULP_PARAM):
         antecedent = [antecedent]
 
     premise = lpSum(antecedent)
@@ -86,39 +146,29 @@ def implication_pulp(
 
     lhs, operator, rhs = consequent
 
-    ## This implementation seems to be slower for some reason?
-    # indicator = LpVariable(name, lowBound=0, upBound=1, cat=LpInteger)
-    # n_vars = sum(1 for _ in indicators)
-
-    # model.addConstraint(
-    #     indicator >= lpSum(indicators) - n_vars + 1
-    # )
-
-    # for i, ind in enumerate(indicators):
-    #     model.addConstraint(
-    #         indicator <= ind,
-    #         f"{name}_indicator_{i}"
-    #     )
-
     if operator == "==":
-        model.addConstraint(
+        pulp_add_constraint(
+            model,
             lhs <= rhs + (n_vars - premise) * big_m,
             f"{name}_le" if name is not None else f"{premise}_{lhs}_le_{rhs}",
         )
 
-        model.addConstraint(
+        pulp_add_constraint(
+            model,
             lhs >= rhs - (n_vars - premise) * big_m,
             f"{name}_ge" if name is not None else f"{premise}_{lhs}_ge_{rhs}",
         )
 
     elif operator == "<=":
-        model.addConstraint(
+        pulp_add_constraint(
+            model,
             lhs <= rhs + (n_vars - premise) * big_m,
             name if name is not None else f"{premise}_{lhs}_le_{rhs}",
         )
 
     elif operator == ">=":
-        model.addConstraint(
+        pulp_add_constraint(
+            model,
             lhs >= rhs - (n_vars - premise) * big_m,
             name if name is not None else f"{premise}_{lhs}_ge_{rhs}",
         )

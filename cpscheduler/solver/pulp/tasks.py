@@ -4,8 +4,14 @@ from abc import ABC, abstractmethod
 from pulp import LpVariable, LpProblem, LpBinary, LpAffineExpression, lpSum
 
 from cpscheduler.environment.tasks import Tasks
+from cpscheduler.environment.data import SchedulingData
 
-from .pulp_utils import implication_pulp
+from .pulp_utils import (
+    PULP_EXPRESSION,
+    get_value,
+    pulp_add_constraint,
+    implication_pulp,
+)
 
 
 def get_order(task_i: int, task_j: int) -> tuple[tuple[int, int], int]:
@@ -17,14 +23,18 @@ def get_order(task_i: int, task_j: int) -> tuple[tuple[int, int], int]:
 
 
 class PulpVariables(ABC):
-    def __init__(self, model: LpProblem, tasks: Tasks, integral: bool):
+    def __init__(
+        self, model: LpProblem, tasks: Tasks, data: SchedulingData, integral: bool
+    ):
         self.model = model
         self.tasks = tasks
+        self.data = data
         self.integral = integral
+        self.objective: PULP_EXPRESSION = LpAffineExpression()
 
     @property
     @abstractmethod
-    def end_times(self) -> Sequence[LpVariable | LpAffineExpression]:
+    def end_times(self) -> Sequence[PULP_EXPRESSION | int]:
         """
         Expression for the end time of a task.
         Returns:
@@ -39,7 +49,7 @@ class PulpVariables(ABC):
             A list of tuples where each tuple contains the machine ID and the start time of the task.
         """
 
-    def set_objective(self, objective_var: LpVariable | LpAffineExpression) -> None:
+    def set_objective(self, objective_var: PULP_EXPRESSION) -> None:
         self.objective = objective_var
 
     def get_objective_value(self) -> float:
@@ -55,13 +65,15 @@ class PulpVariables(ABC):
 
 
 class PulpSchedulingVariables(PulpVariables):
-    start_times: list[LpVariable]
-    _end_times: list[LpVariable]
-    assignments: list[list[LpVariable]]
-    orders: dict[tuple[int, int], LpVariable]
+    start_times: list[PULP_EXPRESSION | int]
+    _end_times: list[PULP_EXPRESSION | int]
+    assignments: list[list[PULP_EXPRESSION | int]]
+    orders: dict[tuple[int, int], PULP_EXPRESSION | int]
 
-    def __init__(self, model: LpProblem, tasks: Tasks, integral: bool):
-        super().__init__(model, tasks, integral)
+    def __init__(
+        self, model: LpProblem, tasks: Tasks, data: SchedulingData, integral: bool
+    ):
+        super().__init__(model, tasks, data, integral)
 
         # By considering the start and end times as continuous variables,
         # we can get a speedup in the branch-and-bound algorithm.
@@ -85,39 +97,64 @@ class PulpSchedulingVariables(PulpVariables):
             for task in tasks
         ]
 
-        self.assignments = [
-            [
-                LpVariable(f"assign_{task.task_id}_{machine_id}", cat=LpBinary)
-                for machine_id in range(tasks.n_machines)
-            ]
-            for task in tasks
-        ]
+        self.assignments = []
+        assignments: list[PULP_EXPRESSION | int] = []
+        for task in tasks:
+            machines = task.machines
 
-        self.orders = {
-            (i, j): LpVariable(f"order_{i}_{j}", lowBound=0, upBound=1, cat=LpBinary)
-            for j in range(tasks.n_tasks)
-            for i in range(j)
-        }
+            if len(machines) == 1:
+                assignments = [
+                    1 if machine_id == machines[0] else 0
+                    for machine_id in range(data.n_machines)
+                ]
+
+            else:
+                assignments = [0] * data.n_machines
+
+                for machine_id in machines:
+                    assignments[machine_id] = LpVariable(
+                        f"assign_{task.task_id}_{machine_id}", cat=LpBinary
+                    )
+
+            self.assignments.append(assignments)
+
+        self.orders = {}
 
     @property
-    def end_times(self) -> list[LpVariable]:
+    def end_times(self) -> list[PULP_EXPRESSION | int]:
         return self._end_times
 
     def get_assignments(self) -> list[tuple[int, int]]:
         assignments: list[tuple[int, int]] = []
 
         for task_id, task in enumerate(self.tasks):
-            start_value = self.start_times[task_id].value()
+            start_value = get_value(self.start_times[task_id])
 
             start_time = int(start_value) if start_value is not None else -1
             machine_id = -1
-            for machine_id in range(self.tasks.n_machines):
-                if self.assignments[task_id][machine_id].value() == 1:
+            for machine_id in range(self.data.n_machines):
+                if get_value(self.assignments[task_id][machine_id]):
                     break
 
             assignments.append((machine_id, start_time))
 
         return assignments
+
+    def get_order(self, task_prec: int, task_succ: int) -> PULP_EXPRESSION | int:
+        if task_prec < task_succ:
+            i, j = task_prec, task_succ
+            ordered = True
+
+        else:
+            i, j = task_succ, task_prec
+            ordered = False
+
+        if (i, j) not in self.orders:
+            self.orders[(i, j)] = LpVariable(
+                f"order_{i}_{j}", lowBound=0, upBound=1, cat=LpBinary
+            )
+
+        return self.orders[(i, j)] if ordered else 1 - self.orders[(i, j)]
 
     def set_order(
         self,
@@ -134,13 +171,16 @@ class PulpSchedulingVariables(PulpVariables):
         order, value = get_order(task_prec, task_succ)
 
         if conditions is None:
-            model.addConstraint(
+            pulp_add_constraint(
+                model,
                 self.end_times[task_prec] <= self.start_times[task_succ],
                 f"{prefix}_C_{task_prec}_le_S_{task_succ}",
             )
 
-            model.addConstraint(
-                self.orders[order] == value, f"{prefix}_{task_prec}_prec_{task_succ}"
+            pulp_add_constraint(
+                model,
+                self.orders[order] == value,
+                f"{prefix}_{task_prec}_prec_{task_succ}",
             )
 
         else:
@@ -172,8 +212,10 @@ class PulpTimetable(PulpVariables):
     T: int
     start_times: list[dict[int, list[LpVariable]]]
 
-    def __init__(self, model: LpProblem, tasks: Tasks, integral: bool):
-        super().__init__(model, tasks, integral)
+    def __init__(
+        self, model: LpProblem, tasks: Tasks, data: SchedulingData, integral: bool
+    ):
+        super().__init__(model, tasks, data, integral)
 
         self.T = tasks.get_time_ub() + 1
         self.start_times = [

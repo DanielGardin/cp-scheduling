@@ -1,11 +1,10 @@
 from typing import Any, Literal
-from collections.abc import Iterable
 
 from pulp import LpProblem, LpSolver, LpMinimize, LpMaximize, LpSolution
 import pulp as pl
 
+from cpscheduler.environment import SchedulingEnv
 from cpscheduler.environment.instructions import ActionType
-from cpscheduler.environment.env import SchedulingEnv
 
 from .tasks import PulpVariables, PulpSchedulingVariables, PulpTimetable
 from .setup import export_setup_pulp
@@ -13,8 +12,9 @@ from .constraint import export_constraint_pulp
 from .objective import export_objective_pulp
 from .symmetry_breaking import employ_symmetry_breaking_pulp
 
+Formulations = Literal["scheduling", "timetable"]
 
-Formulation = Literal["scheduling", "timetable"]
+MAX_ENV_DEPTH = 10  # Maximum depth for the environment wrapping
 
 
 class PulpSolver:
@@ -22,10 +22,10 @@ class PulpSolver:
 
     def __init__(
         self,
-        env: SchedulingEnv,
+        env: Any | SchedulingEnv,
         solver_tag: str = "GUROBI_CMD",
         tighten: bool = True,
-        formulation: Formulation = "scheduling",
+        formulation: Formulations = "scheduling",
         symmetry_breaking: bool = True,
         integral: bool = False,
         **solver_kwargs: Any,
@@ -46,12 +46,33 @@ class PulpSolver:
                 This changes the environment's tasks assuming semi-active scheduling.
 
         """
-        if not env.loaded:
+        depth = 0
+        while not isinstance(env, SchedulingEnv) and depth < MAX_ENV_DEPTH:
+            if not hasattr(env, "unwrapped"):
+                raise TypeError(
+                    f"Expected env to be of type SchedulingEnv or a Wrapped env, got {type(env)} instead."
+                )
+
+            if hasattr(env, "core"):
+                env = env.core
+                break
+
+            env = env.unwrapped
+            depth += 1
+
+        if not isinstance(env, SchedulingEnv):
+            raise TypeError(
+                f"Expected env to be of type SchedulingEnv, got {type(env)} instead."
+            )
+
+        self.env = env
+
+        if not self.env.loaded:
             raise ValueError(
                 "Environment must be loaded before initializing the solver."
             )
 
-        if env.allow_preemption:
+        if self.env.n_parts > 1:
             raise ValueError("This version of the solver does not support preemption.")
 
         self.set_solver(solver_tag, **solver_kwargs)
@@ -72,33 +93,35 @@ class PulpSolver:
     @staticmethod
     def build_model(
         env: SchedulingEnv,
-        formulation: Formulation,
+        formulation: Formulations,
         symmetry_breaking: bool = True,
         integral: bool = False,
     ) -> tuple[LpProblem, PulpVariables]:
-        model = LpProblem(env.get_entry(), LpMinimize if env.minimize else LpMaximize)
+        model = LpProblem(
+            env.get_entry(), LpMinimize if env.objective.minimize else LpMaximize
+        )
 
         tasks = env.tasks
-        num_parts = tasks.n_parts
-
-        assert num_parts == 1, "This version does not support preemption."
+        data = env.data
 
         variables: PulpVariables
         if formulation == "timetable":
-            variables = PulpTimetable(model, env.tasks, integral)
+            variables = PulpTimetable(model, tasks, data, integral)
 
         elif formulation == "scheduling":
-            variables = PulpSchedulingVariables(model, env.tasks, integral)
+            variables = PulpSchedulingVariables(model, tasks, data, integral)
 
         if symmetry_breaking:
             employ_symmetry_breaking_pulp(env, model, variables)
 
-        export_setup_pulp(env.setup, variables)(model, tasks)
+        export_setup_pulp(env.setup, variables)(model, tasks, data)
 
         for constraint in env.constraints.values():
-            export_constraint_pulp(constraint, variables)(model, tasks)
+            export_constraint_pulp(constraint, variables)(model, tasks, data)
 
-        objective_var = export_objective_pulp(env.objective, variables)(model, tasks)
+        objective_var = export_objective_pulp(env.objective, variables)(
+            model, tasks, data
+        )
         variables.set_objective(objective_var)
 
         model.setObjective(objective_var)
