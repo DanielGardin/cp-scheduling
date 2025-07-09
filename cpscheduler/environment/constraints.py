@@ -601,50 +601,24 @@ class MachineConstraint(Constraint):
     General Parallel machine constraint, differs from DisjunctiveConstraint as the disjunctive
     constraint have groups with predefined tasks, while the machine constraint defines its groups
     based on the machine assignment of the tasks.
-
-    Arguments:
-        machine_constraint: Iterable[Iterable[int]] | str
-            A list of lists of machine ids, each sublist representing the set of
-            machines that the corresponding task can be assigned to. The length of the outer list
-            should be equal to the number of tasks. Finally, if None is provided, then every task
-            can be processed on every machine.
     """
 
-    machine_constraint: list[list[MACHINE_ID]]
+    machine_constraint: list[set[TASK_ID]]
     machine_free: list[TIME]
-
-    def __init__(
-        self,
-        machine_constraint: Iterable[Iterable[Int]] | None = None,
-        name: str | None = None,
-    ) -> None:
-        super().__init__(name)
-
-        self.complete = machine_constraint is None
-
-        if machine_constraint is None:
-            self.machine_constraint = []
-
-        else:
-            self.machine_constraint = [
-                convert_to_list(tasks, MACHINE_ID) for tasks in machine_constraint
-            ]
 
     def import_data(self, data: SchedulingData) -> None:
         self.machine_free = [0 for _ in range(data.n_machines)]
+        self.machine_constraint = [set() for _ in range(data.n_machines)]
+
+        self.n_tasks = data.n_tasks
 
     def reset(self, tasks: Tasks) -> None:
         for machine, _ in enumerate(self.machine_free):
             self.machine_free[machine] = 0
 
-    # def reevaluate(self, time: TIME, tasks: Tasks) -> None:
-    #     for task_id in tasks.transition_tasks:
-    #         task = tasks[task_id]
-
-    #         machine = task.get_assignment()
-    #         end_time = task.get_end()
-
-    #         self.machine_free[machine] = end_time
+        for task in tasks:
+            for machine in task.machines:
+                self.machine_constraint[machine].add(task.task_id)
 
     def propagate(self, time: TIME, tasks: Tasks) -> None:
         for task_id in tasks.transition_tasks:
@@ -655,16 +629,25 @@ class MachineConstraint(Constraint):
 
             self.machine_free[machine] = end_time
 
-        for task_id in tasks.awaiting_tasks:
-            task = tasks[task_id]
+        for machine_id, machine_tasks in enumerate(self.machine_constraint):
+            # We go in reverse order to avoid errors when removing tasks
+            for task_id in machine_tasks.copy():
+                task = tasks[task_id]
 
-            machines = (
-                task.machines if self.complete else self.machine_constraint[task_id]
-            )
+                if task.is_fixed():
+                    if task.is_completed(time):
+                        self.machine_constraint[machine_id].remove(task_id)
+                    continue
 
-            for machine in machines:
-                if task.get_start_lb(machine) < self.machine_free[machine]:
-                    task.set_start_lb(self.machine_free[machine], machine)
+                if task.get_start_lb(machine_id) < self.machine_free[machine_id]:
+                    task.set_start_lb(self.machine_free[machine_id], machine_id)
+
+    def is_complete(self) -> bool:
+        "Check if the machine constraint is complete."
+        return all(
+            len(machine_tasks) == self.n_tasks
+            for machine_tasks in self.machine_constraint
+        )
 
 
 # TODO: Check literature if the setup time only happens when in the same machine

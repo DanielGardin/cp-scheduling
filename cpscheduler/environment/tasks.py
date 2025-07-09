@@ -470,7 +470,7 @@ class Tasks:
         task = self.tasks[task_id]
 
         task.assign(time, machine_id)
-        self.awaiting_tasks.discard(task_id)
+        self.awaiting_tasks.remove(task_id)
         self.transition_tasks.add(task_id)
         self.fixed_tasks.add(task_id)
 
@@ -480,7 +480,7 @@ class Tasks:
         task.interrupt(time)
         self.awaiting_tasks.add(task_id)
         self.transition_tasks.add(task_id)
-        self.fixed_tasks.discard(task_id)
+        self.fixed_tasks.remove(task_id)
 
     def finish_propagation(self) -> None:
         "Ensure that all tasks are in a consistent state after propagation."
@@ -560,4 +560,3 @@ class Tasks:
             f"Tasks(n_tasks={self.n_tasks}, awaiting={len(self.awaiting_tasks)}, "
             f"fixed={len(self.fixed_tasks)}, transition={len(self.transition_tasks)})"
         )
-    
