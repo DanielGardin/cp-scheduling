@@ -42,6 +42,7 @@ benchmark_times = {
     "ta80": 7.8,
 }
 
+
 def is_compiled() -> bool:
     import cpscheduler.environment.env as env
 
@@ -55,6 +56,8 @@ def is_instance_present() -> bool:
 
 
 RESET = "\033[0m"
+
+
 def colormap(
     value: float,
     min_value: float = 0,
@@ -63,18 +66,24 @@ def colormap(
     clamped = max(min(value, max_value), min_value)
     norm = (clamped - min_value) / (max_value - min_value)
 
-    rocket_rgb = np.array([
-        [  5,  19,  40],   # dark purple
-        [ 94,   0,  95],   # purple
-        [196,  33,  72],   # red
-        [249, 123,  28],   # orange
-        [252, 254, 164],   # yellow
-    ], dtype=float) / 255.0
+    rocket_rgb = (
+        np.array(
+            [
+                [5, 19, 40],  # dark purple
+                [94, 0, 95],  # purple
+                [196, 33, 72],  # red
+                [249, 123, 28],  # orange
+                [252, 254, 164],  # yellow
+            ],
+            dtype=float,
+        )
+        / 255.0
+    )
 
     positions = np.linspace(0, 1, len(rocket_rgb))
 
     # Linear interpolation between palette points
-    idx = np.searchsorted(positions, norm, side='right') - 1
+    idx = np.searchsorted(positions, norm, side="right") - 1
     idx = np.clip(idx, 0, len(rocket_rgb) - 2)
     t = (norm - positions[idx]) / (positions[idx + 1] - positions[idx])
     color = (1 - t) * rocket_rgb[idx] + t * rocket_rgb[idx + 1]
@@ -84,6 +93,7 @@ def colormap(
     color_code = f"\033[38;2;{r};{g};{b}m"
 
     return color_code
+
 
 def statistics(
     data: list[float],
@@ -110,14 +120,18 @@ def statistics(
 
         else:
             comp_string += f" \033[;90m({100*mean_perc:.2f} ± {std_perc:.2%}"
-        
+
         comp_string += f"){RESET}"
 
     return comp_string
 
+
 root = Path(__file__).parent
 
-def test_speed(n: int = 1, full: bool = False, quiet: bool = False, plot: bool = False) -> None:
+
+def test_speed(
+    n: int = 1, full: bool = False, quiet: bool = False, plot: bool = False
+) -> None:
     """
     Test the speed of the Shortest Processing Time heuristic on various job shop instances.
     Parameters
@@ -134,14 +148,15 @@ def test_speed(n: int = 1, full: bool = False, quiet: bool = False, plot: bool =
 
     if not quiet:
         print(f"{OK + '[PASS]' if compiled else FAIL + '[FAIL]'}{RESET} compiled")
-        print(f"{OK + '[PASS]' if instance_present else FAIL + '[FAIL]'}{RESET} instance directory")
+        print(
+            f"{OK + '[PASS]' if instance_present else FAIL + '[FAIL]'}{RESET} instance directory"
+        )
 
     if not instance_present:
         print()
         raise FileNotFoundError(
             "Could not locate `instances` directory. Maybe you forgot to run `git submodule update --init`?"
         )
-
 
     if full:
         columns = [
@@ -153,13 +168,15 @@ def test_speed(n: int = 1, full: bool = False, quiet: bool = False, plot: bool =
             "Step time",
             "All time",
             "Benchmark",
+            "Time per task"
         ]
-    
+
     else:
         columns = [
             "Instance",
             "Benchmark",
-            "Step time",
+            "Simulation time",
+            "Time per task"
         ]
 
     table = PrettyTable(columns)
@@ -175,7 +192,10 @@ def test_speed(n: int = 1, full: bool = False, quiet: bool = False, plot: bool =
 
     dots = 0
     if not quiet:
-        print(f"Running \033[;36m{n}{RESET} iteration{'s' if n > 1 else ''} per instance", end='')
+        print(
+            f"Running \033[;36m{n}{RESET} iteration{'s' if n > 1 else ''} per instance",
+            end="",
+        )
     for instance_name, bench_time in benchmark_times.items():
         instance_path = root / "instances/jobshop" / f"{instance_name}.txt"
 
@@ -190,11 +210,15 @@ def test_speed(n: int = 1, full: bool = False, quiet: bool = False, plot: bool =
 
         if not quiet:
             if dots < 3:
-                print('.', end='', flush=True)
+                print(".", end="", flush=True)
                 dots += 1
 
             else:
-                print(f'\r{' ' * 100}', end=f"\rRunning \033[;36m{n}{RESET} iteration{'s' if n > 1 else ''} per instance", flush=True)
+                print(
+                    f"\r{' ' * 100}",
+                    end=f"\rRunning \033[;36m{n}{RESET} iteration{'s' if n > 1 else ''} per instance",
+                    flush=True,
+                )
                 dots = 0
 
         n_tasks = 0
@@ -204,13 +228,13 @@ def test_speed(n: int = 1, full: bool = False, quiet: bool = False, plot: bool =
             tick = perf_counter()
             instance, metadata = read_jsp_instance(instance_path)
             tock = perf_counter()
-            time_dict['instance'].append(tock - tick)
+            time_dict["instance"].append(tock - tick)
 
             tick = perf_counter()
             env = SchedulingEnv(JobShopSetup())
             env.set_instance(instance, processing_times="processing_time")
             tock = perf_counter()
-            time_dict['setup'].append(tock - tick)
+            time_dict["setup"].append(tock - tick)
 
             spt_agent = ShortestProcessingTime()
 
@@ -235,9 +259,7 @@ def test_speed(n: int = 1, full: bool = False, quiet: bool = False, plot: bool =
 
             del env
 
-        times[instance_name] = {
-            stage: sum(time_dict[stage]) / n for stage in time_dict
-        }
+        times[instance_name] = {stage: sum(time_dict[stage]) / n for stage in time_dict}
 
         mean_time = sum(time_dict["all"]) / n
         std_time = (sum((t - mean_time) ** 2 for t in time_dict["all"]) / n) ** 0.5
@@ -246,11 +268,9 @@ def test_speed(n: int = 1, full: bool = False, quiet: bool = False, plot: bool =
         perf.append(mean_time)
         perf_err.append(std_time)
 
-        speedups = [bench_time / t - 1 for t in time_dict["step"]]
+        speedups = [bench_time / t - 1 for t in time_dict["all"]]
         mean_speedup = sum(speedups) / n
-        std_speedup = (
-            sum((s - mean_speedup) ** 2 for s in speedups) / n
-        ) ** 0.5
+        std_speedup = (sum((s - mean_speedup) ** 2 for s in speedups) / n) ** 0.5
 
         values.append(mean_speedup)
         speedup_strs.append(
@@ -258,6 +278,16 @@ def test_speed(n: int = 1, full: bool = False, quiet: bool = False, plot: bool =
             if std_speedup > 0
             else f"{mean_speedup:.2%}"
         )
+
+        tasks_per_second = [1000 * t / n_tasks for t in time_dict["all"]]
+        mean_tps = sum(tasks_per_second) / n
+        std_tps = (sum((t - mean_tps) ** 2 for t in tasks_per_second) / n) ** 0.5
+        tasks_per_second_str = (
+            f"{mean_tps:.2f} ± {std_tps:.2f} ms"
+            if std_tps > 0
+            else f"{mean_tps:.2f} ms"
+        )
+
 
         if full:
             datas = {
@@ -279,12 +309,13 @@ def test_speed(n: int = 1, full: bool = False, quiet: bool = False, plot: bool =
                     datas["step"],
                     datas["all"],
                     f"{bench_time:.2f} s",
+                    tasks_per_second_str
                 ]
             )
 
         else:
-            mean_time = sum(time_dict["step"]) / n
-            std_time = (sum((t - mean_time) ** 2 for t in time_dict["step"]) / n) ** 0.5
+            mean_time = sum(time_dict["all"]) / n
+            std_time = (sum((t - mean_time) ** 2 for t in time_dict["all"]) / n) ** 0.5
 
             table.add_row(
                 [
@@ -295,6 +326,7 @@ def test_speed(n: int = 1, full: bool = False, quiet: bool = False, plot: bool =
                         if std_time > 0
                         else f"{mean_time:.3f}s"
                     ),
+                    tasks_per_second_str
                 ]
             )
 
@@ -308,8 +340,8 @@ def test_speed(n: int = 1, full: bool = False, quiet: bool = False, plot: bool =
     table.add_column("Speedup", speedup_strs)
 
     table._set_markdown_style()
-    
-    print('\n')
+
+    print("\n")
     print(table, flush=True)
 
     if plot:
@@ -319,7 +351,6 @@ def test_speed(n: int = 1, full: bool = False, quiet: bool = False, plot: bool =
         import seaborn as sns
 
         sns.set_theme(style="whitegrid", palette="Set2", font_scale=1.2)
-
 
         ax: Sequence[Axes]
         fig, ax = plt.subplots(ncols=2, figsize=(20, 6))
@@ -337,8 +368,9 @@ def test_speed(n: int = 1, full: bool = False, quiet: bool = False, plot: bool =
 
         # Stacked bar plot for time in each stage
         stages = ["instance", "setup", "reset", "pdr", "step"]
-        stage_times = np.array([[time_dict[stage] for stage in time_dict]
-                               for time_dict in times.values()])
+        stage_times = np.array(
+            [[time_dict[stage] for stage in time_dict] for time_dict in times.values()]
+        )
 
         stage_times = stage_times.T  # Transpose to have stages as rows
 
@@ -354,7 +386,7 @@ def test_speed(n: int = 1, full: bool = False, quiet: bool = False, plot: bool =
         ax[0].set_title("Time per stage for each instance")
         ax[0].set_xlabel("Instance")
         ax[0].set_ylabel("Time (s)")
-        ax[0].legend(title="Stage", loc='upper left')
+        ax[0].legend(title="Stage", loc="upper left")
         ax[0].set_xticks(list(times.keys()))
         ax[0].set_xticklabels(list(times.keys()), rotation=90)
 
@@ -369,22 +401,28 @@ def test_speed(n: int = 1, full: bool = False, quiet: bool = False, plot: bool =
         ax[1].plot(
             x,
             lin_coef + x * (ang_coef + x * fit_coef),
-            color='red',
-            label='Quadratic Fit',
+            color="red",
+            label="Quadratic Fit",
             zorder=1,
         )
 
-        sup_coef = max((perf - (ang_coef * n_tasks + lin_coef)) / n_tasks**2 for perf, n_tasks in zip(perf, task_numbers))
-        inf_coef = min((perf - (ang_coef * n_tasks + lin_coef)) / n_tasks**2 for perf, n_tasks in zip(perf, task_numbers))
+        sup_coef = max(
+            (perf - (ang_coef * n_tasks + lin_coef)) / n_tasks**2
+            for perf, n_tasks in zip(perf, task_numbers)
+        )
+        inf_coef = min(
+            (perf - (ang_coef * n_tasks + lin_coef)) / n_tasks**2
+            for perf, n_tasks in zip(perf, task_numbers)
+        )
 
         # Plot the area between the curves
         ax[1].fill_between(
             x,
             lin_coef + x * (ang_coef + x * inf_coef),
             lin_coef + x * (ang_coef + x * sup_coef),
-            color='lightblue',
+            color="lightblue",
             alpha=0.5,
-            label='Quadratic Growth Area',
+            label="Quadratic Growth Area",
             zorder=0,
         )
 
@@ -393,13 +431,13 @@ def test_speed(n: int = 1, full: bool = False, quiet: bool = False, plot: bool =
             task_numbers,
             perf,
             yerr=perf_err,
-            color='black',
-            fmt='o',
-            ecolor='black',
+            color="black",
+            fmt="o",
+            ecolor="black",
             elinewidth=2,
             capsize=4,
-            label='Measured Times',
-            zorder=2
+            label="Measured Times",
+            zorder=2,
         )
 
         # ax[1].set_xscale('log')

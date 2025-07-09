@@ -57,6 +57,9 @@ The project is organized into the following main directories inside `cpscheduler
 │   ├── tasks
 │   └── utils
 │
+├── 🏋️ gym
+│   └── wrappers
+│
 ├── 🛠️ heuristics
 │   └── pdr_heuristics
 │
