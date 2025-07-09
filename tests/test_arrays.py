@@ -1,29 +1,12 @@
-import pytest
-from typing import Any
-
-import numpy as np
-
-from gymnasium import Env
 
 from common import env_setup
 
-from cpscheduler.environment.wrappers import PermutationActionWrapper
-
-
 def test_numpy_scalar() -> None:
+    import numpy as np
     env = env_setup("ta01")
 
     env.reset()
     obs, reward, terminated, truncated, info = env.step(("execute", np.array(0)))
-
-
-def test_numpy_array() -> None:
-    env = PermutationActionWrapper(env_setup("ta01"))
-
-    env.reset()
-
-    obs, reward, terminated, truncated, info = env.step(np.array([0, 1, 2, 3]))
-
 
 def test_torch_scalar() -> None:
     import torch
@@ -32,13 +15,3 @@ def test_torch_scalar() -> None:
 
     env.reset()
     obs, reward, terminated, truncated, info = env.step(("execute", torch.tensor(0)))
-
-
-def test_torch_array() -> None:
-    import torch
-
-    env = PermutationActionWrapper(env_setup("ta01"))
-
-    env.reset()
-
-    obs, reward, terminated, truncated, info = env.step(torch.tensor([0, 1, 2, 3]))

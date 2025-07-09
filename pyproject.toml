@@ -3,7 +3,6 @@ requires = [
     "setuptools>=61.0",
     "setuptools-scm",
     "wheel",
-    "gymnasium >= 1.1.1",
     "mypy>=1.13.0",
     "mypy_extensions",
     "tomli; python_version<'3.11'",
@@ -12,7 +11,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cpscheduler"
-version = "0.5.0.dev0"
+version = "0.5.0.dev1"
 authors = [
     { name="Daniel Gardin", email="gardin.dan@gmail.com" },
 ]
@@ -28,15 +27,12 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "gymnasium >= 1.1.1",
-    "multimethod >= 2.0",
-    "mypy >= 1.13.0",
-    "mypy_extensions >= 1.0.0",
-    "pandas >= 2.2.3" # TODO: Remove this dependency
+    "mypy_extensions",
 ]
 
 [project.optional-dependencies]
 rl = [
+    "gymnasium >= 1.1.1",
     "torch >= 2.0.1",
     "tensordict >= 0.7.0",
     "tqdm >= 4.67.1",
