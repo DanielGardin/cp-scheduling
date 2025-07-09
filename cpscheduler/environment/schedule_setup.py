@@ -9,8 +9,6 @@ identical parallel machines, uniform parallel machines, job shop, and open shop 
 from typing import Any
 from collections.abc import Iterable, Mapping
 
-from abc import ABC, abstractmethod
-
 from mypy_extensions import mypyc_attr
 
 from ._common import ProcessTimeAllowedTypes, MACHINE_ID, TIME, Int
@@ -38,7 +36,7 @@ def infer_processing_time(data: dict[str, list[Any]]) -> ProcessTimeAllowedTypes
 
 
 @mypyc_attr(allow_interpreted_subclasses=True)
-class ScheduleSetup(ABC):
+class ScheduleSetup:
     """
     Base class for scheduling setups. It defines the common interface for all scheduling setups
     and provides methods to parse process times, set tasks, and setup constraints.
@@ -49,7 +47,6 @@ class ScheduleSetup(ABC):
 
         setups[cls.__name__] = cls
 
-    @abstractmethod
     def parse_process_time(
         self,
         task_data: dict[str, list[Any]],
@@ -68,6 +65,7 @@ class ScheduleSetup(ABC):
         list[dict[MACHINE_ID, TIME]]: List of dictionaries with the machine as key and the process time
         as value.
         """
+        raise NotImplementedError()
 
     def setup_constraints(self, data: SchedulingData) -> tuple[Constraint, ...]:
         "Build the constraint for that setup."

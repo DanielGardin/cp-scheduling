@@ -15,7 +15,6 @@ from typing import Any
 from collections.abc import Iterable, Mapping, Sequence
 from typing_extensions import Self
 
-from abc import ABC
 import re
 
 from mypy_extensions import mypyc_attr
@@ -29,7 +28,7 @@ constraints: dict[str, type["Constraint"]] = {}
 
 
 @mypyc_attr(allow_interpreted_subclasses=True)
-class Constraint(ABC):
+class Constraint:
     """
     Base class for all constraints in the scheduling environment.
     This class provides a common interface for any piece in the scheduling environment that
