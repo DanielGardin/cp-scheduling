@@ -17,8 +17,7 @@ from ._common import (
 
 from .utils import convert_to_list
 
-JOB_ID_ALIASES = ["job", "job_id"]
-
+JOB_ID_ALIASES = ["job", "job_id", "jobs", "jobs_ids"]
 
 class SchedulingData:
     "A class to hold static scheduling data for the CPScheduler environment."
@@ -26,6 +25,9 @@ class SchedulingData:
     n_tasks: TASK_ID
     n_jobs: TASK_ID
     n_machines: MACHINE_ID
+
+    safe_converse: bool
+    "Whether task ID and job ID can be safely converted to each other."
 
     task_data: dict[str, list[Any]]
     jobs_data: dict[str, list[Any]]
@@ -68,16 +70,23 @@ class SchedulingData:
             self.job_ids = convert_to_list(self.task_data.pop(job_feature), TASK_ID)
             self.n_jobs = TASK_ID(len(set(self.job_ids)))
 
+            self.safe_converse = self.n_tasks == self.n_jobs and all(
+                job_id == task_id for job_id, task_id in enumerate(self.job_ids)
+            )
+
         else:  # If no job feature is provided, we assume each task is its own job
             self.job_ids = [task_id for task_id in range(self.n_tasks)]
             self.n_jobs = self.n_tasks
+
+            self.safe_converse = True
+
 
     @classmethod
     def empty(cls) -> Self:
         "Create an empty SchedulingData instance."
         return cls(
-            task_data={"job_id": []},
-            jobs_data={"job_id": []},
+            task_data={},
+            jobs_data={},
             processing_times=[],
         )
 
@@ -91,6 +100,46 @@ class SchedulingData:
 
         raise KeyError(f"Feature '{key}' not found in tasks or jobs data.")
 
+    def get_task_data(self, feature: str, task_id: TASK_ID) -> Any:
+        "Get a specific task data feature for a given task."
+        if feature in self.task_data:
+            return self.task_data[feature][task_id]
+
+        if feature in self.jobs_data:
+            job_data = self.jobs_data[feature]
+            job_id = self.job_ids[task_id]
+
+            return job_data[job_id]
+
+        raise KeyError(f"Feature '{feature}' not found in tasks or jobs data.")
+
+    def get_job_data(self, feature: str, job_id: TASK_ID) -> Any:
+        "Get a specific job data feature for a given job."
+        if feature in self.jobs_data:
+            return self.jobs_data[feature][job_id]
+
+        if feature in self.task_data:
+            if self.safe_converse:
+                return self.task_data[feature][job_id]
+
+            job_data_point: Any = None
+            task_level_data = self.task_data[feature]
+            for task_id, job in enumerate(self.job_ids):
+                if job_id != job:
+                    continue
+
+                if job_data_point is None:
+                    job_data_point = task_level_data[task_id]
+
+                if job_data_point != task_level_data[task_id]:
+                    raise ValueError(
+                        f"Feature '{feature}' has inconsistent values for job {job_id}."
+                    )
+
+            return job_data_point
+
+        raise KeyError(f"Feature '{feature}' not found in jobs data.")
+
     def get_task_level_data(self, feature: str) -> list[Any]:
         "Get a specific, task or job, data feature for all tasks."
         if feature in self.task_data:
@@ -99,7 +148,7 @@ class SchedulingData:
         if feature in self.jobs_data:
             job_data = self.jobs_data[feature]
 
-            return [job_data[job_id] for job_id in self.task_data["job_id"]]
+            return [job_data[job_id] for job_id in self.job_ids]
 
         raise KeyError(f"Feature '{feature}' not found in tasks or jobs data.")
 
@@ -109,12 +158,21 @@ class SchedulingData:
             return self.jobs_data[feature]
 
         if feature in self.task_data:
-            if self.n_tasks == self.n_jobs:
+            if self.safe_converse:
                 return self.task_data[feature]
 
+            task_level_data = self.task_data[feature]
             job_level_data: list[Any] = [None for _ in range(self.n_jobs)]
-            for task_id, job_id in enumerate(self.task_data["job_id"]):
-                job_level_data[job_id] = self.task_data[feature][task_id]
+            for task_id, job_id in enumerate(self.job_ids):
+                job_data_point = task_level_data[task_id]
+
+                if job_level_data[job_id] is None:
+                    job_level_data[job_id] = job_data_point
+
+                if job_level_data[job_id] != job_data_point:
+                    raise ValueError(
+                        f"Feature '{feature}' has inconsistent values for job {job_id}."
+                    )
 
             return job_level_data
 
@@ -146,12 +204,12 @@ class SchedulingData:
         task_state = {
             "task_id": [task_id for task_id in range(self.n_tasks)],
             "job_id": self.job_ids.copy(),
-            **{feature: self.task_data[feature] for feature in self.task_data},
+            **self.task_data.copy(),
         }
 
         job_state = {
             "job_id": [job_id for job_id in range(self.n_jobs)],
-            **{feature: self.jobs_data[feature] for feature in self.jobs_data},
+            **self.jobs_data.copy(),
         }
 
         return task_state, job_state
