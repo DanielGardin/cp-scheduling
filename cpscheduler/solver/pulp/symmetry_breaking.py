@@ -1,5 +1,3 @@
-from collections.abc import Iterable
-
 from itertools import combinations
 from functools import partial
 
