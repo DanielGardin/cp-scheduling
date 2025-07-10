@@ -40,8 +40,7 @@ gym = [
 ]
 
 rl = [
-    "gymnasium >= 1.1.1",
-    "pandas >= 2.1.3",
+    "cpscheduler[gym]",
     "torch >= 2.0.1",
     "tensordict >= 0.7.0",
     "tqdm >= 4.67.1",
@@ -50,17 +49,22 @@ rl = [
     "tqdm >= 4.67.1"
 ]
 
-tests = [
-    "pytest >= 7.1.3",
-    "torch >= 2.0.1",
-]
-
 solver = [
     "pulp >= 2.7.0",
     "multimethod >= 2.0.0",
     "nest_asyncio>=1.6.0"
 ]
 
+all = [
+    "cpscheduler[gym, rl, solver]"
+]
+
+dev = [
+    "cpscheduler[all]",
+    "pytest >= 7.1.3",
+    "mypy >= 1.13.0",
+    "black >= 25.1.0",
+]
 
 [tool.setuptools]
 packages = ["cpscheduler"]
