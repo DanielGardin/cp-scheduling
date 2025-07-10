@@ -19,7 +19,7 @@ import re
 
 from mypy_extensions import mypyc_attr
 
-from ._common import MACHINE_ID, TASK_ID, TIME, Int, Float
+from ._common import TASK_ID, TIME, Int, Float
 from .data import SchedulingData
 from .tasks import Tasks
 from .utils import convert_to_list, topological_sort, binary_search, is_iterable_type
@@ -65,14 +65,23 @@ class Constraint:
     def reset(self, tasks: Tasks) -> None:
         "Reset the constraint to its initial state."
 
-    # Some subclasses may not need to implement this method if the constraints
-    # are not time-dependent and are ensured in the reset method.
     def propagate(self, time: TIME, tasks: Tasks) -> None:
         "Ensure the constraint is satisfied."
 
     def get_entry(self) -> str:
         "Produce the β entry for the constraint."
         return ""
+
+    def to_dict(self) -> dict[str, Any]:
+        "Serialize the objective to a dictionary."
+        raise NotImplementedError(
+            f"{self.__class__.__name__} serialization is not implemented."
+        )
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Self:
+        "Deserialize the objective from a dictionary."
+        return cls(**data)
 
 
 class PrecedenceConstraint(Constraint):
@@ -204,6 +213,7 @@ class PrecedenceConstraint(Constraint):
 
         self.topological_order = topological_sort(self.precedence, tasks.n_tasks)
 
+    # Change to the original method instead of topological ordering
     def propagate(self, time: TIME, tasks: Tasks) -> None:
         ptr = 0
 
@@ -213,15 +223,14 @@ class PrecedenceConstraint(Constraint):
 
             end_time = task.get_end_lb()
 
-            if task_id in self.precedence:
-                for child_id in self.precedence[task_id]:
-                    child = tasks[child_id]
+            for child_id in self.precedence[task_id]:
+                child = tasks[child_id]
 
-                    if child.is_completed(time):
-                        self._remove_precedence(task_id, child_id)
+                if child.is_completed(time):
+                    self._remove_precedence(task_id, child_id)
 
-                    elif child.get_start_lb() < end_time:
-                        child.set_start_lb(end_time)
+                elif child.get_start_lb() < end_time:
+                    child.set_start_lb(end_time)
 
             if ptr + 1 >= len(self.topological_order):
                 break
@@ -425,6 +434,12 @@ class ReleaseDateConstraint(Constraint):
     def get_entry(self) -> str:
         return "r_j"
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "release_dates": self.tags.get("release_time", "release_time"),
+            "name": self.name,
+        }
+
 
 class DeadlineConstraint(Constraint):
     """
@@ -493,6 +508,12 @@ class DeadlineConstraint(Constraint):
 
     def get_entry(self) -> str:
         return "d_j"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "deadlines": self.tags.get("due_date", "due_date"),
+            "name": self.name,
+        }
 
 
 class ResourceConstraint(Constraint):

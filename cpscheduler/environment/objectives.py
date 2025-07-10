@@ -7,7 +7,9 @@ and can be used to guide the search for an optimal schedule by providing a numer
 that represents the quality of the schedule.
 """
 
+from typing import Any
 from collections.abc import Iterable
+from typing_extensions import Self
 
 from mypy_extensions import mypyc_attr
 
@@ -61,6 +63,17 @@ class Objective:
     def get_entry(self) -> str:
         "Produce the γ entry for the constraint."
         return ""
+
+    def to_dict(self) -> dict[str, Any]:
+        "Serialize the objective to a dictionary."
+        return {
+            "minimize": self.minimize,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Self:
+        "Deserialize the objective from a dictionary."
+        return cls(**data)
 
 
 class ComposedObjective(Objective):
@@ -135,6 +148,33 @@ class ComposedObjective(Objective):
             entry += f"{coef_str} {objective.get_entry()}"
 
         return entry
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "objectives": [
+                objective.to_dict() | {"type": objective.__class__.__name__}
+                for objective in self.objectives
+            ],
+            "coefficients": self.coefficients,
+            "minimize": self.minimize,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Self:
+        global objectives
+
+        obj_dict: list[dict[str, Any]] = data["objectives"]
+
+        objectives_list = [
+            objectives[objective_data.pop("type")].from_dict(objective_data)
+            for objective_data in obj_dict
+        ]
+
+        return cls(
+            objectives=objectives_list,
+            coefficients=data["coefficients"],
+            minimize=data["minimize"],
+        )
 
 
 class Makespan(Objective):
@@ -223,6 +263,12 @@ class WeightedCompletionTime(Objective):
     def get_entry(self) -> str:
         return "Σw_jC_j"
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "job_weights": self.tags.get("job_weights", "weight"),
+            "minimize": self.minimize,
+        }
+
 
 class MaximumLateness(Objective):
     """
@@ -269,6 +315,12 @@ class MaximumLateness(Objective):
 
     def get_entry(self) -> str:
         return "L_max"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "due_dates": self.tags.get("due_dates", "due_date"),
+            "minimize": self.minimize,
+        }
 
 
 class TotalTardiness(Objective):
@@ -319,6 +371,12 @@ class TotalTardiness(Objective):
 
     def get_entry(self) -> str:
         return "ΣT_j"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "due_dates": self.tags.get("due_dates", "due_date"),
+            "minimize": self.minimize,
+        }
 
 
 class WeightedTardiness(Objective):
@@ -388,6 +446,13 @@ class WeightedTardiness(Objective):
     def get_entry(self) -> str:
         return "Σw_jT_j"
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "due_dates": self.tags.get("due_dates", "due_date"),
+            "job_weights": self.tags.get("job_weights", "weight"),
+            "minimize": self.minimize,
+        }
+
 
 class TotalEarliness(Objective):
     """
@@ -437,6 +502,12 @@ class TotalEarliness(Objective):
 
     def get_entry(self) -> str:
         return "ΣE_j"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "due_dates": self.tags.get("due_dates", "due_date"),
+            "minimize": self.minimize,
+        }
 
 
 class WeightedEarliness(Objective):
@@ -505,6 +576,13 @@ class WeightedEarliness(Objective):
     def get_entry(self) -> str:
         return "Σw_jE_j"
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "due_dates": self.tags.get("due_dates", "due_date"),
+            "job_weights": self.tags.get("job_weights", "weight"),
+            "minimize": self.minimize,
+        }
+
 
 class TotalTardyJobs(Objective):
     """
@@ -552,6 +630,12 @@ class TotalTardyJobs(Objective):
 
     def get_entry(self) -> str:
         return "ΣU_j"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "due_dates": self.tags.get("due_dates", "due_date"),
+            "minimize": self.minimize,
+        }
 
 
 class WeightedTardyJobs(Objective):
@@ -617,6 +701,13 @@ class WeightedTardyJobs(Objective):
     def get_entry(self) -> str:
         return "Σw_jU_j"
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "due_dates": self.tags.get("due_dates", "due_date"),
+            "job_weights": self.tags.get("job_weights", "weight"),
+            "minimize": self.minimize,
+        }
+
 
 class TotalFlowTime(Objective):
     """
@@ -662,3 +753,12 @@ class TotalFlowTime(Objective):
             total_flowtime += job_flowtime
 
         return total_flowtime
+
+    def get_entry(self) -> str:
+        return "ΣF_j"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "release_times": self.tags.get("release_times", "release_time"),
+            "minimize": self.minimize,
+        }

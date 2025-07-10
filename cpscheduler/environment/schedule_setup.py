@@ -8,6 +8,7 @@ identical parallel machines, uniform parallel machines, job shop, and open shop 
 
 from typing import Any
 from collections.abc import Iterable, Mapping
+from typing_extensions import Self
 
 from mypy_extensions import mypyc_attr
 
@@ -23,8 +24,6 @@ from .utils import is_iterable_type, convert_to_list, is_iterable_int
 
 PTIME_ALIASES = ["processing_time", "process_time", "processing time"]
 
-setups: dict[str, type["ScheduleSetup"]] = {}
-
 
 # TODO: Expand the inference logic to handle more complex cases
 def infer_processing_time(data: dict[str, list[Any]]) -> ProcessTimeAllowedTypes:
@@ -33,6 +32,9 @@ def infer_processing_time(data: dict[str, list[Any]]) -> ProcessTimeAllowedTypes
             return alias
 
     raise ValueError(f"Cannot infer processing time from the data.")
+
+
+setups: dict[str, type["ScheduleSetup"]] = {}
 
 
 @mypyc_attr(allow_interpreted_subclasses=True)
@@ -75,6 +77,17 @@ class ScheduleSetup:
         "Produce the α entry for the constraint."
         return ""
 
+    def to_dict(self) -> dict[str, Any]:
+        "Serialize the setup to a dictionary."
+        raise NotImplementedError(
+            f"{self.__class__.__name__} serialization is not implemented."
+        )
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Self:
+        "Deserialize the setup from a dictionary."
+        return cls(**data)
+
 
 class SingleMachineSetup(ScheduleSetup):
     """
@@ -112,6 +125,9 @@ class SingleMachineSetup(ScheduleSetup):
 
     def get_entry(self) -> str:
         return "1"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"disjunctive": self.disjunctive}
 
 
 class IdenticalParallelMachineSetup(ScheduleSetup):
@@ -168,6 +184,9 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
 
     def get_entry(self) -> str:
         return f"P{self.n_machines}" if self.n_machines > 1 else "Pm"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"n_machines": self.n_machines, "disjunctive": self.disjunctive}
 
 
 class UniformParallelMachineSetup(ScheduleSetup):
@@ -226,6 +245,9 @@ class UniformParallelMachineSetup(ScheduleSetup):
 
     def get_entry(self) -> str:
         return f"U{self.n_machines}" if self.n_machines > 1 else "Um"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"speed": self.speed, "disjunctive": self.disjunctive}
 
 
 class UnrelatedParallelMachineSetup(ScheduleSetup):
@@ -292,6 +314,9 @@ class UnrelatedParallelMachineSetup(ScheduleSetup):
 
     def get_entry(self) -> str:
         return "Rm"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"disjunctive": self.disjunctive}
 
 
 class JobShopSetup(ScheduleSetup):
@@ -370,6 +395,12 @@ class JobShopSetup(ScheduleSetup):
     def get_entry(self) -> str:
         return "Jm"
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "operation_order": self.operation_order,
+            "machine_feature": self.machine_feature,
+        }
+
 
 class OpenShopSetup(ScheduleSetup):
     """
@@ -436,3 +467,9 @@ class OpenShopSetup(ScheduleSetup):
 
     def get_entry(self) -> str:
         return "Om"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "machine_feature": self.machine_feature,
+            "disjunctive": self.disjunctive,
+        }

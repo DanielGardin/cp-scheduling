@@ -16,6 +16,8 @@ from warnings import warn
 from typing import Any
 from collections.abc import Iterable
 
+import json
+
 from mypy_extensions import u8, i64
 
 from ._common import (
@@ -28,6 +30,7 @@ from ._common import (
     InfoType,
     ObsType,
     InstanceConfig,
+    EnvSerialization,
 )
 from .data import SchedulingData
 from .tasks import Tasks
@@ -39,9 +42,9 @@ from .instructions import (
     ActionType,
     is_single_action,
 )
-from .schedule_setup import ScheduleSetup
-from .constraints import Constraint
-from .objectives import Objective
+from .schedule_setup import ScheduleSetup, setups
+from .constraints import Constraint, constraints
+from .objectives import Objective, objectives
 from .utils import convert_to_list
 
 from ._render import Renderer, PlotlyRenderer
@@ -574,3 +577,54 @@ class SchedulingEnv:
             )
 
         return f"SchedulingEnv({self.get_entry()}, n_tasks=0)"
+
+    def to_dict(self) -> EnvSerialization:
+        """
+        Serialize the environment to a dictionary.
+
+        The resulting serialization is lazily generated, incorporating custom parameters
+        for the setup, constraints, and objective into the instance, whenever it's possible.
+
+        For example, if a ReleaseDateConstraint explicitly gets a release time list, instead
+        of a tag, the serialization will include that list to the instance, instead of storing
+        it on the constraint itself.
+        """
+
+        setup_dict = self.setup.to_dict()
+        setup_dict["setup"] = self.setup.__class__.__name__
+
+        objective_dict = self.objective.to_dict()
+        objective_dict["objective"] = self.objective.__class__.__name__
+
+        constraint_dict: dict[str, dict[str, Any]] = {}
+        for name, constraint in self.constraints.items():
+            if not name.startswith("setup_"):
+                cls_name = constraint.__class__.__name__
+
+                constraint_dict[cls_name] = constraint.to_dict()
+
+        return {
+            "setup": setup_dict,
+            "constraints": constraint_dict,
+            "objective": objective_dict,
+        }
+
+    @classmethod
+    def from_dict(cls, data: EnvSerialization) -> "SchedulingEnv":
+        "Deserialize the environment from a dictionary."
+        setup_class = setups[data["setup"].pop("setup")]
+        setup = setup_class.from_dict(data["setup"])
+
+        objective_class = objectives[data["objective"].pop("objective")]
+        objective = objective_class.from_dict(data["objective"])
+
+        constraints_list = [
+            constraints[cls_name].from_dict(constraint_data)
+            for cls_name, constraint_data in data["constraints"].items()
+        ]
+
+        return SchedulingEnv(
+            machine_setup=setup,
+            constraints=constraints_list,
+            objective=objective,
+        )

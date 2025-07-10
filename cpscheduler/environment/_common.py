@@ -68,3 +68,13 @@ class InstanceConfig(TypedDict):
     processing_times: NotRequired[ProcessTimeAllowedTypes]
     job_instance: NotRequired[InstanceTypes]
     job_feature: NotRequired[str]
+
+
+class EnvSerialization(TypedDict):
+    "Serialization format for the environment."
+
+    setup: dict[str, Any]
+    constraints: dict[str, dict[str, Any]]
+    objective: dict[str, Any]
+
+    instance: NotRequired[InstanceTypes]
