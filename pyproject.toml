@@ -6,6 +6,7 @@ requires = [
     "mypy>=1.13.0",
     "mypy_extensions",
     "tomli; python_version<'3.11'",
+    "multimethod >= 2.0.0",
 ]
 build-backend = "setuptools.build_meta"
 
@@ -46,12 +47,12 @@ rl = [
     "tqdm >= 4.67.1",
     "wandb >= 0.21.0",
     "tensorboard >= 2.19.0",
-    "tqdm >= 4.67.1"
+    "tqdm >= 4.67.1",
+    "tyro >= 0.9.26"
 ]
 
 solver = [
     "pulp >= 2.7.0",
-    "multimethod >= 2.0.0",
     "nest_asyncio>=1.6.0"
 ]
 

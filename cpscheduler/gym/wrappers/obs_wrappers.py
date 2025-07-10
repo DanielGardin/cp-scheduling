@@ -1,5 +1,7 @@
 from typing import Any, TypeVar
 from collections.abc import Callable
+from typing_extensions import Unpack
+
 from numpy.typing import NDArray
 
 from abc import ABC, abstractmethod
@@ -189,7 +191,7 @@ class PreprocessObservationWrapper(
     def __init__(
         self,
         env: Env[ObsType, _Act],
-        transform: Callable[[*ObsType], NDArray[np.floating[Any]]],
+        transform: Callable[[Unpack[ObsType]], NDArray[np.floating[Any]]],
     ):
         self.transform = transform
 
