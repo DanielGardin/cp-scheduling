@@ -108,9 +108,7 @@ class SingleMachineSetup(ScheduleSetup):
         if not self.disjunctive:
             return ()
 
-        disjunctive_tasks = {0: [i for i in range(data.n_tasks)]}
-
-        return (DisjunctiveConstraint(disjunctive_tasks, name="setup_disjunctive"),)
+        return (MachineConstraint(name="setup_machine_disjunctive"),)
 
     def get_entry(self) -> str:
         return "1"

@@ -434,6 +434,7 @@ class Tasks:
 
         self.tasks = []
         self.jobs = [[] for _ in range(max(job_ids) + 1)]
+        self.n_jobs = len(self.jobs)
 
         self.awaiting_tasks = set()
         self.transition_tasks = set()
