@@ -2,9 +2,8 @@ from torch import Tensor
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-from .common import layer_init, PositionalEncoding
+from ..network import layer_init, PositionalEncoding
 
 
 class End2EndActor(nn.Module):

@@ -5,8 +5,10 @@ from torch import Tensor
 import torch
 from torch import nn
 
+from cpscheduler.rl.protocols import Policy
 
-class PlackettLucePolicy(nn.Module):
+
+class PlackettLucePolicy(nn.Module, Policy[Tensor, Tensor]):
     def __init__(
         self,
         score_model: Callable[[Tensor], Tensor],

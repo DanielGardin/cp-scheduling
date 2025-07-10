@@ -40,12 +40,14 @@ The project is organized into the following main directories inside `cpscheduler
 
 ```
 🧩 cpscheduler
-├── 🧠 algorithms
+├── 🧠 rl
 │   ├── offline
 │   │   └── bc
 │   │
-│   └── online
-│       └── reinforce.py
+│   ├── online
+│   │   └── reinforce.py
+│   │
+│   └── policies
 │
 ├── 🏭 environment
 │   ├── constraints
@@ -68,8 +70,6 @@ The project is organized into the following main directories inside `cpscheduler
 │   ├── jobshop
 │   ├── rcpsp
 │   └── smtwt
-│
-├── 🎮 policies
 │
 └── ⚙️ solver
     └── pulp
