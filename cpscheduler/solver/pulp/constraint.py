@@ -51,7 +51,7 @@ def _(
 
                 pulp_add_constraint(
                     model,
-                    variables.get_order(task_id, child_id) == 1,
+                    variables.get_order(task_id, child_id) >= 1,
                     f"order_{task_id}_{child_id}",
                 )
 

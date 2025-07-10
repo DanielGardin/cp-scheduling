@@ -1,10 +1,12 @@
 from collections.abc import Iterable
 
+from itertools import combinations
+from functools import partial
+
 from pulp import LpProblem, LpAffineExpression, lpSum
 
 from .tasks import PulpVariables, PulpSchedulingVariables, PulpTimetable, get_order
 from .pulp_utils import implication_pulp
-from itertools import repeat, combinations
 
 from cpscheduler.environment.env import SchedulingEnv
 
@@ -13,16 +15,21 @@ import cpscheduler.environment.objectives as objectives
 import cpscheduler.environment.schedule_setup as setups
 
 
-def is_partition_problem(env: SchedulingEnv) -> bool:
-    "Check if the environment has no additional constraints (beta entries)."
-    constraint = constraints.Constraint()
+def get_machine_constraint(env: SchedulingEnv) -> constraints.MachineConstraint | None:
     for constraint in env.constraints.values():
         if isinstance(constraint, constraints.MachineConstraint):
-            return constraint.is_complete()
+            return constraint
+    return None
 
+
+def is_partition_problem(env: SchedulingEnv) -> bool:
+    "Check if the environment has no additional constraints (beta entries)."
+    constraint = get_machine_constraint(env)
+
+    if constraint is None:
         return False
 
-    return True
+    return constraint.is_complete()
 
 
 def employ_symmetry_breaking_pulp(
@@ -70,7 +77,7 @@ def partition_symmetry_breaking(
         env.objective,
         (objectives.WeightedTardiness, objectives.TotalTardiness),
     ):
-        ...
+        tardiness_dominance_symmetry_breaking(env, model, variables)
 
 
 def machine_ordering_symmetry_breaking(
@@ -110,13 +117,8 @@ def job_ordering_symmetry_breaking(
     "When jobs inside machines are exchangeable, break symmetry by ordering by lexicographic order"
     tasks = env.tasks
 
-    machine_constraint = next(
-        iter(
-            constraint
-            for constraint in env.constraints.values()
-            if isinstance(constraint, constraints.MachineConstraint)
-        )
-    )
+    machine_constraint = get_machine_constraint(env)
+    assert machine_constraint is not None
 
     for machine_id, machine_tasks in enumerate(machine_constraint.machine_constraint):
         for i, j in combinations(machine_tasks, 2):
@@ -126,7 +128,7 @@ def job_ordering_symmetry_breaking(
                     decision_vars.assignments[i][machine_id],
                     decision_vars.assignments[j][machine_id],
                 ),
-                consequent=(decision_vars.get_order(i, j), "==", 1),
+                consequent=(decision_vars.get_order(i, j), ">=", 1),
                 big_m=1,
                 name=f"SB_order_{i}_{j}_machine_{machine_id}",
             )
@@ -156,14 +158,14 @@ def smiths_rules_symmetry_breaking(
     the task
     """
     tasks = env.tasks
-    data = env.data
 
-    weights: Iterable[float]
     if isinstance(env.objective, objectives.WeightedCompletionTime):
-        weights = env.objective.job_weights
+        weighted = True
+        weights: list[float] = env.data.get_job_level_data("weight")
 
     elif isinstance(env.objective, objectives.TotalCompletionTime):
-        weights = repeat(1.0, len(tasks))
+        weighted = False
+        weights = []
 
     else:
         raise ValueError(
@@ -171,23 +173,26 @@ def smiths_rules_symmetry_breaking(
             "for WeightedCompletionTime or TotalCompletionTime objectives."
         )
 
-    priorities: list[tuple[float, int]]
-    for machine_id in range(data.n_machines):
+    machine_constraint = get_machine_constraint(env)
+    assert machine_constraint is not None
+
+    def smith_rule(task_id: int, machine_id: int) -> float:
+        task = tasks[task_id]
+        if weighted:
+            return -weights[task.job_id] / int(task.processing_times[machine_id])
+
+        return int(task.processing_times[machine_id])
+
+    for machine_id, machine_tasks in enumerate(machine_constraint.machine_constraint):
         priorities = sorted(
-            [
-                (-weight / int(task.processing_times[machine_id]), task.task_id)
-                for task, weight in zip(tasks, weights)
-                if machine_id in task.processing_times
-            ]
+            machine_tasks, key=partial(smith_rule, machine_id=machine_id)
         )
 
-        for i, (_, task_id) in enumerate(priorities):
+        for idx, task_id in enumerate(priorities):
             S_j = lpSum(
-                [
-                    tasks[prev_task].processing_times[machine_id]
-                    * decision_vars.assignments[prev_task][machine_id]
-                    for _, prev_task in priorities[:i]
-                ]
+                tasks[prev_task_id].processing_times[machine_id]
+                * decision_vars.assignments[prev_task_id][machine_id]
+                for prev_task_id in priorities[:idx]
             )
 
             implication_pulp(
@@ -200,16 +205,89 @@ def smiths_rules_symmetry_breaking(
                 name=f"SB_smiths_{task_id}_machine_{machine_id}",
             )
 
-            for _, prev_task in priorities[:i]:
-                order, value = get_order(task_id, prev_task)
-
+            for prev_task_id in priorities[:idx]:
                 implication_pulp(
                     model,
                     antecedent=(
                         decision_vars.assignments[task_id][machine_id],
-                        decision_vars.assignments[prev_task][machine_id],
+                        decision_vars.assignments[prev_task_id][machine_id],
                     ),
-                    consequent=(decision_vars.orders[order], "==", value),
+                    consequent=(
+                        decision_vars.get_order(prev_task_id, task_id),
+                        ">=",
+                        1,
+                    ),
                     big_m=1,
-                    name=f"SB_smiths_order_{order[0]}_{order[1]}_machine_{machine_id}",
+                    name=f"SB_smiths_order_{prev_task_id}_{task_id}_machine_{machine_id}",
                 )
+
+
+def tardiness_dominance_symmetry_breaking(
+    env: SchedulingEnv, model: LpProblem, decision_vars: PulpSchedulingVariables
+) -> None:
+    "In agreeable jobs, break symmetry by ordering by tardiness dominance"
+    tasks = env.tasks
+
+    machine_constraint = get_machine_constraint(env)
+    assert machine_constraint is not None
+
+    if isinstance(env.objective, objectives.WeightedTardiness):
+        weighted = True
+        weights: list[float] = env.data.get_job_level_data("weight")
+
+    elif isinstance(env.objective, objectives.TotalTardiness):
+        weighted = False
+        weights = []
+
+    else:
+        raise ValueError(
+            "Tardiness dominance symmetry breaking is only applicable"
+            "for WeightedTardiness or TotalTardiness objectives."
+        )
+
+    due_dates = env.data.get_job_level_data("due_date")
+
+    for machine_id, machine_tasks in enumerate(machine_constraint.machine_constraint):
+        sorted_tasks = sorted(
+            machine_tasks, key=lambda task_id: due_dates[tasks[task_id].job_id]
+        )
+
+        # Necessarely d_i <= d_j
+        for i, j in combinations(sorted_tasks, 2):
+            task_i = tasks[i]
+            task_j = tasks[j]
+
+            if task_i.processing_times[machine_id] >= task_j.processing_times[
+                machine_id
+            ] or (weighted and weights[task_i.job_id] <= weights[task_j.job_id]):
+                continue
+
+            implication_pulp(
+                model,
+                antecedent=(
+                    decision_vars.assignments[i][machine_id],
+                    decision_vars.assignments[j][machine_id],
+                ),
+                consequent=(
+                    decision_vars.get_order(i, j),
+                    ">=",
+                    1,
+                ),
+                big_m=1,
+                name=f"SB_tardiness_order_{i}_{j}_machine_{machine_id}",
+            )
+
+            implication_pulp(
+                model,
+                antecedent=(
+                    decision_vars.assignments[i][machine_id],
+                    decision_vars.assignments[j][machine_id],
+                ),
+                consequent=(
+                    decision_vars.end_times[i],
+                    "<=",
+                    decision_vars.start_times[j],
+                ),
+                big_m=int(task_i.get_end_ub() - task_j.get_start_lb()),
+                name=f"SB_tardiness_{i}_{j}_machine_{machine_id}",
+            )
