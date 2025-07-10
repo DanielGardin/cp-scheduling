@@ -207,6 +207,9 @@ class WeightedCompletionTime(Objective):
         if not self.tags:
             data.add_data("weight", self.job_weights)
 
+        else:
+            data.add_alias("weight", self.tags["job_weights"])
+
     def get_current(self, time: TIME, tasks: Tasks) -> float:
         weighted_completion_time = 0.0
         for job in range(tasks.n_jobs):
@@ -248,6 +251,9 @@ class MaximumLateness(Objective):
     def export_data(self, data: SchedulingData) -> None:
         if not self.tags:
             data.add_data("due_date", self.due_dates)
+
+        else:
+            data.add_alias("due_date", self.tags["due_dates"])
 
     def get_current(self, time: TIME, tasks: Tasks) -> int:
         max_lateness = 0
@@ -293,6 +299,9 @@ class TotalTardiness(Objective):
     def export_data(self, data: SchedulingData) -> None:
         if not self.tags:
             data.add_data("due_date", self.due_dates)
+
+        else:
+            data.add_alias("due_date", self.tags["due_dates"])
 
     def get_current(self, time: TIME, tasks: Tasks) -> int:
         total_tardiness = 0
@@ -352,8 +361,14 @@ class WeightedTardiness(Objective):
         if "due_dates" not in self.tags:
             data.add_data("due_date", self.due_dates)
 
+        else:
+            data.add_alias("due_date", self.tags["due_dates"])
+
         if "job_weights" not in self.tags:
             data.add_data("weight", self.job_weights)
+
+        else:
+            data.add_alias("weight", self.tags["job_weights"])
 
     def get_current(self, time: TIME, tasks: Tasks) -> float:
         weighted_tardiness = 0.0
@@ -402,6 +417,9 @@ class TotalEarliness(Objective):
     def export_data(self, data: SchedulingData) -> None:
         if not self.tags:
             data.add_data("due_date", self.due_dates)
+
+        else:
+            data.add_alias("due_date", self.tags["due_dates"])
 
     def get_current(self, time: TIME, tasks: Tasks) -> int:
         total_earliness = 0
@@ -460,8 +478,14 @@ class WeightedEarliness(Objective):
         if "due_dates" not in self.tags:
             data.add_data("due_date", self.due_dates)
 
+        else:
+            data.add_alias("due_date", self.tags["due_dates"])
+
         if "job_weights" not in self.tags:
             data.add_data("weight", self.job_weights)
+
+        else:
+            data.add_alias("weight", self.tags["job_weights"])
 
     def get_current(self, time: TIME, tasks: Tasks) -> float:
         weighted_earliness = 0.0
@@ -511,6 +535,9 @@ class TotalTardyJobs(Objective):
     def export_data(self, data: SchedulingData) -> None:
         if not self.tags:
             data.add_data("due_date", self.due_dates)
+
+        else:
+            data.add_alias("due_date", self.tags["due_dates"])
 
     def get_current(self, time: TIME, tasks: Tasks) -> int:
         tardy_jobs = 0
@@ -566,8 +593,14 @@ class WeightedTardyJobs(Objective):
         if "due_dates" not in self.tags:
             data.add_data("due_date", self.due_dates)
 
+        else:
+            data.add_alias("due_date", self.tags["due_dates"])
+
         if "job_weights" not in self.tags:
             data.add_data("weight", self.job_weights)
+
+        else:
+            data.add_alias("weight", self.tags["job_weights"])
 
     def get_current(self, time: TIME, tasks: Tasks) -> float:
         weighted_tardy_jobs = 0.0
@@ -612,6 +645,9 @@ class TotalFlowTime(Objective):
     def export_data(self, data: SchedulingData) -> None:
         if not self.tags:
             data.add_data("release_time", self.release_times)
+
+        else:
+            data.add_alias("release_time", self.tags["release_times"])
 
     def get_current(self, time: TIME, tasks: Tasks) -> int:
         total_flowtime = 0

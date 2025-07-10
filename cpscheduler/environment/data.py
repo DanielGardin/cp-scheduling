@@ -19,6 +19,7 @@ from .utils import convert_to_list
 
 JOB_ID_ALIASES = ["job", "job_id", "jobs", "jobs_ids"]
 
+
 class SchedulingData:
     "A class to hold static scheduling data for the CPScheduler environment."
 
@@ -34,6 +35,8 @@ class SchedulingData:
 
     job_ids: list[TASK_ID]
 
+    alias: dict[str, str]
+
     def __init__(
         self,
         task_data: dict[str, list[Any]],
@@ -41,6 +44,8 @@ class SchedulingData:
         jobs_data: dict[str, list[Any]],
         job_feature: str = "",
     ) -> None:
+        self.alias = {}
+
         self.task_data = task_data.copy()
         self.jobs_data = jobs_data.copy()
         self.processing_times = processing_times.copy()
@@ -80,7 +85,6 @@ class SchedulingData:
 
             self.safe_converse = True
 
-
     @classmethod
     def empty(cls) -> Self:
         "Create an empty SchedulingData instance."
@@ -90,18 +94,31 @@ class SchedulingData:
             processing_times=[],
         )
 
-    def __getitem__(self, key: str) -> list[Any]:
+    def add_alias(self, alias: str, feature: str) -> None:
+        if feature not in self.task_data and feature not in self.jobs_data:
+            raise KeyError(f"Feature '{feature}' not found in tasks or jobs data.")
+
+        if alias != feature:
+            self.alias[alias] = feature
+
+    def __getitem__(self, feature: str) -> list[Any]:
         "Get a specific data feature for all tasks or jobs."
-        if key in self.task_data:
-            return self.task_data[key]
+        if feature in self.alias:
+            feature = self.alias[feature]
 
-        if key in self.jobs_data:
-            return self.jobs_data[key]
+        if feature in self.task_data:
+            return self.task_data[feature]
 
-        raise KeyError(f"Feature '{key}' not found in tasks or jobs data.")
+        if feature in self.jobs_data:
+            return self.jobs_data[feature]
+
+        raise KeyError(f"Feature '{feature}' not found in tasks or jobs data.")
 
     def get_task_data(self, feature: str, task_id: TASK_ID) -> Any:
         "Get a specific task data feature for a given task."
+        if feature in self.alias:
+            feature = self.alias[feature]
+
         if feature in self.task_data:
             return self.task_data[feature][task_id]
 
@@ -115,6 +132,9 @@ class SchedulingData:
 
     def get_job_data(self, feature: str, job_id: TASK_ID) -> Any:
         "Get a specific job data feature for a given job."
+        if feature in self.alias:
+            feature = self.alias[feature]
+
         if feature in self.jobs_data:
             return self.jobs_data[feature][job_id]
 
@@ -142,6 +162,9 @@ class SchedulingData:
 
     def get_task_level_data(self, feature: str) -> list[Any]:
         "Get a specific, task or job, data feature for all tasks."
+        if feature in self.alias:
+            feature = self.alias[feature]
+
         if feature in self.task_data:
             return self.task_data[feature]
 
@@ -154,6 +177,9 @@ class SchedulingData:
 
     def get_job_level_data(self, feature: str) -> list[Any]:
         "Get a specific job data feature for all jobs."
+        if feature in self.alias:
+            feature = self.alias[feature]
+
         if feature in self.jobs_data:
             return self.jobs_data[feature]
 

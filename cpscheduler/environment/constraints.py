@@ -415,6 +415,9 @@ class ReleaseDateConstraint(Constraint):
                 ],
             )
 
+        else:
+            data.add_alias("release_time", self.tags["release_time"])
+
     def reset(self, tasks: Tasks) -> None:
         for task_id, date in self.release_dates.items():
             tasks[task_id].set_start_lb(date)
@@ -480,6 +483,9 @@ class DeadlineConstraint(Constraint):
                     for task in range(data.n_tasks)
                 ],
             )
+
+        else:
+            data.add_alias("due_date", self.tags["due_date"])
 
     def reset(self, tasks: Tasks) -> None:
         for task_id, date in self.deadlines.items():
