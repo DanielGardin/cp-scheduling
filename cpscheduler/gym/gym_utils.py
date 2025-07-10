@@ -7,6 +7,7 @@ from gymnasium.spaces import Space, Dict, Tuple, Box, MultiBinary, Text, Sequenc
 from cpscheduler.environment._common import MAX_INT, MIN_INT
 from cpscheduler.environment.utils import is_iterable_type
 
+
 @overload
 def infer_collection_space(obs: Mapping[Any, Any]) -> Dict: ...
 
@@ -31,9 +32,7 @@ def infer_collection_space(obs: Any) -> Space[Any]:
     "Infer the Gymnasium space of a collection based on its elements."
 
     if isinstance(obs, Mapping):
-        return Dict(
-            {key: infer_collection_space(value) for key, value in obs.items()}
-        )
+        return Dict({key: infer_collection_space(value) for key, value in obs.items()})
 
     if isinstance(obs, tuple):
         return Tuple([infer_collection_space(elem) for elem in obs])
@@ -44,9 +43,7 @@ def infer_collection_space(obs: Any) -> Space[Any]:
         return Sequence(Text(max_length=100), stack=True)
 
     if is_iterable_type(obs, int):
-        return Box(
-            low=int(MIN_INT), high=int(MAX_INT), shape=(n,), dtype=np.int64
-        )
+        return Box(low=int(MIN_INT), high=int(MAX_INT), shape=(n,), dtype=np.int64)
 
     if is_iterable_type(obs, float):
         return Box(low=-np.inf, high=np.inf, shape=(n,), dtype=np.float64)

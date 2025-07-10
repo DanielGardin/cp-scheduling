@@ -13,12 +13,15 @@ from collections import deque
 from ._common import TASK_ID, Int
 
 _T = TypeVar("_T")
+
+
 @overload
 def convert_to_list(array: Any, dtype: type[_T]) -> list[_T]: ...
 @overload
 def convert_to_list(array: Iterable[_T], dtype: None = ...) -> list[_T]: ...
 @overload
 def convert_to_list(array: Any, dtype: None = ...) -> list[Any]: ...
+
 
 def convert_to_list(array: Iterable[Any], dtype: type[Any] | None = None) -> list[Any]:
     """
@@ -83,11 +86,11 @@ def is_iterable_type(
             return isinstance(first_item, dtype)
 
         return all(isinstance(item, dtype) for item in obj)
-    
+
     # except StopIteration:
     #     # If the iterable is empty, we consider it to be of the specified type
     #     return True
-    
+
     except TypeError:
         # If the iterable is not a collection, it will raise a TypeError
         return False
@@ -100,11 +103,11 @@ def is_iterable_int(obj: Any, lazy: bool = True) -> TypeIs[Iterable[Int]]:
             return isinstance(first_item, Int)
 
         return all(isinstance(item, Int) for item in obj)
-    
+
     # except StopIteration:
     #     # If the iterable is empty, we consider it to be of the specified type
     #     return True
-    
+
     except TypeError:
         # If the iterable is not a collection, it will raise a TypeError
         return False

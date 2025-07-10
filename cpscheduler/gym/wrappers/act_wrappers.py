@@ -22,7 +22,7 @@ class SchedulingActionWrapper(ActionWrapper[_Obs, _Act, ActionType], ABC):
     def __init__(self, env: Env[_Obs, ActionType] | SchedulingEnv):
         if isinstance(env, SchedulingEnv):
             wrapped_env: Env[Any, ActionType] = SchedulingEnvGym.from_env(env)
-            super().__init__(wrapped_env) # type: ignore[call-arg]
+            super().__init__(wrapped_env)  # type: ignore[call-arg]
 
         else:
             super().__init__(env)
@@ -62,6 +62,7 @@ class SchedulingActionWrapper(ActionWrapper[_Obs, _Act, ActionType], ABC):
         """
         return None
 
+
 class PermutationActionWrapper(SchedulingActionWrapper[_Obs, Iterable[Int]]):
     """
     A wrapper that converts the action space to a permutation of the job IDs.
@@ -75,7 +76,9 @@ class PermutationActionWrapper(SchedulingActionWrapper[_Obs, Iterable[Int]]):
     def get_action_space(self) -> Space[Iterable[Int]]:
         n_jobs = len(getattr(self.env.get_wrapper_attr("tasks"), "jobs"))
 
-        return Sequence(Box(low=0, high=n_jobs - 1, shape=(1,), dtype=int64), stack=True)
+        return Sequence(
+            Box(low=0, high=n_jobs - 1, shape=(1,), dtype=int64), stack=True
+        )
 
     def action(self, action: Iterable[Int]) -> ActionType:
         return [(self.instruction, job_id) for job_id in action]

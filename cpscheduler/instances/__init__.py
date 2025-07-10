@@ -1,15 +1,12 @@
 __all__ = [
     "generate_instance",
     "generate_poisson_releases",
-
     # Jobshop instances
     "read_jsp_instance",
     "generate_taillard_instance",
     "generate_demirkol_instance",
-
     # Resource constrained instances
     "read_rcpsp_instance",
-
     # SMTWT instances
     "read_smtwt_instance",
 ]

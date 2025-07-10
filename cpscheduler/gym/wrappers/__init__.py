@@ -15,10 +15,6 @@ from .obs_wrappers import (
     PreprocessObservationWrapper,
 )
 
-from .act_wrappers import (
-    PermutationActionWrapper
-)
+from .act_wrappers import PermutationActionWrapper
 
-from .misc_wrappers import (
-    RandomGeneratorWrapper
-)
+from .misc_wrappers import RandomGeneratorWrapper

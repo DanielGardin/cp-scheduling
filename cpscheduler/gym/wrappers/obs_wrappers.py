@@ -52,7 +52,7 @@ class SchedulingObservationWrapper(ObservationWrapper[_Obs, _Act, ObsType], ABC)
     def __init__(self, env: Env[ObsType, _Act]):
         if isinstance(env, SchedulingEnv):
             wrapped_env: Env[ObsType, Any] = SchedulingEnvGym.from_env(env)
-            super().__init__(wrapped_env) # type: ignore[call-arg]
+            super().__init__(wrapped_env)  # type: ignore[call-arg]
 
         else:
             super().__init__(env)

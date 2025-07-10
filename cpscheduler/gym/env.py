@@ -65,7 +65,6 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
 
         self.observation_space = infer_collection_space(self._env._get_state())
 
-
     @classmethod
     def from_env(cls, env: SchedulingEnv) -> "SchedulingEnvGym":
         """
