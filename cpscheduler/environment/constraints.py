@@ -107,8 +107,8 @@ class PrecedenceConstraint(Constraint):
     """
 
     # original_precedence: dict[int, list[int]]
-    original_precedence: dict[TASK_ID, list[TASK_ID]]
-    topological_order: list[TASK_ID]
+    precedence: dict[TASK_ID, set[TASK_ID]]
+    original_order: list[TASK_ID]
 
     def __init__(
         self,
@@ -118,9 +118,9 @@ class PrecedenceConstraint(Constraint):
     ):
         super().__init__(name)
 
-        self.original_precedence = {
-            TASK_ID(task): convert_to_list(tasks, TASK_ID)
-            for task, tasks in precedence.items()
+        self.precedence = {
+            TASK_ID(task): {TASK_ID(child) for child in children}
+            for task, children in precedence.items()
         }
 
         self.no_wait = no_wait
@@ -159,15 +159,9 @@ class PrecedenceConstraint(Constraint):
 
         return cls(precedence, no_wait, name)
 
-    def _remove_precedence(self, task: TASK_ID, child: TASK_ID) -> None:
-        self.precedence[task].remove(child)
-
-        if self.topological_order and len(self.precedence[task]) == 0:
-            self.topological_order.remove(task)
-
     def is_intree(self) -> bool:
         "Check if the precedence graph is an in-tree."
-        for tasks in self.original_precedence.values():
+        for tasks in self.precedence.values():
             if len(tasks) > 1:
                 return False
 
@@ -178,18 +172,21 @@ class PrecedenceConstraint(Constraint):
         n_children = 0
         unique_children: set[TASK_ID] = set()
 
-        for tasks in self.original_precedence.values():
+        for tasks in self.precedence.values():
             n_children += len(tasks)
             unique_children.update(tasks)
 
         return n_children == len(unique_children)
 
+    def import_data(self, data: SchedulingData) -> None:
+        self.original_order = topological_sort(self.precedence, data.n_tasks)
+
     def export_data(self, data: SchedulingData) -> None:
         if self.is_intree():
             successors = [
                 (
-                    self.original_precedence[task_id][0]
-                    if task_id in self.original_precedence
+                    next(iter(self.precedence[task_id]))
+                    if task_id in self.precedence
                     else -1
                 )
                 for task_id in range(data.n_tasks)
@@ -199,26 +196,17 @@ class PrecedenceConstraint(Constraint):
 
         if self.is_outtree():
             predecessors = [-1 for _ in range(data.n_tasks)]
-            for task_id, children in self.original_precedence.items():
+            for task_id, children in self.precedence.items():
                 for child_id in children:
                     predecessors[child_id] = task_id
 
             data.add_data("predecessor", predecessors)
 
     def reset(self, tasks: Tasks) -> None:
-        self.precedence = {
-            task_id: children.copy()
-            for task_id, children in self.original_precedence.items()
-        }
+        self.topological_order = self.original_order.copy()
 
-        self.topological_order = topological_sort(self.precedence, tasks.n_tasks)
-
-    # Change to the original method instead of topological ordering
     def propagate(self, time: TIME, tasks: Tasks) -> None:
-        ptr = 0
-
-        while ptr < len(self.topological_order):
-            task_id = self.topological_order[ptr]
+        for task_id in list(self.topological_order):
             task = tasks[task_id]
 
             end_time = task.get_end_lb()
@@ -226,18 +214,11 @@ class PrecedenceConstraint(Constraint):
             for child_id in self.precedence[task_id]:
                 child = tasks[child_id]
 
-                if child.is_completed(time):
-                    self._remove_precedence(task_id, child_id)
-
-                elif child.get_start_lb() < end_time:
+                if child.get_start_lb() < end_time:
                     child.set_start_lb(end_time)
 
-            if ptr + 1 >= len(self.topological_order):
-                break
-
-            # Check if the potential removed precedences caused the current task to be removed
-            if task_id == self.topological_order[ptr]:
-                ptr += 1
+            if task.is_completed(time):
+                self.topological_order.remove(task_id)
 
     def get_entry(self) -> str:
         intree = self.is_intree()
