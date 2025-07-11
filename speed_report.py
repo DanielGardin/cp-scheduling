@@ -354,25 +354,11 @@ def test_speed(
 
         ax: Sequence[Axes]
         fig, ax = plt.subplots(ncols=2, figsize=(20, 6))
-        # sns.barplot(
-        #     x=list(benchmark_times.keys()),
-        #     y=values,
-        #     hue=np.array(values),
-        #     hue_norm=(0, 10),
-        #     palette="rocket",
-        #     ax=ax[0],
-        #     edgecolor='black',
-        #     linewidth=1,
-        #     legend=False,
-        # )
 
-        # Stacked bar plot for time in each stage
         stages = ["instance", "setup", "reset", "pdr", "step"]
         stage_times = np.array(
             [[time_dict[stage] for stage in time_dict] for time_dict in times.values()]
-        )
-
-        stage_times = stage_times.T  # Transpose to have stages as rows
+        ).T
 
         for i, stage in enumerate(stages):
             ax[0].bar(
@@ -407,11 +393,11 @@ def test_speed(
         )
 
         sup_coef = max(
-            (perf - (ang_coef * n_tasks + lin_coef)) / n_tasks**2
+            (perf) / n_tasks**2
             for perf, n_tasks in zip(perf, task_numbers)
         )
         inf_coef = min(
-            (perf - (ang_coef * n_tasks + lin_coef)) / n_tasks**2
+            (perf) / n_tasks**2
             for perf, n_tasks in zip(perf, task_numbers)
         )
 
