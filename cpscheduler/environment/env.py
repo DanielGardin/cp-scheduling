@@ -16,8 +16,6 @@ from warnings import warn
 from typing import Any
 from collections.abc import Iterable
 
-import json
-
 from mypy_extensions import u8, i64
 
 from ._common import (
@@ -578,7 +576,7 @@ class SchedulingEnv:
 
         return f"SchedulingEnv({self.get_entry()}, n_tasks=0)"
 
-    def to_dict(self) -> EnvSerialization:
+    def to_dict(self, export_data: bool = False) -> EnvSerialization:
         """
         Serialize the environment to a dictionary.
 
@@ -603,11 +601,15 @@ class SchedulingEnv:
 
                 constraint_dict[cls_name] = constraint.to_dict()
 
-        return {
+        serialization_dict: EnvSerialization = {
             "setup": setup_dict,
             "constraints": constraint_dict,
             "objective": objective_dict,
         }
+
+        serialization_dict["instance"] = self.data.to_dict()
+
+        return serialization_dict
 
     @classmethod
     def from_dict(cls, data: EnvSerialization) -> "SchedulingEnv":

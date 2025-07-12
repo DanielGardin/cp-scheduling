@@ -13,6 +13,7 @@ from ._common import (
     MACHINE_ID,
     TASK_ID,
     TIME,
+    InstanceConfig
 )
 
 from .utils import convert_to_list
@@ -229,13 +230,33 @@ class SchedulingData:
         "Export the status of the tasks in a dictionary format."
         task_state = {
             "task_id": [task_id for task_id in range(self.n_tasks)],
-            "job_id": self.job_ids.copy(),
-            **self.task_data.copy(),
+            "job_id": self.job_ids,
+            **self.task_data,
         }
 
         job_state = {
             "job_id": [job_id for job_id in range(self.n_jobs)],
-            **self.jobs_data.copy(),
+            **self.jobs_data,
         }
 
         return task_state, job_state
+
+    def to_dict(self) -> InstanceConfig:
+        "Convert the scheduling data back to the instance format."
+        instance_config: InstanceConfig = {}
+            
+
+        instance = {
+            **self.task_data,
+            'job_id': self.job_ids,
+        }
+
+        instance_config["instance"] = instance
+        instance_config["processing_times"] = self.processing_times
+
+        if len(self.jobs_data) > 1:
+            instance_config["job_instance"] = {
+                **self.jobs_data,
+            }
+
+        return instance_config

@@ -11,7 +11,7 @@ from typing import (
     Protocol,
     runtime_checkable,
 )
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from typing_extensions import NotRequired, TypedDict, TypeAlias
 
 from mypy_extensions import i64, i32, i16, u8
@@ -45,11 +45,11 @@ class DataFrameLike(Protocol):
 
     def __iter__(self) -> Iterator[Hashable]: ...
 
-
+# Changing from Int to Any to avoid issues with Mypy in nested generics (explore later)
 ProcessTimeAllowedTypes: TypeAlias = (
-    Iterable[Mapping[SupportsInt, SupportsInt]]
-    | Iterable[Iterable[SupportsInt]]
-    | Iterable[SupportsInt]  # Requires a machine array
+    Iterable[Mapping[Any, Any]]
+    | Iterable[Sequence[Any]]
+    | Iterable[Int]  # Requires a machine array
     | str  # Requires a machine array
     | Iterable[str]  # Map columns in data to machines
     | None  # Infer from data
@@ -77,4 +77,4 @@ class EnvSerialization(TypedDict):
     constraints: dict[str, dict[str, Any]]
     objective: dict[str, Any]
 
-    instance: NotRequired[InstanceTypes]
+    instance: NotRequired[InstanceConfig]
