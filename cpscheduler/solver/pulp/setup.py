@@ -37,7 +37,9 @@ def non_preemptive_constraint(
 
 @multidispatch
 def export_setup_pulp(setup: ScheduleSetup, variables: PulpVariables) -> ModelExport:
-    raise NotImplementedError(f"Setup {setup} not implemented for PuLP.")
+    raise NotImplementedError(
+        f"Setup {setup} for variable {variables} not implemented for PuLP."
+    )
 
 
 # Timetables do not require any specific setup constraints:

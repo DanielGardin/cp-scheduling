@@ -21,14 +21,18 @@ from cpscheduler.environment.constraints import (
 )
 
 from .tasks import PulpVariables, PulpSchedulingVariables, PulpTimetable
-from .pulp_utils import implication_pulp, pulp_add_constraint
+from .pulp_utils import implication_pulp, pulp_add_constraint, PULP_EXPRESSION
 
 ModelExport: TypeAlias = Callable[[LpProblem, Tasks, SchedulingData], None]
 
 
 @multidispatch
-def export_constraint_pulp(setup: Constraint, variables: PulpVariables) -> ModelExport:
-    raise NotImplementedError(f"Setup {setup} not implemented for PuLP.")
+def export_constraint_pulp(
+    constraint: Constraint, variables: PulpVariables
+) -> ModelExport:
+    raise NotImplementedError(
+        f"Constraint {constraint} for variable {variables} not implemented for PuLP."
+    )
 
 
 @export_constraint_pulp.register
@@ -192,7 +196,7 @@ def _(constraint: MachineConstraint, variables: PulpTimetable) -> ModelExport:
     def export_model(model: LpProblem, tasks: Tasks, data: SchedulingData) -> None:
         for machine_id, machine_tasks in enumerate(constraint.machine_constraint):
             for time in range(variables.T):
-                disjunction_group: list[LpVariable] = []
+                disjunction_group: list[PULP_EXPRESSION | int] = []
 
                 for task_id in machine_tasks:
                     task = tasks[task_id]

@@ -1,4 +1,5 @@
-from collections.abc import Iterable, Sequence
+from typing import Any
+from collections.abc import Sequence, Iterable, Mapping
 from abc import ABC, abstractmethod
 
 from pulp import LpVariable, LpProblem, LpBinary, LpAffineExpression, lpSum
@@ -6,31 +7,48 @@ from pulp import LpVariable, LpProblem, LpBinary, LpAffineExpression, lpSum
 from cpscheduler.environment.tasks import Tasks
 from cpscheduler.environment.data import SchedulingData
 
-from .pulp_utils import (
-    PULP_EXPRESSION,
-    get_value,
-    pulp_add_constraint,
-    implication_pulp,
-)
+from .pulp_utils import PULP_EXPRESSION, get_value, pulp_add_constraint
 
 
-def get_order(task_i: int, task_j: int) -> tuple[tuple[int, int], int]:
-    "Util function to get the proper order of tasks in the ordering variable."
-    if task_i < task_j:
-        return (task_i, task_j), 1
-    else:
-        return (task_j, task_i), 0
+def count_variables(variables: Iterable[Any] | PULP_EXPRESSION | int) -> int:
+    if isinstance(variables, Mapping):
+        return sum(count_variables(v) for v in variables.values())
+
+    if isinstance(variables, Iterable):
+        return sum(count_variables(v) for v in variables)
+
+    if isinstance(variables, (LpVariable, LpAffineExpression)):
+        return 1
+
+    return 0
 
 
 class PulpVariables(ABC):
     def __init__(
         self, model: LpProblem, tasks: Tasks, data: SchedulingData, integral: bool
     ):
+        object.__setattr__(self, "_initializing_base", True)
+        self._variables: dict[str, Any] = {}
+
         self.model = model
-        self.tasks = tasks
-        self.data = data
+        self.n_tasks = tasks.n_tasks
+        self.n_machines = data.n_machines
+
         self.integral = integral
+        self._initializing_base = False
+
         self.objective: PULP_EXPRESSION = LpAffineExpression()
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if not self._initializing_base and not hasattr(self, name):
+            self._variables[name] = value
+
+        super().__setattr__(name, value)
+
+    @property
+    def n_variables(self) -> int:
+        "Get the number of variables in the model."
+        return count_variables(self._variables)
 
     @property
     @abstractmethod
@@ -127,12 +145,12 @@ class PulpSchedulingVariables(PulpVariables):
     def get_assignments(self) -> list[tuple[int, int]]:
         assignments: list[tuple[int, int]] = []
 
-        for task_id, task in enumerate(self.tasks):
+        for task_id in range(self.n_tasks):
             start_value = get_value(self.start_times[task_id])
 
             start_time = int(start_value) if start_value is not None else -1
             machine_id = -1
-            for machine_id in range(self.data.n_machines):
+            for machine_id in range(self.n_machines):
                 if get_value(self.assignments[task_id][machine_id]):
                     break
 
@@ -156,61 +174,14 @@ class PulpSchedulingVariables(PulpVariables):
 
         return self.orders[(i, j)] if ordered else 1 - self.orders[(i, j)]
 
-    def set_order(
-        self,
-        model: LpProblem,
-        task_prec: int,
-        task_succ: int,
-        conditions: Iterable[LpVariable] | None = None,
-        prefix: str = "",
-    ) -> None:
-        """
-        Set the order of two tasks based on the conditions provided.
-        If the conditions are met, the order variable is set to 1, otherwise it is set to 0.
-        """
-        order, value = get_order(task_prec, task_succ)
-
-        if conditions is None:
-            pulp_add_constraint(
-                model,
-                self.end_times[task_prec] <= self.start_times[task_succ],
-                f"{prefix}_C_{task_prec}_le_S_{task_succ}",
-            )
-
-            pulp_add_constraint(
-                model,
-                self.orders[order] == value,
-                f"{prefix}_{task_prec}_prec_{task_succ}",
-            )
-
-        else:
-            implication_pulp(
-                model,
-                antecedent=conditions,
-                consequent=(
-                    self.end_times[task_prec],
-                    "<=",
-                    self.start_times[task_succ],
-                ),
-                big_m=int(
-                    self.tasks[task_prec].get_end_ub()
-                    - self.tasks[task_succ].get_start_lb()
-                ),
-                name=f"{prefix}_{task_prec}_prec_{task_succ}",
-            )
-
-            implication_pulp(
-                model,
-                antecedent=conditions,
-                consequent=(self.orders[order], "==", value),
-                big_m=1,
-                name=f"{prefix}_{task_prec}_prec_{task_succ}",
-            )
+    def __repr__(self) -> str:
+        "String representation of the PulpSchedulingVariables."
+        return f"PulpSchedulingVariables(n_variables={self.n_variables})"
 
 
 class PulpTimetable(PulpVariables):
     T: int
-    start_times: list[dict[int, list[LpVariable]]]
+    start_times: list[dict[int, list[PULP_EXPRESSION | int]]]
 
     def __init__(
         self, model: LpProblem, tasks: Tasks, data: SchedulingData, integral: bool
@@ -218,70 +189,65 @@ class PulpTimetable(PulpVariables):
         super().__init__(model, tasks, data, integral)
 
         self.T = tasks.get_time_ub() + 1
-        self.start_times = [
-            {
-                machine_id: [
-                    LpVariable(
-                        name=f"start_{task_id}_{machine_id}_{time}",
-                        lowBound=0,
-                        upBound=1,
-                        cat=LpBinary,
+
+        self.start_times = []
+        self.processing_times = data.processing_times.copy()
+
+        for task_id, task in enumerate(tasks):
+            machines = task.machines
+
+            task_start_times: dict[int, list[PULP_EXPRESSION | int]] = {}
+            for machine in machines:
+                start_lb = task.get_start_lb(machine)
+                start_ub = task.get_start_ub(machine)
+
+                task_start_times[machine] = [
+                    (
+                        0
+                        if time < start_lb or time > start_ub
+                        else LpVariable(
+                            f"start_{task_id}_{machine}_{time}",
+                            lowBound=0,
+                            upBound=1,
+                            cat=LpBinary,
+                        )
                     )
-                    for time in range(
-                        task.get_start_lb(machine_id), task.get_start_ub(machine_id) + 1
-                    )
+                    for time in range(self.T)
                 ]
-                for machine_id in task.machines
-            }
-            for task_id, task in enumerate(tasks)
-        ]
 
-        for task_id in range(tasks.n_tasks):
-            starting_times = self.start_times[task_id].values()
+            self.start_times.append(task_start_times)
 
-            model.addConstraint(
+            pulp_add_constraint(
+                model,
                 lpSum(
                     decision_var
-                    for machine_decision in starting_times
+                    for machine_decision in task_start_times.values()
                     for decision_var in machine_decision
                 )
-                == 1
+                == 1,
+                f"task_{task_id}_timetable_assignment",
             )
-
-    def x(self, task_id: int, machine_id: int, time: int) -> LpVariable | int:
-        start_lb: int = self.tasks[task_id].get_start_lb(machine_id)
-        start_ub: int = self.tasks[task_id].get_start_ub(machine_id)
-
-        if time < start_lb or time >= start_ub:
-            return 0
-
-        return self.start_times[task_id][machine_id][time - start_lb]
 
     @property
     def end_times(self) -> list[LpVariable | LpAffineExpression]:
         "Expression for the end time of a task."
         return [
             lpSum(
-                x * (time + self.tasks[task_id].processing_times[machine_id])
+                self.start_times[task_id][machine_id][time]
+                * (time + self.processing_times[task_id][machine_id])
                 for machine_id, machine_xs in self.start_times[task_id].items()
-                for time, x in enumerate(
-                    machine_xs, start=self.tasks[task_id].get_start_lb(machine_id)
-                )
+                for time in range(self.T)
             )
-            for task_id in range(self.tasks.n_tasks)
+            for task_id in range(self.n_tasks)
         ]
 
     def get_assignments(self) -> list[tuple[int, int]]:
         assignments: list[tuple[int, int]] = []
 
-        for task_id in range(self.tasks.n_tasks):
-            task = self.tasks[task_id]
-
-            for machine_id in task.machines:
-                for time in range(
-                    task.get_start_lb(machine_id), task.get_start_ub(machine_id) + 1
-                ):
-                    if self.start_times[task_id][machine_id][time].value():
+        for task_id in range(self.n_tasks):
+            for machine_id in range(self.n_machines):
+                for time in range(self.T):
+                    if get_value(self.start_times[task_id][machine_id][time]):
                         assignments.append((machine_id, time))
 
         return assignments

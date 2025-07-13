@@ -48,6 +48,18 @@ def get_value(param: PULP_PARAM) -> float | int:
     raise ValueError(f"Unexpected type: {type(param)}")
 
 
+def is_true(constraint: LpConstraint | bool) -> bool | None:
+    if isinstance(constraint, bool):
+        return constraint
+
+    if constraint.isNumericalConstant():
+        truth: bool = constraint.constant <= 0.0
+        return truth
+
+    # If the constraint is not a numerical constant, we cannot determine its truth value
+    return None
+
+
 def pulp_add_constraint(
     model: LpProblem, constraint: LpConstraint | bool, name: str
 ) -> None:
@@ -59,20 +71,20 @@ def pulp_add_constraint(
         constraint (LpConstraint | bool): The constraint to add. If it's a boolean, asserts that
         it is True and ignores the addition to the model.
     """
+    truth_value = is_true(constraint)
 
-    if isinstance(constraint, bool):
-        if not constraint:
-            raise ValueError(
-                f"The constraint {name} you are trying to add is False, making the model infeasible."
-                "Aborting the model creation."
-            )
+    if truth_value is None:
+        assert not isinstance(constraint, bool)
 
-        return
+        model.addConstraint(
+            constraint,
+            name=name,
+        )
 
-    model.addConstraint(
-        constraint,
-        name=name,
-    )
+    elif not truth_value:
+        raise ValueError(
+            f"Constraint {name} is False, adding it to the model invalidates the model."
+        )
 
 
 global_max_id = 0
@@ -141,34 +153,48 @@ def implication_pulp(
     if isinstance(antecedent, PULP_PARAM):
         antecedent = [antecedent]
 
-    premise = lpSum(antecedent)
-    n_vars = sum(1 for _ in antecedent)
-
     lhs, operator, rhs = consequent
+    if all(is_true(premise == 1) for premise in antecedent):
 
-    if operator == "==":
-        pulp_add_constraint(
-            model,
-            lhs <= rhs + (n_vars - premise) * big_m,
-            f"{name}_le" if name is not None else f"{premise}_{lhs}_le_{rhs}",
+        full_consequent = (
+            lhs <= rhs
+            if operator == "<="
+            else lhs >= rhs if operator == ">=" else lhs == rhs
         )
 
         pulp_add_constraint(
             model,
-            lhs >= rhs - (n_vars - premise) * big_m,
-            f"{name}_ge" if name is not None else f"{premise}_{lhs}_ge_{rhs}",
+            full_consequent,
+            name if name is not None else f"{lhs}_{operator}_{rhs}",
         )
 
-    elif operator == "<=":
-        pulp_add_constraint(
-            model,
-            lhs <= rhs + (n_vars - premise) * big_m,
-            name if name is not None else f"{premise}_{lhs}_le_{rhs}",
-        )
+    else:
+        premise = lpSum(antecedent)
+        n_vars = sum(1 for _ in antecedent)
 
-    elif operator == ">=":
-        pulp_add_constraint(
-            model,
-            lhs >= rhs - (n_vars - premise) * big_m,
-            name if name is not None else f"{premise}_{lhs}_ge_{rhs}",
-        )
+        if operator == "==":
+            pulp_add_constraint(
+                model,
+                lhs <= rhs + (n_vars - premise) * big_m,
+                f"{name}_le" if name is not None else f"{premise}_{lhs}_le_{rhs}",
+            )
+
+            pulp_add_constraint(
+                model,
+                lhs >= rhs - (n_vars - premise) * big_m,
+                f"{name}_ge" if name is not None else f"{premise}_{lhs}_ge_{rhs}",
+            )
+
+        elif operator == "<=":
+            pulp_add_constraint(
+                model,
+                lhs <= rhs + (n_vars - premise) * big_m,
+                name if name is not None else f"{premise}_{lhs}_le_{rhs}",
+            )
+
+        elif operator == ">=":
+            pulp_add_constraint(
+                model,
+                lhs >= rhs - (n_vars - premise) * big_m,
+                name if name is not None else f"{premise}_{lhs}_ge_{rhs}",
+            )

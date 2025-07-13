@@ -32,8 +32,12 @@ ModelExport: TypeAlias = Callable[[LpProblem, Tasks, SchedulingData], ObjectiveV
 
 
 @multidispatch
-def export_objective_pulp(setup: Objective, variables: PulpVariables) -> ModelExport:
-    raise NotImplementedError(f"Setup {setup} not implemented for PuLP.")
+def export_objective_pulp(
+    objective: Objective, variables: PulpVariables
+) -> ModelExport:
+    raise NotImplementedError(
+        f"Objective {objective} for variable {variables} not implemented for PuLP."
+    )
 
 
 @export_objective_pulp.register

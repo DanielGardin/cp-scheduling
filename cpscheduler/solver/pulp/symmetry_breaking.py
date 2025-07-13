@@ -3,7 +3,7 @@ from functools import partial
 
 from pulp import LpProblem, LpAffineExpression, lpSum
 
-from .tasks import PulpVariables, PulpSchedulingVariables, PulpTimetable, get_order
+from .tasks import PulpVariables, PulpSchedulingVariables, PulpTimetable
 from .pulp_utils import implication_pulp
 
 from cpscheduler.environment.env import SchedulingEnv
