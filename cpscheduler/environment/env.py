@@ -243,11 +243,13 @@ class SchedulingEnv:
         self.tasks = Tasks(self.data.job_ids, parsed_processing_times, self.n_parts)
 
         for constraint in self.setup.setup_constraints(self.data):
+            constraint.setup_constraint = True
             self.add_constraint(constraint, replace=True)
 
         for constraint in self.constraints.values():
             constraint.import_data(self.data)
-            if not constraint.name.startswith("setup_"):
+
+            if not constraint.setup_constraint:
                 constraint.export_data(self.data)
 
         self.objective.import_data(self.data)
@@ -554,8 +556,8 @@ class SchedulingEnv:
             ",".join(
                 [
                     constraint.get_entry()
-                    for name, constraint in self.constraints.items()
-                    if not name.startswith("setup_") and constraint.get_entry()
+                    for constraint in self.constraints.values()
+                    if not constraint.setup_constraint and constraint.get_entry()
                 ]
             )
             + "prmp"
@@ -595,11 +597,12 @@ class SchedulingEnv:
         objective_dict["objective"] = self.objective.__class__.__name__
 
         constraint_dict: dict[str, dict[str, Any]] = {}
-        for name, constraint in self.constraints.items():
-            if not name.startswith("setup_"):
-                cls_name = constraint.__class__.__name__
+        for constraint in self.constraints.values():
+            if constraint.setup_constraint:
+                continue
 
-                constraint_dict[cls_name] = constraint.to_dict()
+            cls_name = constraint.__class__.__name__
+            constraint_dict[cls_name] = constraint.to_dict()
 
         serialization_dict: EnvSerialization = {
             "setup": setup_dict,
