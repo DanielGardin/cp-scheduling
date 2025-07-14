@@ -11,6 +11,7 @@ __all__ = [
     # Beta constraints
     "Constraint",
     "PrecedenceConstraint",
+    "ConstantProcessingTime",
     "DisjunctiveConstraint",
     "ReleaseDateConstraint",
     "DeadlineConstraint",
@@ -48,6 +49,7 @@ from .schedule_setup import (
 from .constraints import (
     Constraint,
     PrecedenceConstraint,
+    ConstantProcessingTime,
     DisjunctiveConstraint,
     ReleaseDateConstraint,
     DeadlineConstraint,
