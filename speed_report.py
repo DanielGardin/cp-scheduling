@@ -1,11 +1,15 @@
 from pathlib import Path
 
+from typing import Annotated
 from collections.abc import Sequence
 
 from time import perf_counter
 from prettytable import PrettyTable
 
 import numpy as np
+
+import tyro
+from tyro.conf import arg
 
 from cpscheduler import SchedulingEnv, JobShopSetup
 from cpscheduler.instances import read_jsp_instance
@@ -130,7 +134,7 @@ root = Path(__file__).parent
 
 
 def test_speed(
-    n: int = 1, full: bool = False, quiet: bool = False, plot: bool = False
+    n: Annotated[int, arg(aliases=('-n',))] = 1, full: bool = False, quiet: Annotated[bool, arg(aliases=('-q',))] = False, plot: bool = False
 ) -> None:
     """
     Test the speed of the Shortest Processing Time heuristic on various job shop instances.
@@ -141,6 +145,12 @@ def test_speed(
 
     full: bool
         If True, run the benchmark times for all the environment stages.
+
+    quiet: bool
+        If True, suppress the output of the benchmark results.
+
+    plot: bool
+        If True, plot the benchmark results.
     """
 
     compiled = is_compiled()
@@ -331,9 +341,9 @@ def test_speed(
             )
 
     # RECORDS: 49x speedup for small instances
-    #           8x speedup for large instances
+    #          10x speedup for large instances
     speedup_strs = [
-        colormap(value, min_value=0, max_value=10) + speed + RESET
+        colormap(value, min_value=0, max_value=12) + speed + RESET
         for value, speed in zip(values, speedup_strs)
     ]
 
@@ -435,8 +445,6 @@ def test_speed(
 
 
 if __name__ == "__main__":
-    import tyro
-
     tyro.cli(
         test_speed,
         description="Test the speed of the Shortest Processing Time heuristic on various job shop instances.",
