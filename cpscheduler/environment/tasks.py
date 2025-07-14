@@ -30,7 +30,7 @@ from typing_extensions import Self
 from mypy_extensions import u8
 
 from ._common import MIN_INT, MAX_INT, MACHINE_ID, TASK_ID, PART_ID, TIME, ObsType
-
+from .data import SchedulingData
 
 class Status:
     "Possible statuses of a task at a given time."
@@ -123,14 +123,14 @@ class Task:
         self,
         task_id: TASK_ID,
         job_id: TASK_ID,
-        processing_times: dict[MACHINE_ID, TIME],
+        data: SchedulingData
     ) -> None:
         self.task_id = task_id
         self.job_id = job_id
-        self.processing_times = processing_times.copy()
-        self._remaining_times = processing_times.copy()
+        self._remaining_times = data.processing_times[task_id].copy()
+        self.machines = list(self._remaining_times.keys())
 
-        self.start_bounds = {machine: Bounds() for machine in processing_times}
+        self.start_bounds = {machine: Bounds() for machine in self.machines}
 
         self.starts = []
         self.durations = []
@@ -138,6 +138,11 @@ class Task:
 
         self.fixed = False
         self.n_parts = 0
+
+        # Task data
+        self.weight: float = data.get_task_data("weight", task_id, 0.)
+        self.due_date: TIME = data.get_task_data("due_date", task_id, MAX_INT)
+        self.release_date: TIME = data.get_task_data("release_date", task_id, 0)
 
     def __repr__(self) -> str:
         representation = f"Task(id={self.task_id}"
@@ -157,7 +162,7 @@ class Task:
 
         return representation
 
-    def reset(self) -> None:
+    def reset(self, data: SchedulingData) -> None:
         "Resets the task to its initial state."
         self.fixed = False
         self.n_parts = 0
@@ -166,16 +171,11 @@ class Task:
         self.durations.clear()
         self.assignments.clear()
 
-        for machine in self._remaining_times:
-            self._remaining_times[machine] = self.processing_times[machine]
+        for machine in self.machines:
+            self._remaining_times[machine] = data.processing_times[self.task_id][machine]
 
         for start_bound in self.start_bounds.values():
             start_bound.reset()
-
-    @property
-    def machines(self) -> list[MACHINE_ID]:
-        "Get the list of machines that can process this task."
-        return [machine for machine in self.processing_times]
 
     def is_fixed(self) -> bool:
         "Checks if the task has its decision variables fixed."
@@ -227,7 +227,7 @@ class Task:
             return self.start_bounds[machine].lb + self._remaining_times[machine]
 
         end_lb = MAX_INT
-        for machine in self.start_bounds:
+        for machine in self.machines:
             machine_end_lb = (
                 self.start_bounds[machine].lb + self._remaining_times[machine]
             )
@@ -242,7 +242,7 @@ class Task:
             return self.start_bounds[machine].ub + self._remaining_times[machine]
 
         end_ub = 0
-        for machine in self.start_bounds:
+        for machine in self.machines:
             machine_end_ub = (
                 self.start_bounds[machine].ub + self._remaining_times[machine]
             )
@@ -284,7 +284,7 @@ class Task:
             self.start_bounds[machine].lb = time - self._remaining_times[machine]
             return
 
-        for machine in self.start_bounds:
+        for machine in self.machines:
             self.start_bounds[machine].lb = time - self._remaining_times[machine]
 
     def set_end_ub(self, time: TIME, machine: MACHINE_ID = -1) -> None:
@@ -296,7 +296,7 @@ class Task:
             self.start_bounds[machine].ub = time - self._remaining_times[machine]
             return
 
-        for machine in self.start_bounds:
+        for machine in self.machines:
             self.start_bounds[machine].ub = time - self._remaining_times[machine]
 
     def assign(
@@ -312,7 +312,7 @@ class Task:
         self.assignments.append(machine)
 
         self.fixed = True
-        for other_machine in self.start_bounds:
+        for other_machine in self.machines:
             if other_machine == machine:
                 self.start_bounds[other_machine].fix(start)
 
@@ -327,7 +327,7 @@ class Task:
         remaining_time = self.durations[-1] - time + previsous_start
         self.durations[-1] = remaining_time
 
-        for machine in self._remaining_times:
+        for machine in self.machines:
             self._remaining_times[machine] = ceil_div(
                 self._remaining_times[machine] * remaining_time, previous_remaining_time
             )
@@ -369,7 +369,7 @@ class Task:
                 self.start_bounds[machine].lb <= time <= self.start_bounds[machine].ub
             )
 
-        for machine in self.start_bounds:
+        for machine in self.machines:
             if self.start_bounds[machine].lb <= time <= self.start_bounds[machine].ub:
                 return True
 
@@ -425,45 +425,36 @@ class Tasks:
 
     def __init__(
         self,
-        job_ids: list[TASK_ID],
-        processing_times: list[dict[MACHINE_ID, TIME]],
+        data: SchedulingData,
         n_parts: PART_ID,
     ):
         self.n_parts = n_parts
-        self.n_tasks = 0
+        self.n_jobs = data.n_jobs
+        self.n_tasks = data.n_tasks
 
         self.tasks = []
-        self.jobs = [[] for _ in range(max(job_ids) + 1)]
-        self.n_jobs = TASK_ID(len(self.jobs))
+        self.jobs = [[] for _ in range(data.n_jobs)]
 
         self.awaiting_tasks = set()
         self.transition_tasks = set()
         self.fixed_tasks = set()
 
-        for job_id, processing_time in zip(job_ids, processing_times):
-            self.add_task(job_id, processing_time)
+        for task_id, job_id in enumerate(data.job_ids):
+            task = Task(task_id, job_id, data)
 
-    def add_task(
-        self, job_id: TASK_ID, processing_times: dict[MACHINE_ID, TIME]
-    ) -> None:
-        "Add a new task to the tasks container."
-        task_id = self.n_tasks
-        task = Task(task_id, job_id, processing_times)
+            self.tasks.append(task)
+            self.awaiting_tasks.add(task_id)
 
-        self.tasks.append(task)
-        self.awaiting_tasks.add(task_id)
+            self.jobs[job_id].append(task)
 
-        self.jobs[job_id].append(task)
 
-        self.n_tasks += 1
-
-    def reset(self) -> None:
+    def reset(self, data: SchedulingData) -> None:
         "Reset all tasks to their initial state."
         self.awaiting_tasks.clear()
         self.fixed_tasks.clear()
 
         for task in self.tasks:
-            task.reset()
+            task.reset(data)
             self.awaiting_tasks.add(task.task_id)
 
     def fix_task(self, task_id: TASK_ID, machine_id: MACHINE_ID, time: TIME) -> None:

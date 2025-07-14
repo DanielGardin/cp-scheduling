@@ -8,13 +8,7 @@ within the CPScheduler environment.
 from typing import Any
 from typing_extensions import Self
 
-from ._common import (
-    ObsType,
-    MACHINE_ID,
-    TASK_ID,
-    TIME,
-    InstanceConfig
-)
+from ._common import ObsType, MACHINE_ID, TASK_ID, TIME, InstanceConfig
 
 from .utils import convert_to_list
 
@@ -41,7 +35,6 @@ class SchedulingData:
     def __init__(
         self,
         task_data: dict[str, list[Any]],
-        processing_times: list[dict[MACHINE_ID, TIME]],
         jobs_data: dict[str, list[Any]],
         job_feature: str = "",
     ) -> None:
@@ -49,9 +42,8 @@ class SchedulingData:
 
         self.task_data = task_data.copy()
         self.jobs_data = jobs_data.copy()
-        self.processing_times = processing_times.copy()
 
-        self.n_tasks = TASK_ID(len(processing_times))
+        self.n_tasks = TASK_ID(len(next(iter(self.task_data.values()))))
         for feature, values in self.task_data.items():
             length = TASK_ID(len(values))
 
@@ -60,12 +52,6 @@ class SchedulingData:
                     f"Feature '{feature}' must have length equal to the number of tasks,"
                     f"expected {self.n_tasks}, got {len(values)}."
                 )
-
-        machines: set[MACHINE_ID] = set()
-        for processing_time in processing_times:
-            machines.update(processing_time.keys())
-
-        self.n_machines = MACHINE_ID(len(machines))
 
         if not job_feature:
             for alias in JOB_ID_ALIASES:
@@ -86,13 +72,33 @@ class SchedulingData:
 
             self.safe_converse = True
 
+    def import_machine_data(
+        self, processing_times: list[dict[MACHINE_ID, TIME]], machine_data: dict[str, list[Any]]
+    ) -> None:
+        """
+        Import machine-specific data into the scheduling data.
+
+        Parameters
+        ----------
+        processing_times: list[dict[MACHINE_ID, TIME]]
+            The processing times for each task on each machine.
+        machine_data: dict[str, list[Any]]
+            Additional machine-specific data to be added.
+        """
+        self.processing_times = processing_times
+
+        machines: set[MACHINE_ID] = set()
+        for processing_time in processing_times:
+            machines.update(processing_time.keys())
+        
+        self.n_machines = MACHINE_ID(len(machines))
+
     @classmethod
     def empty(cls) -> Self:
         "Create an empty SchedulingData instance."
         return cls(
             task_data={},
             jobs_data={},
-            processing_times=[],
         )
 
     def add_alias(self, alias: str, feature: str) -> None:
@@ -115,7 +121,7 @@ class SchedulingData:
 
         raise KeyError(f"Feature '{feature}' not found in tasks or jobs data.")
 
-    def get_task_data(self, feature: str, task_id: TASK_ID) -> Any:
+    def get_task_data(self, feature: str, task_id: TASK_ID, default: Any = None) -> Any:
         "Get a specific task data feature for a given task."
         if feature in self.alias:
             feature = self.alias[feature]
@@ -129,9 +135,12 @@ class SchedulingData:
 
             return job_data[job_id]
 
+        if default is not None:
+            return default
+
         raise KeyError(f"Feature '{feature}' not found in tasks or jobs data.")
 
-    def get_job_data(self, feature: str, job_id: TASK_ID) -> Any:
+    def get_job_data(self, feature: str, job_id: TASK_ID, default: Any = None) -> Any:
         "Get a specific job data feature for a given job."
         if feature in self.alias:
             feature = self.alias[feature]
@@ -158,6 +167,9 @@ class SchedulingData:
                     )
 
             return job_data_point
+
+        if default is not None:
+            return default
 
         raise KeyError(f"Feature '{feature}' not found in jobs data.")
 
@@ -244,11 +256,10 @@ class SchedulingData:
     def to_dict(self) -> InstanceConfig:
         "Convert the scheduling data back to the instance format."
         instance_config: InstanceConfig = {}
-            
 
         instance = {
             **self.task_data,
-            'job_id': self.job_ids,
+            "job_id": self.job_ids,
         }
 
         instance_config["instance"] = instance

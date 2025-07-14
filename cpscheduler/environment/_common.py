@@ -47,19 +47,20 @@ class DataFrameLike(Protocol):
 
 # Changing from Int to Any to avoid issues with Mypy in nested generics (explore later)
 ProcessTimeAllowedTypes: TypeAlias = (
-    Iterable[Mapping[Any, Any]]
-    | Iterable[Sequence[Any]]
-    | Iterable[Int]  # Requires a machine array
-    | str  # Requires a machine array
-    | Iterable[str]  # Map columns in data to machines
-    | None  # Infer from data
+    # DataFrameLike | # TODO: Handle DataFrame-like structures in schedule_setup.py
+    Iterable[Mapping[Any, Any]] |
+    Iterable[Sequence[Any]] |
+    Iterable[Int]  | # Requires a machine array
+    str | # Requires a machine array
+    Iterable[str] |  # Map columns in data to machines
+    None  # Infer from data
 )
 
 InstanceTypes: TypeAlias = DataFrameLike | Mapping[Any, Iterable[Any]]
+MachineDataTypes: TypeAlias = DataFrameLike | Mapping[Any, Iterable[Any]]
 
 ObsType: TypeAlias = tuple[dict[str, list[Any]], dict[str, list[Any]]]
 InfoType: TypeAlias = dict[str, Any]
-
 
 class InstanceConfig(TypedDict):
     "Instance configuration for the environment."

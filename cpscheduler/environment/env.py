@@ -21,10 +21,11 @@ from mypy_extensions import u8, i64
 from ._common import (
     MAX_INT,
     ProcessTimeAllowedTypes,
+    InstanceTypes,
+    MachineDataTypes,
     TASK_ID,
     PART_ID,
     TIME,
-    InstanceTypes,
     InfoType,
     ObsType,
     InstanceConfig,
@@ -206,6 +207,7 @@ class SchedulingEnv:
         processing_times: ProcessTimeAllowedTypes = None,
         job_instance: InstanceTypes | None = None,
         job_feature: str = "",
+        machine_instance: MachineDataTypes | None = None,
     ) -> None:
         """
         Set the instance data for the environment.
@@ -232,15 +234,15 @@ class SchedulingEnv:
         """
         task_data = prepare_instance(instance)
         job_data = prepare_instance(job_instance) if job_instance is not None else {}
+        machine_data = prepare_instance(machine_instance) if machine_instance is not None else {}
+
+        self.data = SchedulingData(task_data, job_data, job_feature)
 
         parsed_processing_times = self.setup.parse_process_time(
             task_data, processing_times
         )
 
-        self.data = SchedulingData(
-            task_data, parsed_processing_times, job_data, job_feature
-        )
-        self.tasks = Tasks(self.data.job_ids, parsed_processing_times, self.n_parts)
+        self.data.import_machine_data(parsed_processing_times, machine_data)
 
         for constraint in self.setup.setup_constraints(self.data):
             constraint.setup_constraint = True
@@ -255,6 +257,7 @@ class SchedulingEnv:
         self.objective.import_data(self.data)
         self.objective.export_data(self.data)
 
+        self.tasks = Tasks(self.data, self.n_parts)
         self.loaded = True
 
     ## Environment state retrieval methods
@@ -311,7 +314,7 @@ class SchedulingEnv:
         self.advancing_to = 0
         self.query_times.clear()
 
-        self.tasks.reset()
+        self.tasks.reset(self.data)
         for constraint in self.constraints.values():
             constraint.reset(self.tasks)
 
