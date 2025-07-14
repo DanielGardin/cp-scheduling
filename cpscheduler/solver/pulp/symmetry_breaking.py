@@ -27,7 +27,7 @@ def is_partition_problem(env: SchedulingEnv) -> bool:
     if constraint is None:
         return False
 
-    return constraint.is_complete()
+    return constraint.is_complete(env.tasks)
 
 
 def employ_symmetry_breaking_pulp(
@@ -91,10 +91,10 @@ def machine_ordering_symmetry_breaking(
     processing_times: list[LpAffineExpression] = [
         lpSum(
             [
-                task.processing_times[machine_id]
+                task._remaining_times[machine_id]
                 * decision_vars.assignments[task_id][machine_id]
                 for task_id, task in enumerate(tasks)
-                if machine_id in task.processing_times
+                if machine_id in task._remaining_times
             ]
         )
         for machine_id in range(n_machines)
@@ -115,10 +115,13 @@ def job_ordering_symmetry_breaking(
     "When jobs inside machines are exchangeable, break symmetry by ordering by lexicographic order"
     tasks = env.tasks
 
-    machine_constraint = get_machine_constraint(env)
-    assert machine_constraint is not None
+    machine_constraint: list[list[int]] = [[] for _ in range(env.data.n_machines)]
 
-    for machine_id, machine_tasks in enumerate(machine_constraint.machine_constraint):
+    for task in tasks:
+        for machine_id in task.machines:
+            machine_constraint[machine_id].append(task.task_id)
+
+    for machine_id, machine_tasks in enumerate(machine_constraint):
         for i, j in combinations(machine_tasks, 2):
             implication_pulp(
                 model,
@@ -171,24 +174,27 @@ def smiths_rules_symmetry_breaking(
             "for WeightedCompletionTime or TotalCompletionTime objectives."
         )
 
-    machine_constraint = get_machine_constraint(env)
-    assert machine_constraint is not None
+    machine_constraint: list[list[int]] = [[] for _ in range(env.data.n_machines)]
+
+    for task in tasks:
+        for machine_id in task.machines:
+            machine_constraint[machine_id].append(task.task_id)
 
     def smith_rule(task_id: int, machine_id: int) -> float:
         task = tasks[task_id]
         if weighted:
-            return -weights[task.job_id] / int(task.processing_times[machine_id])
+            return -weights[task.job_id] / int(task._remaining_times[machine_id])
 
-        return int(task.processing_times[machine_id])
+        return int(task._remaining_times[machine_id])
 
-    for machine_id, machine_tasks in enumerate(machine_constraint.machine_constraint):
+    for machine_id, machine_tasks in enumerate(machine_constraint):
         priorities = sorted(
             machine_tasks, key=partial(smith_rule, machine_id=machine_id)
         )
 
         for idx, task_id in enumerate(priorities):
             S_j = lpSum(
-                tasks[prev_task_id].processing_times[machine_id]
+                tasks[prev_task_id]._remaining_times[machine_id]
                 * decision_vars.assignments[prev_task_id][machine_id]
                 for prev_task_id in priorities[:idx]
             )
@@ -226,8 +232,11 @@ def tardiness_dominance_symmetry_breaking(
     "In agreeable jobs, break symmetry by ordering by tardiness dominance"
     tasks = env.tasks
 
-    machine_constraint = get_machine_constraint(env)
-    assert machine_constraint is not None
+    machine_constraint: list[list[int]] = [[] for _ in range(env.data.n_machines)]
+
+    for task in tasks:
+        for machine_id in task.machines:
+            machine_constraint[machine_id].append(task.task_id)
 
     if isinstance(env.objective, objectives.WeightedTardiness):
         weighted = True
@@ -245,7 +254,7 @@ def tardiness_dominance_symmetry_breaking(
 
     due_dates = env.data.get_job_level_data("due_date")
 
-    for machine_id, machine_tasks in enumerate(machine_constraint.machine_constraint):
+    for machine_id, machine_tasks in enumerate(machine_constraint):
         sorted_tasks = sorted(
             machine_tasks, key=lambda task_id: due_dates[tasks[task_id].job_id]
         )
@@ -255,7 +264,7 @@ def tardiness_dominance_symmetry_breaking(
             task_i = tasks[i]
             task_j = tasks[j]
 
-            if task_i.processing_times[machine_id] >= task_j.processing_times[
+            if task_i._remaining_times[machine_id] >= task_j._remaining_times[
                 machine_id
             ] or (weighted and weights[task_i.job_id] <= weights[task_j.job_id]):
                 continue

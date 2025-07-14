@@ -3,7 +3,7 @@ from collections.abc import Callable
 
 from itertools import combinations
 
-from pulp import LpProblem, LpVariable, lpSum
+from pulp import LpProblem, lpSum
 
 from multimethod import multidispatch
 
@@ -12,6 +12,7 @@ from cpscheduler.environment.data import SchedulingData
 from cpscheduler.environment.constraints import (
     Constraint,
     PrecedenceConstraint,
+    ConstantProcessingTime,
     DisjunctiveConstraint,
     ReleaseDateConstraint,
     DeadlineConstraint,
@@ -98,7 +99,7 @@ def _(
 
 @export_constraint_pulp.register
 def _(
-    constraint: ReleaseDateConstraint | DeadlineConstraint,
+    constraint: ReleaseDateConstraint | DeadlineConstraint | ConstantProcessingTime,
     variables: PulpSchedulingVariables,
 ) -> ModelExport:
     return (
@@ -118,7 +119,13 @@ def _(
 @export_constraint_pulp.register
 def _(constraint: MachineConstraint, variables: PulpSchedulingVariables) -> ModelExport:
     def export_model(model: LpProblem, tasks: Tasks, data: SchedulingData) -> None:
-        for machine_id, machine_tasks in enumerate(constraint.machine_constraint):
+        machine_constraint: list[list[int]] = [[] for _ in range(data.n_machines)]
+
+        for task in tasks:
+            for machine_id in task.machines:
+                machine_constraint[machine_id].append(task.task_id)
+
+        for machine_id, machine_tasks in enumerate(machine_constraint):
             for i, j in combinations(machine_tasks, 2):
                 implication_pulp(
                     model,
@@ -175,48 +182,6 @@ def _(constraint: SetupConstraint, variables: PulpSchedulingVariables) -> ModelE
                         - tasks[child_id].get_start_lb()
                     ),
                     name=f"setup_{task_id}_{child_id}_order",
-                )
-
-    return export_model
-
-
-# Timetable implementations
-
-# @export_constraint_pulp.register
-# def _(constraint: PrecedenceConstraint, variables: PulpTimetable) -> ModelExport:
-#     def export_model(model: LpProblem, tasks: Tasks, data: SchedulingData) -> None:
-#         for task_id, children in constraint.precedence.items():
-#             for child_id in children:
-#                 for child_start_time in range(variables.T):
-#                     ...
-
-
-@export_constraint_pulp.register
-def _(constraint: MachineConstraint, variables: PulpTimetable) -> ModelExport:
-    def export_model(model: LpProblem, tasks: Tasks, data: SchedulingData) -> None:
-        for machine_id, machine_tasks in enumerate(constraint.machine_constraint):
-            for time in range(variables.T):
-                disjunction_group: list[PULP_EXPRESSION | int] = []
-
-                for task_id in machine_tasks:
-                    task = tasks[task_id]
-                    start_lb = task.get_start_lb()
-
-                    if time < start_lb or time >= task.get_start_ub():
-                        continue
-
-                    start_time = time - task.processing_times[machine_id] + 1
-                    start_time = max(start_time, start_lb)
-
-                    disjunction_group.extend(
-                        variables.start_times[task_id][machine_id][
-                            start_time : time + 1
-                        ]
-                    )
-
-                model.addConstraint(
-                    lpSum(disjunction_group) <= 1,
-                    f"machine_{machine_id}_timetable_{time}",
                 )
 
     return export_model

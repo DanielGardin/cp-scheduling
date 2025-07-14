@@ -54,7 +54,7 @@ def _(setup: ScheduleSetup, variables: PulpTimetable) -> ModelExport:
 def _(setup: SingleMachineSetup, variables: PulpSchedulingVariables) -> ModelExport:
     def export_model(model: LpProblem, tasks: Tasks, data: SchedulingData) -> None:
         for task_id, task in enumerate(tasks):
-            processing_time = task.processing_times[0]
+            processing_time = task._remaining_times[0]
 
             non_preemptive_constraint(
                 model,
@@ -79,7 +79,7 @@ def _(
                 f"assignment_{task_id}",
             )
 
-            processing_time = task.processing_times[0]
+            processing_time = task._remaining_times[0]
 
             non_preemptive_constraint(
                 model,
@@ -106,7 +106,7 @@ def _(
 
             processing_time = lpSum(
                 variables.assignments[task_id][machine_id] * processing_time
-                for machine_id, processing_time in task.processing_times.items()
+                for machine_id, processing_time in task._remaining_times.items()
             )
 
             non_preemptive_constraint(
@@ -134,7 +134,7 @@ def _(
 
             processing_time = lpSum(
                 variables.assignments[task_id][machine_id] * processing_time
-                for machine_id, processing_time in task.processing_times.items()
+                for machine_id, processing_time in task._remaining_times.items()
             )
 
             non_preemptive_constraint(
@@ -152,7 +152,7 @@ def _(
 def _(setup: JobShopSetup, variables: PulpSchedulingVariables) -> ModelExport:
     def export_model(model: LpProblem, tasks: Tasks, data: SchedulingData) -> None:
         for task_id, task in enumerate(tasks):
-            processing_time = next(iter(task.processing_times.values()))
+            processing_time = next(iter(task._remaining_times.values()))
 
             non_preemptive_constraint(
                 model,
@@ -169,7 +169,7 @@ def _(setup: JobShopSetup, variables: PulpSchedulingVariables) -> ModelExport:
 def _(setup: OpenShopSetup, variables: PulpSchedulingVariables) -> ModelExport:
     def export_model(model: LpProblem, tasks: Tasks, data: SchedulingData) -> None:
         for task_id, task in enumerate(tasks):
-            processing_time = next(iter(task.processing_times.values()))
+            processing_time = next(iter(task._remaining_times.values()))
 
             non_preemptive_constraint(
                 model,

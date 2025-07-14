@@ -5,6 +5,7 @@ import pulp as pl
 
 from cpscheduler.environment import SchedulingEnv
 from cpscheduler.environment.instructions import ActionType
+from cpscheduler.common import unwrap_env
 
 from .tasks import PulpVariables, PulpSchedulingVariables, PulpTimetable
 from .setup import export_setup_pulp
@@ -13,8 +14,6 @@ from .objective import export_objective_pulp
 from .symmetry_breaking import employ_symmetry_breaking_pulp
 
 Formulations = Literal["scheduling", "timetable"]
-
-MAX_ENV_DEPTH = 10  # Maximum depth for the environment wrapping
 
 
 class PulpSolver:
@@ -46,26 +45,7 @@ class PulpSolver:
                 This changes the environment's tasks assuming semi-active scheduling.
 
         """
-        depth = 0
-        while not isinstance(env, SchedulingEnv) and depth < MAX_ENV_DEPTH:
-            if not hasattr(env, "unwrapped"):
-                raise TypeError(
-                    f"Expected env to be of type SchedulingEnv or a Wrapped env, got {type(env)} instead."
-                )
-
-            if hasattr(env, "core"):
-                env = env.core
-                break
-
-            env = env.unwrapped
-            depth += 1
-
-        if not isinstance(env, SchedulingEnv):
-            raise TypeError(
-                f"Expected env to be of type SchedulingEnv, got {type(env)} instead."
-            )
-
-        self.env = env
+        self.env = unwrap_env(env)
 
         if not self.env.loaded:
             raise ValueError(
@@ -132,11 +112,8 @@ class PulpSolver:
         try:
             self.model.solve(self.solver)
 
-        except Exception as e:
-            if self.model.status <= 0:
-                raise RuntimeError(
-                    f"Solver failed with status: {LpSolution[self.model.status]}"
-                ) from e
+        except KeyboardInterrupt:
+            pass
 
         if self.model.status <= 0:
             raise RuntimeError(
