@@ -32,6 +32,7 @@ from mypy_extensions import u8
 from ._common import MIN_INT, MAX_INT, MACHINE_ID, TASK_ID, PART_ID, TIME, ObsType
 from .data import SchedulingData
 
+
 class Status:
     "Possible statuses of a task at a given time."
 
@@ -119,12 +120,7 @@ class Task:
 
     n_parts: PART_ID
 
-    def __init__(
-        self,
-        task_id: TASK_ID,
-        job_id: TASK_ID,
-        data: SchedulingData
-    ) -> None:
+    def __init__(self, task_id: TASK_ID, job_id: TASK_ID, data: SchedulingData) -> None:
         self.task_id = task_id
         self.job_id = job_id
         self._remaining_times = data.processing_times[task_id].copy()
@@ -140,7 +136,7 @@ class Task:
         self.n_parts = 0
 
         # Task data
-        self.weight: float = data.get_task_data("weight", task_id, 0.)
+        self.weight: float = data.get_task_data("weight", task_id, 0.0)
         self.due_date: TIME = data.get_task_data("due_date", task_id, MAX_INT)
         self.release_date: TIME = data.get_task_data("release_date", task_id, 0)
 
@@ -172,7 +168,9 @@ class Task:
         self.assignments.clear()
 
         for machine in self.machines:
-            self._remaining_times[machine] = data.processing_times[self.task_id][machine]
+            self._remaining_times[machine] = data.processing_times[self.task_id][
+                machine
+            ]
 
         for start_bound in self.start_bounds.values():
             start_bound.reset()
@@ -446,7 +444,6 @@ class Tasks:
             self.awaiting_tasks.add(task_id)
 
             self.jobs[job_id].append(task)
-
 
     def reset(self, data: SchedulingData) -> None:
         "Reset all tasks to their initial state."

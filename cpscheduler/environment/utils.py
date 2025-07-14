@@ -113,7 +113,6 @@ def is_iterable_int(obj: Any, lazy: bool = True) -> TypeIs[Iterable[Int]]:
         return False
 
 
-
 def topological_sort(
     precedence_map: dict[TASK_ID, set[TASK_ID]], n_tasks: TASK_ID
 ) -> list[TASK_ID]:

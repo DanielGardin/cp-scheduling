@@ -118,7 +118,6 @@ class MachineConstraint(Constraint):
                 if task.get_start_lb(machine) < self.machine_free[machine]:
                     task.set_start_lb(self.machine_free[machine], machine)
 
-
     def is_complete(self, tasks: Tasks) -> bool:
         "Check if the machine constraint is complete."
         n_machines = len(self.machine_free)

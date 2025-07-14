@@ -234,7 +234,9 @@ class SchedulingEnv:
         """
         task_data = prepare_instance(instance)
         job_data = prepare_instance(job_instance) if job_instance is not None else {}
-        machine_data = prepare_instance(machine_instance) if machine_instance is not None else {}
+        machine_data = (
+            prepare_instance(machine_instance) if machine_instance is not None else {}
+        )
 
         self.data = SchedulingData(task_data, job_data, job_feature)
 

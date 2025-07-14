@@ -73,7 +73,9 @@ class SchedulingData:
             self.safe_converse = True
 
     def import_machine_data(
-        self, processing_times: list[dict[MACHINE_ID, TIME]], machine_data: dict[str, list[Any]]
+        self,
+        processing_times: list[dict[MACHINE_ID, TIME]],
+        machine_data: dict[str, list[Any]],
     ) -> None:
         """
         Import machine-specific data into the scheduling data.
@@ -90,7 +92,7 @@ class SchedulingData:
         machines: set[MACHINE_ID] = set()
         for processing_time in processing_times:
             machines.update(processing_time.keys())
-        
+
         self.n_machines = MACHINE_ID(len(machines))
 
     @classmethod

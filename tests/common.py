@@ -1,7 +1,5 @@
 from pathlib import Path
 
-from typing import cast
-
 from cpscheduler.environment import SchedulingEnv, JobShopSetup, Makespan
 from cpscheduler.instances import read_jsp_instance
 
