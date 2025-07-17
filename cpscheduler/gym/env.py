@@ -13,7 +13,7 @@ from gymnasium.spaces import Tuple, Text, Box, OneOf, Sequence
 
 import numpy as np
 
-from cpscheduler.environment._common import MAX_INT, InstanceConfig, ObsType, InfoType
+from cpscheduler.environment._common import MAX_INT, InstanceConfig, ObsType
 from cpscheduler.environment.instructions import ActionType
 from cpscheduler.environment import SchedulingEnv, ScheduleSetup, Constraint, Objective
 from cpscheduler.environment._render import Renderer
@@ -86,7 +86,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         *,
         seed: int | None = None,
         options: dict[str, Any] | InstanceConfig | None = None,
-    ) -> tuple[ObsType, InfoType]:
+    ) -> tuple[ObsType, dict[str, Any]]:
         super().reset(seed=seed)
 
         previously_loaded = self._env.loaded
@@ -98,12 +98,12 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         if options is not None or not previously_loaded:
             self.observation_space = infer_collection_space(obs)
 
-        return obs, info
+        return obs, {key: value for key, value in info.items()}
 
-    def step(self, action: ActionType) -> tuple[ObsType, float, bool, bool, InfoType]:
+    def step(self, action: ActionType) -> tuple[ObsType, float, bool, bool, dict[str, Any]]:
         obs, reward, done, truncated, info = self._env.step(action)
 
-        return obs, reward, done, truncated, info
+        return obs, reward, done, truncated, {key: value for key, value in info.items()}
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._env, name)

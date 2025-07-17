@@ -61,7 +61,12 @@ InstanceTypes: TypeAlias = DataFrameLike | Mapping[Any, Iterable[Any]]
 MachineDataTypes: TypeAlias = DataFrameLike | Mapping[Any, Iterable[Any]]
 
 ObsType: TypeAlias = tuple[dict[str, list[Any]], dict[str, list[Any]]]
-InfoType: TypeAlias = dict[str, Any]
+
+class InfoType(TypedDict):
+    "Type for the info dictionary in the environment."
+
+    n_queries: int
+    current_time: int
 
 
 class InstanceConfig(TypedDict):
