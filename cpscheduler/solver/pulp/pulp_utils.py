@@ -6,6 +6,7 @@ Utility model for easy modeling with PuLP.
 
 from typing import Literal, TypeAlias
 from collections.abc import Iterable
+from typing_extensions import TypedDict, NotRequired
 
 from pulp import (
     LpProblem,
@@ -15,6 +16,18 @@ from pulp import (
     LpContinuous,
     LpConstraint,
 )
+
+
+class SolverConfig(TypedDict, total=False):
+    "Configurations for the solver."
+
+    quiet: NotRequired[bool]
+    "Whether to suppress solver output."
+    time_limit: NotRequired[int]
+    "Time limit for the solver in seconds."
+    warm_start: NotRequired[bool]
+    "Whether to use warm start for the solver."
+
 
 PULP_EXPRESSION: TypeAlias = LpVariable | LpAffineExpression
 PULP_PARAM: TypeAlias = PULP_EXPRESSION | int | float

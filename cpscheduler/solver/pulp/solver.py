@@ -1,4 +1,5 @@
 from typing import Any, Literal
+from typing_extensions import Unpack
 
 from pulp import LpProblem, LpSolver, LpMinimize, LpMaximize, LpSolution
 import pulp as pl
@@ -12,22 +13,35 @@ from .setup import export_setup_pulp
 from .constraint import export_constraint_pulp
 from .objective import export_objective_pulp
 from .symmetry_breaking import employ_symmetry_breaking_pulp
+from .pulp_utils import SolverConfig
 
 Formulations = Literal["scheduling", "timetable"]
 
 
-class PulpSolver:
-    solver: LpSolver
+def parse_solver_config(solver_config: SolverConfig) -> dict[str, Any]:
+    config: dict[str, Any] = {}
 
+    if solver_config.pop("quiet", False):
+        config["msg"] = 0
+
+    time_limit = solver_config.pop("time_limit", None)
+    if time_limit is not None:
+        config["timeLimit"] = time_limit
+
+    if solver_config.pop("warm_start", False):
+        config["warmStart"] = True
+
+    return config | solver_config
+
+
+class PulpSolver:
     def __init__(
         self,
         env: Any | SchedulingEnv,
-        solver_tag: str = "GUROBI_CMD",
         tighten: bool = True,
         formulation: Formulations = "scheduling",
         symmetry_breaking: bool = True,
         integral: bool = False,
-        **solver_kwargs: Any,
     ):
         """
         Initialize the solver using PuLP.
@@ -55,19 +69,30 @@ class PulpSolver:
         if self.env.n_parts > 1:
             raise ValueError("This version of the solver does not support preemption.")
 
-        self.set_solver(solver_tag, **solver_kwargs)
-
         if tighten:
             env.tasks.tighten_bounds(env.current_time)
 
+        self._solver: LpSolver | None = None
         self.model, self.variables = self.build_model(
             env, formulation, symmetry_breaking, integral
         )
 
-    def set_solver(self, solver_tag: str, **solver_kwargs: Any) -> None:
-        self.solver = pl.getSolver(
+    @classmethod
+    def available_solvers(cls) -> list[str]:
+        solvers_list: list[str] = pl.listSolvers(onlyAvailable=True)
+
+        return solvers_list
+
+    def set_solver(
+        self,
+        solver_tag: str,
+        **solver_kwargs: Unpack[SolverConfig],
+    ) -> None:
+        config = parse_solver_config(solver_kwargs)
+
+        self._solver = pl.getSolver(
             solver_tag,
-            **solver_kwargs,
+            **config,
         )
 
     @staticmethod
@@ -108,12 +133,15 @@ class PulpSolver:
 
         return model, variables
 
-    def solve(self) -> tuple[ActionType, float, int]:
-        try:
-            self.model.solve(self.solver)
+    def solve(
+        self,
+        solver_tag: str | None = None,
+        **solver_kwargs: Unpack[SolverConfig],
+    ) -> tuple[ActionType, float, int]:
+        if solver_tag is not None:
+            self.set_solver(solver_tag, **solver_kwargs)
 
-        except KeyboardInterrupt:
-            pass
+        self.model.solve(self._solver)
 
         if self.model.status <= 0:
             raise RuntimeError(
