@@ -15,6 +15,7 @@ from .utils import convert_to_list
 JOB_ID_ALIASES = ["job", "job_id", "jobs", "jobs_ids"]
 
 
+# TODO: Structure processing time and machine data to add them to the state
 class SchedulingData:
     "A class to hold static scheduling data for the CPScheduler environment."
 

@@ -62,6 +62,7 @@ MachineDataTypes: TypeAlias = DataFrameLike | Mapping[Any, Iterable[Any]]
 
 ObsType: TypeAlias = tuple[dict[str, list[Any]], dict[str, list[Any]]]
 
+
 class InfoType(TypedDict):
     "Type for the info dictionary in the environment."
 

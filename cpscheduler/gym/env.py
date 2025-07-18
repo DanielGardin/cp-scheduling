@@ -100,7 +100,9 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
 
         return obs, {key: value for key, value in info.items()}
 
-    def step(self, action: ActionType) -> tuple[ObsType, float, bool, bool, dict[str, Any]]:
+    def step(
+        self, action: ActionType
+    ) -> tuple[ObsType, float, bool, bool, dict[str, Any]]:
         obs, reward, done, truncated, info = self._env.step(action)
 
         return obs, reward, done, truncated, {key: value for key, value in info.items()}

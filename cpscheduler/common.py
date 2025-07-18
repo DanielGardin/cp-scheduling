@@ -4,6 +4,7 @@ from cpscheduler.environment.env import SchedulingEnv
 
 MAX_ENV_DEPTH = 10  # Maximum depth for the environment wrapping
 
+
 def unwrap_env(env: Any | SchedulingEnv) -> SchedulingEnv:
     """
     Unwraps the environment to get the underlying SchedulingEnv instance.
@@ -36,5 +37,5 @@ def unwrap_env(env: Any | SchedulingEnv) -> SchedulingEnv:
         raise TypeError(
             f"Expected env to be of type SchedulingEnv, got {type(env)} instead."
         )
-    
+
     return env
