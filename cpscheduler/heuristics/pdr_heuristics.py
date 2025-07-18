@@ -26,6 +26,9 @@ class PriorityDispatchingRule(ABC):
     of priority.
     """
 
+    def __init__(self, strict: bool = False):
+        self.instruction = "execute" if strict else "submit"
+
     @abstractmethod
     def priority_rule(
         self, tasks: dict[str, list[Any]], jobs: dict[str, list[Any]], time: int
@@ -170,7 +173,9 @@ class CombinedRule(PriorityDispatchingRule):
         self,
         rules: Iterable[PriorityDispatchingRule],
         weights: Iterable[float] | None = None,
+        strict: bool = False,
     ):
+        super().__init__(strict)
         self.rules = list(rules)
         self.weights = (
             convert_to_list(weights, float)
@@ -196,7 +201,10 @@ class ShortestProcessingTime(PriorityDispatchingRule):
     This heuristic selects the job with the shortest processing time as the next job to be scheduled.
     """
 
-    def __init__(self, processing_time_label: str = "processing_time"):
+    def __init__(
+        self, processing_time_label: str = "processing_time", strict: bool = False
+    ):
+        super().__init__(strict)
         self.processing_time_label = processing_time_label
 
     def priority_rule(
@@ -216,7 +224,8 @@ class MostOperationsRemaining(PriorityDispatchingRule):
     This heuristic selects the earliest job to be done in the waiting buffer as the next job to be scheduled.
     """
 
-    def __init__(self, operation_label: str = "operation"):
+    def __init__(self, operation_label: str = "operation", strict: bool = False):
+        super().__init__(strict)
         self.operation_label = operation_label
 
     def priority_rule(
@@ -239,7 +248,8 @@ class RandomPriority(PriorityDispatchingRule):
     This heuristic randomly selects a job from the waiting buffer as the next job to be scheduled.
     """
 
-    def __init__(self, seed: int | None = None):
+    def __init__(self, seed: int | None = None, strict: bool = False):
+        super().__init__(strict)
         self.seed = seed
 
     def priority_rule(
@@ -262,7 +272,9 @@ class MostWorkRemaining(PriorityDispatchingRule):
         self,
         operation_label: str = "operation",
         processing_time_label: str = "processing_time",
+        strict: bool = False,
     ):
+        super().__init__(strict)
         self.operation_label = operation_label
         self.processing_time_label = processing_time_label
 
@@ -300,10 +312,8 @@ class EarliestDueDate(PriorityDispatchingRule):
     This heuristic selects the job with the earliest due date as the next job to be scheduled.
     """
 
-    def __init__(
-        self,
-        due_date_label: str = "due_date",
-    ):
+    def __init__(self, due_date_label: str = "due_date", strict: bool = False):
+        super().__init__(strict)
         self.due_date_label = due_date_label
 
     def priority_rule(
@@ -324,7 +334,9 @@ class ModifiedDueDate(PriorityDispatchingRule):
         due_date_label: str = "due_date",
         processing_time_label: str = "processing_time",
         weight_label: str | None = None,
+        strict: bool = False,
     ):
+        super().__init__(strict)
         self.due_date_label = due_date_label
         self.processing_time_label = processing_time_label
         self.weight_label = weight_label
@@ -365,7 +377,9 @@ class WeightedShortestProcessingTime(PriorityDispatchingRule):
         self,
         weight_label: str = "weight",
         processing_time_label: str = "processing_time",
+        strict: bool = False,
     ):
+        super().__init__(strict)
         self.weighted_label = weight_label
         self.processing_time = processing_time_label
 
@@ -392,7 +406,9 @@ class MinimumSlackTime(PriorityDispatchingRule):
         due_date_label: str = "due_date",
         processing_time_label: str = "processing_time",
         release_time_label: str | None = None,
+        strict: bool = False,
     ):
+        super().__init__(strict)
         self.due_date_label = due_date_label
         self.processing_time_label = processing_time_label
         self.release_time_label = release_time_label
@@ -435,7 +451,9 @@ class CriticalRatio(PriorityDispatchingRule):
         due_date_label: str = "due_date",
         processing_time_label: str = "processing_time",
         release_time_label: str | None = None,
+        strict: bool = False,
     ):
+        super().__init__(strict)
         self.due_date_label = due_date_label
         self.processing_time_label = processing_time_label
         self.release_time_label = release_time_label
@@ -473,7 +491,8 @@ class FirstInFirstOut(PriorityDispatchingRule):
     This heuristic selects the job that has been in the waiting buffer the longest as the next job to be scheduled.
     """
 
-    def __init__(self, release_time_label: str = "release_time"):
+    def __init__(self, release_time_label: str = "release_time", strict: bool = False):
+        super().__init__(strict)
         self.release_time_label = release_time_label
 
     def priority_rule(
@@ -495,7 +514,9 @@ class CostOverTime(PriorityDispatchingRule):
         weight_label: str = "weight",
         processing_time_label: str = "processing_time",
         due_date_label: str = "due_date",
+        strict: bool = False,
     ):
+        super().__init__(strict)
         self.weighted_label = weight_label
         self.processing_time = processing_time_label
         self.due_date_label = due_date_label
@@ -535,7 +556,9 @@ class ApparentTardinessCost(PriorityDispatchingRule):
         weight_label: str = "weight",
         processing_time_label: str = "processing_time",
         due_date_label: str = "due_date",
+        strict: bool = False,
     ):
+        super().__init__(strict)
         self.lookahead = lookahead
 
         self.weighted_label = weight_label
@@ -570,7 +593,9 @@ class TrafficPriority(PriorityDispatchingRule):
         K: float = 3.0,
         processing_time_label: str = "processing_time",
         due_date_label: str = "due_date",
+        strict: bool = False,
     ):
+        super().__init__(strict)
         self.K = K
 
         self.processing_time = processing_time_label
