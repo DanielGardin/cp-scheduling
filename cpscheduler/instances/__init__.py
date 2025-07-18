@@ -1,6 +1,5 @@
 __all__ = [
     "generate_instance",
-    "generate_poisson_releases",
     # Jobshop instances
     "read_jsp_instance",
     "generate_taillard_instance",
@@ -11,7 +10,7 @@ __all__ = [
     "read_smtwt_instance",
 ]
 
-from .common import generate_instance, generate_poisson_releases
+from .common import generate_instance
 
 from .jobshop import (
     read_jsp_instance,

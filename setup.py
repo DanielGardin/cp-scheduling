@@ -7,7 +7,7 @@ try:
     from tomllib import load
 
 except ImportError:
-    from tomli import load  # type: ignore
+    from tomli import load  # type: ignore[no-redef, import-untyped]
 
 from setuptools import setup
 from mypyc.build import mypycify
@@ -18,13 +18,12 @@ with open("pyproject.toml", "rb") as f:
 
 compiling_dirs = [
     "cpscheduler/environment",
-    "cpscheduler/instances",
+    "cpscheduler/heuristics",
+    # "cpscheduler/instances",
 ]
 
 
-compiling_files = [
-    "cpscheduler/heuristics/pdr_heuristics.py",
-]
+compiling_files: list[str] = []
 for dir in compiling_dirs:
     compiling_files.extend(
         [str(file) for file in Path(dir).rglob("*.py") if not file.name.startswith("_")]
@@ -41,7 +40,7 @@ setup(
     install_requires=project_info.get("dependencies", []),
     tests_require=["pytest"],
     include_package_data=True,
-    ext_modules=mypycify(compiling_files),  # type: ignore
+    ext_modules=mypycify(compiling_files),
     classifiers=[
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
