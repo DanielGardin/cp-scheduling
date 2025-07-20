@@ -61,8 +61,6 @@ pdrs: dict[str, PriorityDispatchingRule] = {
     "TP" : TrafficPriority(strict=True),
 }
 
-choices = [*pdrs.keys(), "Optimal"]
-
 def mean_point(arr: NDArray[Any]) -> NDArray[Any]:
     a = np.insert(arr, 0, 0)
 
@@ -98,7 +96,7 @@ def read_instances(paths: list[str]) -> tuple[DataFrame, list[float]]:
         base_instances.append(
             pd.DataFrame(instance).assign(instance_id=i)
         )
-        optimal_bounds[i] = metadata["Objective UB"]
+        optimal_bounds[i] = float(metadata["Objective UB"])
 
     return pd.concat(base_instances, ignore_index=True), optimal_bounds
 
@@ -193,12 +191,8 @@ def customer_scheduling_instance(
 
     base_instance[weight_feature] = base_instance[weight_feature] / weight_norm
 
-    customer_information[f"{weight_feature}_original"] = customer_information[
-        weight_feature
-    ]
-    customer_information[weight_feature] = (
-        customer_information[weight_feature] / weight_norm
-    )
+    customer_information[f"{weight_feature}_original"] = customer_information[weight_feature]
+    customer_information[weight_feature] = customer_information[weight_feature] / weight_norm
 
     base_instance[customer_feature] = base_instance[customer_feature].astype(int)
 
@@ -285,12 +279,14 @@ if __name__ == "__main__":
         "Generate plots for the instance generation."
 
         solver: Annotated[str, arg(aliases=('-s',))] = "GUROBI_CMD"
-        "Solver to use during action collection."
+        "Solver to use during action collection. Set to `none` to disable solver usage."
 
         timelimit: Annotated[int, arg(aliases=('-t',))] = 60
         "Time limit for the solver in seconds."
 
     args = tyro.cli(Config)
+
+    choices = [*pdrs.keys(), "Optimal"] if args.solver.lower() != "none" else [*pdrs.keys()]
 
     base_instance, optimal_bounds = read_instances(args.instances)
 
@@ -300,6 +296,9 @@ if __name__ == "__main__":
         sort_noise=args.sort_noise,
         seed=args.seed,
     )
+
+    weight_norm = float(customer_information["weight"].sum() / customer_information["weight_original"].sum())
+    optimal_bounds = [bound * weight_norm for bound in optimal_bounds]
 
     if args.plots:
         plot_customer_allocation(customer_information, PWD / "customer_allocation.png")
@@ -339,6 +338,10 @@ if __name__ == "__main__":
             instance["BPolicy start"] = [task.get_start() for task in env.tasks]
             behavior_reward[i] = -reward if env.objective.minimize else reward
 
+    logger.info(
+        "Scheduling instances completed. Generating statistics:"
+    )
+    logger.info(f"Cumulative gap: {sum(behavior_reward) / sum(optimal_bounds) - 1:.2%}")
 
     instance_info = pd.DataFrame(
         [
