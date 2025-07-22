@@ -286,6 +286,8 @@ if __name__ == "__main__":
 
     args = tyro.cli(Config)
 
+    rng = random.Random(args.seed)
+
     choices = [*pdrs.keys(), "Optimal"] if args.solver.lower() != "none" else [*pdrs.keys()]
 
     base_instance, optimal_bounds = read_instances(args.instances)
@@ -301,7 +303,7 @@ if __name__ == "__main__":
     optimal_bounds = [bound * weight_norm for bound in optimal_bounds]
 
     if args.plots:
-        plot_customer_allocation(customer_information, PWD / "customer_allocation.png")
+        plot_customer_allocation(customer_information, PWD / "customer_allocation.pdf")
 
     env = SchedulingEnv(
         machine_setup=SingleMachineSetup(),
@@ -322,7 +324,7 @@ if __name__ == "__main__":
             env.set_instance(instance)
             obs, info = env.reset()
 
-            strategy = random.choice(choices)
+            strategy = rng.choice(choices)
             pbar.set_postfix_str(f"Strategy: {strategy}")
 
             if strategy == "Optimal":
@@ -344,10 +346,10 @@ if __name__ == "__main__":
     logger.info(f"Cumulative gap: {sum(behavior_reward) / sum(optimal_bounds) - 1:.2%}")
 
     instance_info = pd.DataFrame(
-        [
-            ("optimal", optimal_bounds),
-            ("behavior", behavior_reward)
-        ]
+        {
+            "optimal": optimal_bounds,
+            "behavior": behavior_reward
+        }
     )
 
     save_instances = list_instances, instance_info, customer_information
