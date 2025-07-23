@@ -4,7 +4,7 @@ from typing_extensions import Unpack
 from pulp import LpProblem, LpSolver, LpMinimize, LpMaximize, LpSolution
 import pulp as pl
 
-from cpscheduler.environment import SchedulingEnv
+from cpscheduler.environment import SchedulingEnv, Objective
 from cpscheduler.environment.instructions import ActionType
 from cpscheduler.common import unwrap_env
 
@@ -13,26 +13,9 @@ from .setup import export_setup_pulp
 from .constraint import export_constraint_pulp
 from .objective import export_objective_pulp
 from .symmetry_breaking import employ_symmetry_breaking_pulp
-from .pulp_utils import SolverConfig
+from .pulp_utils import SolverConfig, parse_solver_config
 
 Formulations = Literal["scheduling", "timetable"]
-
-
-def parse_solver_config(solver_config: SolverConfig) -> dict[str, Any]:
-    config: dict[str, Any] = {}
-
-    if solver_config.pop("quiet", False):
-        config["msg"] = 0
-
-    time_limit = solver_config.pop("time_limit", None)
-    if time_limit is not None:
-        config["timeLimit"] = time_limit
-
-    if solver_config.pop("warm_start", False):
-        config["warmStart"] = True
-
-    return config | solver_config
-
 
 class PulpSolver:
     def __init__(
@@ -42,6 +25,7 @@ class PulpSolver:
         formulation: Formulations = "scheduling",
         symmetry_breaking: bool = True,
         integral: bool = False,
+        integral_var: bool = True,
     ):
         """
         Initialize the solver using PuLP.
@@ -74,7 +58,7 @@ class PulpSolver:
 
         self._solver: LpSolver | None = None
         self.model, self.variables = self.build_model(
-            env, formulation, symmetry_breaking, integral
+            env, formulation, symmetry_breaking, integral, integral_var
         )
 
     @classmethod
@@ -101,6 +85,7 @@ class PulpSolver:
         formulation: Formulations,
         symmetry_breaking: bool = True,
         integral: bool = False,
+        integral_var: bool = True,
     ) -> tuple[LpProblem, PulpVariables]:
         model = LpProblem(
             env.get_entry(), LpMinimize if env.objective.minimize else LpMaximize
@@ -114,7 +99,7 @@ class PulpSolver:
             variables = PulpTimetable(model, tasks, data, integral)
 
         elif formulation == "scheduling":
-            variables = PulpSchedulingVariables(model, tasks, data, integral)
+            variables = PulpSchedulingVariables(model, tasks, data, integral, integral_var)
 
         if symmetry_breaking:
             employ_symmetry_breaking_pulp(env, model, variables)
@@ -124,12 +109,13 @@ class PulpSolver:
         for constraint in env.constraints.values():
             export_constraint_pulp(constraint, variables)(model, tasks, data)
 
-        objective_var = export_objective_pulp(env.objective, variables)(
-            model, tasks, data
-        )
-        variables.set_objective(objective_var)
+        if type(env.objective) is not Objective:
+            objective_var = export_objective_pulp(env.objective, variables)(
+                model, tasks, data
+            )
+            variables.set_objective(objective_var)
 
-        model.setObjective(objective_var)
+            model.setObjective(objective_var)
 
         return model, variables
 

@@ -4,8 +4,8 @@ utils.py
 Utility model for easy modeling with PuLP.
 """
 
-from typing import Literal, TypeAlias
-from collections.abc import Iterable
+from typing import Any, Literal, TypeAlias, overload
+from collections.abc import Iterable, Mapping, Sequence
 from typing_extensions import TypedDict, NotRequired
 
 from pulp import (
@@ -27,7 +27,27 @@ class SolverConfig(TypedDict, total=False):
     "Time limit for the solver in seconds."
     warm_start: NotRequired[bool]
     "Whether to use warm start for the solver."
+    keep_files: NotRequired[bool]
+    "Whether to keep the solver files after solving."
+    ...
 
+def parse_solver_config(solver_config: SolverConfig) -> dict[str, Any]:
+    config: dict[str, Any] = {}
+
+    if solver_config.pop("quiet", False):
+        config["msg"] = 0
+
+    time_limit = solver_config.pop("time_limit", None)
+    if time_limit is not None:
+        config["timeLimit"] = time_limit
+
+    if solver_config.pop("warm_start", False):
+        config["warmStart"] = True
+    
+    if solver_config.pop("keep_files", False):
+        config["keepFiles"] = True
+
+    return config | solver_config
 
 PULP_EXPRESSION: TypeAlias = LpVariable | LpAffineExpression
 PULP_PARAM: TypeAlias = PULP_EXPRESSION | int | float
@@ -59,6 +79,24 @@ def get_value(param: PULP_PARAM) -> float | int:
         return value
 
     raise ValueError(f"Unexpected type: {type(param)}")
+
+@overload
+def get_values(params: PULP_PARAM) -> float | int: ...
+
+@overload
+def get_values(params: Sequence[PULP_PARAM]) -> list[float | int]: ...
+
+@overload
+def get_values(params: Mapping[str, PULP_PARAM]) -> dict[str, float | int]: ...
+
+def get_values(params: Any) -> Any:
+    if isinstance(params, Sequence):
+        return [get_value(p) for p in params]
+
+    if isinstance(params, Mapping):
+        return {k: get_value(v) for k, v in params.items()}
+
+    return get_value(params)
 
 
 def is_true(constraint: LpConstraint | bool) -> bool | None:
