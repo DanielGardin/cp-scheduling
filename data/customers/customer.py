@@ -18,13 +18,12 @@ from natsort import natsorted
 import tyro
 from tyro.conf import Positional, arg
 
-import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import seaborn as sns
 
 sns.set_theme(style="whitegrid")
 
-from cpscheduler.environment import SchedulingEnv, SingleMachineSetup, WeightedTardiness
+from cpscheduler.environment import SchedulingEnv, SingleMachineSetup, WeightedTardiness, Objective
 from cpscheduler.instances import read_smtwt_instance
 
 from cpscheduler.solver import PulpSolver
@@ -39,15 +38,14 @@ from cpscheduler.heuristics import (
     TrafficPriority,
     CostOverTime,
     # CriticalRatio,
-    RandomPriority
+    # RandomPriority
 )
-
 import logging.config
 
 import logging
 logging.config.fileConfig('logging.conf', disable_existing_loggers=False)
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 PWD = Path(__file__).parent
 ROOT = Path(__file__).parent.parent.parent
@@ -278,10 +276,10 @@ if __name__ == "__main__":
         plots: Annotated[bool, arg(aliases=('-p',))] = False
         "Generate plots for the instance generation."
 
-        solver: Annotated[str, arg(aliases=('-s',))] = "GUROBI_CMD"
+        solver: Annotated[str, arg(aliases=('-s',))] = "CPLEX_CMD"
         "Solver to use during action collection. Set to `none` to disable solver usage."
 
-        timelimit: Annotated[int, arg(aliases=('-t',))] = 60
+        timelimit: Annotated[int, arg(aliases=('-t',))] = 30
         "Time limit for the solver in seconds."
 
     args = tyro.cli(Config)
@@ -333,7 +331,7 @@ if __name__ == "__main__":
 
             else:
                 pdr = pdrs[strategy]
-                action = pdr.sample(obs, info["current_time"], target_prob=0.995)
+                action = pdr.sample(obs, info["current_time"], target_prob=0.9, seed=i)
 
             new_obs, reward, done, truncated, info = env.step(action)
 
