@@ -1,15 +1,15 @@
-# Constraint Programming Scheduler
+# 🧩 Constraint Programming Scheduler
 
 This repository provides a comprehensive gym environment for applying constraint programming techniques to scheduling problems.
 It focuses on the learning and optimization of priority dispatch rules, enabling the development and testing of intelligent heuristics for dynamic scheduling scenarios.
 Designed for researchers and practitioners, the framework supports customization, benchmarking, and integration with machine learning approaches to enhance scheduling performance.
 
-This work was directly inspired by [another project](https://github.com/ingambe/JobShopCPEnv), which only considers jobshop scheduling problems.
+This work was directly inspired by [JobShopCPEnv  ](https://github.com/ingambe/JobShopCPEnv), which only considers jobshop scheduling problems.
 We expand the previous idea of building an environment that automatically ensure the problem's constraints along the decisions.
 The major contribution here is providing a flexible and expansible framework for enumerous scheduling problems following the scheduling literature (see [Pinedo, 2022](https://link.springer.com/book/10.1007/978-3-031-05921-6) for a complete review).
 
 
-## Installation
+## 🚀 Installation
 
  We use a submodule for storing the scheduling instances in this [standalone repository](https://github.com/DanielGardin/scheduling-instances).
 To install the project, clone the repository and install the dependencies, along with the scheduling instances, run
@@ -34,7 +34,7 @@ To install the solver dependencies with CP and MILP formulations for the schedul
 pip install -e .[solver]
 ```
 
-## High-Level Structure
+## 🗂️ High-Level Structure
 
 The project is organized into the following main directories inside `cpscheduler`:
 
@@ -80,10 +80,11 @@ The project is organized into the following main directories inside `cpscheduler
 -   **`instances`**: Provides functions for reading and generating scheduling problem instances, including well-known benchmark sets like Taillard's for Job Shop and RCPSP instances.
 -   **`heuristics`**: Implements a variety of priority dispatching rules (PDRs) such as `ShortestProcessingTime`, `MostOperationsRemaining`, and `EarliestDueDate`. These can be used as baseline policies or as building blocks for more complex scheduling agents.
 -   **`solver`**: Integrates with external solvers. Currently, it includes a `pulp` backend for formulating and solving scheduling problems as Mixed-Integer Linear Programs (MILPs). This module depends on the `environment` module.
--   **`policies`**: Contains neural network-based policies that can be trained to make scheduling decisions. This includes common architectures like `MLP` and `TransformerEncoder`, as well as the `PlackettLucePolicy` for learning permutation-based actions.
--   **`algorithms`**: Contains implementations of reinforcement learning algorithms, both online (e.g., REINFORCE) and offline (e.g., Behavioral Cloning). This module depends on the `environment`, `policies`, and `heuristics` modules.
+- **`rl`**: Module for Reinforcement-Learning-based agents, it is split into the modules for
+  -   **`policies`**: Contains neural network-based policies that can be trained to make scheduling decisions. This includes common architectures like `MLP` and `TransformerEncoder`, as well as the `PlackettLucePolicy` for learning permutation-based actions.
+    -   **`algorithms`**: Contains implementations of reinforcement learning algorithms, both online (e.g., REINFORCE) and offline (e.g., Behavioral Cloning). This module depends on the `environment`, `policies`, and `heuristics` modules.
 
-## Usage
+## 🛠️ Usage
 
 The following example shows how to use the scheduling environment to solve a simple scheduling problem:
 
@@ -110,7 +111,7 @@ print(info["current_time"])
 ```
 
 
-## Compilation
+## 🏗️ Compilation
 
 This project uses `mypyc` to compile the Python code to C extensions for performance automatically via `pip install`.
 If the installation fail due to compilation issues, guarantee a C compiler is available and python-dev is installed in your machine.
