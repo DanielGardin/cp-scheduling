@@ -178,6 +178,35 @@ class Task:
         "Get the machine assigned to a given part of the task."
         return self.assignments[part]
 
+    def get_processed_time(self, time: TIME, machine: MACHINE_ID = -1) -> TIME:
+        """
+        Get the time processed by the task at a given time.
+        If machine is specified, return the time processed by that machine.
+        """
+        processed_time = 0
+        if machine != -1:
+            if machine not in self._remaining_times:
+                return processed_time
+
+            for part in range(self.n_parts):
+                if self.get_assignment(part) == machine:
+                    if self.get_start(part) <= time < self.get_end(part):
+                        processed_time += time - self.get_start(part)
+
+                    if time >= self.get_end(part):
+                        processed_time += self.get_duration(part)
+
+            return processed_time
+
+        for part in range(self.n_parts):
+            if self.get_start(part) <= time < self.get_end(part):
+                processed_time += time - self.get_start(part)
+
+            if time >= self.get_end(part):
+                processed_time += self.get_duration(part)
+
+        return processed_time
+
     def get_start_lb(self, machine: MACHINE_ID = -1) -> TIME:
         "Get the current lower bound for the starting time in a machine."
         if machine != -1:

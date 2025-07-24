@@ -45,6 +45,7 @@ from .constraints import Constraint, constraints
 from .objectives import Objective, objectives
 from .metrics import Metric
 
+from ._protocols import ImportableMetric
 from .utils import convert_to_list
 
 
@@ -277,10 +278,8 @@ class SchedulingEnv:
         self.objective.export_data(self.data)
 
         for metric in self.metrics.values():
-            # Workaround for using Objective as a Metric
-            # Check how to handle this better in the future
-            if hasattr(metric, "import_data"):
-                getattr(metric, "import_data")(self.data)
+            if isinstance(metric, ImportableMetric):
+                metric.import_data(self.data)
 
         self.tasks.add_tasks(self.data)
         self.loaded = True
@@ -298,11 +297,13 @@ class SchedulingEnv:
 
     def _get_info(self) -> InfoType:
         "Retrieve additional information about the environment."
+        objective_value = self._get_objective()
+
         return {
             "n_queries": len(self.query_times),
             "current_time": int(self.current_time),
             **{
-                metric_name: metric(self.current_time, self.tasks, self.data)
+                metric_name: metric(self.current_time, self.tasks, self.data, objective_value)
                 for metric_name, metric in self.metrics.items()
             },
         }
