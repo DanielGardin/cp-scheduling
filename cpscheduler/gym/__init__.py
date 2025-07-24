@@ -19,18 +19,16 @@ register(
 __all__ = [
     "SchedulingEnvGym",
     "PermutationActionWrapper",
-    "RandomGeneratorWrapper",
     "CPStateWrapper",
     "TabularObservationWrapper",
-    "PreprocessObservationWrapper",
+    "InstancePoolWrapper",
 ]
 
 from .env import SchedulingEnvGym
 
 from .wrappers import (
     PermutationActionWrapper,
-    RandomGeneratorWrapper,
     CPStateWrapper,
     TabularObservationWrapper,
-    PreprocessObservationWrapper,
+    InstancePoolWrapper,
 )

@@ -8,32 +8,15 @@ the CPScheduler scheduling environment.
 from typing import Any
 from collections.abc import Iterable
 
-from gymnasium import Env
-from gymnasium.spaces import Tuple, Text, Box, OneOf, Sequence
+from gymnasium import Env, Space
 
-import numpy as np
-
-from cpscheduler.environment._common import MAX_INT, InstanceConfig, ObsType
+from cpscheduler.environment._common import InstanceConfig, ObsType
 from cpscheduler.environment.instructions import ActionType
 from cpscheduler.environment import SchedulingEnv, ScheduleSetup, Constraint, Objective
 from cpscheduler.environment._render import Renderer
 
 from .gym_utils import infer_collection_space
-
-# Define the action space for the environment
-InstructionSpace = Text(max_length=10)
-IntSpace = Box(low=0, high=int(MAX_INT), shape=(), dtype=np.int64)
-
-SingleActionSpace = OneOf(
-    [
-        Tuple([InstructionSpace]),
-        Tuple([InstructionSpace, IntSpace]),
-        Tuple([InstructionSpace, IntSpace, IntSpace]),
-        Tuple([InstructionSpace, IntSpace, IntSpace, IntSpace]),
-    ]
-)
-
-ActionSpace = Sequence(SingleActionSpace, stack=True)
+from .common import ActionSpace, Options
 
 
 class SchedulingEnvGym(Env[ObsType, ActionType]):
@@ -50,7 +33,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         instance_config: InstanceConfig | None = None,
         *,
         render_mode: Renderer | str | None = None,
-        n_parts: int = 1,
+        allow_preemption: bool = False,
     ):
         self.action_space = ActionSpace
 
@@ -60,16 +43,17 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
             objective=objective,
             instance_config=instance_config,
             render_mode=render_mode,
-            n_parts=n_parts,
+            allow_preemption=allow_preemption,
         )
 
-        self.observation_space = infer_collection_space(self._env._get_state())
+        self.observation_space = self.get_observation_space()
+
+    def get_observation_space(self) -> Space[ObsType]:
+        return infer_collection_space(self._env._get_state())
 
     @classmethod
     def from_env(cls, env: SchedulingEnv) -> "SchedulingEnvGym":
-        """
-        Create a `SchedulingEnvGym` instance from an existing `SchedulingEnv`.
-        """
+        "Create a `SchedulingEnvGym` instance from an existing `SchedulingEnv`."
         self = cls.__new__(cls)
 
         self.action_space = ActionSpace
@@ -79,24 +63,20 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
 
     @property
     def core(self) -> SchedulingEnv:
+        "Return the underlying `SchedulingEnv` instance."
         return self._env
 
     def reset(
-        self,
-        *,
-        seed: int | None = None,
-        options: dict[str, Any] | InstanceConfig | None = None,
+        self, *, seed: int | None = None, options: Options = None
     ) -> tuple[ObsType, dict[str, Any]]:
         super().reset(seed=seed)
 
         previously_loaded = self._env.loaded
 
-        obs, info = self._env.reset(
-            options=options,
-        )
+        obs, info = self._env.reset(options=options)
 
         if options is not None or not previously_loaded:
-            self.observation_space = infer_collection_space(obs)
+            self.observation_space = self.get_observation_space()
 
         return obs, {key: value for key, value in info.items()}
 
