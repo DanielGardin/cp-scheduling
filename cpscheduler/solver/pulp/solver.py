@@ -17,6 +17,7 @@ from .pulp_utils import SolverConfig, parse_solver_config
 
 Formulations = Literal["scheduling", "timetable"]
 
+
 class PulpSolver:
     def __init__(
         self,
@@ -50,7 +51,7 @@ class PulpSolver:
                 "Environment must be loaded before initializing the solver."
             )
 
-        if self.env.n_parts > 1:
+        if self.env.preemptive:
             raise ValueError("This version of the solver does not support preemption.")
 
         if tighten:
@@ -99,7 +100,9 @@ class PulpSolver:
             variables = PulpTimetable(model, tasks, data, integral)
 
         elif formulation == "scheduling":
-            variables = PulpSchedulingVariables(model, tasks, data, integral, integral_var)
+            variables = PulpSchedulingVariables(
+                model, tasks, data, integral, integral_var
+            )
 
         if symmetry_breaking:
             employ_symmetry_breaking_pulp(env, model, variables)

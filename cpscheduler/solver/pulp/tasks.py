@@ -2,7 +2,15 @@ from typing import Any
 from collections.abc import Sequence, Iterable, Mapping
 from abc import ABC, abstractmethod
 
-from pulp import LpVariable, LpProblem, LpBinary, LpInteger, LpContinuous, LpAffineExpression, lpSum
+from pulp import (
+    LpVariable,
+    LpProblem,
+    LpBinary,
+    LpInteger,
+    LpContinuous,
+    LpAffineExpression,
+    lpSum,
+)
 
 from cpscheduler.environment.tasks import Tasks
 from cpscheduler.environment.data import SchedulingData
@@ -79,7 +87,7 @@ class PulpVariables(ABC):
 
             return float(obj_value)
 
-        return 0.
+        return 0.0
 
 
 class PulpSchedulingVariables(PulpVariables):
@@ -156,7 +164,9 @@ class PulpSchedulingVariables(PulpVariables):
             start_time = round(start_value) if start_value is not None else -1
             machine_id = -1
             for machine_id in range(self.n_machines):
-                if get_value(self.assignments[task_id][machine_id]) > 1/len(self.assignments[task_id]):
+                if get_value(self.assignments[task_id][machine_id]) > 1 / len(
+                    self.assignments[task_id]
+                ):
                     break
 
             assignments.append((machine_id, start_time))

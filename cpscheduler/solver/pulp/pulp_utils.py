@@ -31,6 +31,7 @@ class SolverConfig(TypedDict, total=False):
     "Whether to keep the solver files after solving."
     ...
 
+
 def parse_solver_config(solver_config: SolverConfig) -> dict[str, Any]:
     config: dict[str, Any] = {}
 
@@ -43,11 +44,12 @@ def parse_solver_config(solver_config: SolverConfig) -> dict[str, Any]:
 
     if solver_config.pop("warm_start", False):
         config["warmStart"] = True
-    
+
     if solver_config.pop("keep_files", False):
         config["keepFiles"] = True
 
     return config | solver_config
+
 
 PULP_EXPRESSION: TypeAlias = LpVariable | LpAffineExpression
 PULP_PARAM: TypeAlias = PULP_EXPRESSION | int | float
@@ -80,14 +82,18 @@ def get_value(param: PULP_PARAM) -> float | int:
 
     raise ValueError(f"Unexpected type: {type(param)}")
 
+
 @overload
 def get_values(params: PULP_PARAM) -> float | int: ...
+
 
 @overload
 def get_values(params: Sequence[PULP_PARAM]) -> list[float | int]: ...
 
+
 @overload
 def get_values(params: Mapping[str, PULP_PARAM]) -> dict[str, float | int]: ...
+
 
 def get_values(params: Any) -> Any:
     if isinstance(params, Sequence):
