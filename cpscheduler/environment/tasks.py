@@ -25,42 +25,14 @@ in the environment, change with caution.
 
 from warnings import warn
 
-from typing import Any, ClassVar
+from typing import Any
 from collections.abc import Iterator
 from typing_extensions import Self
 
 from mypy_extensions import u8
 
-from ._common import MIN_INT, MAX_INT, MACHINE_ID, TASK_ID, PART_ID, TIME, ObsType
+from ._common import MIN_INT, MAX_INT, MACHINE_ID, TASK_ID, PART_ID, TIME, ObsType, Status
 from .data import SchedulingData
-
-
-class Status:
-    "Possible statuses of a task at a given time."
-
-    # awaiting:  time < start_lb[0] or waiting for a machine
-    AWAITING: ClassVar[u8] = 0
-
-    # executing: start_lb[i] <= time < start_lb[i] + duration[i] for some i
-    EXECUTING: ClassVar[u8] = 1
-
-    # paused:    start_lb[i] + duration[i] < = time < start_lb[i+1] for some i
-    PAUSED: ClassVar[u8] = 2
-
-    # completed: time >= start_lb[-1] + duration[-1]
-    COMPLETED: ClassVar[u8] = 3
-
-    # unknown status
-    UNKNOWN: ClassVar[u8] = 4
-
-
-status_str = {
-    Status.AWAITING: "awaiting",
-    Status.EXECUTING: "executing",
-    Status.PAUSED: "paused",
-    Status.COMPLETED: "completed",
-    Status.UNKNOWN: "unknown",
-}
 
 
 def ceil_div(a: TIME, b: TIME) -> TIME:
@@ -343,7 +315,7 @@ class Task:
 
         if not self.fixed:
             if len(self.starts) == 0 or time < self.get_start(0):
-                return Status.AWAITING
+                return Status.AVAILABLE if self.is_available(time) else Status.AWAITING
 
             return Status.PAUSED
 
@@ -398,16 +370,6 @@ class Task:
     def is_completed(self, time: TIME) -> bool:
         "Check if the task is completed at a given time."
         return self.fixed and time >= self.get_end()
-
-    def get_buffer(self, time: TIME) -> str:
-        "Get the a string representation of the status of a task at a given time."
-        buffer = status_str[self.get_status(time)]
-
-        if buffer == "awaiting" and self.is_available(time):
-            buffer = "available"
-
-        return buffer
-
 
 class Tasks:
     "Container class for the tasks in the scheduling environment."
@@ -556,7 +518,7 @@ class Tasks:
 
     def export_state(self, time: TIME) -> ObsType:
         task_state = {
-            "status": [task.get_buffer(time) for task in self.tasks],
+            "status": [task.get_status(time) for task in self.tasks],
         }
 
         job_state: dict[str, list[Any]] = {}
