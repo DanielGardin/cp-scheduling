@@ -31,7 +31,16 @@ from typing_extensions import Self
 
 from mypy_extensions import u8
 
-from ._common import MIN_INT, MAX_INT, MACHINE_ID, TASK_ID, PART_ID, TIME, ObsType, Status
+from ._common import (
+    MIN_INT,
+    MAX_INT,
+    MACHINE_ID,
+    TASK_ID,
+    PART_ID,
+    TIME,
+    ObsType,
+    Status,
+)
 from .data import SchedulingData
 
 
@@ -370,6 +379,7 @@ class Task:
     def is_completed(self, time: TIME) -> bool:
         "Check if the task is completed at a given time."
         return self.fixed and time >= self.get_end()
+
 
 class Tasks:
     "Container class for the tasks in the scheduling environment."

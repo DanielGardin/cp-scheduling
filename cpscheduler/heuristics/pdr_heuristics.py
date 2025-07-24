@@ -10,6 +10,7 @@ from mypy_extensions import mypyc_attr
 from cpscheduler.environment._common import ObsType, Status
 from cpscheduler.environment.utils import convert_to_list
 
+
 def sample_gumbel() -> float:
     """Sample from Gumbel(0, 1) using inverse transform sampling."""
     u = random.random()
@@ -38,7 +39,11 @@ class PriorityDispatchingRule(ABC):
 
     def filter_tasks(self, tasks: dict[str, list[Any]]) -> dict[str, list[Any]]:
         return {
-            feature: [value for value, status in zip(values, tasks["status"]) if status < Status.COMPLETED]
+            feature: [
+                value
+                for value, status in zip(values, tasks["status"])
+                if status < Status.COMPLETED
+            ]
             for feature, values in tasks.items()
         }
 
