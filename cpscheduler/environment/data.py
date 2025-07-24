@@ -6,11 +6,8 @@ within the CPScheduler environment.
 """
 
 from typing import Any
-from typing_extensions import Self
 
 from ._common import ObsType, MACHINE_ID, TASK_ID, TIME, InstanceConfig
-
-from .utils import convert_to_list
 
 JOB_ID_ALIASES = ["job", "job_id", "jobs", "jobs_ids"]
 
@@ -19,63 +16,121 @@ JOB_ID_ALIASES = ["job", "job_id", "jobs", "jobs_ids"]
 class SchedulingData:
     "A class to hold static scheduling data for the CPScheduler environment."
 
-    n_tasks: TASK_ID
-    n_jobs: TASK_ID
     n_machines: MACHINE_ID
+    n_jobs: TASK_ID
 
     safe_converse: bool
     "Whether task ID and job ID can be safely converted to each other."
 
+    processing_times: list[dict[MACHINE_ID, TIME]]
+
     task_data: dict[str, list[Any]]
     jobs_data: dict[str, list[Any]]
+    machine_data: dict[str, list[Any]]
 
     job_ids: list[TASK_ID]
 
     alias: dict[str, str]
 
-    def __init__(
-        self,
-        task_data: dict[str, list[Any]],
-        jobs_data: dict[str, list[Any]],
-        job_feature: str = "",
-    ) -> None:
+    def __init__(self) -> None:
         self.alias = {}
 
-        self.task_data = task_data.copy()
-        self.jobs_data = jobs_data.copy()
+        self.processing_times = []
 
-        self.n_tasks = TASK_ID(len(next(iter(self.task_data.values()))))
-        for feature, values in self.task_data.items():
-            length = TASK_ID(len(values))
+        self.task_data = {}
+        self.jobs_data = {}
+        self.machine_data = {}
 
-            if length != self.n_tasks:
-                raise ValueError(
-                    f"Feature '{feature}' must have length equal to the number of tasks,"
-                    f"expected {self.n_tasks}, got {len(values)}."
-                )
+        self.job_ids = []
+
+        self.n_machines = 0
+        self.n_jobs = 0
+
+        self.safe_converse = True
+
+    @property
+    def n_tasks(self) -> TASK_ID:
+        "Get the number of tasks in the scheduling data."
+        return TASK_ID(len(self.processing_times))
+
+    def clear(self) -> None:
+        "Clear all data in the scheduling data."
+        self.processing_times.clear()
+        self.task_data.clear()
+        self.jobs_data.clear()
+        self.machine_data.clear()
+        self.job_ids.clear()
+
+        self.n_machines = 0
+        self.n_jobs = 0
+
+        self.safe_converse = True
+        self.alias.clear()
+
+    def add_task_data(
+        self,
+        processing_times: list[dict[MACHINE_ID, TIME]],
+        task_data: dict[str, list[Any]],
+        job_feature: str,
+    ) -> None:
+        """
+        Add task-specific data to the scheduling data.
+
+        Parameters
+        ----------
+        task_data: dict[str, list[Any]]
+            The task-specific data to be added.
+        """
+        self.processing_times.extend(processing_times)
+
+        for feature, values in task_data.items():
+            if feature not in self.task_data:
+                self.task_data[feature] = []
+
+            self.task_data[feature].extend(values)
+
+        for processing_time in processing_times:
+            for machine_id in processing_time:
+                if machine_id >= self.n_machines:
+                    self.n_machines = MACHINE_ID(machine_id + 1)
 
         if not job_feature:
             for alias in JOB_ID_ALIASES:
                 if alias in self.task_data:
                     job_feature = alias
 
-        if job_feature in self.task_data:
-            self.job_ids = convert_to_list(self.task_data.pop(job_feature), TASK_ID)
-            self.n_jobs = TASK_ID(len(set(self.job_ids)))
+        if job_feature in task_data:
+            for task_id, job_id in enumerate(task_data.pop(job_feature)):
+                if job_id >= self.n_jobs:
+                    self.n_jobs = TASK_ID(job_id + 1)
 
-            self.safe_converse = self.n_tasks == self.n_jobs and all(
-                job_id == task_id for job_id, task_id in enumerate(self.job_ids)
-            )
+                self.job_ids.append(TASK_ID(job_id))
+
+                self.safe_converse = self.safe_converse and task_id == job_id
 
         else:  # If no job feature is provided, we assume each task is its own job
-            self.job_ids = [task_id for task_id in range(self.n_tasks)]
+            self.job_ids.extend(range(self.n_jobs, self.n_tasks))
             self.n_jobs = self.n_tasks
 
-            self.safe_converse = True
+    def add_job_data(self, job_data: dict[str, list[Any]]) -> None:
+        """
+        Add job-specific data to the scheduling data.
 
-    def import_machine_data(
+        Parameters
+        ----------
+        job_data: dict[str, list[Any]]
+            The job-specific data to be added.
+        job_feature: str, optional
+            The feature name for the job data, defaults to an empty string.
+        """
+        for feature, values in job_data.items():
+            if feature not in self.jobs_data:
+                self.jobs_data[feature] = []
+
+            self.jobs_data[feature].extend(values)
+
+    def add_machine_data(
         self,
-        processing_times: list[dict[MACHINE_ID, TIME]],
         machine_data: dict[str, list[Any]],
     ) -> None:
         """
@@ -88,21 +143,11 @@ class SchedulingData:
         machine_data: dict[str, list[Any]]
             Additional machine-specific data to be added.
         """
-        self.processing_times = processing_times
+        for feature, values in machine_data.items():
+            if feature not in self.machine_data:
+                self.machine_data[feature] = []
 
-        machines: set[MACHINE_ID] = set()
-        for processing_time in processing_times:
-            machines.update(processing_time.keys())
-
-        self.n_machines = MACHINE_ID(len(machines))
-
-    @classmethod
-    def empty(cls) -> Self:
-        "Create an empty SchedulingData instance."
-        return cls(
-            task_data={},
-            jobs_data={},
-        )
+            self.machine_data[feature].extend(values)
 
     def add_alias(self, alias: str, feature: str) -> None:
         if feature not in self.task_data and feature not in self.jobs_data:

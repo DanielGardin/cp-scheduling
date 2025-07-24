@@ -87,9 +87,9 @@ def is_iterable_type(
 
         return all(isinstance(item, dtype) for item in obj)
 
-    # except StopIteration:
-    #     # If the iterable is empty, we consider it to be of the specified type
-    #     return True
+    except StopIteration:
+        # If the iterable is empty, we consider it to be of the specified type
+        return True
 
     except TypeError:
         # If the iterable is not a collection, it will raise a TypeError
