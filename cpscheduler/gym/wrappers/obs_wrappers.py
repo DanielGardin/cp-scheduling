@@ -1,30 +1,24 @@
 from typing import Any, TypeVar
-from collections.abc import Callable
-from typing_extensions import Unpack
-
-from numpy.typing import NDArray
 
 from abc import ABC, abstractmethod
 
-import numpy as np
-from gymnasium.spaces import Dict, Tuple, Box, OneOf, Space
+from gymnasium.spaces import Dict, Tuple, Box
 
-from gymnasium import ObservationWrapper, Env
+from gymnasium import ObservationWrapper, Env, Space
 
-from cpscheduler.environment import SchedulingEnv
 from cpscheduler.environment.tasks import Tasks
 from cpscheduler.environment.utils import is_iterable_type
 from cpscheduler.environment._common import ObsType, MAX_INT as MAX_INT_TIME
 
-from cpscheduler.gym import SchedulingEnvGym
+from cpscheduler.gym.common import Options
 
 MAX_INT = int(MAX_INT_TIME)
 
+S = TypeVar("S", Space[Any], Box, Dict, Tuple)
 
-def reshape_space(space: Space[Any], shape: tuple[int, ...]) -> Space[Any]:
-    """
-    Reshape the space to the given shape.
-    """
+
+def reshape_space(space: S, shape: tuple[int, ...]) -> S:
+    "Reshape the space to the given shape."
     if isinstance(space, Box):
         return Box(
             low=space.low.reshape(shape),  # type: ignore
@@ -38,10 +32,7 @@ def reshape_space(space: Space[Any], shape: tuple[int, ...]) -> Space[Any]:
         )
 
     if isinstance(space, Tuple):
-        return Tuple([reshape_space(value, shape) for value in space.spaces])
-
-    if isinstance(space, OneOf):
-        return OneOf([reshape_space(value, shape) for value in space.spaces])
+        return Tuple(reshape_space(value, shape) for value in space.spaces)
 
     raise ValueError(f"Unsupported space type: {type(space)}")
 
@@ -52,30 +43,21 @@ _Act = TypeVar("_Act")
 
 class SchedulingObservationWrapper(ObservationWrapper[_Obs, _Act, ObsType], ABC):
     def __init__(self, env: Env[ObsType, _Act]):
-        if isinstance(env, SchedulingEnv):
-            wrapped_env: Env[ObsType, Any] = SchedulingEnvGym.from_env(env)
-            super().__init__(wrapped_env)  # type: ignore[call-arg]
-
-        else:
-            super().__init__(env)
-
-        if self.env.get_wrapper_attr("loaded"):
-            self.observation_space = self.get_observation_space()
-
-        else:
-            default_space = self.default_observation_space()
-
-            if default_space is not None:
-                self.observation_space = default_space
+        super().__init__(env)
+        self.observation_space = self.get_observation_space()
 
     def reset(
         self,
         *,
         seed: int | None = None,
-        options: dict[str, Any] | None = None,
+        options: Options = None,
     ) -> tuple[_Obs, dict[str, Any]]:
-        obs, info = super().reset(seed=seed, options=options)
-        self.observation_space = self.get_observation_space()
+        previously_loaded = self.get_wrapper_attr("loaded")
+
+        obs, info = super().reset(seed=seed, options=dict(options) if options else None)
+
+        if options is not None or not previously_loaded:
+            self.observation_space = self.get_observation_space()
 
         return obs, info
 
@@ -86,13 +68,6 @@ class SchedulingObservationWrapper(ObservationWrapper[_Obs, _Act, ObsType], ABC)
         This method is called when the environment is loaded, both during
         initialization and when the environment is reset.
         """
-
-    def default_observation_space(self) -> Space[_Obs] | None:
-        """
-        Get the default observation space for the environment during initialization,
-        when the environment's observation space is not known yet.
-        """
-        return None
 
 
 class TabularObservationWrapper(
@@ -162,6 +137,7 @@ class CPStateWrapper(SchedulingObservationWrapper[ObsType, _Act]):
                     {
                         **task_feature_space,
                         "lower_bound": Box(low=0, high=MAX_INT, shape=(n_tasks,)),
+                        "upper_bound": Box(low=0, high=MAX_INT, shape=(n_tasks,)),
                     }
                 ),
                 job_feature_space,
@@ -178,41 +154,3 @@ class CPStateWrapper(SchedulingObservationWrapper[ObsType, _Act]):
         task_data["upper_bound"] = [task.get_start_ub() for task in tasks]
 
         return task_data, job_data
-
-
-class PreprocessObservationWrapper(
-    SchedulingObservationWrapper[NDArray[np.floating[Any]], _Act]
-):
-    """
-    A wrapper that preprocesses the observation space by removing the 'job_id' feature
-    from the job features.
-    """
-
-    def __init__(
-        self,
-        env: Env[ObsType, _Act],
-        transform: Callable[[Unpack[ObsType]], NDArray[np.floating[Any]]],
-    ):
-        self.transform = transform
-
-        obs, info = env.reset()
-        array_obs = transform(*obs)
-
-        self.n_features = array_obs.shape[-1]
-
-        super().__init__(env)
-
-    def get_observation_space(self) -> Space[NDArray[np.floating[Any]]]:
-        if not is_iterable_type(self.env.observation_space, Dict):
-            raise ValueError(
-                f"Unexpected env observation space: {self.env.observation_space}"
-            )
-
-        n_jobs = len(getattr(self.env.get_wrapper_attr("tasks"), "jobs"))
-
-        return Box(float("-inf"), float("inf"), shape=(n_jobs, self.n_features))
-
-    def observation(self, observation: ObsType) -> NDArray[np.floating[Any]]:
-        task_data, job_data = observation
-
-        return self.transform(task_data, job_data)

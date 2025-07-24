@@ -2,13 +2,6 @@ import pytest
 
 from typing_extensions import Unpack
 
-from cpscheduler.instances import generate_taillard_instance
-from cpscheduler.environment import (
-    SchedulingEnv,
-    ResourceConstraint,
-    SingleMachineSetup,
-)
-
 from common import env_setup, TEST_INSTANCES
 
 
@@ -137,7 +130,7 @@ def test_submit2(instance_name: str) -> None:
 @pytest.mark.env
 @pytest.mark.parametrize("instance_name", TEST_INSTANCES)
 def test_pause(instance_name: str) -> None:
-    env = env_setup(instance_name)
+    env = env_setup(instance_name, allow_preemption=True)
 
     env.reset()
 

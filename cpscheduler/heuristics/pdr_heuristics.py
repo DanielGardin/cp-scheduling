@@ -532,10 +532,10 @@ class CostOverTime(PriorityDispatchingRule):
 
         return [
             (
-                weight / proc_time
+                -proc_time / weight
                 if due_date <= proc_time + time
                 else (
-                    weight / proc_time * (P - due_date) / (P - time - proc_time)
+                    -proc_time / weight * (P - time - proc_time) / (P - due_date)
                     if due_date < P
                     else 0
                 )
@@ -575,9 +575,9 @@ class ApparentTardinessCost(PriorityDispatchingRule):
         P_mean = sum(processing_time) / len(processing_time)
 
         return [
-            weight
-            / proc_time
-            * exp(-max(0, due_date - time - proc_time) / (self.lookahead * P_mean))
+            -proc_time
+            / weight
+            * exp(max(0, due_date - time - proc_time) / (self.lookahead * P_mean))
             for weight, proc_time, due_date in zip(weights, processing_time, due_dates)
         ]
 

@@ -23,6 +23,8 @@ We do not reccomend customizing this module, as it's tightly coupled with the ot
 in the environment, change with caution.
 """
 
+from warnings import warn
+
 from typing import Any, ClassVar
 from collections.abc import Iterator
 from typing_extensions import Self
@@ -410,10 +412,6 @@ class Task:
 class Tasks:
     "Container class for the tasks in the scheduling environment."
 
-    n_tasks: TASK_ID
-    n_parts: PART_ID
-    n_jobs: TASK_ID
-
     tasks: list[Task]
     jobs: list[list[Task]]
 
@@ -421,21 +419,38 @@ class Tasks:
     transition_tasks: set[TASK_ID]
     fixed_tasks: set[TASK_ID]
 
-    def __init__(
-        self,
-        data: SchedulingData,
-        n_parts: PART_ID,
-    ):
-        self.n_parts = n_parts
-        self.n_jobs = data.n_jobs
-        self.n_tasks = data.n_tasks
-
+    def __init__(self, allow_preemption: bool) -> None:
         self.tasks = []
-        self.jobs = [[] for _ in range(data.n_jobs)]
+        self.jobs = []
 
         self.awaiting_tasks = set()
         self.transition_tasks = set()
         self.fixed_tasks = set()
+
+        self.allow_preemption = allow_preemption
+
+    @property
+    def n_tasks(self) -> TASK_ID:
+        "Get the number of tasks in the environment."
+        return TASK_ID(len(self.tasks))
+
+    @property
+    def n_jobs(self) -> TASK_ID:
+        "Get the number of jobs in the environment."
+        return TASK_ID(len(self.jobs))
+
+    def clear(self) -> None:
+        "Clear all tasks and jobs in the environment."
+        self.tasks.clear()
+        self.jobs.clear()
+
+        self.awaiting_tasks.clear()
+        self.transition_tasks.clear()
+        self.fixed_tasks.clear()
+
+    def add_tasks(self, data: SchedulingData) -> None:
+        if self.n_jobs < data.n_jobs:
+            self.jobs.extend([[] for _ in range(data.n_jobs - self.n_jobs)])
 
         for task_id, job_id in enumerate(data.job_ids):
             task = Task(task_id, job_id, data)
@@ -464,12 +479,16 @@ class Tasks:
         self.fixed_tasks.add(task_id)
 
     def unfix_task(self, task_id: TASK_ID, time: TIME) -> None:
-        task = self.tasks[task_id]
+        if self.allow_preemption:
+            task = self.tasks[task_id]
 
-        task.interrupt(time)
-        self.awaiting_tasks.add(task_id)
-        self.transition_tasks.add(task_id)
-        self.fixed_tasks.remove(task_id)
+            task.interrupt(time)
+            self.awaiting_tasks.add(task_id)
+            self.transition_tasks.add(task_id)
+            self.fixed_tasks.remove(task_id)
+
+        else:
+            warn("Preemption is not allowed in this environment. Skipping Instruction.")
 
     def finish_propagation(self) -> None:
         "Ensure that all tasks are in a consistent state after propagation."

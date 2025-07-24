@@ -24,7 +24,6 @@ from ._common import (
     InstanceTypes,
     MachineDataTypes,
     TASK_ID,
-    PART_ID,
     TIME,
     InfoType,
     ObsType,
@@ -119,9 +118,6 @@ class SchedulingEnv:
     schedule: dict[TASK_ID, list[Instruction]]
     current_time: TIME
 
-    # Gymnasium support variables
-
-    # Environment constructor methods
     def __init__(
         self,
         machine_setup: ScheduleSetup,
@@ -130,10 +126,11 @@ class SchedulingEnv:
         instance_config: InstanceConfig | None = None,
         *,
         render_mode: Renderer | str | None = None,
-        n_parts: int = 1,
+        allow_preemption: bool = False,
     ):
         self.loaded = False
 
+        self.preemptive = allow_preemption
         self.setup = machine_setup
 
         self.constraints = {}
@@ -146,9 +143,11 @@ class SchedulingEnv:
 
         self.set_objective(objective)
 
+        self.tasks = Tasks(allow_preemption)
+        self.data = SchedulingData()
+
         self.schedule = {-1: []}
 
-        self.n_parts: PART_ID = n_parts
         self.current_time = 0
         self.advancing_to = 0
         self.query_times: list[TIME] = []
@@ -232,19 +231,22 @@ class SchedulingEnv:
                 The number of parts to split the tasks into. If None, it defaults to 16 if
                 preemption is allowed, otherwise 1.
         """
+        self.data.clear()
+        self.tasks.clear()
+
         task_data = prepare_instance(instance)
         job_data = prepare_instance(job_instance) if job_instance is not None else {}
         machine_data = (
             prepare_instance(machine_instance) if machine_instance is not None else {}
         )
 
-        self.data = SchedulingData(task_data, job_data, job_feature)
-
         parsed_processing_times = self.setup.parse_process_time(
             task_data, processing_times
         )
 
-        self.data.import_machine_data(parsed_processing_times, machine_data)
+        self.data.add_task_data(parsed_processing_times, task_data, job_feature)
+        self.data.add_job_data(job_data)
+        self.data.add_machine_data(machine_data)
 
         for constraint in self.setup.setup_constraints(self.data):
             constraint.setup_constraint = True
@@ -259,7 +261,7 @@ class SchedulingEnv:
         self.objective.import_data(self.data)
         self.objective.export_data(self.data)
 
-        self.tasks = Tasks(self.data, self.n_parts)
+        self.tasks.add_tasks(self.data)
         self.loaded = True
 
     ## Environment state retrieval methods
@@ -557,18 +559,16 @@ class SchedulingEnv:
         "Get a string representation of the environment's configuration."
         alpha = self.setup.get_entry()
 
-        beta = (
-            ",".join(
-                [
-                    constraint.get_entry()
-                    for constraint in self.constraints.values()
-                    if not constraint.setup_constraint and constraint.get_entry()
-                ]
-            )
-            + "prmp"
-            if self.n_parts > 1
-            else ""
+        beta = ",".join(
+            [
+                constraint.get_entry()
+                for constraint in self.constraints.values()
+                if not constraint.setup_constraint and constraint.get_entry()
+            ]
         )
+
+        if self.preemptive:
+            beta += f"{',' if beta else ''}prmp"
 
         gamma = self.objective.get_entry()
 

@@ -52,10 +52,9 @@ class Reinforce(BaseAlgorithm):
             allow_grad=True,
         )
 
-        super().__init__(buffer, get_device(device))
+        super().__init__(buffer, actor, get_device(device))
 
         self.envs = envs
-        self.actor = actor
         self.actor_optimizer = actor_optimizer
 
         self.mc_samples = mc_samples
@@ -100,14 +99,14 @@ class Reinforce(BaseAlgorithm):
 
                 observations = torch.tensor(obs).reshape(n_envs, *self.obs_shape)
 
-                actions, _ = self.actor.get_action(observations.to(self.device))
+                actions, _ = self.policy.get_action(observations.to(self.device))
                 actions = actions.reshape(n_envs, *self.action_shape)
 
                 _, returns, *_ = self.envs.step(actions.cpu().numpy())
 
                 obs, _ = self.envs.reset(seed=seed)
 
-                greedy_action = self.actor.greedy(observations.to(self.device))
+                greedy_action = self.policy.greedy(observations.to(self.device))
 
                 _, greedy_returns, *_ = self.envs.step(greedy_action.cpu().numpy())
                 all_greedy_returns[:, i] = greedy_returns
@@ -126,7 +125,7 @@ class Reinforce(BaseAlgorithm):
     def update(self, batch: TensorDict) -> dict[str, Any]:
         returns = batch["returns"]
 
-        log_probs = self.actor.log_prob(batch["obs"], batch["action"])
+        log_probs = self.policy.log_prob(batch["obs"], batch["action"])
 
         baseline = self.compute_baseline(batch)
 

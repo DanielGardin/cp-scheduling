@@ -15,7 +15,7 @@ TEST_INSTANCES = [
 PROJECT_ROOT = Path(__file__).parent.parent
 
 
-def env_setup(instance_name: str) -> SchedulingEnv:
+def env_setup(instance_name: str, allow_preemption: bool = False) -> SchedulingEnv:
     path = PROJECT_ROOT / f"instances/jobshop/{instance_name}.txt"
 
     try:
@@ -32,7 +32,8 @@ def env_setup(instance_name: str) -> SchedulingEnv:
     env = SchedulingEnv(
         machine_setup=JobShopSetup(),
         objective=Makespan(),
-        instance_config={'instance': instance}
+        instance_config={'instance': instance},
+        allow_preemption=allow_preemption,
     )
 
     return env

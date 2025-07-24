@@ -2,19 +2,17 @@ __all__ = [
     # Observation Wrappers
     "TabularObservationWrapper",
     "CPStateWrapper",
-    "PreprocessObservationWrapper",
     # Action Wrappers
     "PermutationActionWrapper",
     # Misc Wrappers
-    "RandomGeneratorWrapper",
+    "InstancePoolWrapper",
 ]
 
 from .obs_wrappers import (
     TabularObservationWrapper,
     CPStateWrapper,
-    PreprocessObservationWrapper,
 )
 
 from .act_wrappers import PermutationActionWrapper
 
-from .misc_wrappers import RandomGeneratorWrapper
+from .misc_wrappers import InstancePoolWrapper

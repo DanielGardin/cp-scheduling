@@ -50,15 +50,14 @@ class BehaviorCloning(BaseAlgorithm):
             action=actions,
         )
 
-        super().__init__(buffer, device)
+        super().__init__(buffer, actor, device)
 
-        self.actor = actor
         self.actor_optimizer = actor_optimizer
 
     def update(self, batch: TensorDict) -> dict[str, Any]:
         target_action = batch["action"]
 
-        loss = -torch.mean(self.actor.log_prob(batch["state"], target_action))
+        loss = -torch.mean(self.policy.log_prob(batch["state"], target_action))
 
         self.actor_optimizer.zero_grad()
         loss.backward()

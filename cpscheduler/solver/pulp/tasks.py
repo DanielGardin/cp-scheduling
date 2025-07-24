@@ -2,7 +2,15 @@ from typing import Any
 from collections.abc import Sequence, Iterable, Mapping
 from abc import ABC, abstractmethod
 
-from pulp import LpVariable, LpProblem, LpBinary, LpAffineExpression, lpSum
+from pulp import (
+    LpVariable,
+    LpProblem,
+    LpBinary,
+    LpInteger,
+    LpContinuous,
+    LpAffineExpression,
+    lpSum,
+)
 
 from cpscheduler.environment.tasks import Tasks
 from cpscheduler.environment.data import SchedulingData
@@ -79,7 +87,7 @@ class PulpVariables(ABC):
 
             return float(obj_value)
 
-        raise ValueError("Objective variable has not been set.")
+        return 0.0
 
 
 class PulpSchedulingVariables(PulpVariables):
@@ -89,7 +97,12 @@ class PulpSchedulingVariables(PulpVariables):
     orders: dict[tuple[int, int], PULP_EXPRESSION | int]
 
     def __init__(
-        self, model: LpProblem, tasks: Tasks, data: SchedulingData, integral: bool
+        self,
+        model: LpProblem,
+        tasks: Tasks,
+        data: SchedulingData,
+        integral: bool,
+        integral_var: bool,
     ):
         super().__init__(model, tasks, data, integral)
 
@@ -100,7 +113,7 @@ class PulpSchedulingVariables(PulpVariables):
                 f"start_{task.task_id}",
                 lowBound=task.get_start_lb(),
                 upBound=task.get_start_ub(),
-                # cat=LpInteger
+                cat=LpInteger if integral_var else LpContinuous,
             )
             for task in tasks
         ]
@@ -110,7 +123,7 @@ class PulpSchedulingVariables(PulpVariables):
                 f"end_{task.task_id}",
                 lowBound=task.get_end_lb(),
                 upBound=task.get_end_ub(),
-                # cat=LpInteger
+                cat=LpInteger if integral_var else LpContinuous,
             )
             for task in tasks
         ]
@@ -148,10 +161,12 @@ class PulpSchedulingVariables(PulpVariables):
         for task_id in range(self.n_tasks):
             start_value = get_value(self.start_times[task_id])
 
-            start_time = int(start_value) if start_value is not None else -1
+            start_time = round(start_value) if start_value is not None else -1
             machine_id = -1
             for machine_id in range(self.n_machines):
-                if get_value(self.assignments[task_id][machine_id]):
+                if get_value(self.assignments[task_id][machine_id]) > 1 / len(
+                    self.assignments[task_id]
+                ):
                     break
 
             assignments.append((machine_id, start_time))

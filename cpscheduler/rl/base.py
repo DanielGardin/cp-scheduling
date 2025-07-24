@@ -1,10 +1,9 @@
 from warnings import warn
+from pathlib import Path
 
 from typing import Any, Self
 from collections.abc import Iterable
-from torch.types import Device
-
-from pathlib import Path
+from torch.types import Device, Tensor
 
 import numpy as np
 
@@ -25,6 +24,7 @@ import tqdm
 
 from .buffer import Buffer
 from .utils import set_seed, get_device
+from .protocols import Policy
 
 logging.basicConfig(
     level=logging.INFO,
@@ -75,8 +75,12 @@ def extend_logs(logs: dict[str, list[Any]], new_logs: dict[str, Any]) -> None:
 class BaseAlgorithm(Module, ABC):
     writer: SummaryWriter
 
-    def __init__(self, buffer: Buffer, device: Device) -> None:
+    def __init__(
+        self, buffer: Buffer, policy: Policy[Tensor, Tensor], device: Device
+    ) -> None:
         super().__init__()
+
+        self.policy = policy
 
         self.buffer = buffer
         self.buffer.to(get_device(device))
@@ -268,14 +272,21 @@ class BaseAlgorithm(Module, ABC):
     def validate(self) -> dict[str, Any]:
         return {}
 
-    def save_checkpoint(self, path: str | Path) -> None:
-        torch.save(self.state_dict(), path)
-        logger.info(f"Checkpoint saved to {path}")
+    def save_checkpoint(self, filename: str | Path) -> None:
+        if isinstance(self.policy, Module):
+            torch.save(
+                self.policy.state_dict(),
+                f"{filename}.pth",
+            )
 
-    # TODO: Separate the state_dict for each module
+        else:
+            torch.save(self.policy, f"{filename}.pkl")
+
+        logger.info(f"Checkpoint saved to {filename}")
+
     def end_experiment(self) -> None:
         if self.save_model:
-            model_path = Path(self.writer.get_logdir()) / "model.pth"
+            model_path = Path(self.writer.get_logdir()) / "policy"
             self.save_checkpoint(model_path)
 
         if self.config is not None:
@@ -284,22 +295,6 @@ class BaseAlgorithm(Module, ABC):
                 import json
 
                 json.dump(self.config, f, indent=4)
-
-            # This is the implementation of writer.add_hparams, but for some reason,
-            # it creates a new SummaryWriter instead of using the existing one.
-            metric_dict = self.get_last_metrics()
-
-            exp, ssi, sei = hparams(
-                hparam_dict=self.config,
-                metric_dict=metric_dict,
-            )
-
-            self.writer.file_writer.add_summary(exp)  # type: ignore
-            self.writer.file_writer.add_summary(ssi)  # type: ignore
-            self.writer.file_writer.add_summary(sei)  # type: ignore
-
-            for tag, value in metric_dict.items():
-                self.writer.add_scalar(tag, value, global_step=self.global_step)
 
         if hasattr(self, "writer"):
             self.writer.close()
