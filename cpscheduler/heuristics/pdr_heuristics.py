@@ -12,6 +12,7 @@ from cpscheduler.environment.utils import convert_to_list
 from cpscheduler.environment.instructions import SingleAction
 
 
+
 def sample_gumbel() -> float:
     """Sample from Gumbel(0, 1) using inverse transform sampling."""
     u = random.random()
