@@ -39,7 +39,7 @@ class InstanceWrapper(Wrapper[_Obs, _Act, _Obs, _Act], ABC):
     ):
         super().__init__(env)
 
-        instance_config = self.parse_options(seed, initial_config)
+        instance_config = self._parse_options(seed, initial_config)
 
         if instance_config is not None:
             wrapped_env = unwrap_env(self.env)
@@ -50,7 +50,7 @@ class InstanceWrapper(Wrapper[_Obs, _Act, _Obs, _Act], ABC):
     def get_observation_space(self) -> Space[_Obs]:
         return self.env.get_wrapper_attr("get_observation_space")()  # type: ignore[no-any-return]
 
-    def parse_options(
+    def _parse_options(
         self, seed: int | None, options: Options
     ) -> InstanceConfig | None:
         instance_config: InstanceConfig | None = None
@@ -104,7 +104,7 @@ class InstanceWrapper(Wrapper[_Obs, _Act, _Obs, _Act], ABC):
         options: Options = None,
     ) -> tuple[_Obs, dict[str, Any]]:
         previously_loaded = self.get_wrapper_attr("loaded")
-        instance_config = self.parse_options(seed, options)
+        instance_config = self._parse_options(seed, options)
 
         obs, info = super().reset(
             seed=seed, options=dict(instance_config) if instance_config else None
