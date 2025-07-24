@@ -14,7 +14,7 @@ steps, rendering the environment, and exporting the scheduling model.
 from warnings import warn
 
 from typing import Any
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 
 from mypy_extensions import u8, i64
 
@@ -43,7 +43,10 @@ from .instructions import (
 from .schedule_setup import ScheduleSetup, setups
 from .constraints import Constraint, constraints
 from .objectives import Objective, objectives
+from .metrics import Metric
+
 from .utils import convert_to_list
+
 
 from ._render import Renderer, PlotlyRenderer
 
@@ -113,6 +116,8 @@ class SchedulingEnv:
     objective: Objective
     data: SchedulingData
 
+    metrics: dict[str, Metric[Any]]
+
     # Environment dynamic variables
     tasks: Tasks
     schedule: dict[TASK_ID, list[Instruction]]
@@ -124,6 +129,7 @@ class SchedulingEnv:
         constraints: Iterable[Constraint] | None = None,
         objective: Objective | None = None,
         instance_config: InstanceConfig | None = None,
+        metrics: Mapping[str, Metric[Any]] | None = None,
         *,
         render_mode: Renderer | str | None = None,
         allow_preemption: bool = False,
@@ -140,6 +146,11 @@ class SchedulingEnv:
 
         if objective is None:
             objective = Objective()
+
+        self.metrics = {}
+        if metrics is not None:
+            for name, metric in metrics.items():
+                self.add_metric(name, metric)
 
         self.set_objective(objective)
 
@@ -199,6 +210,10 @@ class SchedulingEnv:
             objective.export_data(self.data)
 
         self.objective = objective
+
+    def add_metric(self, name: str, metric: Metric[Any]) -> None:
+        "Add a metric to the environment."
+        self.metrics[name] = metric
 
     def set_instance(
         self,
@@ -261,6 +276,12 @@ class SchedulingEnv:
         self.objective.import_data(self.data)
         self.objective.export_data(self.data)
 
+        for metric in self.metrics.values():
+            # Workaround for using Objective as a Metric
+            # Check how to handle this better in the future
+            if hasattr(metric, "import_data"):
+                getattr(metric, "import_data")(self.data)
+
         self.tasks.add_tasks(self.data)
         self.loaded = True
 
@@ -280,6 +301,10 @@ class SchedulingEnv:
         return {
             "n_queries": len(self.query_times),
             "current_time": int(self.current_time),
+            **{
+                metric_name: metric(self.current_time, self.tasks, self.data)
+                for metric_name, metric in self.metrics.items()
+            },
         }
 
     def _propagate(self) -> None:

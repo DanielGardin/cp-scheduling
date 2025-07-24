@@ -6,13 +6,14 @@ the CPScheduler scheduling environment.
 """
 
 from typing import Any
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 
 from gymnasium import Env, Space
 
+from cpscheduler.environment import SchedulingEnv, ScheduleSetup, Constraint, Objective
+from cpscheduler.environment.metrics import Metric
 from cpscheduler.environment._common import InstanceConfig, ObsType
 from cpscheduler.environment.instructions import ActionType
-from cpscheduler.environment import SchedulingEnv, ScheduleSetup, Constraint, Objective
 from cpscheduler.environment._render import Renderer
 
 from .gym_utils import infer_collection_space
@@ -31,6 +32,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         constraints: Iterable[Constraint] | None = None,
         objective: Objective | None = None,
         instance_config: InstanceConfig | None = None,
+        metrics: Mapping[str, Metric[Any]] | None = None,
         *,
         render_mode: Renderer | str | None = None,
         allow_preemption: bool = False,
@@ -42,6 +44,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
             constraints=constraints,
             objective=objective,
             instance_config=instance_config,
+            metrics=metrics,
             render_mode=render_mode,
             allow_preemption=allow_preemption,
         )
