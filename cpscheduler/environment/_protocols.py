@@ -1,14 +1,4 @@
-from typing import (
-    Any,
-    Final,
-    TypeAlias,
-    SupportsInt,
-    SupportsFloat,
-    Hashable,
-    Iterator,
-    Protocol,
-    runtime_checkable,
-)
+from typing import Protocol, runtime_checkable
 
 from .data import SchedulingData
 

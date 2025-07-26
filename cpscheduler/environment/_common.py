@@ -79,6 +79,7 @@ class InstanceConfig(TypedDict):
     processing_times: NotRequired[ProcessTimeAllowedTypes]
     job_instance: NotRequired[InstanceTypes]
     job_feature: NotRequired[str]
+    machine_instance: NotRequired[InstanceTypes]
 
 
 class EnvSerialization(TypedDict):

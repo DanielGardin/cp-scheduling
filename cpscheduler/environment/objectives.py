@@ -60,7 +60,9 @@ class Objective:
         """
         return 0
 
-    def __call__(self, time: int, tasks: Tasks, data: SchedulingData, objective: float) -> float:
+    def __call__(
+        self, time: int, tasks: Tasks, data: SchedulingData, objective: float
+    ) -> float:
         "Call the objective function to get the current value."
         return self.get_current(time, tasks)
 

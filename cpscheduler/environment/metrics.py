@@ -20,7 +20,10 @@ class Metric(Protocol[_T]):
         self, time: int, tasks: Tasks, data: SchedulingData, objective: float
     ) -> _T: ...
 
-def machine_utilization(time: int, tasks: Tasks, data: SchedulingData, objective: float) -> float:
+
+def machine_utilization(
+    time: int, tasks: Tasks, data: SchedulingData, objective: float
+) -> float:
     """
     Calculate the percentage of time that machines are utilized during the scheduling period.
     """
@@ -33,7 +36,9 @@ def machine_utilization(time: int, tasks: Tasks, data: SchedulingData, objective
     return data.n_machines * busy_time / total_time if total_time > 0 else 1
 
 
-def max_preemptions(time: int, tasks: Tasks, data: SchedulingData, objective: float) -> int:
+def max_preemptions(
+    time: int, tasks: Tasks, data: SchedulingData, objective: float
+) -> int:
     "Calculate the maximum number of preemption switches that occurred during the scheduling period."
     max_switches = 0
     for task in tasks:
@@ -244,9 +249,12 @@ class OptimalReferenceMetrics(ReferenceScheduleMetrics):
 
     The additional metrics are:
     """
+
     def __init__(
         self,
-        optimal_schedule: Mapping[Int, Int] | Iterable[tuple[Int, Int]] | str | None = None,
+        optimal_schedule: (
+            Mapping[Int, Int] | Iterable[tuple[Int, Int]] | str | None
+        ) = None,
         optimal_value: float = 0.0,
     ):
         super().__init__(optimal_schedule if optimal_schedule else {})
@@ -269,4 +277,4 @@ class OptimalReferenceMetrics(ReferenceScheduleMetrics):
         Calculate the optimality gap of the current schedule compared to the optimal schedule.
         The optimality gap is defined as the ratio of the regret to the optimal value.
         """
-        return objective / (self.optimal_value + 1e-9) - 1.
+        return objective / (self.optimal_value + 1e-9) - 1.0
