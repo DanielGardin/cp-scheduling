@@ -65,6 +65,10 @@ class PermutationActionWrapper(SchedulingActionWrapper[_Obs, Iterable[Int]]):
         super().__init__(env)
 
         self.instruction = "execute" if strict else "submit"
+
+        if job_oriented:
+            self.instruction += " job"
+
         self.job_oriented = job_oriented
 
     def get_action_space(self) -> Space[Iterable[Int]]:

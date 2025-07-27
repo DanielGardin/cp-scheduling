@@ -14,7 +14,7 @@ steps, rendering the environment, and exporting the scheduling model.
 from warnings import warn
 
 from typing import Any
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 
 from mypy_extensions import u8, i64
 
@@ -43,7 +43,11 @@ from .instructions import (
 from .schedule_setup import ScheduleSetup, setups
 from .constraints import Constraint, constraints
 from .objectives import Objective, objectives
+from .metrics import Metric
+
+from ._protocols import ImportableMetric
 from .utils import convert_to_list
+
 
 from ._render import Renderer, PlotlyRenderer
 
@@ -113,6 +117,8 @@ class SchedulingEnv:
     objective: Objective
     data: SchedulingData
 
+    metrics: dict[str, Metric[Any]]
+
     # Environment dynamic variables
     tasks: Tasks
     schedule: dict[TASK_ID, list[Instruction]]
@@ -124,6 +130,7 @@ class SchedulingEnv:
         constraints: Iterable[Constraint] | None = None,
         objective: Objective | None = None,
         instance_config: InstanceConfig | None = None,
+        metrics: Mapping[str, Metric[Any]] | None = None,
         *,
         render_mode: Renderer | str | None = None,
         allow_preemption: bool = False,
@@ -140,6 +147,11 @@ class SchedulingEnv:
 
         if objective is None:
             objective = Objective()
+
+        self.metrics = {}
+        if metrics is not None:
+            for name, metric in metrics.items():
+                self.add_metric(name, metric)
 
         self.set_objective(objective)
 
@@ -159,12 +171,13 @@ class SchedulingEnv:
         )
 
         if instance_config is not None:
-            instance = instance_config.get("instance", {})
-            processing_times = instance_config.get("processing_times", None)
-            job_instance = instance_config.get("job_instance", {})
-            job_feature = instance_config.get("job_feature", "")
-
-            self.set_instance(instance, processing_times, job_instance, job_feature)
+            self.set_instance(
+                instance=instance_config.get("instance", {}),
+                processing_times=instance_config.get("processing_times", None),
+                job_instance=instance_config.get("job_instance", None),
+                job_feature=instance_config.get("job_feature", ""),
+                machine_instance=instance_config.get("machine_instance", None),
+            )
 
     def _dispatch_render(self, render_model: str | None) -> Renderer:
         "Dispatch the renderer based on the render model."
@@ -199,6 +212,10 @@ class SchedulingEnv:
             objective.export_data(self.data)
 
         self.objective = objective
+
+    def add_metric(self, name: str, metric: Metric[Any]) -> None:
+        "Add a metric to the environment."
+        self.metrics[name] = metric
 
     def set_instance(
         self,
@@ -261,6 +278,10 @@ class SchedulingEnv:
         self.objective.import_data(self.data)
         self.objective.export_data(self.data)
 
+        for metric in self.metrics.values():
+            if isinstance(metric, ImportableMetric):
+                metric.import_data(self.data)
+
         self.tasks.add_tasks(self.data)
         self.loaded = True
 
@@ -277,10 +298,19 @@ class SchedulingEnv:
 
     def _get_info(self) -> InfoType:
         "Retrieve additional information about the environment."
-        return {
+        objective_value = self._get_objective()
+
+        info = {
             "n_queries": len(self.query_times),
             "current_time": int(self.current_time),
         }
+
+        for metric_name, metric in self.metrics.items():
+            info[metric_name] = metric(
+                self.current_time, self.tasks, self.data, objective_value
+            )
+
+        return info
 
     def _propagate(self) -> None:
         "Propagate the new bounds through the constraints"
@@ -301,12 +331,13 @@ class SchedulingEnv:
         self, *, options: dict[str, Any] | InstanceConfig | None = None
     ) -> tuple[ObsType, InfoType]:
         if options is not None:
-            instance = options.get("instance", {})
-            processing_times = options.get("processing_times", None)
-            job_instance = options.get("job_instance", {})
-            job_feature = options.get("job_feature", "")
-
-            self.set_instance(instance, processing_times, job_instance, job_feature)
+            self.set_instance(
+                instance=options.get("instance", {}),
+                processing_times=options.get("processing_times", None),
+                job_instance=options.get("job_instance", None),
+                job_feature=options.get("job_feature", ""),
+                machine_instance=options.get("machine_instance", None),
+            )
 
         if not self.loaded:
             raise ValueError("Environment not loaded. Please set an instance first.")
@@ -400,25 +431,9 @@ class SchedulingEnv:
         self, action: str | Instruction, args: tuple[int, ...]
     ) -> None:
         "Add a single instruction to the schedule."
-        if action in ("execute", "submit") and 0 < len(args) < 3:
-            task = args[0]
-            machines = self.tasks[task].machines
+        instruction, time = parse_instruction(action, args, self.tasks)
 
-            if len(machines) == 1:
-                args = (task, int(machines[0]), *args[1:])
-
-            elif len(args) != 2:
-                raise ValueError(
-                    f"Task {task} has multiple machines assigned: {machines}. "
-                    "Please specify the machine to execute on."
-                )
-
-        if action == "advance" and len(args) == 0:
-            args = (-1,)
-
-        instruction, time = parse_instruction(action, args)
-
-        if time != -1 and time < self.current_time:
+        if 0 <= time < self.current_time:
             warn(
                 f"Scheduled instruction {instruction} with arguments {args} is in the past. \
                 It will be executed immediately."

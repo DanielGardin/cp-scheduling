@@ -7,9 +7,8 @@ import random
 from abc import ABC, abstractmethod
 from mypy_extensions import mypyc_attr
 
+from cpscheduler.environment._common import ObsType, Status
 from cpscheduler.environment.utils import convert_to_list
-
-ObsType = tuple[dict[str, list[Any]], dict[str, list[Any]]]
 
 
 def sample_gumbel() -> float:
@@ -39,14 +38,14 @@ class PriorityDispatchingRule(ABC):
         raise NotImplementedError
 
     def filter_tasks(self, tasks: dict[str, list[Any]]) -> dict[str, list[Any]]:
-        filter_mask = [status != "completed" for status in tasks["status"]]
-
-        filtered_tasks = {
-            key: [value for value, mask in zip(values, filter_mask) if mask]
-            for key, values in tasks.items()
+        return {
+            feature: [
+                value
+                for value, status in zip(values, tasks["status"])
+                if status < Status.COMPLETED
+            ]
+            for feature, values in tasks.items()
         }
-
-        return filtered_tasks
 
     def get_priority(
         self, obs: ObsType, current_time: int | None = None

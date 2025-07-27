@@ -8,8 +8,6 @@ interface for rendering tasks.
 
 from typing import Any
 
-from mypy_extensions import mypyc_attr
-
 from .tasks import Tasks
 from .data import SchedulingData
 
@@ -22,7 +20,6 @@ except ImportError:
     glasbey_dark = None
 
 
-@mypyc_attr(allow_interpreted_subclasses=True)
 class Renderer:
     "Renderer base class for visualizing task schedules."
 

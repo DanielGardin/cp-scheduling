@@ -62,12 +62,14 @@ MachineDataTypes: TypeAlias = DataFrameLike | Mapping[Any, Iterable[Any]]
 
 ObsType: TypeAlias = tuple[dict[str, list[Any]], dict[str, list[Any]]]
 
+InfoType: TypeAlias = dict[str, Any]
 
-class InfoType(TypedDict):
-    "Type for the info dictionary in the environment."
+# TODO: With the addition of metrics, this might need to be updated
+# class InfoType(TypedDict, total=False):
+#     "Type for the info dictionary in the environment."
 
-    n_queries: int
-    current_time: int
+#     n_queries: int
+#     current_time: int
 
 
 class InstanceConfig(TypedDict):
@@ -77,6 +79,7 @@ class InstanceConfig(TypedDict):
     processing_times: NotRequired[ProcessTimeAllowedTypes]
     job_instance: NotRequired[InstanceTypes]
     job_feature: NotRequired[str]
+    machine_instance: NotRequired[InstanceTypes]
 
 
 class EnvSerialization(TypedDict):
@@ -87,3 +90,25 @@ class EnvSerialization(TypedDict):
     objective: dict[str, Any]
 
     instance: NotRequired[InstanceConfig]
+
+
+class Status:
+    "Possible statuses of a task at a given time."
+
+    # awaiting:  time < start_lb[0] or waiting for a machine
+    AWAITING: Final[u8] = 0
+
+    # available: time < start_lb[0] and can be executed
+    AVAILABLE: Final[u8] = 1
+
+    # executing: start_lb[i] <= time < start_lb[i] + duration[i] for some i
+    EXECUTING: Final[u8] = 2
+
+    # paused:    start_lb[i] + duration[i] < = time < start_lb[i+1] for some i
+    PAUSED: Final[u8] = 3
+
+    # completed: time >= start_lb[-1] + duration[-1]
+    COMPLETED: Final[u8] = 4
+
+    # unknown status
+    UNKNOWN: Final[u8] = 5

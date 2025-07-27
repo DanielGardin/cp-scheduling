@@ -2,6 +2,7 @@ __all__ = [
     # Observation Wrappers
     "TabularObservationWrapper",
     "CPStateWrapper",
+    "ArrayObservationWrapper",
     # Action Wrappers
     "PermutationActionWrapper",
     # Misc Wrappers
@@ -11,6 +12,7 @@ __all__ = [
 from .obs_wrappers import (
     TabularObservationWrapper,
     CPStateWrapper,
+    ArrayObservationWrapper,
 )
 
 from .act_wrappers import PermutationActionWrapper

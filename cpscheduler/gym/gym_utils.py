@@ -1,56 +1,62 @@
-from typing import overload, Any
-from collections.abc import Mapping
+from typing import Any
+from collections.abc import Mapping, Iterable
+
+from functools import singledispatch
 
 import numpy as np
-from gymnasium.spaces import Space, Dict, Tuple, Box, MultiBinary, Text, Sequence
+
+from gymnasium.spaces import Space, Dict, Tuple, Box, MultiBinary, Text
 
 from cpscheduler.environment._common import MAX_INT, MIN_INT
-from cpscheduler.environment.utils import is_iterable_type
 
 
-@overload
-def infer_collection_space(obs: Mapping[Any, Any]) -> Dict: ...
+@singledispatch
+def create_list_space(elem: Any, size: int) -> Space[Any]:
+    "Create a Gymnasium space for a list of a specific type and size."
+    raise NotImplementedError(f"Unsupported type {type(elem)} for creating list space.")
 
 
-@overload
-def infer_collection_space(obs: tuple[Any, ...]) -> Tuple: ...
+@create_list_space.register
+def _(elem: str, size: int) -> Space[tuple[str, ...]]:
+    "Create a Gymnasium space for a list of strings."
+    return Tuple(Text(max_length=100) for _ in range(size))
 
 
-@overload
-def infer_collection_space(obs: list[str]) -> Tuple: ...
+@create_list_space.register
+def _(elem: int, size: int) -> Space[Iterable[int]]:
+    "Create a Gymnasium space for a list of integers."
+    return Box(low=int(MIN_INT), high=int(MAX_INT), shape=(size,), dtype=np.int64)
 
 
-@overload
-def infer_collection_space(obs: list[int] | list[float]) -> Box: ...
+@create_list_space.register
+def _(elem: float, size: int) -> Space[Iterable[float]]:
+    "Create a Gymnasium space for a list of floats."
+    return Box(low=-np.inf, high=np.inf, shape=(size,), dtype=np.float64)
 
 
-@overload
-def infer_collection_space(obs: list[bool]) -> MultiBinary: ...
+@create_list_space.register
+def _(elem: bool, size: int) -> Space[Iterable[bool]]:
+    "Create a Gymnasium space for a list of booleans."
+    return MultiBinary(size)
 
 
-def infer_collection_space(obs: Any) -> Space[Any]:
+# This function can be extended to support more types as needed.
+
+
+def infer_collection_space(
+    obs: Mapping[Any, Any] | tuple[Any, ...] | Iterable[Any],
+) -> Space[Any]:
     "Infer the Gymnasium space of a collection based on its elements."
 
     if isinstance(obs, Mapping):
         return Dict({key: infer_collection_space(value) for key, value in obs.items()})
 
     if isinstance(obs, tuple):
-        return Tuple([infer_collection_space(elem) for elem in obs])
+        return Tuple(infer_collection_space(elem) for elem in obs)
 
     n = sum(1 for _ in obs)
 
-    if is_iterable_type(obs, str):
-        return Sequence(Text(max_length=100), stack=True)
+    if n == 0:
+        return Tuple([])
 
-    if is_iterable_type(obs, int):
-        return Box(low=int(MIN_INT), high=int(MAX_INT), shape=(n,), dtype=np.int64)
-
-    if is_iterable_type(obs, float):
-        return Box(low=-np.inf, high=np.inf, shape=(n,), dtype=np.float64)
-
-    if is_iterable_type(obs, bool):
-        return MultiBinary(n)
-
-    raise TypeError(
-        f"Unsupported type {type(obs)} for inferring Gymnasium space. Is it a collection?"
-    )
+    return create_list_space(next(iter(obs)), n)

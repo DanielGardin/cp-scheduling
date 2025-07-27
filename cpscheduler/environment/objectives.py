@@ -60,6 +60,12 @@ class Objective:
         """
         return 0
 
+    def __call__(
+        self, time: int, tasks: Tasks, data: SchedulingData, objective: float
+    ) -> float:
+        "Call the objective function to get the current value."
+        return self.get_current(time, tasks)
+
     def get_entry(self) -> str:
         "Produce the γ entry for the constraint."
         return ""

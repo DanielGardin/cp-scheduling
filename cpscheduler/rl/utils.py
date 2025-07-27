@@ -1,4 +1,4 @@
-from torch.types import Device
+from torch.types import Device, Tensor
 
 from torch.nn import Module
 import torch
@@ -52,3 +52,20 @@ def soft_update(
         target_param.data.copy_(
             tau * source_param.data + (1.0 - tau) * target_param.data
         )
+
+
+def mean_features(x: Tensor, keepdim: bool = False) -> Tensor:
+    """
+    Compute the mean of the features in the input tensor.
+
+    Parameters
+    ----------
+    x : Tensor
+        Input tensor of shape (batch_size, num_features).
+
+    Returns
+    -------
+    Tensor
+        A tensor containing the mean of each feature across the batch.
+    """
+    return x.mean(dim=tuple(range(x.ndim - 1)), keepdim=keepdim)

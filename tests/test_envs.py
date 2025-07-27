@@ -4,6 +4,8 @@ from typing_extensions import Unpack
 
 from common import env_setup, TEST_INSTANCES
 
+from cpscheduler.environment._common import Status
+
 
 @pytest.mark.env
 @pytest.mark.parametrize("instance_name", TEST_INSTANCES)
@@ -13,8 +15,8 @@ def test_reset(instance_name: str) -> None:
     (obs, _), info = env.reset()
 
     assert info["current_time"] == 0
-    assert obs["status"][0] == "available"
-    assert obs["status"][1] == "awaiting"
+    assert obs["status"][0] == Status.AVAILABLE
+    assert obs["status"][1] == Status.AWAITING
 
     env.step(
         [
@@ -29,8 +31,8 @@ def test_reset(instance_name: str) -> None:
     (new_obs, _), new_info = env.reset()
 
     assert new_info["current_time"] == 0
-    assert new_obs["status"][0] == "available"
-    assert new_obs["status"][1] == "awaiting"
+    assert new_obs["status"][0] == Status.AVAILABLE
+    assert new_obs["status"][1] == Status.AWAITING
 
 
 @pytest.mark.env
@@ -46,7 +48,7 @@ def test_execute(instance_name: str) -> None:
     assert not terminated
     assert not truncated
     assert info["current_time"] == 0
-    assert obs["status"][0] == "executing"
+    assert obs["status"][0] == Status.EXECUTING
 
     advancing_time = max(obs["processing_time"])
     (new_obs, _), new_reward, new_terminated, new_truncated, new_info = env.step(
@@ -57,7 +59,7 @@ def test_execute(instance_name: str) -> None:
     assert not new_truncated
     assert new_info["current_time"] == advancing_time
     assert new_reward == -int(env.tasks[0].get_duration())
-    assert new_obs["status"][0] == "completed"
+    assert new_obs["status"][0] == Status.COMPLETED
 
 
 @pytest.mark.env
@@ -75,10 +77,10 @@ def test_submit(instance_name: str) -> None:
 
     (obs, _), reward, terminated, truncated, info = env.step(actions)
 
-    assert obs["status"][0] == "completed"
-    assert obs["status"][1] == "completed"
+    assert obs["status"][0] == Status.COMPLETED
+    assert obs["status"][1] == Status.COMPLETED
 
-    assert obs["status"][2] == "executing"
+    assert obs["status"][2] == Status.EXECUTING
 
     assert (
         info["current_time"]
@@ -89,9 +91,9 @@ def test_submit(instance_name: str) -> None:
         [("complete", 2)]
     )
 
-    assert new_obs["status"][0] == "completed"
-    assert new_obs["status"][1] == "completed"
-    assert new_obs["status"][2] == "completed"
+    assert new_obs["status"][0] == Status.COMPLETED
+    assert new_obs["status"][1] == Status.COMPLETED
+    assert new_obs["status"][2] == Status.COMPLETED
 
     assert new_info["current_time"] == env.tasks[2].get_end()
     assert new_reward + reward == -int(env.tasks[2].get_end())
@@ -108,7 +110,7 @@ def test_execute2(instance_name: str) -> None:
 
     (obs, _), reward, terminated, truncated, info = env.step(actions)
 
-    assert obs["status"] == ["completed"] * len(env.tasks)
+    assert obs["status"] == [Status.COMPLETED] * len(env.tasks)
     assert terminated
 
 
@@ -123,7 +125,7 @@ def test_submit2(instance_name: str) -> None:
 
     (obs, _), reward, terminated, truncated, info = env.step(actions)
 
-    assert obs["status"] == ["completed"] * len(env.tasks)
+    assert obs["status"] == [Status.COMPLETED] * len(env.tasks)
     assert terminated
 
 
@@ -148,11 +150,11 @@ def test_pause(instance_name: str) -> None:
 
     (obs, _), reward, terminated, truncated, info = env.step(actions)
 
-    assert obs["status"][0] == "paused"
+    assert obs["status"][0] == Status.PAUSED
     assert info["current_time"] == 2 * (processing_time // 2)
     # assert obs['remaining_time'][0] == processing_time - processing_time//2
 
     (new_obs, _), new_reward, new_terminated, new_truncated, new_info = env.step()
 
-    assert new_obs["status"][0] == "completed"
+    assert new_obs["status"][0] == Status.COMPLETED
     assert new_info["current_time"] == processing_time + processing_time // 2
