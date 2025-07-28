@@ -70,9 +70,13 @@ class ReferenceScheduleMetrics:
     reference_schedule: dict[TASK_ID, TIME]
 
     def __init__(
-        self, reference_schedule: Mapping[Int, Int] | Iterable[tuple[Int, Int]] | str
+        self,
+        reference_schedule: Mapping[Int, Int] | Iterable[tuple[Int, Int]] | str,
+        permutation_based: bool = False,
     ):
         self.tag = ""
+        self.permutation_based = permutation_based
+        self.force_import = True
 
         if isinstance(reference_schedule, str):
             self.tag = reference_schedule
@@ -88,6 +92,30 @@ class ReferenceScheduleMetrics:
                 TASK_ID(task_id): TIME(time)
                 for task_id, time in reference_schedule.items()
             }
+
+    def __call__(
+        self, time: int, tasks: Tasks, data: SchedulingData, objective: float
+    ) -> dict[str, float]:
+        self.force_import = False
+
+        metrics = {
+            "mean_displacement_distance": self.mean_displacement_distance(
+                time, tasks, data, objective
+            ),
+            "order_preservation": self.order_preservation(
+                time, tasks, data, objective
+            )
+        }
+
+        if self.permutation_based:
+            metrics.update({
+                "hamming_accuracy": self.hamming_accuracy(time, tasks, data, objective),
+                "kendall_tau": self.kendall_tau(time, tasks, data, objective)
+            })
+
+        self.force_import = True
+
+        return metrics
 
     def import_data(self, data: SchedulingData) -> None:
         if self.tag:
@@ -106,7 +134,8 @@ class ReferenceScheduleMetrics:
         The displacement distance is the sum of the absolute differences between
         the scheduled and actual start times of each task.
         """
-        self.import_data(data)
+        if self.force_import:
+            self.import_data(data)
 
         distance = 0
         count = 0
@@ -135,7 +164,8 @@ class ReferenceScheduleMetrics:
         This metric is the ratio of the number of tasks that maintain their order
         in the reference schedule to the total number of tasks.
         """
-        self.import_data(data)
+        if self.force_import:
+            self.import_data(data)
 
         reference_count = 0
         preserved_count = 0
@@ -188,7 +218,9 @@ class ReferenceScheduleMetrics:
         schedule. This metric is the number of tasks that are in the same position
         as in the reference schedule.
         """
-        self.import_data(data)
+        if self.force_import:
+            self.import_data(data)
+
         reference_perm, actual_perm = self._get_permutations(tasks)
 
         hamming_count = 0
@@ -205,7 +237,9 @@ class ReferenceScheduleMetrics:
         Calculate the Kendall Tau distance between the reference schedule and the actual schedule.
         This metric is the number of discordant pairs in the schedule.
         """
-        self.import_data(data)
+        if self.force_import:
+            self.import_data(data)
+
         reference_perm, actual_perm = self._get_permutations(tasks)
         n = len(reference_perm)
 

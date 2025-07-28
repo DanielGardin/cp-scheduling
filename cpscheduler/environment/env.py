@@ -131,11 +131,11 @@ class SchedulingEnv:
         objective: Objective | None = None,
         instance_config: InstanceConfig | None = None,
         metrics: Mapping[str, Metric[Any]] | None = None,
-        *,
         render_mode: Renderer | str | None = None,
         allow_preemption: bool = False,
     ):
         self.loaded = False
+        self.force_reset = True
 
         self.preemptive = allow_preemption
         self.setup = machine_setup
@@ -284,6 +284,7 @@ class SchedulingEnv:
 
         self.tasks.add_tasks(self.data)
         self.loaded = True
+        self.force_reset = True
 
     ## Environment state retrieval methods
     def _get_state(self) -> ObsType:
@@ -306,9 +307,15 @@ class SchedulingEnv:
         }
 
         for metric_name, metric in self.metrics.items():
-            info[metric_name] = metric(
+            metric_value = metric(
                 self.current_time, self.tasks, self.data, objective_value
             )
+
+            if isinstance(metric_value, Mapping):
+                info.update(metric_value)
+
+            else:
+                info[metric_name] = metric_value
 
         return info
 
@@ -341,6 +348,8 @@ class SchedulingEnv:
 
         if not self.loaded:
             raise ValueError("Environment not loaded. Please set an instance first.")
+
+        self.force_reset = False
 
         self.schedule.clear()
         self.schedule[-1] = []
@@ -535,6 +544,12 @@ class SchedulingEnv:
         self,
         action: ActionType = None,
     ) -> tuple[ObsType, float, bool, bool, InfoType]:
+        if self.force_reset or not self.loaded:
+            raise RuntimeError(
+                "Environment was not reset after loading an instance, or wasn't loaded. "
+                "Please call reset() after set_instance(...)."
+            )
+
         if is_single_action(action):
             single_args = tuple(map(int, action[1:]))
             self._schedule_instruction(action[0], single_args)
