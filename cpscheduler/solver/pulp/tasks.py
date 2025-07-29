@@ -14,8 +14,15 @@ from pulp import (
 
 from cpscheduler.environment.tasks import Tasks
 from cpscheduler.environment.data import SchedulingData
+from cpscheduler.environment.env import SchedulingEnv
 
-from .pulp_utils import PULP_EXPRESSION, get_value, pulp_add_constraint
+from .pulp_utils import (
+    PULP_EXPRESSION,
+    get_value,
+    pulp_add_constraint,
+    set_initial_value,
+    get_initial_value,
+)
 
 
 def count_variables(variables: Iterable[Any] | PULP_EXPRESSION | int) -> int:
@@ -43,8 +50,8 @@ class PulpVariables(ABC):
         self.n_machines = data.n_machines
 
         self.integral = integral
-        self._initializing_base = False
 
+        self._initializing_base = False
         self.objective: PULP_EXPRESSION = LpAffineExpression()
 
     def __setattr__(self, name: str, value: Any) -> None:
@@ -73,6 +80,12 @@ class PulpVariables(ABC):
         Get the assignments of tasks to machines.
         Returns:
             A list of tuples where each tuple contains the machine ID and the start time of the task.
+        """
+
+    def warm_start(self, env: SchedulingEnv) -> None:
+        """
+        Warm start the variables based on the current environment state.
+        This method can be overridden by subclasses to implement specific warm start logic.
         """
 
     def set_objective(self, objective_var: PULP_EXPRESSION) -> None:
@@ -155,7 +168,49 @@ class PulpSchedulingVariables(PulpVariables):
     def end_times(self) -> list[PULP_EXPRESSION | int]:
         return self._end_times
 
-    def get_assignments(self) -> list[tuple[int, int]]:
+    def warm_start(self, env: SchedulingEnv) -> None:
+        """
+        Warm start the variables based on the current environment state.
+        This method sets the start times and assignments based on the current schedule.
+        """
+        super().warm_start(env)
+
+        for task_id in env.tasks.fixed_tasks:
+            task = env.tasks[task_id]
+
+            start_var = self.start_times[task_id]
+            end_var = self._end_times[task_id]
+
+            if isinstance(start_var, LpVariable):
+                start_time = task.get_start()
+
+                start_var.setInitialValue(start_time, check=False)
+
+            if isinstance(end_var, LpVariable):
+                end_time = task.get_end()
+
+                end_var.setInitialValue(end_time)
+
+            machine_assignment = task.get_assignment()
+            for machine_id in range(self.n_machines):
+                assignment_var = self.assignments[task_id][machine_id]
+
+                set_initial_value(
+                    assignment_var,
+                    1 if machine_assignment == machine_id else 0,
+                    check=False,
+                )
+
+        for (task_i, task_j), order in self.orders.items():
+            start_i = get_initial_value(self.start_times[task_i])
+            start_j = get_initial_value(self.start_times[task_j])
+
+            if start_i <= start_j:
+                set_initial_value(order, 1, check=False)
+
+            else:
+                set_initial_value(order, 0, check=False)
+
         assignments: list[tuple[int, int]] = []
 
         for task_id in range(self.n_tasks):
@@ -173,7 +228,14 @@ class PulpSchedulingVariables(PulpVariables):
 
         return assignments
 
+    def has_order(self, i: int, j: int) -> bool:
+        "Check if an order i < j, or j < i exists between two tasks."
+        return (i, j) in self.orders or (j, i) in self.orders
+
     def get_order(self, task_prec: int, task_succ: int) -> PULP_EXPRESSION | int:
+        if task_prec == task_succ:
+            return 1
+
         if task_prec < task_succ:
             i, j = task_prec, task_succ
             ordered = True

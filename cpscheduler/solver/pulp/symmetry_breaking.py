@@ -4,7 +4,7 @@ from functools import partial
 from pulp import LpProblem, LpAffineExpression, lpSum
 
 from .tasks import PulpVariables, PulpSchedulingVariables, PulpTimetable
-from .pulp_utils import implication_pulp
+from .pulp_utils import implication_pulp, and_pulp, pulp_add_constraint
 
 from cpscheduler.environment.env import SchedulingEnv
 
@@ -101,9 +101,10 @@ def machine_ordering_symmetry_breaking(
     ]
 
     for machine_id in range(n_machines - 1):
-        model.addConstraint(
-            processing_times[machine_id] >= processing_times[machine_id + 1],
-            name=f"SB_machine_{machine_id}_order",
+        pulp_add_constraint(
+            model,
+            processing_times[machine_id] <= processing_times[machine_id + 1],
+            name=f"SB_machine_{machine_id}_load",
         )
 
 

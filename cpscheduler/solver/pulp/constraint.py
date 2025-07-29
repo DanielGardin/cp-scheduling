@@ -68,7 +68,16 @@ def _(
     constraint: DisjunctiveConstraint, variables: PulpSchedulingVariables
 ) -> ModelExport:
     def export_model(model: LpProblem, tasks: Tasks, data: SchedulingData) -> None:
-        for _, group_tasks in constraint.disjunctive_groups.items():
+        group_constraint: dict[int, list[int]] = {}
+
+        for task_id, groups in enumerate(constraint.task_groups):
+            for group in groups:
+                if group not in group_constraint:
+                    group_constraint[group] = []
+
+                group_constraint[group].append(task_id)
+
+        for group_tasks in group_constraint.values():
             for i, j in combinations(group_tasks, 2):
                 implication_pulp(
                     model,

@@ -1,6 +1,8 @@
 from typing import Any, Literal
 from typing_extensions import Unpack
 
+from copy import deepcopy
+
 from pulp import LpProblem, LpSolver, LpMinimize, LpMaximize, LpSolution
 import pulp as pl
 
@@ -62,6 +64,8 @@ class PulpSolver:
             env, formulation, symmetry_breaking, integral, integral_var
         )
 
+        self._config: SolverConfig = {}
+
     @classmethod
     def available_solvers(cls) -> list[str]:
         solvers_list: list[str] = pl.listSolvers(onlyAvailable=True)
@@ -73,7 +77,7 @@ class PulpSolver:
         solver_tag: str,
         **solver_kwargs: Unpack[SolverConfig],
     ) -> None:
-        config = parse_solver_config(solver_kwargs)
+        config = parse_solver_config(self._config | solver_kwargs)
 
         self._solver = pl.getSolver(
             solver_tag,
@@ -104,9 +108,6 @@ class PulpSolver:
                 model, tasks, data, integral, integral_var
             )
 
-        if symmetry_breaking:
-            employ_symmetry_breaking_pulp(env, model, variables)
-
         export_setup_pulp(env.setup, variables)(model, tasks, data)
 
         for constraint in env.constraints.values():
@@ -120,7 +121,28 @@ class PulpSolver:
 
             model.setObjective(objective_var)
 
+        if symmetry_breaking:
+            employ_symmetry_breaking_pulp(env, model, variables)
+
         return model, variables
+
+    def warm_start(self, action: ActionType) -> None:
+        """
+        Set the initial values for the variables based on the provided action.
+
+        Args:
+            action: ActionType
+                The action to be used for warm starting the solver.
+        """
+        env_copy = deepcopy(self.env)
+
+        if env_copy.force_reset:
+            env_copy.reset()
+
+        env_copy.step(action)
+        self.variables.warm_start(env_copy)
+
+        self._config["warm_start"] = True
 
     def solve(
         self,
