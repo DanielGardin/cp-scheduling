@@ -75,7 +75,9 @@ class PulpVariables(ABC):
         """
 
     @abstractmethod
-    def get_assignments(self) -> list[tuple[int, int]]:
+    def get_assignments(
+        self, task_ids: Iterable[int] | None = None
+    ) -> list[tuple[int, int]]:
         """
         Get the assignments of tasks to machines.
         Returns:
@@ -211,9 +213,15 @@ class PulpSchedulingVariables(PulpVariables):
             else:
                 set_initial_value(order, 0, check=False)
 
+    def get_assignments(
+        self, task_ids: Iterable[int] | None = None
+    ) -> list[tuple[int, int]]:
         assignments: list[tuple[int, int]] = []
 
-        for task_id in range(self.n_tasks):
+        if task_ids is None:
+            task_ids = range(self.n_tasks)
+
+        for task_id in task_ids:
             start_value = get_value(self.start_times[task_id])
 
             start_time = round(start_value) if start_value is not None else -1
@@ -318,10 +326,15 @@ class PulpTimetable(PulpVariables):
             for task_id in range(self.n_tasks)
         ]
 
-    def get_assignments(self) -> list[tuple[int, int]]:
+    def get_assignments(
+        self, task_ids: Iterable[int] | None = None
+    ) -> list[tuple[int, int]]:
         assignments: list[tuple[int, int]] = []
 
-        for task_id in range(self.n_tasks):
+        if task_ids is None:
+            task_ids = range(self.n_tasks)
+
+        for task_id in task_ids:
             for machine_id in range(self.n_machines):
                 for time in range(self.T):
                     if get_value(self.start_times[task_id][machine_id][time]):

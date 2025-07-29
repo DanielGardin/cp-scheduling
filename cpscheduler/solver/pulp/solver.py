@@ -1,4 +1,5 @@
 from typing import Any, Literal
+from collections.abc import Sequence
 from typing_extensions import Unpack
 
 from copy import deepcopy
@@ -7,7 +8,7 @@ from pulp import LpProblem, LpSolver, LpMinimize, LpMaximize, LpSolution
 import pulp as pl
 
 from cpscheduler.environment import SchedulingEnv, Objective
-from cpscheduler.environment.instructions import ActionType
+from cpscheduler.environment.instructions import SingleAction, ActionType
 from cpscheduler.common import unwrap_env
 
 from .tasks import PulpVariables, PulpSchedulingVariables, PulpTimetable
@@ -148,7 +149,7 @@ class PulpSolver:
         self,
         solver_tag: str | None = None,
         **solver_kwargs: Unpack[SolverConfig],
-    ) -> tuple[ActionType, float, int]:
+    ) -> tuple[Sequence[SingleAction], float, int]:
         if solver_tag is not None:
             self.set_solver(solver_tag, **solver_kwargs)
 
@@ -159,16 +160,14 @@ class PulpSolver:
                 f"Solver failed with status: {LpSolution[self.model.status]}"
             )
 
+        assignments = self.variables.get_assignments(self.env.tasks.awaiting_tasks)
+
         actions = [
-            (
-                ("execute", task_id, machine_id, start_time)
-                if machine_id != -1
-                else ("execute", task_id, start_time)
-            )
-            for task_id, (machine_id, start_time) in enumerate(
-                self.variables.get_assignments()
-            )
+            ("execute", task_id, machine_id, start_time)
+            for task_id, (machine_id, start_time) in enumerate(assignments)
         ]
+
+        actions.sort(key=lambda x: (x[-1], x[1]))
 
         objective_value = self.variables.get_objective_value()
 
