@@ -111,7 +111,7 @@ class Execute(Instruction):
         id: TASK_ID,
         machine: MACHINE_ID = -1,
         job_oriented: bool = False,
-        wait: bool = False
+        wait: bool = False,
     ):
         self.id = id
         self.machine = machine
@@ -163,6 +163,7 @@ class Execute(Instruction):
         return Signal(
             Action.WAIT if self.wait else Action.SKIPPED,
         )
+
 
 class Submit(Execute):
     "Submits a task to a specific machine. If the task cannot be executed, it is waited for."
@@ -301,12 +302,14 @@ def parse_args(
 
 
 n_max_args: Final[int] = 3
+
+
 def parse_instruction(
     action: str | Instruction, args: tuple[int, ...], tasks: Tasks
 ) -> tuple[Instruction, TIME]:
     "Parse raw instruction arguments into an Instruction object and the scheduled time."
     if isinstance(action, Instruction):
-        time, = parse_args(args, 1)
+        (time,) = parse_args(args, 1)
         instruction = action
 
     else:
@@ -324,9 +327,7 @@ def parse_instruction(
             else:
                 id, machine, time = parse_args(args, 3)
 
-            instruction = Execute(
-                id, machine, job_oriented, wait=is_submit
-            )
+            instruction = Execute(id, machine, job_oriented, wait=is_submit)
 
         elif action == "pause":
             task_id, time = parse_args(args, 2)
@@ -344,12 +345,12 @@ def parse_instruction(
             instruction = Advance(to_time)
 
         elif action == "query":
-            time, = parse_args(args, 1)
+            (time,) = parse_args(args, 1)
 
             instruction = Query()
 
         elif action == "clear":
-            time, = parse_args(args, 1)
+            (time,) = parse_args(args, 1)
             instruction = Clear()
 
         else:

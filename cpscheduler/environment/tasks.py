@@ -56,6 +56,12 @@ class Bounds:
         self.lb = lb
         self.ub = ub
 
+    def __reduce__(self) -> tuple[type, tuple[TIME, TIME]]:
+        return (self.__class__, (self.lb, self.ub))
+
+    def __setstate__(self, state: tuple[TIME, TIME]) -> None:
+        self.lb, self.ub = state
+
     def reset(self) -> None:
         "Reset the bounds to their initial state."
         self.lb = 0
@@ -103,13 +109,13 @@ class Task:
 
     n_parts: PART_ID
 
-    def __init__(self, task_id: TASK_ID, job_id: TASK_ID, data: SchedulingData) -> None:
+    # Data can be set to None whenever we want to create a task without any data
+    # This is useful to pickle tasks before even the data is available
+    def __init__(
+        self, task_id: TASK_ID, job_id: TASK_ID, data: SchedulingData | None = None
+    ) -> None:
         self.task_id = task_id
         self.job_id = job_id
-        self._remaining_times = data.processing_times[task_id].copy()
-        self.machines = list(self._remaining_times.keys())
-
-        self.start_bounds = {machine: Bounds() for machine in self.machines}
 
         self.starts = []
         self.durations = []
@@ -118,10 +124,56 @@ class Task:
         self.fixed = False
         self.n_parts = 0
 
-        # Task data
-        self.weight: float = data.get_task_data("weight", task_id, 0.0)
-        self.due_date: TIME = data.get_task_data("due_date", task_id, MAX_INT)
-        self.release_date: TIME = data.get_task_data("release_date", task_id, 0)
+        self._remaining_times = {}
+        if data is not None:
+            self._remaining_times.update(data.processing_times[task_id].copy())
+
+            # Task data
+            self.weight: float = data.get_task_data("weight", task_id, 0.0)
+            self.due_date: TIME = data.get_task_data("due_date", task_id, MAX_INT)
+            self.release_date: TIME = data.get_task_data("release_date", task_id, 0)
+
+        else:
+            self.weight = 0.0
+            self.due_date = MAX_INT
+            self.release_date = 0
+
+        self.machines = list(self._remaining_times.keys())
+        self.start_bounds = {machine: Bounds() for machine in self.machines}
+
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (self.task_id, self.job_id, None),
+            (
+                self.starts,
+                self.durations,
+                self.assignments,
+                self.fixed,
+                self.n_parts,
+                self._remaining_times,
+                self.start_bounds,
+                self.weight,
+                self.due_date,
+                self.release_date,
+            ),
+        )
+
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        (
+            self.starts,
+            self.durations,
+            self.assignments,
+            self.fixed,
+            self.n_parts,
+            self._remaining_times,
+            self.start_bounds,
+            self.weight,
+            self.due_date,
+            self.release_date,
+        ) = state
+
+        self.machines = list(self._remaining_times.keys())
 
     def __repr__(self) -> str:
         representation = f"Task(id={self.task_id}"
@@ -429,6 +481,28 @@ class Tasks:
         self.fixed_tasks = set()
 
         self.allow_preemption = allow_preemption
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        return (
+            self.__class__,
+            (self.allow_preemption,),
+            (
+                self.tasks,
+                self.jobs,
+                self.awaiting_tasks,
+                self.transition_tasks,
+                self.fixed_tasks,
+            ),
+        )
+
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        (
+            self.tasks,
+            self.jobs,
+            self.awaiting_tasks,
+            self.transition_tasks,
+            self.fixed_tasks,
+        ) = state
 
     @property
     def n_tasks(self) -> TASK_ID:

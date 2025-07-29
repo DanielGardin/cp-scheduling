@@ -1,4 +1,4 @@
-from typing import Protocol, TypeVar, runtime_checkable
+from typing import Any, Protocol, TypeVar
 from collections.abc import Mapping, Iterable
 
 from .tasks import Tasks
@@ -93,6 +93,12 @@ class ReferenceScheduleMetrics:
                 for task_id, time in reference_schedule.items()
             }
 
+    def __reduce__(self) -> tuple[Any, ...]:
+        return (
+            self.__class__,
+            (self.tag if self.tag else self.reference_schedule, self.permutation_based),
+        )
+
     def __call__(
         self, time: int, tasks: Tasks, data: SchedulingData, objective: float
     ) -> dict[str, float]:
@@ -102,16 +108,18 @@ class ReferenceScheduleMetrics:
             "mean_displacement_distance": self.mean_displacement_distance(
                 time, tasks, data, objective
             ),
-            "order_preservation": self.order_preservation(
-                time, tasks, data, objective
-            )
+            "order_preservation": self.order_preservation(time, tasks, data, objective),
         }
 
         if self.permutation_based:
-            metrics.update({
-                "hamming_accuracy": self.hamming_accuracy(time, tasks, data, objective),
-                "kendall_tau": self.kendall_tau(time, tasks, data, objective)
-            })
+            metrics.update(
+                {
+                    "hamming_accuracy": self.hamming_accuracy(
+                        time, tasks, data, objective
+                    ),
+                    "kendall_tau": self.kendall_tau(time, tasks, data, objective),
+                }
+            )
 
         self.force_import = True
 
@@ -290,10 +298,18 @@ class OptimalReferenceMetrics(ReferenceScheduleMetrics):
             Mapping[Int, Int] | Iterable[tuple[Int, Int]] | str | None
         ) = None,
         optimal_value: float = 0.0,
+        permutation_based: bool = False,
     ):
-        super().__init__(optimal_schedule if optimal_schedule else {})
+        optimal_schedule = optimal_schedule if optimal_schedule else {}
+
+        super().__init__(optimal_schedule, permutation_based)
 
         self.optimal_value = optimal_value
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        _, (schedule, perm) = super().__reduce__()
+
+        return (self.__class__, (schedule, self.optimal_value, perm))
 
     def regret(
         self, time: int, tasks: Tasks, data: SchedulingData, objective: float

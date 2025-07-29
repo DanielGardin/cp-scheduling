@@ -81,6 +81,10 @@ class Objective:
         "Deserialize the objective from a dictionary."
         return cls(**data)
 
+    def __reduce__(self) -> tuple[Any, ...]:
+        "Support for pickling the objective."
+        return (self.__class__, tuple(self.to_dict().values()))
+
 
 class ComposedObjective(Objective):
     """
@@ -124,6 +128,10 @@ class ComposedObjective(Objective):
     def import_data(self, data: SchedulingData) -> None:
         for objective in self.objectives:
             objective.import_data(data)
+
+    def export_data(self, data: SchedulingData) -> None:
+        for objective in self.objectives:
+            objective.export_data(data)
 
     def get_current(self, time: TIME, tasks: Tasks) -> float:
         current_value = 0.0

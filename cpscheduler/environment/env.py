@@ -179,6 +179,67 @@ class SchedulingEnv:
                 machine_instance=instance_config.get("machine_instance", None),
             )
 
+    def __reduce__(self) -> Any:
+        """
+        Custom reduce method to ensure the environment can be pickled and deep copied correctly.
+        This is necessary for compatibility with multiprocessing and other serialization
+        mechanisms.
+        """
+        return (
+            self.__class__,
+            (
+                self.setup,
+                None,
+                None,
+                None,  # instance_config will be set later
+                self.metrics,
+                self.renderer,
+                self.preemptive,
+            ),
+            (
+                self.constraints,
+                self.objective,
+                self.data,
+                self.tasks,
+                self.schedule,
+                self.current_time,
+                self.advancing_to,
+                self.query_times,
+                self.loaded,
+                self.force_reset,
+            ),
+        )
+
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        """
+        Custom setstate method to restore the environment's state after unpickling.
+        This is necessary to ensure the environment is correctly initialized with its
+        data and tasks.
+        """
+        constraints: dict[str, Constraint]
+        (
+            constraints,
+            self.objective,
+            self.data,
+            self.tasks,
+            self.schedule,
+            self.current_time,
+            self.advancing_to,
+            self.query_times,
+            self.loaded,
+            self.force_reset,
+        ) = state
+
+        for name, constraint in constraints.items():
+            if self.loaded:
+                constraint.import_data(self.data)
+                constraint.refresh(self.current_time, self.tasks)
+
+            self.constraints[name] = constraint
+
+        if self.loaded:
+            self.objective.import_data(self.data)
+
     def _dispatch_render(self, render_model: str | None) -> Renderer:
         "Dispatch the renderer based on the render model."
         if render_model is None:
@@ -645,7 +706,8 @@ class SchedulingEnv:
             "objective": objective_dict,
         }
 
-        serialization_dict["instance"] = self.data.to_dict()
+        if export_data:
+            serialization_dict["instance"] = self.data.to_dict()
 
         return serialization_dict
 
@@ -663,8 +725,11 @@ class SchedulingEnv:
             for cls_name, constraint_data in data["constraints"].items()
         ]
 
+        instance_data = data["instance"] if "instance" in data else None
+
         return SchedulingEnv(
             machine_setup=setup,
             constraints=constraints_list,
             objective=objective,
+            instance_config=instance_data,
         )

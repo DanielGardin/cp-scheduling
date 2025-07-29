@@ -79,14 +79,16 @@ class ScheduleSetup:
 
     def to_dict(self) -> dict[str, Any]:
         "Serialize the setup to a dictionary."
-        raise NotImplementedError(
-            f"{self.__class__.__name__} serialization is not implemented."
-        )
+        return {}
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Self:
         "Deserialize the setup from a dictionary."
         return cls(**data)
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        "Support for pickling the setup."
+        return (self.__class__, tuple(self.to_dict().values()))
 
 
 class SingleMachineSetup(ScheduleSetup):
@@ -419,13 +421,8 @@ class OpenShopSetup(ScheduleSetup):
         self.disjunctive = disjunctive
 
     def setup_constraints(self, data: SchedulingData) -> tuple[Constraint, ...]:
-        task_jobs: dict[int, list[int]] = {job: [] for job in range(data.n_jobs)}
-
-        for task_id, job_id in enumerate(data.job_ids):
-            task_jobs[job_id].append(task_id)
-
         task_disjunction = DisjunctiveConstraint(
-            task_jobs, name="setup_task_disjunctive"
+            data.job_ids, name="setup_task_disjunctive"
         )
 
         if not self.disjunctive:
