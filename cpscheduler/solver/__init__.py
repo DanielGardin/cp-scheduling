@@ -1,7 +1,3 @@
-__all__ = ["PulpSolver", "__compiled__"]
+__all__ = ["PulpSolver"]
 
 from .pulp import PulpSolver
-
-from .utils import is_compiled
-
-__compiled__ = is_compiled()

@@ -12,3 +12,7 @@ try:
 
 except ImportError:
     pass
+
+from .common import is_compiled
+
+__compiled__ = is_compiled()

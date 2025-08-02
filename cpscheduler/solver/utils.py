@@ -7,13 +7,6 @@ from math import lcm
 
 import asyncio
 
-
-def is_compiled() -> bool:
-    import cpscheduler.environment as _
-
-    return _.__file__.endswith(".so") or _.__file__.endswith(".pyd")
-
-
 TimeUnits = Literal["ms", "s", "m", "h", "d"]
 
 
