@@ -1,7 +1,8 @@
 from typing import Any, Literal, TypeAlias
 from collections.abc import Callable
-from torch import Tensor
+from torch.types import Tensor, Device
 
+from math import sqrt
 import random
 
 import numpy as np
@@ -31,10 +32,11 @@ class Reinforce(BaseAlgorithm):
         actor_optimizer: Optimizer,
         baseline: nn.Module | Baselines | None = None,
         /,
+        norm_returns: bool = False,
         mc_samples: int = 1,
         n_steps: int = 1,
         baseline_decay: float = 0.99,
-        device: str = "auto",
+        device: Device = "auto",
     ):
         self.obs_shape = obs_shape
         self.action_shape = action_shape
@@ -57,10 +59,13 @@ class Reinforce(BaseAlgorithm):
         self.envs = envs
         self.actor_optimizer = actor_optimizer
 
+        self.norm_returns = norm_returns
         self.mc_samples = mc_samples
         self.baseline = baseline
-        self.running_mean = torch.tensor(0)
-        self.baseline_decay = baseline_decay
+
+        self.running_mean = torch.tensor(0.0, device=self.device)
+        self.sqrd_sum = torch.tensor(0.0, device=self.device)
+        self.count = 0
 
     def compute_baseline(self, batch: TensorDict) -> Tensor:
         if self.baseline is None or self.baseline == "none":
@@ -68,13 +73,6 @@ class Reinforce(BaseAlgorithm):
 
         if isinstance(self.baseline, str):
             if self.baseline == "mean":
-                batch_mean = torch.mean(batch["returns"])
-
-                self.running_mean = (
-                    self.baseline_decay * self.running_mean
-                    + (1 - self.baseline_decay) * batch_mean
-                )
-
                 return self.running_mean
 
             if self.baseline == "greedy":
@@ -118,6 +116,19 @@ class Reinforce(BaseAlgorithm):
                     greedy_return=torch.tensor(greedy_returns).reshape(n_envs, 1),
                 )
 
+        batch_sum = np.sum(all_greedy_returns).item()
+        n_samples = self.mc_samples * n_envs
+
+        delta = batch_sum - self.running_mean
+
+        new_count = self.count + n_samples
+        self.running_mean = (self.count * self.running_mean + batch_sum) / new_count
+
+        sqrd_diff = np.sum((all_greedy_returns - batch_sum / n_samples) ** 2).item()
+
+        self.sqrd_sum += sqrd_diff + delta**2 * self.count * n_samples / new_count
+        self.count = new_count
+
         return {
             "rewards": all_greedy_returns,
         }
@@ -130,6 +141,11 @@ class Reinforce(BaseAlgorithm):
         baseline = self.compute_baseline(batch)
 
         advantages = returns - baseline
+
+        if self.norm_returns:
+            advantages /= self.sqrd_sum.sqrt()
+            advantages *= sqrt(self.count - 1)
+
         loss = torch.mean(-log_probs * advantages)
 
         self.actor_optimizer.zero_grad()
@@ -141,7 +157,7 @@ class Reinforce(BaseAlgorithm):
             "loss/actor": loss.item(),
         }
 
-    def end_experiment(self) -> None:
-        super().end_experiment()
+    def on_session_end(self) -> None:
+        super().on_session_end()
 
         self.envs.close()

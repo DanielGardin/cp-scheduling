@@ -4,6 +4,7 @@ from . import preprocessor
 from . import online
 from . import offline
 from . import policies
+from . import evaluation
 
 from .protocols import (
     Policy,
