@@ -11,7 +11,7 @@ import numpy as np
 import tyro
 from tyro.conf import arg
 
-from cpscheduler import SchedulingEnv, JobShopSetup
+from cpscheduler import SchedulingEnv, JobShopSetup, __compiled__
 from cpscheduler.instances import read_jsp_instance
 from cpscheduler.heuristics import ShortestProcessingTime
 
@@ -45,13 +45,6 @@ benchmark_times = {
     "ta70": 2.0,
     "ta80": 7.8,
 }
-
-
-def is_compiled() -> bool:
-    import cpscheduler.environment.env as env
-
-    return env.__file__.endswith(".so")
-
 
 def is_instance_present() -> bool:
     root = Path(__file__).parent
@@ -152,8 +145,9 @@ def test_speed(
     plot: bool
         If True, plot the benchmark results.
     """
+    
 
-    compiled = is_compiled()
+    compiled = __compiled__
     instance_present = is_instance_present()
 
     if not quiet:
