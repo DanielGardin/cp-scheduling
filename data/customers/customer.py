@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from typing import Any, Annotated
+from collections.abc import Iterable
 from pandas import DataFrame
 from numpy.typing import NDArray
 
@@ -324,6 +325,7 @@ if __name__ == "__main__":
 
             strategy = rng.choice(choices)
             pbar.set_postfix_str(f"Strategy: {strategy}")
+
 
             if strategy == "Optimal":
                 solver = PulpSolver(env)
