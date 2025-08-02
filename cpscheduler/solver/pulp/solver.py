@@ -58,11 +58,11 @@ class PulpSolver:
             raise ValueError("This version of the solver does not support preemption.")
 
         if tighten:
-            env.tasks.tighten_bounds(env.current_time)
+            self.env.tasks.tighten_bounds(self.env.current_time)
 
         self._solver: LpSolver | None = None
         self.model, self.variables = self.build_model(
-            env, formulation, symmetry_breaking, integral, integral_var
+            self.env, formulation, symmetry_breaking, integral, integral_var
         )
 
         self._config: SolverConfig = {}

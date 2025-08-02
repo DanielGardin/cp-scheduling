@@ -30,6 +30,8 @@ class SolverConfig(TypedDict, total=False):
     "Whether to use warm start for the solver."
     keep_files: NotRequired[bool]
     "Whether to keep the solver files after solving."
+    options: NotRequired[Sequence[str]]
+    "Additional solver options to pass to the solver."
     ...
 
 
