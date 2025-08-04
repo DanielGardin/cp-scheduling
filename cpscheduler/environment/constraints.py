@@ -19,7 +19,7 @@ import re
 
 from mypy_extensions import mypyc_attr
 
-from ._common import TASK_ID, TIME, Int, Float
+from ._common import TASK_ID, TIME, MACHINE_ID, Int, Float
 from .data import SchedulingData
 from .tasks import Tasks
 from .utils import convert_to_list, topological_sort, binary_search, is_iterable_type
@@ -115,8 +115,8 @@ class MachineConstraint(Constraint):
         changed_machines: set[int] = set()
         for task_id in tasks.transition_tasks:
             task = tasks[task_id]
-
             machine = task.get_assignment()
+
             self.machine_free[machine] = task.get_end()
             changed_machines.add(machine)
 
@@ -173,7 +173,7 @@ class PrecedenceConstraint(Constraint):
     """
 
     # original_precedence: dict[int, list[int]]
-    precedence: dict[TASK_ID, set[TASK_ID]]
+    precedence: dict[TASK_ID, list[TASK_ID]]
     original_order: list[TASK_ID]
 
     def __init__(
@@ -185,7 +185,7 @@ class PrecedenceConstraint(Constraint):
         super().__init__(name)
 
         self.precedence = {
-            TASK_ID(task): {TASK_ID(child) for child in children}
+            TASK_ID(task): [TASK_ID(child) for child in children]
             for task, children in precedence.items()
         }
 

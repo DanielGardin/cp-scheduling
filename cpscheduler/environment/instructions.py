@@ -117,8 +117,6 @@ class Execute(Instruction):
         self.machine = machine
         self.job_oriented = job_oriented
         self.wait = wait
-        self.job_oriented = job_oriented
-        self.wait = wait
 
     def __repr__(self) -> str:
         instruction = "Submit" if self.wait else "Execute"
@@ -179,6 +177,7 @@ class Submit(Execute):
         job_oriented: bool = False,
     ):
         super().__init__(id, machine, job_oriented, wait=True)
+
 
 class Pause(Instruction):
     "Pauses a task if it is currently executing. Can only be used in preemptive scheduling."
@@ -303,6 +302,8 @@ def parse_args(
 
 
 n_max_args: Final[int] = 3
+
+
 def parse_instruction(
     action: str | Instruction, args: tuple[int, ...], tasks: Tasks
 ) -> tuple[Instruction, TIME]:
@@ -318,13 +319,6 @@ def parse_instruction(
         if is_execute or is_submit:
             job_oriented = action.endswith("job")
 
-            if 0 < len(args) <= 2 and len(tasks[args[0]].machines) == 1:
-                # If the task has only one machine, we can skip the machine argument
-                machine = tasks[args[0]].machines[0]
-                id, time = parse_args(args, 2)
-
-            else:
-                id, machine, time = parse_args(args, 3)
             if 0 < len(args) <= 2 and len(tasks[args[0]].machines) == 1:
                 # If the task has only one machine, we can skip the machine argument
                 machine = tasks[args[0]].machines[0]
