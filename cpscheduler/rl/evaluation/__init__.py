@@ -1,5 +1,6 @@
 __all__ = [
     "confidence_interval",
+    "ccdf"
 ]
 
-from .general import confidence_interval
+from .general import ccdf, confidence_interval

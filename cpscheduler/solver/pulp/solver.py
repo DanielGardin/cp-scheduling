@@ -1,11 +1,14 @@
 from typing import Any, Literal
+from collections.abc import Sequence
 from typing_extensions import Unpack
+
+from copy import deepcopy
 
 from pulp import LpProblem, LpSolver, LpMinimize, LpMaximize, LpSolution
 import pulp as pl
 
 from cpscheduler.environment import SchedulingEnv, Objective
-from cpscheduler.environment.instructions import ActionType
+from cpscheduler.environment.instructions import SingleAction, ActionType
 from cpscheduler.common import unwrap_env
 
 from .tasks import PulpVariables, PulpSchedulingVariables, PulpTimetable
@@ -55,12 +58,14 @@ class PulpSolver:
             raise ValueError("This version of the solver does not support preemption.")
 
         if tighten:
-            env.tasks.tighten_bounds(env.current_time)
+            self.env.tasks.tighten_bounds(self.env.current_time)
 
         self._solver: LpSolver | None = None
         self.model, self.variables = self.build_model(
-            env, formulation, symmetry_breaking, integral, integral_var
+            self.env, formulation, symmetry_breaking, integral, integral_var
         )
+
+        self._config: SolverConfig = {}
 
     @classmethod
     def available_solvers(cls) -> list[str]:
@@ -73,7 +78,7 @@ class PulpSolver:
         solver_tag: str,
         **solver_kwargs: Unpack[SolverConfig],
     ) -> None:
-        config = parse_solver_config(solver_kwargs)
+        config = parse_solver_config(self._config | solver_kwargs)
 
         self._solver = pl.getSolver(
             solver_tag,
@@ -104,9 +109,6 @@ class PulpSolver:
                 model, tasks, data, integral, integral_var
             )
 
-        if symmetry_breaking:
-            employ_symmetry_breaking_pulp(env, model, variables)
-
         export_setup_pulp(env.setup, variables)(model, tasks, data)
 
         for constraint in env.constraints.values():
@@ -120,13 +122,34 @@ class PulpSolver:
 
             model.setObjective(objective_var)
 
+        if symmetry_breaking:
+            employ_symmetry_breaking_pulp(env, model, variables)
+
         return model, variables
+
+    def warm_start(self, action: ActionType) -> None:
+        """
+        Set the initial values for the variables based on the provided action.
+
+        Args:
+            action: ActionType
+                The action to be used for warm starting the solver.
+        """
+        env_copy = deepcopy(self.env)
+
+        if env_copy.force_reset:
+            env_copy.reset()
+
+        env_copy.step(action)
+        self.variables.warm_start(env_copy)
+
+        self._config["warm_start"] = True
 
     def solve(
         self,
         solver_tag: str | None = None,
         **solver_kwargs: Unpack[SolverConfig],
-    ) -> tuple[ActionType, float, int]:
+    ) -> tuple[Sequence[SingleAction], float, int]:
         if solver_tag is not None:
             self.set_solver(solver_tag, **solver_kwargs)
 
@@ -137,16 +160,14 @@ class PulpSolver:
                 f"Solver failed with status: {LpSolution[self.model.status]}"
             )
 
+        assignments = self.variables.get_assignments(self.env.tasks.awaiting_tasks)
+
         actions = [
-            (
-                ("execute", task_id, machine_id, start_time)
-                if machine_id != -1
-                else ("execute", task_id, start_time)
-            )
-            for task_id, (machine_id, start_time) in enumerate(
-                self.variables.get_assignments()
-            )
+            ("execute", task_id, machine_id, start_time)
+            for task_id, (machine_id, start_time) in enumerate(assignments)
         ]
+
+        actions.sort(key=lambda x: (x[-1], x[1]))
 
         objective_value = self.variables.get_objective_value()
 

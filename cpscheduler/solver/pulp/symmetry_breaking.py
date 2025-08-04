@@ -4,7 +4,7 @@ from functools import partial
 from pulp import LpProblem, LpAffineExpression, lpSum
 
 from .tasks import PulpVariables, PulpSchedulingVariables, PulpTimetable
-from .pulp_utils import implication_pulp
+from .pulp_utils import implication_pulp, and_pulp, pulp_add_constraint
 
 from cpscheduler.environment.env import SchedulingEnv
 
@@ -37,6 +37,8 @@ def employ_symmetry_breaking_pulp(
 ) -> None:
     if not isinstance(variables, PulpSchedulingVariables):
         return
+
+    start_lower_bound_symmetry_breaking(env, model, variables)
 
     if is_partition_problem(env):
         partition_symmetry_breaking(env, model, variables)
@@ -78,6 +80,48 @@ def partition_symmetry_breaking(
         tardiness_dominance_symmetry_breaking(env, model, variables)
 
 
+def start_lower_bound_symmetry_breaking(
+    env: SchedulingEnv, model: LpProblem, decision_vars: PulpSchedulingVariables
+) -> None:
+    lower_bounds = [LpAffineExpression() for _ in range(env.tasks.n_tasks)]
+
+    for (i, j), order in decision_vars.orders.items():
+        machine_i = set(env.tasks[i].machines)
+        machine_j = set(env.tasks[j].machines)
+
+        for machine in machine_i.intersection(machine_j):
+            allocate_forward = and_pulp(
+                model,
+                (
+                    decision_vars.assignments[i][machine],
+                    decision_vars.assignments[j][machine],
+                    order,
+                ),
+            )
+
+            lower_bounds[j] += env.tasks[i]._remaining_times[machine] * allocate_forward
+
+            allocate_backward = and_pulp(
+                model,
+                (
+                    decision_vars.assignments[i][machine],
+                    decision_vars.assignments[j][machine],
+                    1 - order,
+                ),
+            )
+
+            lower_bounds[i] += (
+                env.tasks[j]._remaining_times[machine] * allocate_backward
+            )
+
+    for task_id in range(env.tasks.n_tasks):
+        pulp_add_constraint(
+            model,
+            lower_bounds[task_id] <= decision_vars.start_times[task_id],
+            name=f"SB_start_lower_bound_{task_id}",
+        )
+
+
 def machine_ordering_symmetry_breaking(
     env: SchedulingEnv,
     model: LpProblem,
@@ -101,9 +145,10 @@ def machine_ordering_symmetry_breaking(
     ]
 
     for machine_id in range(n_machines - 1):
-        model.addConstraint(
-            processing_times[machine_id] >= processing_times[machine_id + 1],
-            name=f"SB_machine_{machine_id}_order",
+        pulp_add_constraint(
+            model,
+            processing_times[machine_id] <= processing_times[machine_id + 1],
+            name=f"SB_machine_{machine_id}_load",
         )
 
 

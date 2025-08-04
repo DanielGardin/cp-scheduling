@@ -68,7 +68,10 @@ class Constraint:
         "Reset the constraint to its initial state."
 
     def propagate(self, time: TIME, tasks: Tasks) -> None:
-        "Ensure the constraint is satisfied."
+        "Given a bound change, propagate the constraint to other tasks."
+
+    def refresh(self, time: TIME, tasks: Tasks) -> None:
+        "Updates constraint internal state when propagate cannot handle."
 
     def get_entry(self) -> str:
         "Produce the β entry for the constraint."
@@ -76,14 +79,16 @@ class Constraint:
 
     def to_dict(self) -> dict[str, Any]:
         "Serialize the objective to a dictionary."
-        raise NotImplementedError(
-            f"{self.__class__.__name__} serialization is not implemented."
-        )
+        return {"name": self.name}
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Self:
         "Deserialize the objective from a dictionary."
         return cls(**data)
+
+    def __reduce__(self) -> tuple[type[Self], tuple[Any, ...]]:
+        "Support for pickling the constraint."
+        return (self.__class__, tuple(self.to_dict().values()))
 
 
 class MachineConstraint(Constraint):
@@ -107,9 +112,7 @@ class MachineConstraint(Constraint):
             task = tasks[task_id]
 
             machine = task.get_assignment()
-            end_time = task.get_end()
-
-            self.machine_free[machine] = end_time
+            self.machine_free[machine] = task.get_end()
 
         for task_id in tasks.awaiting_tasks:
             task = tasks[task_id]
@@ -117,6 +120,19 @@ class MachineConstraint(Constraint):
             for machine in task.machines:
                 if task.get_start_lb(machine) < self.machine_free[machine]:
                     task.set_start_lb(self.machine_free[machine], machine)
+
+    def refresh(self, time: TIME, tasks: Tasks) -> None:
+        for machine in range(len(self.machine_free)):
+            self.machine_free[machine] = time
+
+        for task_id in tasks.fixed_tasks:
+            task = tasks[task_id]
+
+            for part in range(task.n_parts):
+                machine = task.get_assignment(part)
+
+                if task.get_end(part) > self.machine_free[machine]:
+                    self.machine_free[machine] = task.get_end(part)
 
     def is_complete(self, tasks: Tasks) -> bool:
         "Check if the machine constraint is complete."
@@ -260,6 +276,13 @@ class PrecedenceConstraint(Constraint):
             if task.is_completed(time):
                 self.topological_order.remove(task_id)
 
+    def refresh(self, time: TIME, tasks: Tasks) -> None:
+        self.reset(tasks)
+
+        for task_id in list(self.topological_order):
+            if tasks[task_id].is_completed(time):
+                self.topological_order.remove(task_id)
+
     def get_entry(self) -> str:
         intree = self.is_intree()
         outtree = self.is_outtree()
@@ -278,6 +301,15 @@ class PrecedenceConstraint(Constraint):
             graph += ", nwt"
 
         return graph
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "precedence": {
+                task_id: list(children) for task_id, children in self.precedence.items()
+            },
+            "no_wait": self.no_wait,
+            "name": self.name,
+        }
 
 
 class NoWait(PrecedenceConstraint):
@@ -305,6 +337,14 @@ class NoWait(PrecedenceConstraint):
     ):
         super().__init__(precedence, no_wait=True, name=name)
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "precedence": {
+                task_id: list(children) for task_id, children in self.precedence.items()
+            },
+            "name": self.name,
+        }
+
 
 class ConstantProcessingTime(Constraint):
     """
@@ -330,6 +370,12 @@ class ConstantProcessingTime(Constraint):
             for machine in data.processing_times[task_id]:
                 data.processing_times[task_id][machine] = self.processing_time
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "processing_time": self.processing_time,
+            "name": self.name,
+        }
+
 
 class DisjunctiveConstraint(Constraint):
     """
@@ -340,76 +386,90 @@ class DisjunctiveConstraint(Constraint):
     of group names to a list of task IDs, or as a string that refers to a column in the tasks data.
 
     Arguments:
-        disjunctive_groups: Mapping[_T, Iterable[int]] | str
-            A mapping of group names to a list of task IDs that belong to the group.
-            If a string is provided, it refers to a column in the tasks data that contains
-            the group names for each task.
+        disjunctive_groups: Iterable[Iterable[Int]] | str
+            ...
 
         name: Optional[str] = None
             An optional name for the constraint.
     """
 
-    original_disjunctive_groups: dict[Any, list[TASK_ID]]
+    task_groups: list[list[int]]
+
+    group_free: dict[int, TIME]
 
     def __init__(
         self,
-        disjunctive_groups: Mapping[Any, Iterable[Int]] | str,
+        task_groups: Iterable[Iterable[Int]] | Iterable[Int] | str,
         name: str | None = None,
     ):
         super().__init__(name)
 
-        if isinstance(disjunctive_groups, str):
-            self.tags["disjunctive_groups"] = disjunctive_groups
+        if isinstance(task_groups, str):
+            self.tags["task_groups"] = task_groups
+
+        elif is_iterable_type(task_groups, int):
+            self.task_groups = [[int(group)] for group in task_groups]
 
         else:
-            self.original_disjunctive_groups = {
-                group: convert_to_list(tasks, TASK_ID)
-                for group, tasks in disjunctive_groups.items()
-            }
+            self.task_groups = [convert_to_list(group, int) for group in task_groups]
 
     def import_data(self, data: SchedulingData) -> None:
-        if "disjunctive_groups" in self.tags:
-            groups = data.get_task_level_data(self.tags["disjunctive_groups"])
+        if "task_groups" in self.tags:
+            groups = data.get_task_level_data(self.tags["task_groups"])
 
-            self.original_disjunctive_groups = {}
+            self.task_groups = []
             for task_id in range(data.n_tasks):
                 group = groups[task_id]
 
-                if group not in self.original_disjunctive_groups:
-                    self.original_disjunctive_groups[group] = []
+                task_group = (
+                    convert_to_list(group, int)
+                    if isinstance(group, Iterable)
+                    else [int(group)]
+                )
 
-                self.original_disjunctive_groups[group].append(task_id)
+                self.task_groups.append(task_group)
 
     def reset(self, tasks: Tasks) -> None:
-        self.disjunctive_groups = {
-            group: group_tasks.copy()
-            for group, group_tasks in self.original_disjunctive_groups.items()
-        }
+        self.group_free = {}
+
+        for groups in self.task_groups:
+            for group in groups:
+                if group not in self.group_free:
+                    self.group_free[group] = 0
 
     def propagate(self, time: TIME, tasks: Tasks) -> None:
-        for group, task_ids in self.disjunctive_groups.items():
-            minimum_start_time = time
+        for task_id in tasks.transition_tasks:
+            task = tasks[task_id]
 
-            # We go in reverse order to avoid errors when removing tasks
-            for i in range(len(task_ids) - 1, -1, -1):
-                task = tasks[task_ids[i]]
+            for group in self.task_groups[task_id]:
+                self.group_free[group] = task.get_end()
 
-                if task.is_fixed():
-                    end_lb = task.get_end_lb()
-                    if end_lb > minimum_start_time:
-                        minimum_start_time = end_lb
+        for task_id in tasks.awaiting_tasks:
+            task = tasks[task_id]
 
-                if task.is_completed(time):
-                    self.disjunctive_groups[group].pop(i)
+            for group in self.task_groups[task_id]:
+                if task.get_start_lb(group) < self.group_free[group]:
+                    task.set_start_lb(self.group_free[group], group)
 
-            for task_id in self.disjunctive_groups[group]:
-                task = tasks[task_id]
+    def refresh(self, time: TIME, tasks: Tasks) -> None:
+        for group in self.group_free:
+            self.group_free[group] = time
 
-                if task.is_fixed():
-                    continue
+        for task_id in tasks.fixed_tasks:
+            task = tasks[task_id]
 
-                if task.get_start_lb() < minimum_start_time:
-                    task.set_start_lb(minimum_start_time)
+            for part in range(task.n_parts):
+                for group in self.task_groups[task_id]:
+                    if task.get_end(part) > self.group_free[group]:
+                        self.group_free[group] = task.get_end(part)
+
+    def to_dict(self) -> dict[str, Any]:
+        task_groups = self.tags.get("task_groups", self.task_groups)
+
+        return {
+            "task_groups": task_groups,
+            "name": self.name,
+        }
 
 
 class ReleaseDateConstraint(Constraint):
@@ -482,7 +542,7 @@ class ReleaseDateConstraint(Constraint):
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "release_dates": self.tags.get("release_time", "release_time"),
+            "release_dates": self.tags.get("release_time", self.release_dates),
             "name": self.name,
         }
 
@@ -557,7 +617,7 @@ class DeadlineConstraint(Constraint):
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "deadlines": self.tags.get("due_date", "due_date"),
+            "deadlines": self.tags.get("due_date", self.deadlines),
             "name": self.name,
         }
 
@@ -668,6 +728,20 @@ class ResourceConstraint(Constraint):
                 if task.get_start_lb() < minimum_start_time:
                     task.set_start_lb(minimum_start_time)
 
+    def refresh(self, time: TIME, tasks: Tasks) -> None:
+        raise NotImplementedError(
+            "Refresh method is not implemented for ResourceConstraint yet."
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "capacities": self.capacities,
+            "resources": (
+                list(self.tags.keys()) if self.tags else self.original_resources
+            ),
+            "name": self.name,
+        }
+
 
 # TODO: Check literature if the setup time only happens when in the same machine
 class SetupConstraint(Constraint):
@@ -731,3 +805,14 @@ class SetupConstraint(Constraint):
 
                 if task.get_end_lb() + setup_time > child.get_start_lb():
                     child.set_start_lb(task.get_end_lb() + setup_time)
+
+    def refresh(self, time: TIME, tasks: Tasks) -> None:
+        raise NotImplementedError(
+            "Refresh method is not implemented for SetupConstraint yet."
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "setup_times": self.setup_times,
+            "name": self.name,
+        }

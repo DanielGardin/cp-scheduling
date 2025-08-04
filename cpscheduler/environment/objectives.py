@@ -60,6 +60,12 @@ class Objective:
         """
         return 0
 
+    def __call__(
+        self, time: int, tasks: Tasks, data: SchedulingData, objective: float
+    ) -> float:
+        "Call the objective function to get the current value."
+        return self.get_current(time, tasks)
+
     def get_entry(self) -> str:
         "Produce the γ entry for the constraint."
         return ""
@@ -74,6 +80,10 @@ class Objective:
     def from_dict(cls, data: dict[str, Any]) -> Self:
         "Deserialize the objective from a dictionary."
         return cls(**data)
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        "Support for pickling the objective."
+        return (self.__class__, tuple(self.to_dict().values()))
 
 
 class ComposedObjective(Objective):
@@ -118,6 +128,10 @@ class ComposedObjective(Objective):
     def import_data(self, data: SchedulingData) -> None:
         for objective in self.objectives:
             objective.import_data(data)
+
+    def export_data(self, data: SchedulingData) -> None:
+        for objective in self.objectives:
+            objective.export_data(data)
 
     def get_current(self, time: TIME, tasks: Tasks) -> float:
         current_value = 0.0

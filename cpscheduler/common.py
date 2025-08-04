@@ -4,6 +4,10 @@ from cpscheduler.environment.env import SchedulingEnv
 
 MAX_ENV_DEPTH = 10  # Maximum depth for the environment wrapping
 
+def is_compiled() -> bool:
+    import cpscheduler.environment.env as _
+
+    return _.__file__.endswith(".so") or _.__file__.endswith(".pyd")
 
 def unwrap_env(env: Any | SchedulingEnv) -> SchedulingEnv:
     """

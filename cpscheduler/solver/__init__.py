@@ -1,5 +1,3 @@
-__all__ = [
-    "PulpSolver",
-]
+__all__ = ["PulpSolver"]
 
 from .pulp import PulpSolver

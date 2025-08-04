@@ -25,42 +25,23 @@ in the environment, change with caution.
 
 from warnings import warn
 
-from typing import Any, ClassVar
+from typing import Any
 from collections.abc import Iterator
 from typing_extensions import Self
 
 from mypy_extensions import u8
 
-from ._common import MIN_INT, MAX_INT, MACHINE_ID, TASK_ID, PART_ID, TIME, ObsType
+from ._common import (
+    MIN_INT,
+    MAX_INT,
+    MACHINE_ID,
+    TASK_ID,
+    PART_ID,
+    TIME,
+    ObsType,
+    Status,
+)
 from .data import SchedulingData
-
-
-class Status:
-    "Possible statuses of a task at a given time."
-
-    # awaiting:  time < start_lb[0] or waiting for a machine
-    AWAITING: ClassVar[u8] = 0
-
-    # executing: start_lb[i] <= time < start_lb[i] + duration[i] for some i
-    EXECUTING: ClassVar[u8] = 1
-
-    # paused:    start_lb[i] + duration[i] < = time < start_lb[i+1] for some i
-    PAUSED: ClassVar[u8] = 2
-
-    # completed: time >= start_lb[-1] + duration[-1]
-    COMPLETED: ClassVar[u8] = 3
-
-    # unknown status
-    UNKNOWN: ClassVar[u8] = 4
-
-
-status_str = {
-    Status.AWAITING: "awaiting",
-    Status.EXECUTING: "executing",
-    Status.PAUSED: "paused",
-    Status.COMPLETED: "completed",
-    Status.UNKNOWN: "unknown",
-}
 
 
 def ceil_div(a: TIME, b: TIME) -> TIME:
@@ -74,6 +55,12 @@ class Bounds:
     def __init__(self, lb: TIME = 0, ub: TIME = MAX_INT) -> None:
         self.lb = lb
         self.ub = ub
+
+    def __reduce__(self) -> tuple[type, tuple[TIME, TIME]]:
+        return (self.__class__, (self.lb, self.ub))
+
+    def __setstate__(self, state: tuple[TIME, TIME]) -> None:
+        self.lb, self.ub = state
 
     def reset(self) -> None:
         "Reset the bounds to their initial state."
@@ -122,13 +109,13 @@ class Task:
 
     n_parts: PART_ID
 
-    def __init__(self, task_id: TASK_ID, job_id: TASK_ID, data: SchedulingData) -> None:
+    # Data can be set to None whenever we want to create a task without any data
+    # This is useful to pickle tasks before even the data is available
+    def __init__(
+        self, task_id: TASK_ID, job_id: TASK_ID, data: SchedulingData | None = None
+    ) -> None:
         self.task_id = task_id
         self.job_id = job_id
-        self._remaining_times = data.processing_times[task_id].copy()
-        self.machines = list(self._remaining_times.keys())
-
-        self.start_bounds = {machine: Bounds() for machine in self.machines}
 
         self.starts = []
         self.durations = []
@@ -137,10 +124,56 @@ class Task:
         self.fixed = False
         self.n_parts = 0
 
-        # Task data
-        self.weight: float = data.get_task_data("weight", task_id, 0.0)
-        self.due_date: TIME = data.get_task_data("due_date", task_id, MAX_INT)
-        self.release_date: TIME = data.get_task_data("release_date", task_id, 0)
+        self._remaining_times = {}
+        if data is not None:
+            self._remaining_times.update(data.processing_times[task_id].copy())
+
+            # Task data
+            self.weight: float = data.get_task_data("weight", task_id, 0.0)
+            self.due_date: TIME = data.get_task_data("due_date", task_id, MAX_INT)
+            self.release_date: TIME = data.get_task_data("release_date", task_id, 0)
+
+        else:
+            self.weight = 0.0
+            self.due_date = MAX_INT
+            self.release_date = 0
+
+        self.machines = list(self._remaining_times.keys())
+        self.start_bounds = {machine: Bounds() for machine in self.machines}
+
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (self.task_id, self.job_id, None),
+            (
+                self.starts,
+                self.durations,
+                self.assignments,
+                self.fixed,
+                self.n_parts,
+                self._remaining_times,
+                self.start_bounds,
+                self.weight,
+                self.due_date,
+                self.release_date,
+            ),
+        )
+
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        (
+            self.starts,
+            self.durations,
+            self.assignments,
+            self.fixed,
+            self.n_parts,
+            self._remaining_times,
+            self.start_bounds,
+            self.weight,
+            self.due_date,
+            self.release_date,
+        ) = state
+
+        self.machines = list(self._remaining_times.keys())
 
     def __repr__(self) -> str:
         representation = f"Task(id={self.task_id}"
@@ -196,6 +229,35 @@ class Task:
     def get_assignment(self, part: PART_ID = -1) -> MACHINE_ID:
         "Get the machine assigned to a given part of the task."
         return self.assignments[part]
+
+    def get_processed_time(self, time: TIME, machine: MACHINE_ID = -1) -> TIME:
+        """
+        Get the time processed by the task at a given time.
+        If machine is specified, return the time processed by that machine.
+        """
+        processed_time = 0
+        if machine != -1:
+            if machine not in self._remaining_times:
+                return processed_time
+
+            for part in range(self.n_parts):
+                if self.get_assignment(part) == machine:
+                    if self.get_start(part) <= time < self.get_end(part):
+                        processed_time += time - self.get_start(part)
+
+                    if time >= self.get_end(part):
+                        processed_time += self.get_duration(part)
+
+            return processed_time
+
+        for part in range(self.n_parts):
+            if self.get_start(part) <= time < self.get_end(part):
+                processed_time += time - self.get_start(part)
+
+            if time >= self.get_end(part):
+                processed_time += self.get_duration(part)
+
+        return processed_time
 
     def get_start_lb(self, machine: MACHINE_ID = -1) -> TIME:
         "Get the current lower bound for the starting time in a machine."
@@ -343,7 +405,7 @@ class Task:
 
         if not self.fixed:
             if len(self.starts) == 0 or time < self.get_start(0):
-                return Status.AWAITING
+                return Status.AVAILABLE if self.is_available(time) else Status.AWAITING
 
             return Status.PAUSED
 
@@ -399,15 +461,6 @@ class Task:
         "Check if the task is completed at a given time."
         return self.fixed and time >= self.get_end()
 
-    def get_buffer(self, time: TIME) -> str:
-        "Get the a string representation of the status of a task at a given time."
-        buffer = status_str[self.get_status(time)]
-
-        if buffer == "awaiting" and self.is_available(time):
-            buffer = "available"
-
-        return buffer
-
 
 class Tasks:
     "Container class for the tasks in the scheduling environment."
@@ -428,6 +481,28 @@ class Tasks:
         self.fixed_tasks = set()
 
         self.allow_preemption = allow_preemption
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        return (
+            self.__class__,
+            (self.allow_preemption,),
+            (
+                self.tasks,
+                self.jobs,
+                self.awaiting_tasks,
+                self.transition_tasks,
+                self.fixed_tasks,
+            ),
+        )
+
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        (
+            self.tasks,
+            self.jobs,
+            self.awaiting_tasks,
+            self.transition_tasks,
+            self.fixed_tasks,
+        ) = state
 
     @property
     def n_tasks(self) -> TASK_ID:
@@ -556,7 +631,7 @@ class Tasks:
 
     def export_state(self, time: TIME) -> ObsType:
         task_state = {
-            "status": [task.get_buffer(time) for task in self.tasks],
+            "status": [task.get_status(time) for task in self.tasks],
         }
 
         job_state: dict[str, list[Any]] = {}

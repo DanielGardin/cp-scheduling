@@ -48,6 +48,36 @@ class SchedulingData:
 
         self.safe_converse = True
 
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (),
+            (
+                self.alias,
+                self.processing_times,
+                self.task_data,
+                self.jobs_data,
+                self.machine_data,
+                self.job_ids,
+                self.n_machines,
+                self.n_jobs,
+                self.safe_converse,
+            ),
+        )
+
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        (
+            self.alias,
+            self.processing_times,
+            self.task_data,
+            self.jobs_data,
+            self.machine_data,
+            self.job_ids,
+            self.n_machines,
+            self.n_jobs,
+            self.safe_converse,
+        ) = state
+
     @property
     def n_tasks(self) -> TASK_ID:
         "Get the number of tasks in the scheduling data."
@@ -316,6 +346,11 @@ class SchedulingData:
         if len(self.jobs_data) > 1:
             instance_config["job_instance"] = {
                 **self.jobs_data,
+            }
+
+        if len(self.machine_data) > 1:
+            instance_config["machine_instance"] = {
+                **self.machine_data,
             }
 
         return instance_config

@@ -1,5 +1,5 @@
 from typing import Any
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 
 from math import log, exp
 import random
@@ -7,9 +7,9 @@ import random
 from abc import ABC, abstractmethod
 from mypy_extensions import mypyc_attr
 
+from cpscheduler.environment._common import ObsType, Status
 from cpscheduler.environment.utils import convert_to_list
-
-ObsType = tuple[dict[str, list[Any]], dict[str, list[Any]]]
+from cpscheduler.environment.instructions import SingleAction
 
 
 def sample_gumbel() -> float:
@@ -39,14 +39,14 @@ class PriorityDispatchingRule(ABC):
         raise NotImplementedError
 
     def filter_tasks(self, tasks: dict[str, list[Any]]) -> dict[str, list[Any]]:
-        filter_mask = [status != "completed" for status in tasks["status"]]
-
-        filtered_tasks = {
-            key: [value for value, mask in zip(values, filter_mask) if mask]
-            for key, values in tasks.items()
+        return {
+            feature: [
+                value
+                for value, status in zip(values, tasks["status"])
+                if status < Status.COMPLETED
+            ]
+            for feature, values in tasks.items()
         }
-
-        return filtered_tasks
 
     def get_priority(
         self, obs: ObsType, current_time: int | None = None
@@ -86,7 +86,7 @@ class PriorityDispatchingRule(ABC):
 
     def __call__(
         self, obs: ObsType, current_time: int | None = None
-    ) -> list[tuple[str, int]]:
+    ) -> Sequence[SingleAction]:
         priorities = self.get_priority(obs, current_time)
 
         action = [
@@ -104,7 +104,7 @@ class PriorityDispatchingRule(ABC):
         target_prob: float | None = None,
         n_iter: int = 5,
         seed: int | None = None,
-    ) -> list[tuple[str, int]]:
+    ) -> Sequence[SingleAction]:
         """
         Sample a task based on the priority rule. Instead of greedily selecting the task with the highest priority,
         this method uses a Plackett-Luce model to sample a task based on the priority values.

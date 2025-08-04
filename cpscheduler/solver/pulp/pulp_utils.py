@@ -14,6 +14,7 @@ from pulp import (
     LpVariable,
     LpAffineExpression,
     LpContinuous,
+    LpBinary,
     LpConstraint,
 )
 
@@ -29,6 +30,8 @@ class SolverConfig(TypedDict, total=False):
     "Whether to use warm start for the solver."
     keep_files: NotRequired[bool]
     "Whether to keep the solver files after solving."
+    options: NotRequired[Sequence[str]]
+    "Additional solver options to pass to the solver."
     ...
 
 
@@ -81,6 +84,105 @@ def get_value(param: PULP_PARAM) -> float | int:
         return value
 
     raise ValueError(f"Unexpected type: {type(param)}")
+
+
+def set_initial_value(
+    param: PULP_PARAM, value: float | int, check: bool = True
+) -> None:
+    """
+    Set the initial value of a PULP parameter or expression.
+
+    Args:
+        param: A PULP parameter or expression.
+        value: The value to set.
+        check: Whether to check if the value is valid for the parameter type.
+    """
+    if isinstance(param, LpVariable):
+        param.setInitialValue(value, check=check)
+
+    elif isinstance(param, LpAffineExpression):
+        # If it's a single variable, set its initial value directly
+        if len(param) == 1:
+            constant = param.constant
+            var, scalar = next(iter(param.items()))
+
+            assert isinstance(var, LpVariable)
+            var.setInitialValue((value - constant) / scalar, check=check)
+
+
+def get_initial_value(param: PULP_PARAM) -> float | int:
+    """
+    Get the initial value of a PULP parameter or expression.
+
+    Args:
+        param: A PULP parameter or expression.
+
+    Returns:
+        The initial value of the parameter or expression.
+    """
+    if isinstance(param, LpVariable):
+        return param.varValue if param.varValue is not None else 0
+
+    if isinstance(param, LpAffineExpression):
+        # If it's a single variable, get its initial value directly
+        value: float | int = param.constant
+
+        for var, scalar in param.items():
+            value += get_initial_value(var) * scalar
+
+        return value
+
+    return param
+
+
+def get_ub(param: PULP_PARAM) -> float | int:
+    """
+    Get the upper bound of a PULP parameter or expression.
+
+    Args:
+        param: A PULP parameter or expression.
+
+    Returns:
+        The upper bound of the parameter or expression.
+    """
+    if isinstance(param, LpVariable):
+        ub = param.getUb()
+        return ub if ub is not None else float("inf")
+
+    if isinstance(param, LpAffineExpression):
+        ub = param.constant
+        for var, coeff in param.items():
+            ub += coeff * (get_ub(var) if coeff > 0 else get_lb(var))
+
+        assert isinstance(ub, (int, float))
+        return ub
+
+    return param
+
+
+def get_lb(param: PULP_PARAM) -> float | int:
+    """
+    Get the lower bound of a PULP parameter or expression.
+
+    Args:
+        param: A PULP parameter or expression.
+
+    Returns:
+        The lower bound of the parameter or expression.
+    """
+    if isinstance(param, LpVariable):
+        lb = param.getLb()
+        return lb if lb is not None else 0
+
+    if isinstance(param, LpAffineExpression):
+        lb = param.constant
+        for var, coeff in param.items():
+            lb += coeff * (get_lb(var) if coeff > 0 else get_ub(var))
+
+        assert isinstance(lb, (int, float))
+        return lb
+
+    return param
 
 
 @overload
@@ -182,12 +284,71 @@ def max_pulp(
     return max_var
 
 
+global_and_id = 0
+
+
+def and_pulp(
+    model: LpProblem,
+    bin_vars: Iterable[PULP_PARAM],
+    and_var: LpVariable | None = None,
+    name: str | None = None,
+) -> LpVariable | int:
+    """
+    Adds constraints to the model to ensure and_var is 1 if all bin_vars are 1.
+    Equivalent to: and_var == 1 if all(bin_vars) else and_var == 0
+
+    Parameters:
+        model (LpProblem): The PuLP problem instance.
+        bin_vars (Iterable[LpVariable | int | float]): The binary variables.
+        and_var (LpVariable, optional): The variable to represent the AND condition.
+
+    Returns:
+        LpVariable: The variable representing the AND condition.
+    """
+    global global_and_id
+
+    if name is None:
+        global_and_id += 1
+        name = f"and_var_{global_and_id}"
+
+    if and_var is None:
+        and_var = LpVariable(name, lowBound=0, upBound=1, cat=LpBinary)
+
+    count = 0
+    sum_vars = LpAffineExpression()
+    for var in bin_vars:
+
+        if is_true(var == 1):
+            continue
+
+        elif is_true(var == 0):
+            return 0
+
+        count += 1
+        sum_vars += var
+
+        pulp_add_constraint(
+            model,
+            and_var <= var,
+            f"{name}_le_var_{count}",
+        )
+
+    pulp_add_constraint(
+        model,
+        and_var >= sum_vars - (count - 1),
+        f"{name}_ge_sum_vars",
+    )
+
+    return and_var
+
+
 def implication_pulp(
     model: LpProblem,
     antecedent: Iterable[PULP_PARAM] | PULP_PARAM,
     consequent: tuple[PULP_PARAM, Literal["==", "<=", ">="], PULP_PARAM],
     big_m: float = GLOBAL_BIG_M,
     name: str | None = None,
+    and_formulation: bool = False,
 ) -> None:
     """
     Add implication constraints to the model, whenever all antecedent variables are 1,
@@ -225,33 +386,43 @@ def implication_pulp(
             name if name is not None else f"{lhs}_{operator}_{rhs}",
         )
 
+        return
+
+    elif any(is_true(premise == 0) for premise in antecedent):
+        # If any antecedent is 0, the lhs is unconstrained
+        return
+
+    elif and_formulation:
+        premise = and_pulp(model, antecedent, name=name)
+        n_vars = 1
+
     else:
         premise = lpSum(antecedent)
         n_vars = sum(1 for _ in antecedent)
 
-        if operator == "==":
-            pulp_add_constraint(
-                model,
-                lhs <= rhs + (n_vars - premise) * big_m,
-                f"{name}_le" if name is not None else f"{premise}_{lhs}_le_{rhs}",
-            )
+    if operator == "==":
+        pulp_add_constraint(
+            model,
+            lhs <= rhs + (n_vars - premise) * big_m,
+            f"{name}_le" if name is not None else f"{premise}_{lhs}_le_{rhs}",
+        )
 
-            pulp_add_constraint(
-                model,
-                lhs >= rhs - (n_vars - premise) * big_m,
-                f"{name}_ge" if name is not None else f"{premise}_{lhs}_ge_{rhs}",
-            )
+        pulp_add_constraint(
+            model,
+            lhs >= rhs - (n_vars - premise) * big_m,
+            f"{name}_ge" if name is not None else f"{premise}_{lhs}_ge_{rhs}",
+        )
 
-        elif operator == "<=":
-            pulp_add_constraint(
-                model,
-                lhs <= rhs + (n_vars - premise) * big_m,
-                name if name is not None else f"{premise}_{lhs}_le_{rhs}",
-            )
+    elif operator == "<=":
+        pulp_add_constraint(
+            model,
+            lhs <= rhs + (n_vars - premise) * big_m,
+            name if name is not None else f"{premise}_{lhs}_le_{rhs}",
+        )
 
-        elif operator == ">=":
-            pulp_add_constraint(
-                model,
-                lhs >= rhs - (n_vars - premise) * big_m,
-                name if name is not None else f"{premise}_{lhs}_ge_{rhs}",
-            )
+    elif operator == ">=":
+        pulp_add_constraint(
+            model,
+            lhs >= rhs - (n_vars - premise) * big_m,
+            name if name is not None else f"{premise}_{lhs}_ge_{rhs}",
+        )

@@ -1,5 +1,5 @@
 from typing import Any
-from torch import Tensor
+from torch.types import Tensor, Device
 
 import torch
 from torch.optim import Optimizer
@@ -43,7 +43,7 @@ class BehaviorCloning(BaseAlgorithm):
         actions: Tensor,
         actor: Policy[Tensor, Tensor],
         actor_optimizer: Optimizer,
-        device: str = "auto",
+        device: Device = "auto",
     ):
         buffer = Buffer.from_tensors(
             state=states,
