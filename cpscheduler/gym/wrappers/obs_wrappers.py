@@ -115,10 +115,9 @@ class TabularObservationWrapper(
     def observation(self, observation: ObsType) -> dict[str, list[Any]]:
         task_data, job_data = observation
 
-        if len(job_data) == 1:
-            return task_data
-
-        merged_data = task_data.copy()
+        merged_data = {
+            task_feature: task_data[task_feature] for task_feature in task_data
+        }
 
         jobs_ids: list[int] = task_data["job_id"]
         for job_feature in job_data:
