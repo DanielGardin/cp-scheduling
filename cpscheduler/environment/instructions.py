@@ -117,8 +117,14 @@ class Execute(Instruction):
         self.machine = machine
         self.job_oriented = job_oriented
         self.wait = wait
+        self.job_oriented = job_oriented
+        self.wait = wait
 
     def __repr__(self) -> str:
+        instruction = "Submit" if self.wait else "Execute"
+        unit = "job" if self.job_oriented else "task"
+
+        return f"{instruction} {unit} {self.id} on machine {self.machine}"
         instruction = "Submit" if self.wait else "Execute"
         unit = "job" if self.job_oriented else "task"
 
@@ -151,7 +157,29 @@ class Execute(Instruction):
             task = tasks[self.id]
             if task.is_available(current_time, self.machine):
                 tasks.fix_task(self.id, self.machine, current_time)
+        if self.job_oriented:
+            all_fixed = True
+            for task in tasks.jobs[self.id]:
+                if task.is_available(current_time, self.machine):
+                    tasks.fix_task(self.id, self.machine, current_time)
 
+                    return Signal(Action.DONE)
+
+                if not task.is_fixed():
+                    all_fixed = False
+
+            if all_fixed:
+                return Signal(
+                    Action.RAISE,
+                    info=f"Job {self.id} cannot be executed. All tasks are already fixed.",
+                )
+
+        else:
+            task = tasks[self.id]
+            if task.is_available(current_time, self.machine):
+                tasks.fix_task(self.id, self.machine, current_time)
+
+                return Signal(Action.DONE)
                 return Signal(Action.DONE)
 
             if task.is_fixed():
@@ -159,7 +187,15 @@ class Execute(Instruction):
                     Action.RAISE,
                     info=f"Task {self.id} cannot be executed. It is already being executed or completed",
                 )
+            if task.is_fixed():
+                return Signal(
+                    Action.RAISE,
+                    info=f"Task {self.id} cannot be executed. It is already being executed or completed",
+                )
 
+        return Signal(
+            Action.WAIT if self.wait else Action.SKIPPED,
+        )
         return Signal(
             Action.WAIT if self.wait else Action.SKIPPED,
         )
@@ -177,7 +213,6 @@ class Submit(Execute):
         job_oriented: bool = False,
     ):
         super().__init__(id, machine, job_oriented, wait=True)
-
 
 class Pause(Instruction):
     "Pauses a task if it is currently executing. Can only be used in preemptive scheduling."
@@ -302,8 +337,6 @@ def parse_args(
 
 
 n_max_args: Final[int] = 3
-
-
 def parse_instruction(
     action: str | Instruction, args: tuple[int, ...], tasks: Tasks
 ) -> tuple[Instruction, TIME]:
@@ -319,6 +352,13 @@ def parse_instruction(
         if is_execute or is_submit:
             job_oriented = action.endswith("job")
 
+            if 0 < len(args) <= 2 and len(tasks[args[0]].machines) == 1:
+                # If the task has only one machine, we can skip the machine argument
+                machine = tasks[args[0]].machines[0]
+                id, time = parse_args(args, 2)
+
+            else:
+                id, machine, time = parse_args(args, 3)
             if 0 < len(args) <= 2 and len(tasks[args[0]].machines) == 1:
                 # If the task has only one machine, we can skip the machine argument
                 machine = tasks[args[0]].machines[0]
