@@ -42,6 +42,7 @@ from ._common import (
     Status,
 )
 from .data import SchedulingData
+from .utils import IndexedHeap
 
 
 def ceil_div(a: TIME, b: TIME) -> TIME:
@@ -468,7 +469,7 @@ class Tasks:
     tasks: list[Task]
     jobs: list[list[Task]]
 
-    awaiting_tasks: set[TASK_ID]
+    awaiting_tasks: IndexedHeap[TASK_ID, TIME]
     transition_tasks: set[TASK_ID]
     fixed_tasks: set[TASK_ID]
 
@@ -476,7 +477,7 @@ class Tasks:
         self.tasks = []
         self.jobs = []
 
-        self.awaiting_tasks = set()
+        self.awaiting_tasks = IndexedHeap()
         self.transition_tasks = set()
         self.fixed_tasks = set()
 
@@ -531,7 +532,7 @@ class Tasks:
             task = Task(task_id, job_id, data)
 
             self.tasks.append(task)
-            self.awaiting_tasks.add(task_id)
+            self.awaiting_tasks.insert(task_id, task.get_start_lb())
 
             self.jobs[job_id].append(task)
 
@@ -539,10 +540,15 @@ class Tasks:
         "Reset all tasks to their initial state."
         self.awaiting_tasks.clear()
         self.fixed_tasks.clear()
+        self.transition_tasks.clear()
 
         for task in self.tasks:
             task.reset(data)
-            self.awaiting_tasks.add(task.task_id)
+
+        self.awaiting_tasks.extend(
+            [task_id for task_id in range(self.n_tasks)],
+            [self.tasks[task_id].get_start_lb() for task_id in range(self.n_tasks)]
+        )
 
     def fix_task(self, task_id: TASK_ID, machine_id: MACHINE_ID, time: TIME) -> None:
         "Fix the decision variables of a task, making it immutable."
@@ -558,15 +564,21 @@ class Tasks:
             task = self.tasks[task_id]
 
             task.interrupt(time)
-            self.awaiting_tasks.add(task_id)
+            self.awaiting_tasks.insert(task_id, task.get_start_lb())
             self.transition_tasks.add(task_id)
             self.fixed_tasks.remove(task_id)
 
         else:
             warn("Preemption is not allowed in this environment. Skipping Instruction.")
 
-    def finish_propagation(self) -> None:
+    def finish_propagation(self, changed_tasks: set[TASK_ID]) -> None:
         "Ensure that all tasks are in a consistent state after propagation."
+
+        self.awaiting_tasks.update_batch(
+            [task_id for task_id in changed_tasks],
+            [self.tasks[task_id].get_start_lb() for task_id in changed_tasks]
+        )
+
         self.transition_tasks.clear()
 
     def __len__(self) -> int:

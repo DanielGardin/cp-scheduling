@@ -390,10 +390,14 @@ class SchedulingEnv:
         #     if task.get_start_lb() < self.current_time:
         #         task.set_start_lb(self.current_time)
 
-        for constraint in self.constraints.values():
-            constraint.propagate(self.current_time, self.tasks)
+        changed_tasks: set[TASK_ID] = set()
 
-        self.tasks.finish_propagation()
+        for constraint in self.constraints.values():
+            constraint_changed_tasks = constraint.propagate(self.current_time, self.tasks)
+
+            changed_tasks.update(constraint_changed_tasks)
+
+        self.tasks.finish_propagation(changed_tasks)
 
     # Environment API methods
     def reset(
@@ -449,29 +453,21 @@ class SchedulingEnv:
     def _next_decision_time(self, strict: bool = False) -> TIME:
         "Obtain the next decision time to advance. If strict, only consider future tasks."
         next_time = MAX_INT
-
         if strict:
-            for task_id in self.tasks.awaiting_tasks:
-                task = self.tasks[task_id]
-                start_lb = task.get_start_lb()
-
-                if self.current_time < start_lb < next_time:
+            for _, start_lb in self.tasks.awaiting_tasks.ordered():
+                if start_lb > self.current_time:
                     next_time = start_lb
+                    break
 
-            for instruction_time in self.schedule:
-                if self.current_time < instruction_time < next_time:
-                    next_time = instruction_time
+        elif self.tasks.awaiting_tasks:
+                _, next_time = self.tasks.awaiting_tasks.peek()
 
-        else:
-            for task_id in self.tasks.awaiting_tasks:
-                task = self.tasks[task_id]
-                start_lb = task.get_start_lb()
-                if start_lb < next_time:
-                    next_time = start_lb
-
-            for instruction_time in self.schedule:
-                if self.current_time <= instruction_time < next_time:
-                    next_time = instruction_time
+        for instruction_time in self.schedule:
+            if (
+                (self.current_time < instruction_time < next_time) or
+                (not strict and instruction_time == self.current_time)
+            ):
+                next_time = instruction_time
 
         if self.current_time < self.advancing_to < next_time:
             next_time = self.advancing_to

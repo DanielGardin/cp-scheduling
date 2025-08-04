@@ -67,8 +67,10 @@ class Constraint:
     def reset(self, tasks: Tasks) -> None:
         "Reset the constraint to its initial state."
 
-    def propagate(self, time: TIME, tasks: Tasks) -> None:
-        "Given a bound change, propagate the constraint to other tasks."
+    def propagate(self, time: TIME, tasks: Tasks) -> set[TASK_ID]:
+        "Given a bound change, propagate the constraint to other tasks. "\
+        "Returns a set of task IDs that were changed."
+        return set()
 
     def refresh(self, time: TIME, tasks: Tasks) -> None:
         "Updates constraint internal state when propagate cannot handle."
@@ -107,19 +109,27 @@ class MachineConstraint(Constraint):
         for machine, _ in enumerate(self.machine_free):
             self.machine_free[machine] = 0
 
-    def propagate(self, time: TIME, tasks: Tasks) -> None:
+    def propagate(self, time: TIME, tasks: Tasks) -> set[TASK_ID]:
+        changed_tasks: set[TASK_ID] = set()
+
+        changed_machines: set[int] = set()
         for task_id in tasks.transition_tasks:
             task = tasks[task_id]
 
             machine = task.get_assignment()
             self.machine_free[machine] = task.get_end()
+            changed_machines.add(machine)
 
-        for task_id in tasks.awaiting_tasks:
-            task = tasks[task_id]
+        for machine in changed_machines:
+            for task_id, start_lb in tasks.awaiting_tasks.ordered():
+                if start_lb >= self.machine_free[machine]:
+                    break
 
-            for machine in task.machines:
-                if task.get_start_lb(machine) < self.machine_free[machine]:
-                    task.set_start_lb(self.machine_free[machine], machine)
+                if machine in tasks[task_id].machines:
+                    tasks[task_id].set_start_lb(self.machine_free[machine], machine)
+                    changed_tasks.add(task_id)
+
+        return changed_tasks
 
     def refresh(self, time: TIME, tasks: Tasks) -> None:
         for machine in range(len(self.machine_free)):
@@ -261,20 +271,32 @@ class PrecedenceConstraint(Constraint):
     def reset(self, tasks: Tasks) -> None:
         self.topological_order = self.original_order.copy()
 
-    def propagate(self, time: TIME, tasks: Tasks) -> None:
+    def propagate(self, time: TIME, tasks: Tasks) -> set[TASK_ID]:
+        changed_tasks: set[TASK_ID] = set()
+
         for task_id in list(self.topological_order):
             task = tasks[task_id]
+
+            if task.is_completed(time):
+                self.topological_order.remove(task_id)
+                continue
 
             end_time = task.get_end_lb()
 
             for child_id in self.precedence[task_id]:
                 child = tasks[child_id]
 
-                if child.get_start_lb() < end_time:
+                start_lb = tasks.awaiting_tasks.get_key(child_id)[0]
+
+                if start_lb < end_time:
                     child.set_start_lb(end_time)
 
-            if task.is_completed(time):
-                self.topological_order.remove(task_id)
+                    if self.no_wait and child.get_start_ub() > end_time:
+                        child.set_start_ub(end_time)
+
+                    changed_tasks.add(child_id)
+
+        return changed_tasks
 
     def refresh(self, time: TIME, tasks: Tasks) -> None:
         self.reset(tasks)
@@ -437,7 +459,9 @@ class DisjunctiveConstraint(Constraint):
                 if group not in self.group_free:
                     self.group_free[group] = 0
 
-    def propagate(self, time: TIME, tasks: Tasks) -> None:
+    def propagate(self, time: TIME, tasks: Tasks) -> set[TASK_ID]:
+        changed_tasks: set[TASK_ID] = set()
+
         for task_id in tasks.transition_tasks:
             task = tasks[task_id]
 
@@ -450,6 +474,9 @@ class DisjunctiveConstraint(Constraint):
             for group in self.task_groups[task_id]:
                 if task.get_start_lb(group) < self.group_free[group]:
                     task.set_start_lb(self.group_free[group], group)
+                    changed_tasks.add(task_id)
+        
+        return changed_tasks
 
     def refresh(self, time: TIME, tasks: Tasks) -> None:
         for group in self.group_free:
@@ -680,7 +707,9 @@ class ResourceConstraint(Constraint):
     def reset(self, tasks: Tasks) -> None:
         self.resources = [resources.copy() for resources in self.original_resources]
 
-    def propagate(self, time: TIME, tasks: Tasks) -> None:
+    def propagate(self, time: TIME, tasks: Tasks) -> set[TASK_ID]:
+        changed_tasks: set[TASK_ID] = set()
+
         for i, task_resources in enumerate(self.resources):
             minimum_end_time: list[TIME] = []
             resource_taken: list[float] = []
@@ -727,6 +756,9 @@ class ResourceConstraint(Constraint):
 
                 if task.get_start_lb() < minimum_start_time:
                     task.set_start_lb(minimum_start_time)
+                    changed_tasks.add(task_id)
+            
+        return changed_tasks
 
     def refresh(self, time: TIME, tasks: Tasks) -> None:
         raise NotImplementedError(
@@ -784,7 +816,9 @@ class SetupConstraint(Constraint):
             for task_id, children in self.original_setup_times.items()
         }
 
-    def propagate(self, time: TIME, tasks: Tasks) -> None:
+    def propagate(self, time: TIME, tasks: Tasks) -> set[TASK_ID]:
+        changed_tasks: set[TASK_ID] = set()
+
         for task_id in list(self.setup_times.keys()):
             task = tasks[task_id]
 
@@ -805,6 +839,9 @@ class SetupConstraint(Constraint):
 
                 if task.get_end_lb() + setup_time > child.get_start_lb():
                     child.set_start_lb(task.get_end_lb() + setup_time)
+                    changed_tasks.add(child_id)
+        
+        return changed_tasks
 
     def refresh(self, time: TIME, tasks: Tasks) -> None:
         raise NotImplementedError(

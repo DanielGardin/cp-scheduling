@@ -125,10 +125,6 @@ class Execute(Instruction):
         unit = "job" if self.job_oriented else "task"
 
         return f"{instruction} {unit} {self.id} on machine {self.machine}"
-        instruction = "Submit" if self.wait else "Execute"
-        unit = "job" if self.job_oriented else "task"
-
-        return f"{instruction} {unit} {self.id} on machine {self.machine}"
 
     def process(
         self,
@@ -157,29 +153,7 @@ class Execute(Instruction):
             task = tasks[self.id]
             if task.is_available(current_time, self.machine):
                 tasks.fix_task(self.id, self.machine, current_time)
-        if self.job_oriented:
-            all_fixed = True
-            for task in tasks.jobs[self.id]:
-                if task.is_available(current_time, self.machine):
-                    tasks.fix_task(self.id, self.machine, current_time)
 
-                    return Signal(Action.DONE)
-
-                if not task.is_fixed():
-                    all_fixed = False
-
-            if all_fixed:
-                return Signal(
-                    Action.RAISE,
-                    info=f"Job {self.id} cannot be executed. All tasks are already fixed.",
-                )
-
-        else:
-            task = tasks[self.id]
-            if task.is_available(current_time, self.machine):
-                tasks.fix_task(self.id, self.machine, current_time)
-
-                return Signal(Action.DONE)
                 return Signal(Action.DONE)
 
             if task.is_fixed():
@@ -187,15 +161,7 @@ class Execute(Instruction):
                     Action.RAISE,
                     info=f"Task {self.id} cannot be executed. It is already being executed or completed",
                 )
-            if task.is_fixed():
-                return Signal(
-                    Action.RAISE,
-                    info=f"Task {self.id} cannot be executed. It is already being executed or completed",
-                )
 
-        return Signal(
-            Action.WAIT if self.wait else Action.SKIPPED,
-        )
         return Signal(
             Action.WAIT if self.wait else Action.SKIPPED,
         )
