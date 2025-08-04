@@ -131,7 +131,6 @@ class SchedulingEnv:
         objective: Objective | None = None,
         instance_config: InstanceConfig | None = None,
         metrics: Mapping[str, Metric[Any]] | None = None,
-        *,
         render_mode: Renderer | str | None = None,
         allow_preemption: bool = False,
     ):

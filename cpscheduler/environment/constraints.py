@@ -19,7 +19,7 @@ import re
 
 from mypy_extensions import mypyc_attr
 
-from ._common import TASK_ID, TIME, Int, Float
+from ._common import TASK_ID, TIME, MACHINE_ID, Int, Float
 from .data import SchedulingData
 from .tasks import Tasks
 from .utils import convert_to_list, topological_sort, binary_search, is_iterable_type
@@ -108,18 +108,22 @@ class MachineConstraint(Constraint):
             self.machine_free[machine] = 0
 
     def propagate(self, time: TIME, tasks: Tasks) -> None:
+        changed_machines: set[MACHINE_ID] = set()
+
         for task_id in tasks.transition_tasks:
             task = tasks[task_id]
-
             machine = task.get_assignment()
+
             self.machine_free[machine] = task.get_end()
+            changed_machines.add(machine)
 
-        for task_id in tasks.awaiting_tasks:
-            task = tasks[task_id]
+        for machine in changed_machines:
+            for task_id in tasks.awaiting_tasks:
+                if machine in tasks[task_id].machines:
+                    task = tasks[task_id]
 
-            for machine in task.machines:
-                if task.get_start_lb(machine) < self.machine_free[machine]:
-                    task.set_start_lb(self.machine_free[machine], machine)
+                    if task.get_start_lb(machine) < self.machine_free[machine]:
+                        task.set_start_lb(self.machine_free[machine], machine)
 
     def refresh(self, time: TIME, tasks: Tasks) -> None:
         for machine in range(len(self.machine_free)):
@@ -163,7 +167,7 @@ class PrecedenceConstraint(Constraint):
     """
 
     # original_precedence: dict[int, list[int]]
-    precedence: dict[TASK_ID, set[TASK_ID]]
+    precedence: dict[TASK_ID, list[TASK_ID]]
     original_order: list[TASK_ID]
 
     def __init__(
@@ -175,7 +179,7 @@ class PrecedenceConstraint(Constraint):
         super().__init__(name)
 
         self.precedence = {
-            TASK_ID(task): {TASK_ID(child) for child in children}
+            TASK_ID(task): [TASK_ID(child) for child in children]
             for task, children in precedence.items()
         }
 
