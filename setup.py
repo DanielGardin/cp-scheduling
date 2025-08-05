@@ -20,12 +20,10 @@ with open("pyproject.toml", "rb") as f:
 compiling_dirs = [
     "cpscheduler/environment",
     "cpscheduler/instances",
+    "cpscheduler/heuristics"
 ]
 
-
-compiling_files = [
-    "cpscheduler/heuristics/pdr_heuristics.py",
-]
+compiling_files = []
 for dir in compiling_dirs:
     compiling_files.extend(
         [str(file) for file in Path(dir).rglob("*.py") if not file.name.startswith("_")]

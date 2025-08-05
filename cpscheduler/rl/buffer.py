@@ -203,4 +203,4 @@ class Buffer:
             yield self._apply_norm(batch)
 
     def __getitem__(self, idx: str) -> Tensor:
-        return self.buffer[idx][: self.current_size]  # type: ignore
+        return self.buffer[idx][: self.current_size]

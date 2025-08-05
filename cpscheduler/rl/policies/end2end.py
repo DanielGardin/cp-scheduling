@@ -113,4 +113,4 @@ class End2EndActor(nn.Module):
 
         logits = torch.masked_fill(logits, mask, -torch.inf)
 
-        return logits  # type: ignore
+        return logits

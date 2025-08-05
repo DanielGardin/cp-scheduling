@@ -63,7 +63,7 @@ pdrs: dict[str, PriorityDispatchingRule] = {
 def mean_point(arr: NDArray[Any]) -> NDArray[Any]:
     a = np.insert(arr, 0, 0)
 
-    return a[:-1] + np.diff(a) / 2  # type: ignore[no-any-return]
+    return a[:-1] + np.diff(a) / 2
 
 def common_instance_name(instance_names: list[str]) -> str:
     "Get the substring of the common instance name in the pattern <instance_name>_<id>.<ext>"

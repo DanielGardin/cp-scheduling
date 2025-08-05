@@ -21,6 +21,7 @@ try:
 except ImportError:
     wandb = None  # type: ignore[assignment]
 
+
 @dataclass
 class Welford:
     mean: float = 0.0
@@ -54,7 +55,9 @@ class Logger(SummaryWriter):
         use_wandb: bool = False,
         config: dict[str, Any] | None = None,
     ):
-        timestamp = datetime.now(tz=datetime.now().astimezone().tzinfo).strftime("%Y-%m-%d_%H-%M-%S")
+        timestamp = datetime.now(tz=datetime.now().astimezone().tzinfo).strftime(
+            "%Y-%m-%d_%H-%M-%S"
+        )
         experiment_name = (
             f"{experiment_name}_{timestamp}" if experiment_name else timestamp
         )

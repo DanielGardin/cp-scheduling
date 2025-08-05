@@ -11,6 +11,7 @@ from math import log
 
 from cpscheduler.rl.protocols import Policy
 
+
 @lru_cache
 def prob_to_lmbda(prob: float, size: int, n_iter: int) -> float:
     """
@@ -18,15 +19,14 @@ def prob_to_lmbda(prob: float, size: int, n_iter: int) -> float:
     """
     if prob == 1.0:
         return float("inf")
-    
+
     lmbda = 1 - prob
     for _ in range(n_iter):
         lmbda = (prob * lmbda**size * (size - 1) - (1 - prob)) / (
-                size * prob * lmbda ** (size - 1) - 1
-            )
+            size * prob * lmbda ** (size - 1) - 1
+        )
 
     return lmbda
-
 
 
 class PlackettLucePolicy(nn.Module, Policy[Tensor, Tensor]):
@@ -59,7 +59,9 @@ class PlackettLucePolicy(nn.Module, Policy[Tensor, Tensor]):
         temperature: float | Tensor = 1.0,
     ) -> tuple[Tensor, Tensor]:
         logits = self.get_score(x)
-        gumbel_noise = torch.distributions.Gumbel(0, 1).sample(logits.shape).to(logits.device)  # type: ignore
+        gumbel_noise = torch.distributions.Gumbel(0, 1).sample(logits.shape)
+        assert isinstance(gumbel_noise, Tensor)
+        gumbel_noise = gumbel_noise.to(logits.device)
 
         if isinstance(temperature, Tensor):
             temperature = temperature.view(-1, 1).expand_as(logits)
@@ -87,7 +89,9 @@ class PlackettLucePolicy(nn.Module, Policy[Tensor, Tensor]):
 
         return logits
 
-    def sample_pstar(self, x: Tensor, target_prob: float, n_iter: int = 10) -> tuple[Tensor, Tensor]:
+    def sample_pstar(
+        self, x: Tensor, target_prob: float, n_iter: int = 10
+    ) -> tuple[Tensor, Tensor]:
         """
         Sample a permutation with maximum probability bounded to a target probability.
         """
@@ -106,7 +110,7 @@ class PlackettLucePolicy(nn.Module, Policy[Tensor, Tensor]):
             Xty = X.transpose(-1, -2) @ y
 
             coeffs: Tensor = torch.linalg.solve(XtX, Xty).squeeze(-1)
-        
+
             lmbda = coeffs[:, 0]
 
         temperature = lmbda / target_lmbda

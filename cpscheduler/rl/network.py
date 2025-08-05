@@ -9,10 +9,10 @@ import math
 
 
 def layer_init(layer: nn.Module, gain: float = 1, bias_const: float = 0.0) -> nn.Module:
-    torch.nn.init.orthogonal_(layer.weight, gain)  # type: ignore
+    torch.nn.init.orthogonal_(layer.weight, gain)
 
     if hasattr(layer, "bias") and layer.bias is not None:
-        torch.nn.init.constant_(layer.bias, bias_const)  # type: ignore
+        torch.nn.init.constant_(layer.bias, bias_const)
 
     return layer
 
