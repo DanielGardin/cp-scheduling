@@ -71,26 +71,3 @@ dev = [
 
 [tool.setuptools]
 packages = ["cpscheduler"]
-
-[tool.mypy]
-strict = true
-pretty = true
-ignore_missing_imports = true
-disallow_untyped_defs = true
-warn_unused_ignores = false
-disallow_subclassing_any = false
-disable_error_code = ["type-abstract"]
-
-[[tool.mypy.overrides]]
-module = "torch.*"
-ignore_missing_imports = true
-follow_imports = "skip"
-follow_imports_for_stubs = true
-disallow_untyped_calls = false
-
-[[tool.mypy.overrides]]
-module = "pulp.*"
-ignore_missing_imports = true
-follow_imports = "skip"
-follow_imports_for_stubs = true
-disallow_untyped_calls = false

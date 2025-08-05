@@ -2,12 +2,13 @@ from pathlib import Path
 from typing import Any
 from collections.abc import Callable
 
-load: Callable[[Any], dict[str, Any]]
-try:
+import sys
+
+if sys.version_info >= (3, 11):
     from tomllib import load
 
-except ImportError:
-    from tomli import load  # type: ignore
+else:
+    from tomli import load
 
 from setuptools import setup
 from mypyc.build import mypycify
@@ -41,7 +42,7 @@ setup(
     install_requires=project_info.get("dependencies", []),
     tests_require=["pytest"],
     include_package_data=True,
-    ext_modules=mypycify(compiling_files),  # type: ignore
+    ext_modules=mypycify(compiling_files),
     classifiers=[
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
