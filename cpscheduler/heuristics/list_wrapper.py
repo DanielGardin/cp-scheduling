@@ -21,9 +21,9 @@ try:
 except ImportError:
     TORCH_AVAILABLE = False
 
-from cpscheduler.environment._common import ObsType, Status
-from ._protocols import ArrayLike, TabularRepresentation
+# Maybe include JAX in another iteration?
 
+from ._protocols import ArrayLike, TabularRepresentation
 
 @contextmanager
 def disable_numpy() -> Iterator[None]:
@@ -58,13 +58,35 @@ def disable_torch() -> Iterator[None]:
 
 def array_factory(data: Iterable[Any] | ArrayLike) -> ArrayLike:
     if NUMPY_AVAILABLE:
-        return np.array(data)
+        if isinstance(data, np.ndarray):
+            return data
+
+        return np.asarray(data)
 
     return ListWrapper(data)
 
 
-def unify_obs(obs: ObsType) -> TabularRepresentation[ArrayLike]:
-    tasks, jobs = obs
+# The original observation must have shape (*batch, num_tasks, num_features)
+# The resulting arraylike after __getitem__ will have shape (*batch, num_tasks)
+def wrap_observation(obs: Any) -> TabularRepresentation[ArrayLike]:
+    "Wraps the observation into an ArrayLike structure."
+    if NUMPY_AVAILABLE and isinstance(obs, np.ndarray):
+        return np.moveaxis(obs, -1, 0)
+
+    if TORCH_AVAILABLE and isinstance(obs, torch.Tensor):
+        result: ArrayLike = obs.moveaxis(-1, 0)
+        return result
+
+    tasks: dict[str, ArrayLike] = {}
+    jobs: dict[str, ArrayLike] = {}
+    if isinstance(obs, tuple) and len(obs) == 2:
+        tasks, jobs = obs
+
+    elif isinstance(obs, dict):
+        tasks = obs
+
+    if not tasks:
+        raise ValueError("Observation must contain at least task features.")
 
     new_obs: dict[str, ArrayLike] = {}
 
@@ -79,46 +101,6 @@ def unify_obs(obs: ObsType) -> TabularRepresentation[ArrayLike]:
         new_obs[job_feature] = array_factory(jobs[job_feature])[array_jobs_ids]
 
     return new_obs
-
-
-def filter_tasks(
-    obs: TabularRepresentation[ArrayLike], status: Status
-) -> tuple[TabularRepresentation[ArrayLike], TabularRepresentation[ArrayLike]]:
-    """
-    Filters the tasks in the observation based on their status.
-    """
-    mask = obs[status] < Status.COMPLETED
-
-    if isinstance(obs, dict):
-        new_obs: TabularRepresentation[ArrayLike] = {}
-        for k, v in obs.items():
-            filtered_v = v[mask]
-
-            assert isinstance(filtered_v, ArrayLike)
-            new_obs[k] = filtered_v
-
-        return new_obs, []
-
-    if isinstance(obs, ArrayLike):
-        new_obs = obs[obs[status] < Status.COMPLETED]
-
-    raise TypeError(f"Unsupported observation type: {type(obs)}")
-
-
-def wrap_observation(obs: Any) -> TabularRepresentation[ArrayLike]:
-    "Wraps the observation into an ArrayLike structure."
-    if isinstance(obs, tuple) and len(obs) == 2:
-        assert all(isinstance(o, dict) for o in obs), "Expected a tuple of two dicts."
-        return unify_obs(obs)
-
-    if isinstance(obs, dict):
-        return unify_obs((obs, {}))
-
-    if isinstance(obs, ArrayLike):
-        return obs
-
-    raise TypeError(f"Couldnt wrap observation of type {type(obs)}.")
-
 
 _T = TypeVar("_T", bound=Any, covariant=True)
 _S = TypeVar("_S", bound=Any)
@@ -607,5 +589,24 @@ def argsort(x: ArrayLike, descending: bool = False, stable: bool = False) -> Arr
 
     else:
         raise TypeError(f"Unsupported types for argsort operation: {type(x)}")
+
+    return result
+
+def astype(x: ArrayLike, dtype: type[Any] | Any) -> ArrayLike:
+    if isinstance(x, ListWrapper):
+        if x.dtype == dtype:
+            return x
+    
+        return x.astype(dtype)
+    
+    result: ArrayLike
+    if TORCH_AVAILABLE and isinstance(x, torch.Tensor):
+        result = x.to(dtype)
+
+    elif hasattr(x, "astype"):
+        result = x.astype(dtype)
+    
+    else:
+        raise TypeError(f"Unsupported types for astype operation: {type(x)}")
 
     return result

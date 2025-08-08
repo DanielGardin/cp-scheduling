@@ -1,5 +1,6 @@
-from typing import Any, Generic, TypeVar, TypeAlias
+from typing import Any, TypeAlias, Final, overload
 from collections.abc import Iterable, Sequence
+from typing_extensions import TypedDict, Unpack
 
 import random
 import math
@@ -7,19 +8,39 @@ import math
 from abc import ABC, abstractmethod
 from mypy_extensions import mypyc_attr
 
-from cpscheduler.environment._common import Status
+from cpscheduler.environment._common import Status, ObsType
 from cpscheduler.environment.instructions import SingleAction
 
 from ._protocols import ArrayLike, TabularRepresentation
 from .list_wrapper import (
-    array_factory,
-    filter_tasks,
     wrap_observation,
     maximum,
     argsort,
     where,
     exp,
 )
+
+MIN_PRIORITY: Final[int] = -2**31
+
+FeatureTag: TypeAlias = str | int
+class BasePriorityKwargs(TypedDict, total=False):
+    status: FeatureTag | None
+    """
+    Status" feature tag, if provided, the output action will not include tasks
+    in non-executable status. When `None`, all tasks will be considered.
+    """
+
+    strict: bool
+    """
+    If True, the output action is strictly to execute the tasks in the given order.
+    Alternatively, the output action will be to submit the tasks to be executed whenever
+    the task is available, following the order given by the priority rule.
+    """
+
+    job_oriented: bool
+    """
+    If True, the output action will refer to jobs instead of tasks.
+    """
 
 
 @mypyc_attr(allow_interpreted_subclasses=True)
@@ -35,7 +56,10 @@ class PriorityDispatchingRule(ABC):
     """
 
     def __init__(
-        self, status: Any = "status", strict: bool = False, job_oriented: bool = False
+        self,
+        status: FeatureTag | None = "status",
+        strict: bool = False,
+        job_oriented: bool = False,
     ) -> None:
         self.status = status
         self.job_oriented = job_oriented
@@ -54,20 +78,56 @@ class PriorityDispatchingRule(ABC):
         raise NotImplementedError
 
     def get_priorities(self, obs: Any, time: int | None = None) -> ArrayLike:
-        filtered_obs, _ = filter_tasks(wrap_observation(obs), self.status)
+        array_obs = wrap_observation(obs)
 
         if time is None:
             time = 0
 
-        return self.priority_rule(filtered_obs, time)
+        priorities = self.priority_rule(array_obs, time)
 
-    def __call__(self, obs: Any, time: int | None = None) -> Sequence[SingleAction]:
+        if self.status is not None:
+            mask = array_obs[self.status] <= Status.PAUSED
+
+            priorities[mask] = MIN_PRIORITY
+
+        return priorities
+
+    @overload
+    def __call__(
+        self, obs: TabularRepresentation[ArrayLike], time: int | None = None
+    ) -> Sequence[Sequence[SingleAction]]: ...
+
+    @overload
+    def __call__(
+        self, obs: ArrayLike, time: int | None = None
+    ) -> Sequence[Sequence[SingleAction]]: ...
+
+    @overload
+    def __call__(
+        self, obs: ObsType, time: int | None = None
+    ) -> Sequence[SingleAction]: ...
+
+    @overload
+    def __call__(
+        self, obs: dict[str, list[Any]], time: int | None = None
+    ) -> Sequence[SingleAction]: ...
+
+    def __call__(
+        self, obs: Any, time: int | None = None
+    ) -> Sequence[SingleAction] | Sequence[Sequence[SingleAction]]:
         priorities = self.get_priorities(obs, time)
         order = argsort(priorities, descending=True, stable=True)
 
-        action = [(self.instruction, int(task_id)) for task_id in order]
+        *batch, n_tasks = order.shape
 
-        return action
+        if len(batch) == 0:
+            return [(self.instruction, int(task_id)) for task_id in order]
+
+        return [
+            [(self.instruction, int(task_id)) for task_id in order[batch_index]]
+            for batch_index in range(len(order))
+        ]
+
 
     # def sample(
     #     self,
@@ -111,11 +171,9 @@ class CombinedRule(PriorityDispatchingRule):
         self,
         rules: Iterable[PriorityDispatchingRule],
         weights: Iterable[float] | None = None,
-        status: Any = "status",
-        strict: bool = False,
-        job_oriented: bool = False,
+        **kwargs: Unpack[BasePriorityKwargs],
     ) -> None:
-        super().__init__(status, strict, job_oriented)
+        super().__init__(**kwargs)
         self.rules = list(rules)
         self.weights = list(weights) if weights is not None else [1.0] * len(self.rules)
 
@@ -142,12 +200,10 @@ class ShortestProcessingTime(PriorityDispatchingRule):
 
     def __init__(
         self,
-        status: Any = "status",
-        processing_time: Any = "processing_time",
-        strict: bool = False,
-        job_oriented: bool = False,
+        processing_time: FeatureTag = "processing_time",
+        **kwargs: Unpack[BasePriorityKwargs],
     ) -> None:
-        super().__init__(status, strict, job_oriented)
+        super().__init__(**kwargs)
         self.processing_time = processing_time
 
     def priority_rule(
@@ -164,13 +220,9 @@ class EarliestDueDate(PriorityDispatchingRule):
     """
 
     def __init__(
-        self,
-        status: Any = "status",
-        due_date: Any = "due_date",
-        strict: bool = False,
-        job_oriented: bool = False,
+        self, due_date: FeatureTag = "due_date", **kwargs: Unpack[BasePriorityKwargs]
     ) -> None:
-        super().__init__(status, strict, job_oriented)
+        super().__init__(**kwargs)
         self.due_date = due_date
 
     def priority_rule(
@@ -186,14 +238,12 @@ class ModifiedDueDate(PriorityDispatchingRule):
 
     def __init__(
         self,
-        status: Any = "status",
-        due_date: Any = "due_date",
-        processing_time: Any = "processing_time",
-        weight: Any = None,
-        strict: bool = False,
-        job_oriented: bool = False,
+        due_date: FeatureTag = "due_date",
+        processing_time: FeatureTag = "processing_time",
+        weight: FeatureTag | None = None,
+        **kwargs: Unpack[BasePriorityKwargs],
     ) -> None:
-        super().__init__(status, strict, job_oriented)
+        super().__init__(**kwargs)
         self.due_date = due_date
         self.processing_time = processing_time
         self.weight = weight
@@ -219,13 +269,11 @@ class WeightedShortestProcessingTime(PriorityDispatchingRule):
 
     def __init__(
         self,
-        status: Any = "status",
-        processing_time: Any = "processing_time",
-        weight: Any = "weight",
-        strict: bool = False,
-        job_oriented: bool = False,
+        processing_time: FeatureTag = "processing_time",
+        weight: FeatureTag = "weight",
+        **kwargs: Unpack[BasePriorityKwargs],
     ) -> None:
-        super().__init__(status, strict, job_oriented)
+        super().__init__(**kwargs)
         self.processing_time = processing_time
         self.weight = weight
 
@@ -244,14 +292,12 @@ class MinimumSlackTime(PriorityDispatchingRule):
 
     def __init__(
         self,
-        status: Any = "status",
-        due_date: Any = "due_date",
-        processing_time: Any = "processing_time",
-        release_time: Any = None,
-        strict: bool = False,
-        job_oriented: bool = False,
+        due_date: FeatureTag = "due_date",
+        processing_time: FeatureTag = "processing_time",
+        release_time: FeatureTag | None = None,
+        **kwargs: Unpack[BasePriorityKwargs],
     ) -> None:
-        super().__init__(status, strict, job_oriented)
+        super().__init__(**kwargs)
         self.due_date = due_date
         self.processing_time = processing_time
         self.release_time = release_time
@@ -278,14 +324,12 @@ class CriticalRatio(PriorityDispatchingRule):
 
     def __init__(
         self,
-        status: Any = "status",
-        due_date: Any = "due_date",
-        processing_time: Any = "processing_time",
-        release_time: Any = None,
-        strict: bool = False,
-        job_oriented: bool = False,
+        due_date: FeatureTag = "due_date",
+        processing_time: FeatureTag = "processing_time",
+        release_time: FeatureTag | None = None,
+        **kwargs: Unpack[BasePriorityKwargs],
     ) -> None:
-        super().__init__(status, strict, job_oriented)
+        super().__init__(**kwargs)
         self.due_date = due_date
         self.processing_time = processing_time
         self.release_time = release_time
@@ -311,12 +355,10 @@ class FirstInFirstOut(PriorityDispatchingRule):
 
     def __init__(
         self,
-        status: Any = "status",
-        release_time: Any = "release_time",
-        strict: bool = False,
-        job_oriented: bool = False,
+        release_time: FeatureTag = "release_time",
+        **kwargs: Unpack[BasePriorityKwargs],
     ) -> None:
-        super().__init__(status, strict, job_oriented)
+        super().__init__(**kwargs)
         self.release_time = release_time
 
     def priority_rule(
@@ -333,15 +375,13 @@ class CostOverTime(PriorityDispatchingRule):
 
     def __init__(
         self,
-        status: Any = "status",
-        processing_time: Any = "processing_time",
-        due_date: Any = "due_date",
-        release_time: Any = None,
-        weight: Any = "weight",
-        strict: bool = False,
-        job_oriented: bool = False,
+        processing_time: FeatureTag = "processing_time",
+        due_date: FeatureTag = "due_date",
+        release_time: FeatureTag | None = None,
+        weight: FeatureTag = "weight",
+        **kwargs: Unpack[BasePriorityKwargs],
     ) -> None:
-        super().__init__(status, strict, job_oriented)
+        super().__init__(**kwargs)
         self.processing_time = processing_time
         self.weight = weight
         self.due_date = due_date
@@ -377,16 +417,14 @@ class ApparentTardinessCost(PriorityDispatchingRule):
 
     def __init__(
         self,
-        status: Any = "status",
-        processing_time: Any = "processing_time",
-        due_date: Any = "due_date",
-        release_time: Any = None,
-        weight: Any = "weight",
+        processing_time: FeatureTag = "processing_time",
+        due_date: FeatureTag = "due_date",
+        release_time: FeatureTag | None = None,
+        weight: FeatureTag = "weight",
         lookahead: float = 3.0,
-        strict: bool = False,
-        job_oriented: bool = False,
+        **kwargs: Unpack[BasePriorityKwargs],
     ) -> None:
-        super().__init__(status, strict, job_oriented)
+        super().__init__(**kwargs)
         self.processing_time = processing_time
         self.weight = weight
         self.due_date = due_date
@@ -422,14 +460,12 @@ class TrafficPriority(PriorityDispatchingRule):
 
     def __init__(
         self,
-        status: Any = "status",
-        processing_time: Any = "processing_time",
-        due_date: Any = "due_date",
+        processing_time: FeatureTag = "processing_time",
+        due_date: FeatureTag = "due_date",
         K: float = 3.0,
-        strict: bool = False,
-        job_oriented: bool = False,
+        **kwargs: Unpack[BasePriorityKwargs],
     ) -> None:
-        super().__init__(status, strict, job_oriented)
+        super().__init__(**kwargs)
         self.processing_time = processing_time
         self.due_date = due_date
         self.K = K
