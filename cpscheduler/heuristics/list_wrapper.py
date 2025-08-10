@@ -1,106 +1,13 @@
 from typing import TypeVar, overload, Any, Generic
-from collections.abc import Iterator, Iterable
+from collections.abc import Iterator, Iterable, Sequence
 from typing_extensions import TypeIs
 
 import math
-
-from contextlib import contextmanager
-
-NUMPY_AVAILABLE = True
-try:
-    from numpy.typing import NDArray
-    import numpy as np
-
-except ImportError:
-    NUMPY_AVAILABLE = False
-
-TORCH_AVAILABLE = True
-try:
-    import torch
-
-except ImportError:
-    TORCH_AVAILABLE = False
+import random
 
 # Maybe include JAX in another iteration?
 
-from ._protocols import ArrayLike, TabularRepresentation
-
-@contextmanager
-def disable_numpy() -> Iterator[None]:
-    """
-    Context manager to temporarily disable NumPy functionality in priority dispatching.
-    This is mainly used for testing the ListWrapper functionality, without relying on NumPy.
-
-    The reason for this is because we design the library to work with minimal dependencies,
-    and NumPy is not a strict requirement for the core functionality.
-    """
-    global NUMPY_AVAILABLE
-    original_numpy_available = NUMPY_AVAILABLE
-    NUMPY_AVAILABLE = False
-    try:
-        yield
-
-    finally:
-        NUMPY_AVAILABLE = original_numpy_available
-
-
-@contextmanager
-def disable_torch() -> Iterator[None]:
-    global TORCH_AVAILABLE
-    original_torch_available = TORCH_AVAILABLE
-    TORCH_AVAILABLE = False
-    try:
-        yield
-
-    finally:
-        TORCH_AVAILABLE = original_torch_available
-
-
-def array_factory(data: Iterable[Any] | ArrayLike) -> ArrayLike:
-    if NUMPY_AVAILABLE:
-        if isinstance(data, np.ndarray):
-            return data
-
-        return np.asarray(data)
-
-    return ListWrapper(data)
-
-
-# The original observation must have shape (*batch, num_tasks, num_features)
-# The resulting arraylike after __getitem__ will have shape (*batch, num_tasks)
-def wrap_observation(obs: Any) -> TabularRepresentation[ArrayLike]:
-    "Wraps the observation into an ArrayLike structure."
-    if NUMPY_AVAILABLE and isinstance(obs, np.ndarray):
-        return np.moveaxis(obs, -1, 0)
-
-    if TORCH_AVAILABLE and isinstance(obs, torch.Tensor):
-        result: ArrayLike = obs.moveaxis(-1, 0)
-        return result
-
-    tasks: dict[str, ArrayLike] = {}
-    jobs: dict[str, ArrayLike] = {}
-    if isinstance(obs, tuple) and len(obs) == 2:
-        tasks, jobs = obs
-
-    elif isinstance(obs, dict):
-        tasks = obs
-
-    if not tasks:
-        raise ValueError("Observation must contain at least task features.")
-
-    new_obs: dict[str, ArrayLike] = {}
-
-    for task_feature in tasks:
-        new_obs[task_feature] = array_factory(tasks[task_feature])
-
-    array_jobs_ids = new_obs["job_id"]
-    for job_feature in jobs:
-        if job_feature == "job_id":
-            continue
-
-        new_obs[job_feature] = array_factory(jobs[job_feature])[array_jobs_ids]
-
-    return new_obs
+from .protocols import ArrayLike, TabularRepresentation
 
 _T = TypeVar("_T", bound=Any, covariant=True)
 _S = TypeVar("_S", bound=Any)
@@ -131,12 +38,9 @@ class ListWrapper(Generic[_T]):
         )
 
     def __array__(self, dtype: Any = None) -> ArrayLike:
-        if not NUMPY_AVAILABLE:
-            raise RuntimeError(
-                "Trying to convert ListWrapper to array in a non-NumPy environment."
-            )
+        from numpy import array
 
-        return np.array(self._data, dtype=dtype)
+        return array(self._data, dtype=dtype)
 
     @overload
     def __getitem__(self, index: int) -> _T: ...
@@ -379,30 +283,6 @@ class ListWrapper(Generic[_T]):
     def sort(self, key: Any = None, reverse: bool = False) -> None:
         self._data.sort(key=key, reverse=reverse)
 
-    def argsort(
-        self, key: Any = None, reverse: bool = False, stable: bool = False
-    ) -> "ListWrapper[int]":
-        if not stable:
-            return ListWrapper(
-                sorted(
-                    range(len(self._data)),
-                    key=lambda i: self._data[i],
-                    reverse=reverse,
-                )
-            )
-
-        indices = (
-            [(x, i) for i, x in enumerate(self._data)]
-            if not reverse
-            else [(x, -i) for i, x in enumerate(self._data)]
-        )
-
-        indices.sort(reverse=reverse)
-        argsort = ListWrapper([i for _, i in indices])
-        if reverse:
-            argsort = -argsort
-        return argsort
-
     def max(self) -> _T:
         return max(self._data)
 
@@ -423,190 +303,136 @@ class ListWrapper(Generic[_T]):
 
         return self.sum() / len(self._data)
 
-
-def maximum(x1: Any, x2: Any) -> ArrayLike:
-    if isinstance(x1, ListWrapper):
-        if isinstance(x2, ListWrapper):
-            if len(x1) != len(x2):
-                raise ValueError(
-                    f"Length mismatch in maximum operation. Expected {len(x1)}, got {len(x2)}"
-                )
-
-            return ListWrapper([a if a > b else b for a, b in zip(x1, x2)])
-
-        else:
-            return ListWrapper([a if a > x2 else x2 for a in x1])
-
-    elif isinstance(x2, ListWrapper):
-        return ListWrapper([x2 if a > x2 else a for a in x1])
-
-    result: ArrayLike
-    if (
-        TORCH_AVAILABLE
-        and isinstance(x1, torch.Tensor)
-        and isinstance(x2, torch.Tensor)
-    ):
-        result = torch.maximum(x1, x2)
-
-    elif NUMPY_AVAILABLE:
-        result = np.maximum(x1, x2)
-
-    else:
-        raise TypeError(
-            f"Unsupported types for maximum operation: {type(x1)}, {type(x2)}"
-        )
-
-    return result
-
-
-def minimum(x1: Any, x2: Any) -> ArrayLike:
-    if isinstance(x1, ListWrapper):
-        if isinstance(x2, ListWrapper):
-            if len(x1) != len(x2):
-                raise ValueError(
-                    f"Length mismatch in minimum operation. Expected {len(x1)}, got {len(x2)}"
-                )
-
-            return ListWrapper([a if a < b else b for a, b in zip(x1, x2)])
-
-        return ListWrapper([a if a < x2 else x2 for a in x1])
-
-    elif isinstance(x2, ListWrapper):
-        return ListWrapper([x2 if a < x2 else a for a in x1])
-
-    result: ArrayLike
-    if (
-        TORCH_AVAILABLE
-        and isinstance(x1, torch.Tensor)
-        and isinstance(x2, torch.Tensor)
-    ):
-        result = torch.minimum(x1, x2)
-
-    elif NUMPY_AVAILABLE:
-        result = np.minimum(x1, x2)
-
-    else:
-        raise TypeError(
-            f"Unsupported types for minimum operation: {type(x1)}, {type(x2)}"
-        )
-
-    return result
-
-
-def log(x: ArrayLike) -> ArrayLike:
-    if isinstance(x, ListWrapper):
-        return ListWrapper([math.log(a) for a in x])
-
-    result: ArrayLike
-    if TORCH_AVAILABLE and isinstance(x, torch.Tensor):
-        result = torch.log(x)
-
-    elif NUMPY_AVAILABLE:
-        result = np.log(x)
-
-    else:
-        raise TypeError(f"Unsupported types for log operation: {type(x)}")
-
-    return result
-
-
-def exp(x: ArrayLike) -> ArrayLike:
-    if isinstance(x, ListWrapper):
-        return ListWrapper([math.exp(a) for a in x])
-
-    result: ArrayLike
-    if TORCH_AVAILABLE and isinstance(x, torch.Tensor):
-        result = torch.exp(x)
-
-    elif NUMPY_AVAILABLE:
-        result = np.exp(x)
-
-    else:
-        raise TypeError(f"Unsupported types for log operation: {type(x)}")
-
-    return result
-
-
-def sqrt(x: ArrayLike) -> ArrayLike:
-    if isinstance(x, ListWrapper):
-        return ListWrapper([math.sqrt(a) for a in x])
-
-    result: ArrayLike
-    if TORCH_AVAILABLE and isinstance(x, torch.Tensor):
-        result = torch.sqrt(x)
-
-    elif NUMPY_AVAILABLE:
-        result = np.sqrt(x)
-
-    elif hasattr(x, "sqrt"):
-        result = x.sqrt()
-
-    else:
-        raise TypeError(f"Unsupported types for sqrt operation: {type(x)}")
-
-    return result
-
-
-def where(condition: ArrayLike, x1: Any, x2: Any) -> ArrayLike:
-    if isinstance(condition, ListWrapper):
-        if isinstance(x1, ListWrapper) and isinstance(x2, ListWrapper):
+    @staticmethod
+    def argsort(
+        x: Iterable[_T], reverse: bool = False, stable: bool = False
+    ) -> "ListWrapper[int]":
+        if not stable:
             return ListWrapper(
-                [a if cond else b for cond, a, b in zip(condition, x1, x2)]
+                map(
+                    lambda pair: pair[0],
+                    sorted(
+                        [(i, value) for i, value in enumerate(x)],
+                        key=lambda pair: pair[1],
+                        reverse=reverse,
+                    ),
+                )
             )
 
-        elif isinstance(x1, ListWrapper):
-            return ListWrapper([a if cond else x2 for cond, a in zip(condition, x1)])
+        indices = (
+            [(value, i) for i, value in enumerate(x)]
+            if not reverse
+            else [(value, -i) for i, value in enumerate(x)]
+        )
 
-        elif isinstance(x2, ListWrapper):
+        indices.sort(reverse=reverse)
+        argsort_lst = ListWrapper([i for _, i in indices])
+        if reverse:
+            argsort_lst = -argsort_lst
+
+        return argsort_lst
+
+    @staticmethod
+    def maximum(
+        x1: Iterable[_T] | _T,
+        x2: Iterable[_T] | _T,
+    ) -> "ListWrapper[_T]":
+        if is_pure_iterable(x1):
+            if is_pure_iterable(x2):
+                return ListWrapper([a if a > b else b for a, b in zip(x1, x2)])
+
+            else:
+                return ListWrapper([a if a > x2 else x2 for a in x1])
+
+        elif is_pure_iterable(x2):
+            return ListWrapper([x1 if x1 > b else b for b in x2])
+
+        return ListWrapper([max(x1, x2)])
+
+    @staticmethod
+    def minimum(
+        x1: Iterable[_T] | _T,
+        x2: Iterable[_T] | _T,
+    ) -> "ListWrapper[_T]":
+        if is_pure_iterable(x1):
+            if is_pure_iterable(x2):
+                return ListWrapper([a if a < b else b for a, b in zip(x1, x2)])
+
+            else:
+                return ListWrapper([a if a < x2 else x2 for a in x1])
+
+        elif is_pure_iterable(x2):
+            return ListWrapper([x1 if x1 < b else b for b in x2])
+
+        return ListWrapper([min(x1, x2)])
+
+    @staticmethod
+    def log(x: Iterable[_T]) -> "ListWrapper[float]":
+        return ListWrapper([math.log(a) for a in x])
+
+    @staticmethod
+    def exp(x: Iterable[_T]) -> "ListWrapper[float]":
+        return ListWrapper([math.exp(a) for a in x])
+
+    @staticmethod
+    def sqrt(x: Iterable[_T]) -> "ListWrapper[float]":
+        return ListWrapper([math.sqrt(a) for a in x])
+
+    @staticmethod
+    def where(
+        condition: Iterable[bool],
+        x1: Iterable[_T] | _T,
+        x2: Iterable[_T] | _T,
+    ) -> "ListWrapper[_T]":
+        if is_pure_iterable(x1):
+            if is_pure_iterable(x2):
+                return ListWrapper(
+                    [a if cond else b for cond, a, b in zip(condition, x1, x2)]
+                )
+
+            else:
+                return ListWrapper(
+                    [a if cond else x2 for cond, a in zip(condition, x1)]
+                )
+
+        elif is_pure_iterable(x2):
             return ListWrapper([x1 if cond else b for cond, b in zip(condition, x2)])
 
-        else:
-            return ListWrapper([x1 if cond else x2 for cond in condition])
-
-    result: ArrayLike
-    if TORCH_AVAILABLE and isinstance(condition, torch.Tensor):
-        result = torch.where(condition, x1, x2)
-
-    elif NUMPY_AVAILABLE:
-        result = np.where(condition, x1, x2)
-
-    else:
-        raise TypeError(f"Unsupported types for where operation: {type(condition)}")
-
-    return result
+        return ListWrapper([x1 if cond else x2 for cond in condition])
 
 
-def argsort(x: ArrayLike, descending: bool = False, stable: bool = False) -> ArrayLike:
-    if isinstance(x, ListWrapper):
-        return x.argsort(reverse=descending, stable=stable)
+maximum = ListWrapper.maximum
+minimum = ListWrapper.minimum
+log = ListWrapper.log
+exp = ListWrapper.exp
+sqrt = ListWrapper.sqrt
+argsort = ListWrapper.argsort
 
-    result: ArrayLike
-    if TORCH_AVAILABLE and isinstance(x, torch.Tensor):
-        result = torch.argsort(x, descending=descending, stable=stable, dim=-1)
 
-    elif NUMPY_AVAILABLE:
-        result = np.argsort(x if not descending else -x, axis=-1, stable=stable)
+# def where(condition: ArrayLike, x1: Any, x2: Any) -> ArrayLike:
+#     if isinstance(condition, ListWrapper):
+#         if isinstance(x1, ListWrapper) and isinstance(x2, ListWrapper):
+#             return ListWrapper(
+#                 [a if cond else b for cond, a, b in zip(condition, x1, x2)]
+#             )
 
-    else:
-        raise TypeError(f"Unsupported types for argsort operation: {type(x)}")
+#         elif isinstance(x1, ListWrapper):
+#             return ListWrapper([a if cond else x2 for cond, a in zip(condition, x1)])
 
-    return result
+#         elif isinstance(x2, ListWrapper):
+#             return ListWrapper([x1 if cond else b for cond, b in zip(condition, x2)])
 
-def astype(x: ArrayLike, dtype: type[Any] | Any) -> ArrayLike:
-    if isinstance(x, ListWrapper):
-        if x.dtype == dtype:
-            return x
-    
-        return x.astype(dtype)
-    
-    result: ArrayLike
-    if TORCH_AVAILABLE and isinstance(x, torch.Tensor):
-        result = x.to(dtype)
+#         else:
+#             return ListWrapper([x1 if cond else x2 for cond in condition])
 
-    elif hasattr(x, "astype"):
-        result = x.astype(dtype)
-    
-    else:
-        raise TypeError(f"Unsupported types for astype operation: {type(x)}")
+#     result: ArrayLike
+#     if TORCH_AVAILABLE and isinstance(condition, torch.Tensor):
+#         result = torch.where(condition, x1, x2)
 
-    return result
+#     elif NUMPY_AVAILABLE:
+#         result = np.where(condition, x1, x2)
+
+#     else:
+#         raise TypeError(f"Unsupported types for where operation: {type(condition)}")
+
+#     return result

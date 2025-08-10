@@ -2,27 +2,29 @@ from typing import Any, TypeAlias, Final, overload
 from collections.abc import Iterable, Sequence
 from typing_extensions import TypedDict, Unpack
 
-import random
-import math
-
 from abc import ABC, abstractmethod
 from mypy_extensions import mypyc_attr
 
 from cpscheduler.environment._common import Status, ObsType
 from cpscheduler.environment.instructions import SingleAction
 
-from ._protocols import ArrayLike, TabularRepresentation
-from .list_wrapper import (
+from .protocols import ArrayLike, TabularRepresentation
+from .array_utils import (
     wrap_observation,
     maximum,
+    minimum,
+    exp,
     argsort,
     where,
-    exp,
+    array_sum,
+    array_mean,
+    array_max,
+    astype,
 )
 
-MIN_PRIORITY: Final[int] = -2**31
-
 FeatureTag: TypeAlias = str | int
+
+
 class BasePriorityKwargs(TypedDict, total=False):
     status: FeatureTag | None
     """
@@ -60,6 +62,7 @@ class PriorityDispatchingRule(ABC):
         status: FeatureTag | None = "status",
         strict: bool = False,
         job_oriented: bool = False,
+        **kwargs: Any,
     ) -> None:
         self.status = status
         self.job_oriented = job_oriented
@@ -84,11 +87,12 @@ class PriorityDispatchingRule(ABC):
             time = 0
 
         priorities = self.priority_rule(array_obs, time)
+        priorities = astype(priorities, float)
 
         if self.status is not None:
             mask = array_obs[self.status] <= Status.PAUSED
 
-            priorities[mask] = MIN_PRIORITY
+            priorities[mask] = float("-inf")
 
         return priorities
 
@@ -127,7 +131,6 @@ class PriorityDispatchingRule(ABC):
             [(self.instruction, int(task_id)) for task_id in order[batch_index]]
             for batch_index in range(len(order))
         ]
-
 
     # def sample(
     #     self,
@@ -254,7 +257,7 @@ class ModifiedDueDate(PriorityDispatchingRule):
         task_dues = maximum(time + obs[self.processing_time], obs[self.due_date])
 
         if self.weight is not None:
-            task_dues = task_dues / self.weight
+            task_dues = task_dues / obs[self.weight]
 
         return -task_dues
 
@@ -280,7 +283,7 @@ class WeightedShortestProcessingTime(PriorityDispatchingRule):
     def priority_rule(
         self, obs: TabularRepresentation[ArrayLike], time: int
     ) -> ArrayLike:
-        return -obs[self.processing_time] / obs[self.weight]
+        return -(obs[self.processing_time] / obs[self.weight])
 
 
 class MinimumSlackTime(PriorityDispatchingRule):
@@ -390,23 +393,20 @@ class CostOverTime(PriorityDispatchingRule):
     def priority_rule(
         self, obs: TabularRepresentation[ArrayLike], time: int
     ) -> ArrayLike:
-        sum_processing = obs[self.processing_time].sum()
-
         wspt = -(obs[self.processing_time] / obs[self.weight])
+
+        sum_processing = array_sum(obs[self.processing_time], axis=-1)
 
         end_times = obs[self.processing_time] + (
             maximum(obs[self.release_time], time)
             if self.release_time is not None
             else time
         )
-        remaining = sum_processing - end_times
+
+        remaining = maximum(sum_processing - end_times, 0)
         denom = sum_processing - obs[self.due_date]
 
-        return where(
-            obs[self.due_date] <= end_times,
-            wspt,
-            where(obs[self.due_date] < sum_processing, wspt * (remaining / denom), 0.0),
-        )
+        return where(denom > 0, wspt * maximum(remaining / (denom + 1e-8), 1.0), 0.0)
 
 
 class ApparentTardinessCost(PriorityDispatchingRule):
@@ -435,9 +435,9 @@ class ApparentTardinessCost(PriorityDispatchingRule):
     def priority_rule(
         self, obs: TabularRepresentation[ArrayLike], time: int
     ) -> ArrayLike:
-        P_mean = obs[self.processing_time].mean()
+        P_mean = array_mean(obs[self.processing_time], axis=-1)
 
-        wspt = -obs[self.processing_time] / obs[self.weight]
+        wspt = obs[self.processing_time] / obs[self.weight]
 
         slack = (
             obs[self.due_date]
@@ -449,7 +449,7 @@ class ApparentTardinessCost(PriorityDispatchingRule):
             )
         )
 
-        return wspt * exp(maximum(0, slack) / (P_mean * self.lookahead))
+        return -wspt * exp(maximum(0, slack) / (P_mean * self.lookahead))
 
 
 class TrafficPriority(PriorityDispatchingRule):
@@ -473,22 +473,20 @@ class TrafficPriority(PriorityDispatchingRule):
     def priority_rule(
         self, obs: TabularRepresentation[ArrayLike], time: int
     ) -> ArrayLike:
-        traffic_congestion_ratio = (
-            obs[self.processing_time].sum() / obs[self.due_date].mean()
-        )
+        traffic_congestion_ratio = array_sum(
+            obs[self.processing_time], axis=-1
+        ) / array_mean(obs[self.due_date], axis=-1)
 
         weighted_edd = self.K / traffic_congestion_ratio - 0.5
-        if weighted_edd < 0:
-            weighted_edd = 0.0
-
-        elif weighted_edd > 1:
-            weighted_edd = 1.0
+        weighted_edd = where(
+            weighted_edd < 0.0, 0.0, where(weighted_edd > 1.0, 1.0, weighted_edd)
+        )
 
         tp: ArrayLike = -(
-            weighted_edd * obs[self.due_date] / obs[self.due_date].max()
+            weighted_edd * obs[self.due_date] / array_max(obs[self.due_date], axis=-1)
             + (1 - weighted_edd)
             * obs[self.processing_time]
-            / obs[self.processing_time].max()
+            / array_max(obs[self.processing_time], axis=-1)
         )
 
         return tp
