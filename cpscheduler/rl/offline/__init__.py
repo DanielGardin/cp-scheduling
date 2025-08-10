@@ -1,5 +1,6 @@
 __all__ = [
     "BehaviorCloning",
+    "EntropyAnnealingBC",
 ]
 
-from .bc import BehaviorCloning
+from .bc import BehaviorCloning, EntropyAnnealingBC
