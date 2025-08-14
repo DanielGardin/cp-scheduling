@@ -2,14 +2,19 @@ from typing import Any, TypeAlias, Final, overload
 from collections.abc import Iterable, Sequence
 from typing_extensions import TypedDict, Unpack
 
+import math
+
 from abc import ABC, abstractmethod
 from mypy_extensions import mypyc_attr
 
 from cpscheduler.environment._common import Status, ObsType
 from cpscheduler.environment.instructions import SingleAction
 
-from .protocols import ArrayLike, TabularRepresentation
+from ._protocols import ArrayLike, TabularRepresentation
+from .list_wrapper import ListWrapper
 from .array_utils import (
+    NUMPY_AVAILABLE,
+    TORCH_AVAILABLE,
     wrap_observation,
     maximum,
     minimum,
@@ -19,8 +24,110 @@ from .array_utils import (
     array_sum,
     array_mean,
     array_max,
-    astype,
+    astype
 )
+
+if NUMPY_AVAILABLE:
+    import numpy as np
+
+if TORCH_AVAILABLE:
+    import torch
+
+def sample_gumbel(x: ArrayLike, seed: int | None = None) -> ArrayLike:
+    result: ArrayLike
+    if TORCH_AVAILABLE and isinstance(x, torch.Tensor):
+        if seed is not None:
+            torch.manual_seed(seed)
+
+        result = -torch.log(-torch.log(torch.rand_like(x)))
+
+    elif NUMPY_AVAILABLE:
+        if seed is not None:
+            np.random.seed(seed)
+
+        result = -np.log(-np.log(np.random.rand(*x.shape)))
+
+    else:
+        raise RuntimeError("Gumbel sampling requires either PyTorch or NumPy.")
+
+    return result
+
+
+def prob_to_lmbda(prob: float, size: int, n_iter: int) -> float:
+    """
+    Convert a probability to a lambda parameter for the Plackett-Luce model.
+    """
+    if prob == 1.0:
+        return float("inf")
+
+    if prob * size < 1:
+        raise ValueError(
+            f"Target probability {prob} cannot be lower than uniform probability 1/{size}."
+        )
+
+    x = 1 - prob
+    for _ in range(n_iter):
+        x = (prob * x**size * (size - 1) - (1 - prob)) / (
+            size * prob * x ** (size - 1) - 1
+        )
+
+    return -math.log(x)
+
+
+def solve_p_star(priorities: ArrayLike, target_prob: float, n_iter: int) -> ArrayLike:
+    *batch, n_tasks = priorities.shape
+    target_lmbda = prob_to_lmbda(target_prob, n_tasks, n_iter)
+
+    lmbda: ArrayLike
+    if TORCH_AVAILABLE and isinstance(priorities, torch.Tensor):
+        with torch.no_grad():
+            *batch, n_tasks = priorities.shape
+
+            if target_prob * n_tasks < 1:
+                raise ValueError(
+                    f"Target probability {target_prob} cannot be lower than uniform probability 1/{n_tasks}."
+                )
+
+            batch_size = int(torch.prod(torch.tensor(batch)))
+            target_lmbda = prob_to_lmbda(target_prob, n_tasks, n_iter)
+
+            X = torch.arange(n_tasks, device=priorities.device, dtype=priorities.dtype)
+            X_mean = X.mean()
+
+            ordered_priorities, _ = torch.sort(priorities, dim=-1, descending=True)
+            y = priorities.reshape(batch_size, n_tasks)
+            y_mean = y.mean(axis=-1)
+
+            cov_xy = torch.sum((X - X_mean) * (y - y_mean), axis=-1)
+            var_x  = torch.sum((X - X_mean) ** 2, axis=-1)
+
+            lmbda = torch.reshape(-cov_xy / var_x, batch)
+
+    elif NUMPY_AVAILABLE:
+        batch_size = int(np.prod(batch))
+
+        x = np.arange(n_tasks)
+        x_mean = x.mean()
+
+        ordered_priorities = np.sort(priorities, axis=-1)[..., ::-1]
+        y = ordered_priorities.reshape(batch_size, n_tasks)
+        y_mean = y.mean(axis=-1)
+
+        cov_xy = np.sum((x - x_mean) * (y - y_mean), axis=-1)
+        var_x  = np.sum((x - x_mean) ** 2, axis=-1)
+
+        lmbda = np.reshape(-cov_xy / var_x, batch)
+
+    else:
+        ordered_priorities = ListWrapper.sort(priorities, reverse=True, stable=True)
+        ts = (n_tasks + 1) / 2 - ListWrapper(range(n_tasks))
+
+        lmbda = (
+            12 / (n_tasks * (n_tasks + 1) * (n_tasks - 1)) * (ts * ordered_priorities).sum()
+        )
+
+    return lmbda / target_lmbda
+
 
 FeatureTag: TypeAlias = str | int
 
@@ -90,7 +197,7 @@ class PriorityDispatchingRule(ABC):
         priorities = astype(priorities, float)
 
         if self.status is not None:
-            mask = array_obs[self.status] <= Status.PAUSED
+            mask = array_obs[self.status] >= Status.EXECUTING
 
             priorities[mask] = float("-inf")
 
@@ -120,7 +227,7 @@ class PriorityDispatchingRule(ABC):
         self, obs: Any, time: int | None = None
     ) -> Sequence[SingleAction] | Sequence[Sequence[SingleAction]]:
         priorities = self.get_priorities(obs, time)
-        order = argsort(priorities, descending=True, stable=True)
+        order = argsort(priorities, descending=True, stable=True, axis=-1)
 
         *batch, n_tasks = order.shape
 
@@ -132,32 +239,36 @@ class PriorityDispatchingRule(ABC):
             for batch_index in range(len(order))
         ]
 
-    # def sample(
-    #     self,
-    #     obs: Any,
-    #     time: int | None = None,
-    #     temp: float = 1.0,
-    #     target_prob: float | None = None,
-    #     n_iter: int = 5,
-    #     seed: int | None = None
-    # ) -> Sequence[SingleAction]:
-    #     priorities = self.get_priorities(obs, time)
+    def sample(
+        self,
+        obs: Any,
+        time: int | None = None,
+        temp: float | ArrayLike = 1.0,
+        target_prob: float | None = None,
+        n_iter: int = 5,
+        seed: int | None = None
+    ) -> Sequence[SingleAction] | Sequence[Sequence[SingleAction]]:
+        priorities = self.get_priorities(obs, time)
 
-    #     if temp <= 0.0 or (target_prob is not None and target_prob >= 1.0):
-    #         temp = 0.0
+        if temp <= 0.0 or (target_prob is not None and target_prob >= 1.0):
+            temp = 0.0
 
-    #     elif target_prob is not None:
-    #         x = 1 - target_prob
-    #         for _ in range(n_iter):
-    #             x = (
-    #                 (target_prob * x**n * (n - 1) - (1 - target_prob)) /
-    #                 (n * target_prob * x ** (n - 1) - 1)
-    #             )
+        elif target_prob is not None:
+            temp = solve_p_star(priorities, target_prob, n_iter)
 
-    #         order_multiplier = ((n+1) /2) - array_factory(range(1, len(priorities) + 1))
-    #         predicted_lambda = 12 * order_multiplier.sum() / ((n-1) * n * (n + 1))
+        priorities = priorities + temp * sample_gumbel(priorities, seed)
 
-    #         temp = predicted_lambda / -math.log(x)
+        order = argsort(priorities, descending=True, stable=True, axis=-1)
+
+        *batch, n_tasks = order.shape
+
+        if len(batch) == 0:
+            return [(self.instruction, int(task_id)) for task_id in order]
+
+        return [
+            [(self.instruction, int(task_id)) for task_id in order[batch_index]]
+            for batch_index in range(len(order))
+        ]
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}()"
@@ -283,7 +394,7 @@ class WeightedShortestProcessingTime(PriorityDispatchingRule):
     def priority_rule(
         self, obs: TabularRepresentation[ArrayLike], time: int
     ) -> ArrayLike:
-        return -(obs[self.processing_time] / obs[self.weight])
+        return obs[self.weight] / obs[self.processing_time]
 
 
 class MinimumSlackTime(PriorityDispatchingRule):
@@ -367,7 +478,7 @@ class FirstInFirstOut(PriorityDispatchingRule):
     def priority_rule(
         self, obs: TabularRepresentation[ArrayLike], time: int
     ) -> ArrayLike:
-        return obs[self.release_time]
+        return time - obs[self.release_time]
 
 
 class CostOverTime(PriorityDispatchingRule):
@@ -393,7 +504,7 @@ class CostOverTime(PriorityDispatchingRule):
     def priority_rule(
         self, obs: TabularRepresentation[ArrayLike], time: int
     ) -> ArrayLike:
-        wspt = -(obs[self.processing_time] / obs[self.weight])
+        wspt = obs[self.weight] / obs[self.processing_time]
 
         sum_processing = array_sum(obs[self.processing_time], axis=-1)
 
@@ -403,10 +514,9 @@ class CostOverTime(PriorityDispatchingRule):
             else time
         )
 
-        remaining = maximum(sum_processing - end_times, 0)
-        denom = sum_processing - obs[self.due_date]
+        deadline_slack = maximum(sum_processing - obs[self.due_date], 0)
 
-        return where(denom > 0, wspt * maximum(remaining / (denom + 1e-8), 1.0), 0.0)
+        return wspt * minimum(deadline_slack / (sum_processing - end_times), 1.0)
 
 
 class ApparentTardinessCost(PriorityDispatchingRule):
@@ -417,11 +527,11 @@ class ApparentTardinessCost(PriorityDispatchingRule):
 
     def __init__(
         self,
+        lookahead: float = 3.0,
         processing_time: FeatureTag = "processing_time",
         due_date: FeatureTag = "due_date",
         release_time: FeatureTag | None = None,
         weight: FeatureTag = "weight",
-        lookahead: float = 3.0,
         **kwargs: Unpack[BasePriorityKwargs],
     ) -> None:
         super().__init__(**kwargs)
@@ -437,19 +547,17 @@ class ApparentTardinessCost(PriorityDispatchingRule):
     ) -> ArrayLike:
         P_mean = array_mean(obs[self.processing_time], axis=-1)
 
-        wspt = obs[self.processing_time] / obs[self.weight]
-
-        slack = (
-            obs[self.due_date]
-            - obs[self.processing_time]
-            - (
-                maximum(obs[self.release_time], time)
-                if self.release_time is not None
-                else time
-            )
+        wspt = obs[self.weight] / obs[self.processing_time]
+    
+        start_time = (
+            maximum(obs[self.release_time], time)
+            if self.release_time is not None
+            else time
         )
 
-        return -wspt * exp(maximum(0, slack) / (P_mean * self.lookahead))
+        slack = obs[self.due_date] - obs[self.processing_time] - start_time
+
+        return wspt * exp(-maximum(0, slack) / (P_mean * self.lookahead))
 
 
 class TrafficPriority(PriorityDispatchingRule):
@@ -460,14 +568,16 @@ class TrafficPriority(PriorityDispatchingRule):
 
     def __init__(
         self,
+        K: float = 3.0,
         processing_time: FeatureTag = "processing_time",
         due_date: FeatureTag = "due_date",
-        K: float = 3.0,
+        # weight: FeatureTag | None = None,
         **kwargs: Unpack[BasePriorityKwargs],
     ) -> None:
         super().__init__(**kwargs)
         self.processing_time = processing_time
         self.due_date = due_date
+        # self.weight = weight
         self.K = K
 
     def priority_rule(
@@ -482,11 +592,12 @@ class TrafficPriority(PriorityDispatchingRule):
             weighted_edd < 0.0, 0.0, where(weighted_edd > 1.0, 1.0, weighted_edd)
         )
 
+        max_due_date = array_max(obs[self.due_date], axis=-1)
+        max_processing_time = array_max(obs[self.processing_time], axis=-1)
+
         tp: ArrayLike = -(
-            weighted_edd * obs[self.due_date] / array_max(obs[self.due_date], axis=-1)
-            + (1 - weighted_edd)
-            * obs[self.processing_time]
-            / array_max(obs[self.processing_time], axis=-1)
+            weighted_edd * obs[self.due_date] / max_due_date
+            + (1 - weighted_edd) * obs[self.processing_time] / max_processing_time
         )
 
         return tp

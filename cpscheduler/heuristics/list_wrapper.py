@@ -7,7 +7,7 @@ import random
 
 # Maybe include JAX in another iteration?
 
-from .protocols import ArrayLike, TabularRepresentation
+from ._protocols import ArrayLike, TabularRepresentation
 
 _T = TypeVar("_T", bound=Any, covariant=True)
 _S = TypeVar("_S", bound=Any)
@@ -280,9 +280,6 @@ class ListWrapper(Generic[_T]):
     def __hash__(self) -> int:
         return hash(tuple(self._data))
 
-    def sort(self, key: Any = None, reverse: bool = False) -> None:
-        self._data.sort(key=key, reverse=reverse)
-
     def max(self) -> _T:
         return max(self._data)
 
@@ -400,6 +397,21 @@ class ListWrapper(Generic[_T]):
 
         return ListWrapper([x1 if cond else x2 for cond in condition])
 
+    @staticmethod
+    def sort(
+        x: Iterable[_T], reverse: bool = False, stable: bool = False
+    ) -> "ListWrapper[int]":
+        if not stable:
+            return ListWrapper(sorted(x, reverse=reverse))
+
+        indices = (
+            [(value, i) for i, value in enumerate(x)]
+            if not reverse
+            else [(value, -i) for i, value in enumerate(x)]
+        )
+
+        indices.sort(reverse=reverse)
+        return ListWrapper([value for value, _ in indices])
 
 maximum = ListWrapper.maximum
 minimum = ListWrapper.minimum
@@ -407,32 +419,4 @@ log = ListWrapper.log
 exp = ListWrapper.exp
 sqrt = ListWrapper.sqrt
 argsort = ListWrapper.argsort
-
-
-# def where(condition: ArrayLike, x1: Any, x2: Any) -> ArrayLike:
-#     if isinstance(condition, ListWrapper):
-#         if isinstance(x1, ListWrapper) and isinstance(x2, ListWrapper):
-#             return ListWrapper(
-#                 [a if cond else b for cond, a, b in zip(condition, x1, x2)]
-#             )
-
-#         elif isinstance(x1, ListWrapper):
-#             return ListWrapper([a if cond else x2 for cond, a in zip(condition, x1)])
-
-#         elif isinstance(x2, ListWrapper):
-#             return ListWrapper([x1 if cond else b for cond, b in zip(condition, x2)])
-
-#         else:
-#             return ListWrapper([x1 if cond else x2 for cond in condition])
-
-#     result: ArrayLike
-#     if TORCH_AVAILABLE and isinstance(condition, torch.Tensor):
-#         result = torch.where(condition, x1, x2)
-
-#     elif NUMPY_AVAILABLE:
-#         result = np.where(condition, x1, x2)
-
-#     else:
-#         raise TypeError(f"Unsupported types for where operation: {type(condition)}")
-
-#     return result
+sort = ListWrapper.sort

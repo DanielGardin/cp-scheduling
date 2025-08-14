@@ -1,6 +1,8 @@
 from typing import Any
 from collections.abc import Iterable, Iterator
 
+from enum import Enum
+
 from contextlib import contextmanager
 
 NUMPY_AVAILABLE = True
@@ -18,7 +20,7 @@ try:
 except ImportError:
     TORCH_AVAILABLE = False
 
-from .protocols import ArrayLike, TabularRepresentation
+from ._protocols import ArrayLike, TabularRepresentation
 from .list_wrapper import ListWrapper
 
 
