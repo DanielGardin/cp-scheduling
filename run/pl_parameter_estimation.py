@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from typing import Any, Annotated
+from typing import Any, Annotated, Literal
 from collections.abc import Callable
 from torch.types import Device
 from numpy.typing import NDArray
@@ -9,33 +9,51 @@ from pandas import DataFrame
 
 import pandas as pd
 
-from gymnasium.vector import AsyncVectorEnv, SyncVectorEnv
+from gymnasium.vector import SyncVectorEnv
 
 import numpy as np
 
 import torch
 import torch.nn as nn
 
-from torch.optim import Adam
+from torch.optim import Adam, SGD
 
-from gymnasium import Env, make_vec
+from gymnasium import Env
 
 from dataclasses import dataclass, asdict
 
 import tyro
 from tyro.conf import arg, Positional
 
-from cpscheduler import SingleMachineSetup, WeightedTardiness, TotalTardiness, Objective
 from cpscheduler.environment.metrics import ReferenceScheduleMetrics
-from cpscheduler.gym import (
-    SchedulingEnvGym, PermutationActionWrapper, ArrayObservationWrapper
-)
-import cpscheduler.rl as rl
+from cpscheduler.gym import SchedulingEnvGym, PermutationActionWrapper, ArrayObservationWrapper
+from cpscheduler import SingleMachineSetup, WeightedTardiness, Objective
 
+from cpscheduler.heuristics._pdr import (
+    CostOverTime,
+    WeightedShortestProcessingTime,
+    ModifiedDueDate,
+    ApparentTardinessCost
+)
+from cpscheduler.rl.policies.perm import PlackettLucePolicy, WeightEstimationModel
+
+import cpscheduler.rl as rl
 INSTANCE_PATH = "data/customers/wt40_50_0.5.pkl"
 DATASET_PATH = "data/customers/wt40_50_0.5_dataset.pkl"
 
 features = ["processing_time", "due_date", "customer"]
+
+PDRS = Literal["WSPT", "WMDD", "COverT", "ATC"]
+
+
+default_float = torch.float64
+
+pdrs_mapping = {
+    "WSPT": WeightedShortestProcessingTime(processing_time=0, weight=2, status=None),
+    "WMDD": ModifiedDueDate(processing_time=0, due_date=1, weight=2, status=None),
+    "COverT": CostOverTime(processing_time=0, due_date=1, weight=2, status=None),
+    "ATC": ApparentTardinessCost(processing_time=0, due_date=1, weight=2, status=None)
+}
 
 @dataclass
 class Config:
@@ -60,16 +78,13 @@ class Config:
     quiet: Annotated[bool, arg(aliases=("-q",))] = False
     "If True, suppresses output during training."
 
-    hidden_size: Annotated[int, arg(aliases=("-s",))] = 64
-    "Size of the hidden layers in the neural network."
+    pdr: PDRS  = "WSPT"
+    "Priority Dispatching Rule to use for weight estimation."
 
-    n_layers: Annotated[int, arg(aliases=("-l",))] = 2
-    "Number of layers in the neural network."
+    p_star: Annotated[float | None, arg(aliases=("-p",))] = None
+    "Target probability for the Plackett-Luce model."
 
-    dropout: float = 0.0
-    "Dropout rate for the neural network."
-
-    lr: float = 1e-5
+    lr: float = 1e-4
     "Learning rate for the optimizer."
 
     weight_decay: float = 0.0
@@ -87,6 +102,8 @@ class Config:
     validation_freq: Annotated[int, arg(aliases=("-v",))] = 1
     "Frequency of validation during training."
 
+    random_start: Annotated[bool, arg(aliases=("-r",))] = False
+    "If True, samples a random weight."
 
 args = tyro.cli(Config)
 
@@ -94,7 +111,7 @@ if args.seed is not None:
     rl.utils.set_seed(args.seed)
 
 device = rl.utils.get_device(args.device)
-args.device = device
+args.device = str(device)
 
 list_instances: list[DataFrame]
 instance_info: DataFrame
@@ -123,7 +140,7 @@ def make_env(instance: DataFrame) -> Callable[[], Env[Any, Any]]:
 
     return inner
 
-val_envs = AsyncVectorEnv(
+val_envs = SyncVectorEnv(
     [
         make_env(instance)
         for instance in list_instances
@@ -139,14 +156,14 @@ envs = SyncVectorEnv(
 
 val_obs = torch.cat(
     [
-        torch.tensor(df[features].values, dtype=torch.float32).unsqueeze(0)
+        torch.tensor(df[features].values, dtype=default_float).unsqueeze(0)
         for df in list_instances
     ]
 ).to(device)
 
 dataset = torch.cat(
     [
-        torch.tensor(df[features].values, dtype=torch.float32).unsqueeze(0)
+        torch.tensor(df[features].values, dtype=default_float).unsqueeze(0)
         for df in train_dataset
     ]
 ).to(device)
@@ -155,7 +172,7 @@ actions = torch.cat(
     [
         torch.tensor(
             df["BPolicy start"].values,
-            dtype=torch.float32
+            dtype=default_float
         ).unsqueeze(0).argsort()
         for df in train_dataset
     ]
@@ -167,25 +184,17 @@ if args.frac_train < 1:
     dataset = dataset[indices]
     actions = actions[indices]
 
-preprocessor = rl.preprocessor.TabularPreprocessor(
-    categorical_indices=[2],
-    numerical_indices=[0, 1],
-    categorical_embedding_dim=8,
-)
+weight_model = WeightEstimationModel(
+    50,
+    feature_index=-1,
+    pdr=pdrs_mapping[args.pdr]
+).to(device)
 
-preprocessor.fit(dataset)
+if args.random_start:
+    random_weight = torch.distributions.Dirichlet(torch.ones(50)).sample()
+    weight_model.logit_weights.data = torch.log(random_weight).to(device)
 
-scorer = nn.Sequential(
-    preprocessor,
-    rl.network.MLP(
-        input_dim=preprocessor.output_dim,
-        output_dim=1,
-        hidden_dims= [args.hidden_size] * args.n_layers,
-        dropout=args.dropout,
-    )
-)
-
-policy = rl.policies.PlackettLucePolicy(scorer).to(device)
+policy = rl.policies.PlackettLucePolicy(weight_model).to(device)
 
 optimizer = Adam(
     policy.parameters(),
@@ -194,11 +203,27 @@ optimizer = Adam(
 )
 
 policy.compile()
-
 class SchedulingBC(rl.offline.BehaviorCloning):
+    def update(self, batch: Any) -> dict[str, Any]:
+        target_action = batch["action"]
+
+        temp = 1.0
+        if args.p_star is not None:
+            temp = self.policy.get_temperature(batch["state"], args.p_star, 100) # type: ignore
+
+        loss = -torch.mean(self.policy.log_prob(batch["state"], target_action, temp=temp))
+
+        self.actor_optimizer.zero_grad()
+        loss.backward()
+        self.actor_optimizer.step()
+
+        return {
+            "loss/actor": loss.item(),
+        }
+
+
     def on_epoch_end(self) -> dict[str, Any]:
         obs: NDArray[Any]
-
         obs, _ = envs.reset()
         
         with torch.no_grad():
@@ -212,10 +237,9 @@ class SchedulingBC(rl.offline.BehaviorCloning):
             key: value
             for key, value in info.items()
             if not key.startswith('_')
-        }
+        } | super().on_epoch_end()
 
     def validate(self) -> dict[str, float]:
-
         with torch.no_grad():
             val_action = self.policy.greedy(val_obs).cpu().numpy()
 
