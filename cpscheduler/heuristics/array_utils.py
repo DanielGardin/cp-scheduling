@@ -44,13 +44,15 @@ def disable_numpy() -> Iterator[None]:
 
 
 def array_factory(data: Iterable[Any] | ArrayLike) -> ArrayLike:
+    array: ArrayLike
+
     if NUMPY_AVAILABLE:
-        if isinstance(data, np.ndarray):
-            return data
+        array = np.asarray(data)
+    
+    else:
+        array = ListWrapper(data)
 
-        return np.asarray(data)
-
-    return ListWrapper(data)
+    return array
 
 
 # The original observation must have shape (*batch, num_tasks, num_features)
@@ -157,7 +159,7 @@ def argsort(
         result = torch.argsort(x, descending=descending, stable=stable, dim=axis)
 
     elif NUMPY_AVAILABLE:
-        result = np.argsort(x if not descending else -x, axis=axis, stable=stable)
+        result = np.argsort(x if not descending else -x, axis=axis, kind="stable" if stable else "quicksort")
 
     else:
         result = ListWrapper.argsort(x, reverse=descending, stable=stable)

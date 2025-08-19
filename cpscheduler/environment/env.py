@@ -49,7 +49,7 @@ from ._protocols import ImportableMetric
 from .utils import convert_to_list
 
 
-from ._render import Renderer, PlotlyRenderer
+from ._render import Renderer
 
 
 def prepare_instance(instance: InstanceTypes) -> dict[str, list[Any]]:
@@ -166,8 +166,8 @@ class SchedulingEnv:
 
         self.renderer = (
             render_mode
-            if isinstance(render_mode, Renderer)
-            else self._dispatch_render(render_mode)
+            if isinstance(render_mode, Renderer) else
+            Renderer.get_renderer(render_mode)
         )
 
         if instance_config is not None:
@@ -410,8 +410,7 @@ class SchedulingEnv:
             if self._dispatch_instruction():
                 break
 
-            if type(self.renderer) is not Renderer:
-                self.render()
+            self.render()
 
         obs = self._get_state()
 
@@ -427,17 +426,6 @@ class SchedulingEnv:
 
     def render(self) -> None:
         self.renderer.render(self.current_time, self.tasks, self.data)
-
-    ## Environment utility private methods
-    def _dispatch_render(self, render_model: str | None) -> Renderer:
-        "Dispatch the renderer based on the render model."
-        if render_model is None:
-            return Renderer()
-
-        if render_model == "human":
-            return PlotlyRenderer()
-
-        raise ValueError(f"Unknown render model: {render_model}. Supported: 'human'.")
 
     def _get_objective(self) -> float:
         "Get the current value of the objective function."

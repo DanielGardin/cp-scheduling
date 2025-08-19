@@ -6,14 +6,30 @@ charts of task schedules. The Renderer class is an abstract base class that prov
 interface for rendering tasks.
 """
 
-from typing import Any
+from typing import Any, ClassVar
 
 from .tasks import Tasks
 from .data import SchedulingData
 
 
+renderers: dict[str, "Renderer"] = {}
 class Renderer:
     "Renderer base class for visualizing task schedules."
+    render_name: ClassVar[str | None] = None
+
+    def __init_subclass__(cls) -> None:
+        super().__init_subclass__()
+
+        if cls.render_name is not None:
+            renderers[cls.render_name] = cls()
+
+    @classmethod
+    def get_renderer(cls, render_mode: str | None) -> "Renderer":
+        "Get the registered renderers."
+        if render_mode is None:
+            return Renderer()
+
+        return renderers[render_mode]
 
     def build_gantt(self, current_time: int, tasks: Tasks, data: SchedulingData) -> Any:
         "Build a figure-like object representing the Gantt chart."
@@ -29,6 +45,7 @@ try:
 
     class PlotlyRenderer(Renderer):
         "Renderer for visualizing task schedules using the Plotly backend."
+        name = "plotly"
 
         def build_gantt(
             self, current_time: int, tasks: Tasks, data: SchedulingData
