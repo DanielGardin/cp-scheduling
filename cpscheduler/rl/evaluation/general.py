@@ -93,6 +93,7 @@ def confidence_interval(
     statistic : Statistics | str | Statistic_FN, optional
         The statistic to compute for each bootstrap sample. Can be one of the predefined statistics
         ("mean", "median", "min", "max", "ccdf") or a custom function that takes an array and returns a statistic.
+        if None, returns the spread confidence interval
 
     axis : int, optional
         The axis along which to compute the statistic. Default is -1, which means the last
@@ -147,5 +148,7 @@ def confidence_interval(
 
     lower = np.quantile(statistics, alpha / 2, axis=0)
     upper = np.quantile(statistics, 1 - alpha / 2, axis=0)
+
+
 
     return statistics, lower, upper

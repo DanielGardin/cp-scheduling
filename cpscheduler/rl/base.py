@@ -75,11 +75,11 @@ class BaseAlgorithm(Module, ABC):
 
     def learn(
         self,
-        num_updates: int,
-        steps_per_update: int,
-        batch_size: int,
-        validation_freq: int | None = 1,
+        num_updates: int | None = None,
         global_steps: int | None = None,
+        steps_per_update: int = 4,
+        batch_size: int = 1,
+        validation_freq: int | None = 1,
         lr_scheduler: LRScheduler | None = None,
         *,
         project_name: str | None = None,
@@ -98,9 +98,32 @@ class BaseAlgorithm(Module, ABC):
             config=config,
         )
 
-        self.on_session_start(num_updates, steps_per_update, batch_size)
+        if global_steps is None:
+            if num_updates is None:
+                raise ValueError("Either num_updates or global_steps must be provided.")
 
-        for update in range(1, num_updates + 1):
+            global_steps = (
+                num_updates
+                * steps_per_update
+                * ceildiv(self.buffer.capacity, batch_size)
+            )
+
+        expected_updates = (
+            ceildiv(
+                global_steps,
+                steps_per_update * ceildiv(self.buffer.capacity, batch_size),
+            )
+            if num_updates is None
+            else num_updates
+        )
+
+        self.on_session_start(steps_per_update, batch_size)
+
+        update_count = 0
+        while self.global_step < global_steps or (
+            num_updates is not None and update_count < num_updates
+        ):
+            update_count += 1
 
             start_logs = self.on_epoch_start()
             logger.add_logs(start_logs, step=self.global_step, tag="start")
@@ -110,10 +133,11 @@ class BaseAlgorithm(Module, ABC):
                 total=n_steps,
                 unit=" steps",
                 dynamic_ncols=True,
-                leave=validation_freq is not None and update % validation_freq == 0,
+                leave=validation_freq is not None
+                and update_count % validation_freq == 0,
                 disable=quiet,
             ) as pbar:
-                pbar.set_description(f"Epoch {update}/{num_updates}")
+                pbar.set_description(f"Epoch {update_count}/{expected_updates}")
                 logger.reset_log_accumulator()
 
                 self.train()
@@ -133,7 +157,7 @@ class BaseAlgorithm(Module, ABC):
                 logger.add_logs(end_logs, step=self.global_step, tag="end")
 
                 val_logs = {}
-                if validation_freq is not None and update % validation_freq == 0:
+                if validation_freq is not None and update_count % validation_freq == 0:
                     with torch.no_grad():
                         self.eval()
 
@@ -149,11 +173,13 @@ class BaseAlgorithm(Module, ABC):
                         }
                     )
 
-            if global_steps is not None and self.global_step >= global_steps:
-                break
-
             if lr_scheduler is not None:
                 lr_scheduler.step()
+
+            if num_updates is None:
+                expected_updates = ceildiv(
+                    global_steps * update_count, self.global_step
+                )
 
         self.on_session_end()
         logger.close()
@@ -179,9 +205,7 @@ class BaseAlgorithm(Module, ABC):
 
         self.to(device=self.device)
 
-    def on_session_start(
-        self, num_updates: int, steps_per_update: int, batch_size: int
-    ) -> None:
+    def on_session_start(self, steps_per_update: int, batch_size: int) -> None:
         pass
 
     def on_epoch_start(self) -> dict[str, Any]:

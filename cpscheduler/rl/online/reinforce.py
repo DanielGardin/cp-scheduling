@@ -35,7 +35,6 @@ class Reinforce(BaseAlgorithm):
         norm_returns: bool = False,
         mc_samples: int = 1,
         n_steps: int = 1,
-        baseline_decay: float = 0.99,
         device: Device = "auto",
     ):
         self.obs_shape = obs_shape
@@ -51,7 +50,7 @@ class Reinforce(BaseAlgorithm):
                 "returns": (1,),
                 "greedy_return": (1,),
             },
-            allow_grad=True,
+            allow_grad=False,
         )
 
         super().__init__(buffer, actor, get_device(device))
