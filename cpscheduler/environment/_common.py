@@ -101,11 +101,11 @@ class Status:
     # available: time < start_lb[0] and can be executed
     AVAILABLE: Final[u8] = 1
 
-    # executing: start_lb[i] <= time < start_lb[i] + duration[i] for some i
-    EXECUTING: Final[u8] = 2
-
     # paused:    start_lb[i] + duration[i] < = time < start_lb[i+1] for some i
-    PAUSED: Final[u8] = 3
+    PAUSED: Final[u8] = 2
+
+    # executing: start_lb[i] <= time < start_lb[i] + duration[i] for some i
+    EXECUTING: Final[u8] = 3
 
     # completed: time >= start_lb[-1] + duration[-1]
     COMPLETED: Final[u8] = 4

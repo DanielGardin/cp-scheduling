@@ -537,7 +537,7 @@ class CostOverTime(PriorityDispatchingRule):
                 else (
                     -proc_time / weight * (P - time - proc_time) / (P - due_date)
                     if due_date < P
-                    else 0
+                    else float("-inf")
                 )
             )
             for weight, proc_time, due_date in zip(weights, processing_time, due_dates)
@@ -552,7 +552,7 @@ class ApparentTardinessCost(PriorityDispatchingRule):
 
     def __init__(
         self,
-        lookahead: float,
+        lookahead: float = 3.0,
         weight_label: str = "weight",
         processing_time_label: str = "processing_time",
         due_date_label: str = "due_date",

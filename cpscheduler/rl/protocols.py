@@ -1,17 +1,24 @@
-from typing import Protocol, TypeVar
+from typing import Protocol, TypeVar, ParamSpec, TypeAlias
 from torch.types import Tensor
 
 ObsT_C = TypeVar("ObsT_C", contravariant=True)
 ActT_ = TypeVar("ActT_")
 
+P = ParamSpec("P")
 
-class Policy(Protocol[ObsT_C, ActT_]):
-    def get_action(self, x: ObsT_C) -> tuple[ActT_, Tensor]: ...
 
-    def log_prob(self, x: ObsT_C, action: ActT_) -> Tensor: ...
+class GeneralPolicy(Protocol[ObsT_C, ActT_, P]):
+    def get_action(
+        self, x: ObsT_C, *args: P.args, **kwargs: P.kwargs
+    ) -> tuple[ActT_, Tensor]: ...
 
+    def log_prob(
+        self, x: ObsT_C, action: ActT_, *args: P.args, **kwargs: P.kwargs
+    ) -> Tensor: ...
     def greedy(self, x: ObsT_C) -> ActT_: ...
 
+
+Policy: TypeAlias = GeneralPolicy[ObsT_C, ActT_, ...]
 
 ActT_C = TypeVar("ActT_C", contravariant=True)
 

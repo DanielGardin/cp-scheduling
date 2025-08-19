@@ -6,14 +6,15 @@ from functools import partial
 from numpy.typing import NDArray, ArrayLike
 import numpy as np
 
+
 def ccdf(
     metrics: NDArray[np.floating[Any]],
     thresholds: ArrayLike | None = None,
-    axis: int = -1
+    axis: int = -1,
 ) -> NDArray[np.floating[Any]]:
     """
     Compute the complementary cumulative distribution function (CCDF) of the given metrics.
-    The CCDF is defined as the fraction of instances for which the metric is greater than or 
+    The CCDF is defined as the fraction of instances for which the metric is greater than or
     equal to a given threshold.
 
     This metric is very useful for evaluating policy performance due to the stochastic nature of
@@ -41,7 +42,6 @@ def ccdf(
         The CCDF values for the given thresholds. The shape of the returned array will be
         (*batch, t), where *batch is the same as in the input metrics and t is the number of thresholds.
     """
-    
 
     if thresholds is None:
         thresholds = np.linspace(np.min(metrics), np.max(metrics), num=100)
@@ -54,14 +54,18 @@ def ccdf(
 
     n = metrics.shape[-1]
 
-    cmp = metrics[..., np.newaxis] >= thresholds[np.newaxis, ...]  # shape: (*batch, n, t)
+    cmp = (
+        metrics[..., np.newaxis] >= thresholds[np.newaxis, ...]
+    )  # shape: (*batch, n, t)
 
     ccdf: NDArray[Any] = np.mean(cmp, axis=-2)  # shape: (*batch, t)
 
     return ccdf
 
+
 Statistics = Literal["mean", "median", "min", "max", "ccdf"]
 Statistic_FN = Callable[[NDArray[np.floating[Any]]], NDArray[np.floating[Any]]]
+
 
 def confidence_interval(
     metrics: NDArray[np.floating[Any]],
@@ -71,7 +75,7 @@ def confidence_interval(
     confidence: float = 0.95,
     seed: int | None = None,
     *args: Any,
-    **kwargs: Any
+    **kwargs: Any,
 ) -> tuple[
     NDArray[np.floating[Any]], NDArray[np.floating[Any]], NDArray[np.floating[Any]]
 ]:
@@ -82,30 +86,31 @@ def confidence_interval(
     ----------
     metrics : NDArray[np.floating[Any]]
         The metrics to compute the confidence interval for.
-    
+
     n_bootstrap : int, optional
         The number of bootstrap samples to use for estimating the confidence interval. Default is 1000
-    
+
     statistic : Statistics | str | Statistic_FN, optional
         The statistic to compute for each bootstrap sample. Can be one of the predefined statistics
         ("mean", "median", "min", "max", "ccdf") or a custom function that takes an array and returns a statistic.
+        if None, returns the spread confidence interval
 
     axis : int, optional
         The axis along which to compute the statistic. Default is -1, which means the last
         axis of the metrics array.
-    
+
     confidence : float, optional
         The confidence level for the interval. Default is 0.95, which corresponds to a 95% confidence interval.
 
     seed : int | None, optional
         Random seed for reproducibility. If None, the random number generator will not be seeded.
-    
+
     *args : Any
         Additional positional arguments to pass to the statistic function.
-    
+
     **kwargs : Any
         Additional keyword arguments to pass to the statistic function.
-    
+
     Returns
     -------
     tuple[NDArray[np.floating[Any]], NDArray[np.floating[Any]], NDArray[np.floating[Any]]]
@@ -135,9 +140,9 @@ def confidence_interval(
 
     idx = rng.integers(0, n_samples, size=(n_bootstrap, n_samples))
     samples = metrics[..., idx]
-    samples = np.moveaxis(samples, -2, 0) # shape: (n_bootstrap, *batch, n_samples)
+    samples = np.moveaxis(samples, -2, 0)  # shape: (n_bootstrap, *batch, n_samples)
 
-    statistics = statistic(samples, *args, **kwargs) # shape: (n_bootstrap, ...)
+    statistics = statistic(samples, *args, **kwargs)  # shape: (n_bootstrap, ...)
 
     alpha = 1 - confidence
 
