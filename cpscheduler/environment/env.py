@@ -179,76 +179,14 @@ class SchedulingEnv:
                 machine_instance=instance_config.get("machine_instance", None),
             )
 
-    def __reduce__(self) -> Any:
-        """
-        Custom reduce method to ensure the environment can be pickled and deep copied correctly.
-        This is necessary for compatibility with multiprocessing and other serialization
-        mechanisms.
-        """
-        return (
-            self.__class__,
-            (
-                self.setup,
-                None,
-                None,
-                None,  # instance_config will be set later
-                self.metrics,
-                self.renderer,
-                self.preemptive,
-            ),
-            (
-                self.constraints,
-                self.objective,
-                self.data,
-                self.tasks,
-                self.schedule,
-                self.current_time,
-                self.advancing_to,
-                self.query_times,
-                self.loaded,
-                self.force_reset,
-            ),
-        )
-
-    def __setstate__(self, state: tuple[Any, ...]) -> None:
-        """
-        Custom setstate method to restore the environment's state after unpickling.
-        This is necessary to ensure the environment is correctly initialized with its
-        data and tasks.
-        """
-        constraints: dict[str, Constraint]
-        (
-            constraints,
-            self.objective,
-            self.data,
-            self.tasks,
-            self.schedule,
-            self.current_time,
-            self.advancing_to,
-            self.query_times,
-            self.loaded,
-            self.force_reset,
-        ) = state
-
-        for name, constraint in constraints.items():
-            if self.loaded:
-                constraint.import_data(self.data)
-                constraint.refresh(self.current_time, self.tasks)
-
-            self.constraints[name] = constraint
-
+    def __repr__(self) -> str:
         if self.loaded:
-            self.objective.import_data(self.data)
+            return (
+                f"SchedulingEnv({self.get_entry()}, n_tasks={self.tasks.n_tasks}, "
+                f"current_time={self.current_time}, objective={self._get_objective()})"
+            )
 
-    def _dispatch_render(self, render_model: str | None) -> Renderer:
-        "Dispatch the renderer based on the render model."
-        if render_model is None:
-            return Renderer()
-
-        if render_model == "human":
-            return PlotlyRenderer()
-
-        raise ValueError(f"Unknown render model: {render_model}. Supported: 'human'.")
+        return f"SchedulingEnv({self.get_entry()}, n_tasks=0)"
 
     # Environment configuration public methods
     def add_constraint(self, constraint: Constraint, replace: bool = False) -> None:
@@ -347,7 +285,26 @@ class SchedulingEnv:
         self.loaded = True
         self.force_reset = True
 
-    ## Environment state retrieval methods
+    def get_entry(self) -> str:
+        "Get a string representation of the environment's configuration."
+        alpha = self.setup.get_entry()
+
+        beta = ",".join(
+            [
+                constraint.get_entry()
+                for constraint in self.constraints.values()
+                if not constraint.setup_constraint and constraint.get_entry()
+            ]
+        )
+
+        if self.preemptive:
+            beta += f"{',' if beta else ''}prmp"
+
+        gamma = self.objective.get_entry()
+
+        return f"{alpha}|{beta}|{gamma}"
+
+    # Environment state retrieval methods
     def _get_state(self) -> ObsType:
         "Retrieve the current state of the environment from tasks."
         task_data, job_data = self.data.export_state()
@@ -427,7 +384,61 @@ class SchedulingEnv:
 
         return self._get_state(), self._get_info()
 
+    def step(
+        self,
+        action: ActionType = None,
+    ) -> tuple[ObsType, float, bool, bool, InfoType]:
+        if self.force_reset or not self.loaded:
+            raise RuntimeError(
+                "Environment was not reset after loading an instance, or wasn't loaded. "
+                "Please call reset() after set_instance(...)."
+            )
+
+        if is_single_action(action):
+            single_args = tuple(map(int, action[1:]))
+            self._schedule_instruction(action[0], single_args)
+
+        elif action is not None:
+            for instruction in action:
+                args = tuple(map(int, instruction[1:]))
+                self._schedule_instruction(instruction[0], args)
+
+        self.query_times.append(self.current_time)
+        previous_objective = self._get_objective()
+
+        while True:
+            if self._dispatch_instruction():
+                break
+
+            if type(self.renderer) is not Renderer:
+                self.render()
+
+        obs = self._get_state()
+
+        reward = self._get_objective() - previous_objective
+        if self.objective.minimize:
+            reward = -reward
+
+        truncated = False
+        terminal = self._is_terminal()
+        info = self._get_info()
+
+        return obs, reward, terminal, truncated, info
+
+    def render(self) -> None:
+        self.renderer.render(self.current_time, self.tasks, self.data)
+
     ## Environment utility private methods
+    def _dispatch_render(self, render_model: str | None) -> Renderer:
+        "Dispatch the renderer based on the render model."
+        if render_model is None:
+            return Renderer()
+
+        if render_model == "human":
+            return PlotlyRenderer()
+
+        raise ValueError(f"Unknown render model: {render_model}. Supported: 'human'.")
+
     def _get_objective(self) -> float:
         "Get the current value of the objective function."
         return float(self.objective.get_current(self.current_time, self.tasks))
@@ -601,78 +612,67 @@ class SchedulingEnv:
 
         return self._process_next_instruction()
 
-    def step(
-        self,
-        action: ActionType = None,
-    ) -> tuple[ObsType, float, bool, bool, InfoType]:
-        if self.force_reset or not self.loaded:
-            raise RuntimeError(
-                "Environment was not reset after loading an instance, or wasn't loaded. "
-                "Please call reset() after set_instance(...)."
-            )
-
-        if is_single_action(action):
-            single_args = tuple(map(int, action[1:]))
-            self._schedule_instruction(action[0], single_args)
-
-        elif action is not None:
-            for instruction in action:
-                args = tuple(map(int, instruction[1:]))
-                self._schedule_instruction(instruction[0], args)
-
-        self.query_times.append(self.current_time)
-        previous_objective = self._get_objective()
-
-        while True:
-            if self._dispatch_instruction():
-                break
-
-            if type(self.renderer) is not Renderer:
-                self.render()
-
-        obs = self._get_state()
-
-        reward = self._get_objective() - previous_objective
-        if self.objective.minimize:
-            reward = -reward
-
-        truncated = False
-        terminal = self._is_terminal()
-        info = self._get_info()
-
-        return obs, reward, terminal, truncated, info
-
-    # Environment rendering and representation methods
-    def render(self) -> None:
-        self.renderer.render(self.current_time, self.tasks, self.data)
-
-    def get_entry(self) -> str:
-        "Get a string representation of the environment's configuration."
-        alpha = self.setup.get_entry()
-
-        beta = ",".join(
-            [
-                constraint.get_entry()
-                for constraint in self.constraints.values()
-                if not constraint.setup_constraint and constraint.get_entry()
-            ]
+    # Custom serialization methods for pickling and deep copying
+    def __reduce__(self) -> Any:
+        """
+        Custom reduce method to ensure the environment can be pickled and deep copied correctly.
+        This is necessary for compatibility with multiprocessing and other serialization
+        mechanisms.
+        """
+        return (
+            self.__class__,
+            (
+                self.setup,
+                None,
+                None,
+                None,  # instance_config will be set later
+                self.metrics,
+                self.renderer,
+                self.preemptive,
+            ),
+            (
+                self.constraints,
+                self.objective,
+                self.data,
+                self.tasks,
+                self.schedule,
+                self.current_time,
+                self.advancing_to,
+                self.query_times,
+                self.loaded,
+                self.force_reset,
+            ),
         )
 
-        if self.preemptive:
-            beta += f"{',' if beta else ''}prmp"
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        """
+        Custom setstate method to restore the environment's state after unpickling.
+        This is necessary to ensure the environment is correctly initialized with its
+        data and tasks.
+        """
+        constraints: dict[str, Constraint]
+        (
+            constraints,
+            self.objective,
+            self.data,
+            self.tasks,
+            self.schedule,
+            self.current_time,
+            self.advancing_to,
+            self.query_times,
+            self.loaded,
+            self.force_reset,
+        ) = state
 
-        gamma = self.objective.get_entry()
+        for name, constraint in constraints.items():
+            if self.loaded:
+                constraint.import_data(self.data)
+                constraint.refresh(self.current_time, self.tasks)
 
-        return f"{alpha}|{beta}|{gamma}"
+            self.constraints[name] = constraint
 
-    def __repr__(self) -> str:
         if self.loaded:
-            return (
-                f"SchedulingEnv({self.get_entry()}, n_tasks={self.tasks.n_tasks}, "
-                f"current_time={self.current_time}, objective={self._get_objective()})"
-            )
-
-        return f"SchedulingEnv({self.get_entry()}, n_tasks=0)"
+            self.objective.import_data(self.data)
 
     def to_dict(self, export_data: bool = False) -> EnvSerialization:
         """

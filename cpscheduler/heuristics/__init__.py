@@ -15,7 +15,7 @@ __all__ = [
     "TrafficPriority",
 ]
 
-from .pdr_heuristics import (
+from .legacy_pdr import (
     PriorityDispatchingRule,
     RandomPriority,
     ShortestProcessingTime,

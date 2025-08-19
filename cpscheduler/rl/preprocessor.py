@@ -1,8 +1,8 @@
-from typing import Any
+from typing import Literal
 from collections.abc import Sequence
 from typing_extensions import Self
 
-from torch import Tensor
+from torch.types import Tensor
 
 import torch
 from torch import nn
@@ -23,6 +23,7 @@ class StandardNormLayer(nn.Module):
 
     def fit(self, x: Tensor) -> Self:
         self.mean = mean_features(x)
+
         self.std = x.std(dim=tuple(range(0, x.ndim - 1)), unbiased=False)
 
         return self
@@ -87,9 +88,11 @@ class TabularPreprocessor(nn.Module):
 
     def __init__(
         self,
-        categorical_indices: Sequence[int],
-        numerical_indices: Sequence[int],
-        categorical_embedding_dim: int,
+        categorical_indices: Sequence[int] = (),
+        numerical_indices: Sequence[int] = (),
+        categorical_embedding_dim: int = 8,
+        remaining_action: Literal["ignore", "pass"] = "ignore",
+        input_size: int | None = None,
     ):
         super().__init__()
         self.categorical_encodings = nn.ModuleList()
@@ -100,10 +103,23 @@ class TabularPreprocessor(nn.Module):
         self.categorical_indices = categorical_indices
         self.numerical_indices = numerical_indices
 
-        self.output_dim = (
-            len(numerical_indices)
-            + len(categorical_indices) * categorical_embedding_dim
-        )
+        self.remaining_action = remaining_action
+
+        if self.remaining_action == "ignore":
+            self.output_dim = (
+                len(numerical_indices)
+                + len(categorical_indices) * categorical_embedding_dim
+            )
+
+        elif self.remaining_action == "pass":
+            if input_size is None:
+                raise ValueError(
+                    "input_size must be provided when remaining_action is 'pass'"
+                )
+
+            self.output_dim = input_size + len(categorical_indices) * (
+                categorical_embedding_dim - 1
+            )
 
     def fit(self, x: Tensor) -> Self:
         if not self.categorical_encodings:
@@ -111,7 +127,7 @@ class TabularPreprocessor(nn.Module):
                 encoding = nn.Embedding(
                     num_embeddings=int(x[..., index].max().item() + 1),
                     embedding_dim=self.categorical_embedding_dim,
-                )
+                ).to(x.device)
 
                 self.categorical_encodings.append(encoding)
 
@@ -130,3 +146,15 @@ class TabularPreprocessor(nn.Module):
         ]
 
         return torch.cat([num_x] + cat_x, dim=-1)
+
+        if self.remaining_action == "ignore":
+            return torch.cat([num_x] + cat_x, dim=-1)
+
+        x[..., self.numerical_indices] = num_x
+
+        # Remove indices in categorical_indices
+        x = x[..., [i for i in range(x.size(-1)) if i not in self.categorical_indices]]
+
+        x = torch.cat([x] + cat_x, dim=-1)
+
+        return x

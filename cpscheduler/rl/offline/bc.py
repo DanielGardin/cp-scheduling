@@ -72,7 +72,7 @@ class EntropyAnnealingBC(BehaviorCloning):
     """
     Behavior Cloning with Entropy Annealing algorithm.
 
-    This class extends the Behavior Cloning algorithm by annealing the policy's 
+    This class extends the Behavior Cloning algorithm by annealing the policy's
     entropy over time, encouraging exploration of local minima, and then gradually
     incresing the confidence of the policy to focus on the most promising actions.
 
@@ -84,7 +84,7 @@ class EntropyAnnealingBC(BehaviorCloning):
     states: Tensor
         The states collected from the expert.
 
-    actions: Tensor 
+    actions: Tensor
         The actions taken by the expert.
 
     actor: Policy
@@ -104,10 +104,11 @@ class EntropyAnnealingBC(BehaviorCloning):
         The rate at which the temperature decays.
         Default is 0.99.
 
-    device: Device  
+    device: Device
         The device to run the algorithm on.
         Default is "auto".
     """
+
     def __init__(
         self,
         states: Tensor,
@@ -126,7 +127,11 @@ class EntropyAnnealingBC(BehaviorCloning):
     def update(self, batch: TensorDict) -> dict[str, Any]:
         target_action = batch["action"]
 
-        loss = -torch.mean(self.policy.log_prob(batch["state"], target_action, temp=self.current_temperature))
+        loss = -torch.mean(
+            self.policy.log_prob(
+                batch["state"], target_action, temp=self.current_temperature
+            )
+        )
 
         self.actor_optimizer.zero_grad()
         loss.backward()
@@ -135,7 +140,7 @@ class EntropyAnnealingBC(BehaviorCloning):
         return {
             "loss/actor": loss.item(),
         }
-    
+
     def on_epoch_end(self) -> dict[str, Any]:
         self.current_temperature *= self.decay_rate
         return {

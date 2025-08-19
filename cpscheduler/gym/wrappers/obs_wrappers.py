@@ -25,9 +25,8 @@ def reshape_space(space: S, shape: tuple[int, ...]) -> S:
     "Reshape the space to the given shape."
     if isinstance(space, Box):
         return Box(
-            low=space.low.reshape(shape),  # type: ignore
-            high=space.high.reshape(shape),  # type: ignore
-            dtype=space.dtype,  # type: ignore
+            low=space.low.reshape(shape),
+            high=space.high.reshape(shape),
         )
 
     if isinstance(space, Dict):

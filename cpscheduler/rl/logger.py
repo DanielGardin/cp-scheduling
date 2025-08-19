@@ -4,6 +4,8 @@ from pathlib import Path
 from typing import Any, SupportsFloat, SupportsInt
 from typing_extensions import TypeAlias
 
+from uuid import uuid4
+
 from torch.utils.tensorboard.writer import SummaryWriter
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
 
@@ -20,6 +22,7 @@ try:
 
 except ImportError:
     wandb = None  # type: ignore[assignment]
+
 
 @dataclass
 class Welford:
@@ -54,10 +57,17 @@ class Logger(SummaryWriter):
         use_wandb: bool = False,
         config: dict[str, Any] | None = None,
     ):
-        timestamp = datetime.now(tz=datetime.now().astimezone().tzinfo).strftime("%Y-%m-%d_%H-%M-%S")
+        timestamp = datetime.now(tz=datetime.now().astimezone().tzinfo).strftime(
+            "%Y-%m-%d_%H-%M-%S"
+        )
         experiment_name = (
             f"{experiment_name}_{timestamp}" if experiment_name else timestamp
         )
+
+        if log_dir is not None:
+            base_dir = Path(log_dir)
+
+            log_dir = base_dir / f"{experiment_name}_{uuid4().hex[:4]}"
 
         self.config = config or {}
         self.use_wandb = use_wandb
@@ -67,9 +77,6 @@ class Logger(SummaryWriter):
                 experiment_name=experiment_name,
                 config=config,
             )
-
-        if log_dir is not None:
-            log_dir = Path(log_dir) / experiment_name
 
         super().__init__(log_dir=log_dir)
 
