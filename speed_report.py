@@ -13,7 +13,11 @@ from tyro.conf import arg
 
 from cpscheduler import SchedulingEnv, JobShopSetup, __compiled__
 from cpscheduler.instances import read_jsp_instance
-from cpscheduler.heuristics import ShortestProcessingTime
+from cpscheduler.heuristics._pdr import ShortestProcessingTime
+from cpscheduler.heuristics.array_utils import disable_numpy
+
+root = Path(__file__).parent
+
 
 OK = "\033[92m"
 FAIL = "\033[91m"
@@ -46,10 +50,11 @@ benchmark_times = {
     "ta80": 7.8,
 }
 
+UNITS: list[str] = ["s", "ms", "µs", "ns"]
+
+
 def is_instance_present() -> bool:
-    root = Path(__file__).parent
-    print(root)
-    return (root / "instances/jobshop").exists()
+    return (Path(__file__).parent / "instances/jobshop").exists()
 
 
 RESET = "\033[0m"
@@ -92,19 +97,35 @@ def colormap(
     return color_code
 
 
+def mean(data: list[float]) -> float:
+    return sum(data) / len(data) if data else 0.0
+
+
+def std(data: list[float]) -> float:
+    mean_value = mean(data)
+    return float((sum(((x - mean_value) ** 2 for x in data)) / len(data)) ** 0.5)
+
+
 def statistics(
     data: list[float],
-    unit: str = "s",
     comparison: list[float] | None = None,
 ) -> str:
-    mean = sum(data) / len(data)
-    std = (sum((t - mean) ** 2 for t in data) / len(data)) ** 0.5
+    mean_value = mean(data)
+    std_val = std(data)
 
-    comp_string = f"{mean:.3f}"
-    if std > 0:
-        comp_string += f" ± {std:.3f}"
+    i = 0
+    while mean_value < 1 and mean_value > 0:
+        mean_value *= 1000
+        std_val *= 1000
+        i += 1
 
-    comp_string += f"{unit}"
+    unit = UNITS[i]
+
+    comp_string = f"{mean_value:>6.2f}"
+    if std_val > 0:
+        comp_string += f" ± {std_val:>6.2f}"
+
+    comp_string += f" {unit}"
 
     if comparison is not None:
         perc = [data_point / total for data_point, total in zip(data, comparison)]
@@ -123,11 +144,13 @@ def statistics(
     return comp_string
 
 
-root = Path(__file__).parent
-
 
 def test_speed(
-    n: Annotated[int, arg(aliases=('-n',))] = 1, full: bool = False, quiet: Annotated[bool, arg(aliases=('-q',))] = False, plot: bool = False
+    n: Annotated[int, arg(aliases=("-n",))] = 1,
+    full: bool = False,
+    quiet: Annotated[bool, arg(aliases=("-q",))] = False,
+    plot: bool = False,
+    numpy: bool = True,
 ) -> None:
     """
     Test the speed of the Shortest Processing Time heuristic on various job shop instances.
@@ -145,12 +168,12 @@ def test_speed(
     plot: bool
         If True, plot the benchmark results.
     """
-    
 
     compiled = __compiled__
     instance_present = is_instance_present()
 
     if not quiet:
+        print(Path(__file__).parent)
         print(f"{OK + '[PASS]' if compiled else FAIL + '[FAIL]'}{RESET} compiled")
         print(
             f"{OK + '[PASS]' if instance_present else FAIL + '[FAIL]'}{RESET} instance directory"
@@ -172,16 +195,11 @@ def test_speed(
             "Step time",
             "All time",
             "Benchmark",
-            "Time per task"
+            "Time per task",
         ]
 
     else:
-        columns = [
-            "Instance",
-            "Benchmark",
-            "Simulation time",
-            "Time per task"
-        ]
+        columns = ["Instance", "Benchmark", "Simulation time", "Time per task"]
 
     table = PrettyTable(columns)
 
@@ -195,11 +213,14 @@ def test_speed(
     times: dict[str, dict[str, float]] = {}
 
     dots = 0
+
     if not quiet:
         print(
             f"Running \033[;36m{n}{RESET} iteration{'s' if n > 1 else ''} per instance",
             end="",
         )
+
+    spt_agent = ShortestProcessingTime()
     for instance_name, bench_time in benchmark_times.items():
         instance_path = root / "instances/jobshop" / f"{instance_name}.txt"
 
@@ -240,12 +261,21 @@ def test_speed(
             tock = perf_counter()
             time_dict["setup"].append(tock - tick)
 
-            spt_agent = ShortestProcessingTime()
-
             tick = perf_counter()
             obs, info = env.reset()
             tock = perf_counter()
-            time_dict["reset"].append(tock - tick)
+            time_dict["reset"].append(tock - tick)   
+
+            if numpy:
+                tick = perf_counter()
+                action = spt_agent(obs)
+                tock = perf_counter()
+            
+            else:
+                with disable_numpy():
+                    tick = perf_counter()
+                    action = spt_agent(obs)
+                    tock = perf_counter()
 
             tick = perf_counter()
             action = spt_agent(obs)
@@ -253,7 +283,7 @@ def test_speed(
             time_dict["pdr"].append(tock - tick)
 
             tick = perf_counter()
-            obs, reward, terminated, truncated, info = env.step(action)
+            env.step(action)
             time_dict["step"].append(perf_counter() - tick)
 
             global_tock = perf_counter()
@@ -263,41 +293,46 @@ def test_speed(
 
             del env
 
-        times[instance_name] = {stage: sum(time_dict[stage]) / n for stage in time_dict}
+        times[instance_name] = {stage: mean(time_dict[stage]) for stage in time_dict}
 
-        mean_time = sum(time_dict["all"]) / n
-        std_time = (sum((t - mean_time) ** 2 for t in time_dict["all"]) / n) ** 0.5
+        mean_time = mean(time_dict["all"])
+        std_time = std(time_dict["all"])
 
         task_numbers.append(n_tasks)
         perf.append(mean_time)
         perf_err.append(std_time)
 
         speedups = [bench_time / t - 1 for t in time_dict["all"]]
-        mean_speedup = sum(speedups) / n
-        std_speedup = (sum((s - mean_speedup) ** 2 for s in speedups) / n) ** 0.5
+        mean_speedup = mean(speedups)
+        std_speedup = std(speedups)
 
         values.append(mean_speedup)
         speedup_strs.append(
-            f"{100*mean_speedup:.2f} ± {std_speedup:.2%}"
+            f"{100*mean_speedup:5.2f} ± {std_speedup:5.2%}"
             if std_speedup > 0
-            else f"{mean_speedup:.2%}"
+            else f"{mean_speedup:5.2%}"
         )
 
-        tasks_per_second = [1000 * t / n_tasks for t in time_dict["all"]]
-        mean_tps = sum(tasks_per_second) / n
-        std_tps = (sum((t - mean_tps) ** 2 for t in tasks_per_second) / n) ** 0.5
+        tasks_per_second = [t / n_tasks for t in time_dict["all"]]
+        mean_tps = mean(tasks_per_second)
+        std_tps = std(tasks_per_second)
+
+        i = 0
+        while mean_tps < 1:
+            mean_tps *= 1000
+            std_tps *= 1000
+            i += 1
+
         tasks_per_second_str = (
-            f"{mean_tps:.2f} ± {std_tps:.2f} ms"
+            f"{mean_tps:5.2f} ± {std_tps:5.2f} {UNITS[i]}"
             if std_tps > 0
-            else f"{mean_tps:.2f} ms"
+            else f"{mean_tps:5.2f} {UNITS[i]}"
         )
-
 
         if full:
             datas = {
                 stage: statistics(
                     time_dict[stage],
-                    unit="s",
                     comparison=time_dict["all"] if stage != "all" else None,
                 )
                 for stage in time_dict
@@ -313,24 +348,30 @@ def test_speed(
                     datas["step"],
                     datas["all"],
                     f"{bench_time:.2f} s",
-                    tasks_per_second_str
+                    tasks_per_second_str,
                 ]
             )
 
         else:
-            mean_time = sum(time_dict["all"]) / n
-            std_time = (sum((t - mean_time) ** 2 for t in time_dict["all"]) / n) ** 0.5
+            mean_time = mean(time_dict["all"])
+            std_time = std(time_dict["all"])
+
+            i = 0
+            while mean_time < 1 and mean_time > 0:
+                mean_time *= 1000
+                std_time *= 1000
+                i += 1
 
             table.add_row(
                 [
                     instance_name,
-                    f"{bench_time:.2f}s",
+                    f"{bench_time:.2f} s",
                     (
-                        f"{mean_time:.3f} ± {std_time:.3f} s"
+                        f"{mean_time:5.2f} ± {std_time:5.2f} {UNITS[i]}"
                         if std_time > 0
-                        else f"{mean_time:.3f}s"
+                        else f"{mean_time:5.2f} {UNITS[i]}"
                     ),
-                    tasks_per_second_str
+                    tasks_per_second_str,
                 ]
             )
 
@@ -396,14 +437,8 @@ def test_speed(
             zorder=1,
         )
 
-        sup_coef = max(
-            (perf) / n_tasks**2
-            for perf, n_tasks in zip(perf, task_numbers)
-        )
-        inf_coef = min(
-            (perf) / n_tasks**2
-            for perf, n_tasks in zip(perf, task_numbers)
-        )
+        sup_coef = max((perf) / n_tasks**2 for perf, n_tasks in zip(perf, task_numbers))
+        inf_coef = min((perf) / n_tasks**2 for perf, n_tasks in zip(perf, task_numbers))
 
         # Plot the area between the curves
         ax[1].fill_between(
@@ -430,11 +465,13 @@ def test_speed(
             zorder=2,
         )
 
-        # ax[1].set_xscale('log')
-        # ax[1].set_yscale('log')
-
         ax[1].legend()
         plt.tight_layout()
+
+        plt.suptitle("Speed Benchmark Report", fontsize=16, fontweight="bold")
+        plt.subplots_adjust(top=0.9)  # Adjust the top to make space for the title
+
+        plt.savefig(root / "report.pdf", dpi=300, bbox_inches="tight")
         plt.show()
 
 
