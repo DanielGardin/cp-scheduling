@@ -59,6 +59,10 @@ class Config:
     frac_train: float = 1.0
     "Fraction of the dataset to use for training."
 
+    optimal: bool = False
+    "If True, uses the original instances and solve using complete information. "\
+    "If False, uses the instances from the dataset and hide customer information."
+
     hidden_size: Annotated[int, arg(aliases=("-s",))] = 64
     "Size of the hidden layers in the neural network."
 
@@ -144,11 +148,11 @@ envs = make_vec(
     vectorization_mode="async",
     wrappers=[
         lambda env: ArrayObservationWrapper(env, features),
-        lambda env: InstancePoolWrapper(env, train_dataset),
+        lambda env: InstancePoolWrapper(env, list_instances if args.optimal else train_dataset),
         PermutationActionWrapper,
     ],
     machine_setup=SingleMachineSetup(),
-    objective=TotalTardiness(),
+    objective=WeightedTardiness() if args.optimal else TotalTardiness(),
     metrics={
         "order_preservation": ref.order_preservation,
         "accuracy": ref.hamming_accuracy,
@@ -163,17 +167,6 @@ val_obs = torch.cat(
     ]
 ).to(device)
 
-dataset = torch.cat(
-    [
-        torch.tensor(df[features].values, dtype=torch.float32).unsqueeze(0)
-        for df in train_dataset
-    ]
-).to(device)
-
-if args.frac_train < 1:
-    indices = torch.randperm(int(dataset.shape[0] * args.frac_train)).to(device)
-
-    dataset = dataset[indices]
 
 preprocessor = rl.preprocessor.TabularPreprocessor(
     categorical_indices=[2],
@@ -181,7 +174,23 @@ preprocessor = rl.preprocessor.TabularPreprocessor(
     categorical_embedding_dim=8,
 )
 
-preprocessor.fit(dataset)
+if args.optimal:
+    preprocessor.fit(val_obs)
+
+else:
+    dataset = torch.cat(
+        [
+            torch.tensor(df[features].values, dtype=torch.float32).unsqueeze(0)
+            for df in train_dataset
+        ]
+    ).to(device)
+
+    if args.frac_train < 1:
+        indices = torch.randperm(int(dataset.shape[0] * args.frac_train)).to(device)
+        dataset = dataset[indices]
+
+    preprocessor.fit(dataset)
+
 
 scorer = nn.Sequential(
     preprocessor,
@@ -194,7 +203,6 @@ scorer = nn.Sequential(
 )
 
 policy = rl.policies.PlackettLucePolicy(scorer).to(device)
-# Compile the policy
 
 optimizer = Adam(
     policy.parameters(),

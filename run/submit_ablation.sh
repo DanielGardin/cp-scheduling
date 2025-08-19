@@ -1,6 +1,3 @@
-source ~/miniconda3/bin/activate
-conda activate scheduling
-
 for frac in 0.1 0.25 0.33 0.5 0.8 ; do
     for i in $(seq 1 10);
     do
