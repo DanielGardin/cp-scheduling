@@ -2,12 +2,13 @@ from pathlib import Path
 from typing import Any
 from collections.abc import Callable
 
-load: Callable[[Any], dict[str, Any]]
-try:
+import sys
+
+if sys.version_info >= (3, 11):
     from tomllib import load
 
-except ImportError:
-    from tomli import load  # type: ignore[no-redef, import-untyped]
+else:
+    from tomli import load
 
 from setuptools import setup
 from mypyc.build import mypycify
@@ -18,12 +19,11 @@ with open("pyproject.toml", "rb") as f:
 
 compiling_dirs = [
     "cpscheduler/environment",
-    "cpscheduler/heuristics",
-    # "cpscheduler/instances",
+    "cpscheduler/instances",
+    "cpscheduler/heuristics"
 ]
 
-
-compiling_files: list[str] = []
+compiling_files = []
 for dir in compiling_dirs:
     compiling_files.extend(
         [str(file) for file in Path(dir).rglob("*.py") if not file.name.startswith("_")]
