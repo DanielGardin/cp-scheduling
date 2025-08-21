@@ -10,8 +10,9 @@ from collections.abc import Iterable, Mapping
 
 from gymnasium import Env, Space
 
+from cpscheduler.utils._protocols import Metric
+
 from cpscheduler.environment import SchedulingEnv, ScheduleSetup, Constraint, Objective
-from cpscheduler.environment.metrics import Metric
 from cpscheduler.environment._common import InstanceConfig, ObsType
 from cpscheduler.environment.instructions import ActionType
 from cpscheduler.environment._render import Renderer

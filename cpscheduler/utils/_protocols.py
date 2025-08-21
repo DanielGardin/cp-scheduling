@@ -1,5 +1,34 @@
-from typing import Protocol, runtime_checkable, Any, TypeVar
+from typing import Any, Protocol, TypeVar, runtime_checkable
 from collections.abc import Iterator
+
+
+from cpscheduler.environment.data import SchedulingData
+from cpscheduler.environment.tasks import Tasks
+
+
+_T_co = TypeVar("_T_co", covariant=True)
+
+
+# By definition, every Objective is a Metric
+class Metric(Protocol[_T_co]):
+    """
+    A protocol for metrics that can be used to track and report metrics
+    during the scheduling process.
+    """
+
+    def __call__(
+        self, time: int, tasks: Tasks, data: SchedulingData, objective: float
+    ) -> _T_co: ...
+
+
+@runtime_checkable
+class ImportableMetric(Metric[_T_co], Protocol):
+    def import_data(self, data: SchedulingData) -> None:
+        """
+        Import data from the SchedulingData object.
+        This method is used to initialize the metric with the necessary data.
+        """
+        pass
 
 
 @runtime_checkable

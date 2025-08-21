@@ -14,10 +14,9 @@ from tyro.conf import arg
 from cpscheduler import SchedulingEnv, JobShopSetup, __compiled__
 from cpscheduler.instances import read_jsp_instance
 from cpscheduler.heuristics._pdr import ShortestProcessingTime
-from cpscheduler.heuristics.array_utils import disable_numpy
+from cpscheduler.utils.array_utils import disable_numpy
 
 root = Path(__file__).parent
-
 
 OK = "\033[92m"
 FAIL = "\033[91m"
@@ -144,7 +143,6 @@ def statistics(
     return comp_string
 
 
-
 def test_speed(
     n: Annotated[int, arg(aliases=("-n",))] = 1,
     full: bool = False,
@@ -264,13 +262,13 @@ def test_speed(
             tick = perf_counter()
             obs, info = env.reset()
             tock = perf_counter()
-            time_dict["reset"].append(tock - tick)   
+            time_dict["reset"].append(tock - tick)
 
             if numpy:
                 tick = perf_counter()
                 action = spt_agent(obs)
                 tock = perf_counter()
-            
+
             else:
                 with disable_numpy():
                     tick = perf_counter()

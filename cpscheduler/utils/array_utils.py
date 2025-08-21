@@ -20,8 +20,8 @@ try:
 except ImportError:
     TORCH_AVAILABLE = False
 
-from ._protocols import ArrayLike, TabularRepresentation
-from .list_wrapper import ListWrapper
+from cpscheduler.utils._protocols import ArrayLike, TabularRepresentation
+from cpscheduler.utils.list_utils import ListWrapper
 
 
 @contextmanager
@@ -48,7 +48,7 @@ def array_factory(data: Iterable[Any] | ArrayLike) -> ArrayLike:
 
     if NUMPY_AVAILABLE:
         array = np.asarray(data)
-    
+
     else:
         array = ListWrapper(data)
 
@@ -159,7 +159,11 @@ def argsort(
         result = torch.argsort(x, descending=descending, stable=stable, dim=axis)
 
     elif NUMPY_AVAILABLE:
-        result = np.argsort(x if not descending else -x, axis=axis, kind="stable" if stable else "quicksort")
+        result = np.argsort(
+            x if not descending else -x,
+            axis=axis,
+            kind="stable" if stable else "quicksort",
+        )
 
     else:
         result = ListWrapper.argsort(x, reverse=descending, stable=stable)

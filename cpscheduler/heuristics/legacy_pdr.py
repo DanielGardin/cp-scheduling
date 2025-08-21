@@ -7,8 +7,8 @@ import random
 from abc import ABC, abstractmethod
 from mypy_extensions import mypyc_attr
 
+from cpscheduler.utils.list_utils import convert_to_list
 from cpscheduler.environment._common import ObsType, Status
-from cpscheduler.environment.utils import convert_to_list
 from cpscheduler.environment.instructions import SingleAction
 
 

@@ -12,6 +12,9 @@ from typing_extensions import Self
 
 from mypy_extensions import mypyc_attr
 
+from cpscheduler.utils.list_utils import convert_to_list
+from cpscheduler.utils.typing_utils import is_iterable_type, is_iterable_int
+
 from ._common import ProcessTimeAllowedTypes, MACHINE_ID, TIME, Int
 from .data import SchedulingData
 from .constraints import (
@@ -20,7 +23,6 @@ from .constraints import (
     PrecedenceConstraint,
     MachineConstraint,
 )
-from .utils import is_iterable_type, convert_to_list, is_iterable_int
 
 PTIME_ALIASES = ["processing_time", "process_time", "processing time"]
 

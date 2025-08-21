@@ -18,6 +18,9 @@ from collections.abc import Iterable, Mapping
 
 from mypy_extensions import u8, i64
 
+from cpscheduler.utils.list_utils import convert_to_list
+from cpscheduler.utils._protocols import Metric, ImportableMetric
+
 from ._common import (
     MAX_INT,
     ProcessTimeAllowedTypes,
@@ -43,11 +46,6 @@ from .instructions import (
 from .schedule_setup import ScheduleSetup, setups
 from .constraints import Constraint, constraints
 from .objectives import Objective, objectives
-from .metrics import Metric
-
-from ._protocols import ImportableMetric
-from .utils import convert_to_list
-
 
 from ._render import Renderer
 
@@ -123,6 +121,7 @@ class SchedulingEnv:
     tasks: Tasks
     schedule: dict[TASK_ID, list[Instruction]]
     current_time: TIME
+    advancing_to: TIME
 
     def __init__(
         self,
@@ -166,8 +165,8 @@ class SchedulingEnv:
 
         self.renderer = (
             render_mode
-            if isinstance(render_mode, Renderer) else
-            Renderer.get_renderer(render_mode)
+            if isinstance(render_mode, Renderer)
+            else Renderer.get_renderer(render_mode)
         )
 
         if instance_config is not None:

@@ -1,24 +1,11 @@
 from typing import Any, Protocol, TypeVar
 from collections.abc import Mapping, Iterable
 
+from cpscheduler.utils.typing_utils import is_iterable_type
+
 from .tasks import Tasks
 from .data import SchedulingData
 from ._common import Int, TASK_ID, TIME
-from .utils import is_iterable_type
-
-_T = TypeVar("_T", covariant=True)
-
-
-# By definition, every Objective is a Metric
-class Metric(Protocol[_T]):
-    """
-    A protocol for metrics that can be used to track and report metrics
-    during the scheduling process.
-    """
-
-    def __call__(
-        self, time: int, tasks: Tasks, data: SchedulingData, objective: float
-    ) -> _T: ...
 
 
 def machine_utilization(

@@ -10,9 +10,9 @@ from mypy_extensions import mypyc_attr
 from cpscheduler.environment._common import Status, ObsType
 from cpscheduler.environment.instructions import SingleAction
 
-from ._protocols import ArrayLike, TabularRepresentation
-from .list_wrapper import ListWrapper
-from .array_utils import (
+from cpscheduler.utils._protocols import ArrayLike, TabularRepresentation
+from cpscheduler.utils.list_utils import ListWrapper
+from cpscheduler.utils.array_utils import (
     NUMPY_AVAILABLE,
     TORCH_AVAILABLE,
     wrap_observation,

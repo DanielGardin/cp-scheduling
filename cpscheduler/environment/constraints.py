@@ -19,10 +19,13 @@ import re
 
 from mypy_extensions import mypyc_attr
 
+from cpscheduler.utils.list_utils import convert_to_list
+from cpscheduler.utils.typing_utils import is_iterable_type
+from cpscheduler.utils.general_algo import topological_sort, binary_search
+
 from ._common import TASK_ID, TIME, MACHINE_ID, Int, Float
 from .data import SchedulingData
 from .tasks import Tasks
-from .utils import convert_to_list, topological_sort, binary_search, is_iterable_type
 
 constraints: dict[str, type["Constraint"]] = {}
 

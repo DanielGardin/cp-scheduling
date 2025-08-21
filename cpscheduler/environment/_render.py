@@ -13,8 +13,11 @@ from .data import SchedulingData
 
 
 renderers: dict[str, "Renderer"] = {}
+
+
 class Renderer:
     "Renderer base class for visualizing task schedules."
+
     render_name: ClassVar[str | None] = None
 
     def __init_subclass__(cls) -> None:
@@ -45,6 +48,7 @@ try:
 
     class PlotlyRenderer(Renderer):
         "Renderer for visualizing task schedules using the Plotly backend."
+
         name = "plotly"
 
         def build_gantt(

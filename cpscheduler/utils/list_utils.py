@@ -1,13 +1,59 @@
-from typing import TypeVar, overload, Any, Generic
+from typing import Any, TypeVar, overload, Generic
 from collections.abc import Iterator, Iterable, Sequence
 from typing_extensions import TypeIs
 
 import math
 import random
 
-from cpscheduler.utils._protocols import ArrayLike, TabularRepresentation
+_T = TypeVar("_T")
 
-_T = TypeVar("_T", bound=Any, covariant=True)
+
+@overload
+def convert_to_list(array: Any, dtype: type[_T]) -> list[_T]: ...
+@overload
+def convert_to_list(array: Iterable[_T], dtype: None = ...) -> list[_T]: ...
+@overload
+def convert_to_list(array: Any, dtype: None = ...) -> list[Any]: ...
+
+
+def convert_to_list(array: Iterable[Any], dtype: type[Any] | None = None) -> list[Any]:
+    """
+    Convert an iterable to a list. If a dtype is provided, the elements of the list will be casted
+    to that type.
+
+    Parameters
+    ----------
+    array: Iterable
+        The iterable to be converted to a list.
+
+    dtype: type, optional
+        The type to which the elements of the list will be casted to.
+
+    Returns
+    -------
+    list
+        A list containing the elements of the iterable.
+    """
+
+    if hasattr(array, "tolist"):
+        array = getattr(array, "tolist")()
+
+    try:
+        if dtype is None:
+            return array if isinstance(array, list) else list(array)
+
+        return [dtype(item) for item in array]
+
+    # If the iterable is not a collection, it will raise a TypeError
+    except TypeError:
+        return [array] if dtype is None else [dtype(array)]
+
+
+# Maybe include JAX in another iteration?
+
+from ._protocols import ArrayLike, TabularRepresentation
+
+_T_co = TypeVar("_T_co", bound=Any, covariant=True)
 _S = TypeVar("_S", bound=Any)
 
 
@@ -15,8 +61,8 @@ def is_pure_iterable(obj: Any) -> TypeIs[Iterable[Any]]:
     return isinstance(obj, Iterable) and not isinstance(obj, (str, bytes, dict))
 
 
-class ListWrapper(Generic[_T]):
-    def __init__(self, data: Iterable[_T]) -> None:
+class ListWrapper(Generic[_T_co]):
+    def __init__(self, data: Iterable[_T_co]) -> None:
         self._data = list(data)
 
     @property
@@ -41,16 +87,16 @@ class ListWrapper(Generic[_T]):
         return array(self._data, dtype=dtype)
 
     @overload
-    def __getitem__(self, index: int) -> _T: ...
+    def __getitem__(self, index: int) -> _T_co: ...
 
     @overload
     def __getitem__(
         self, index: slice | Iterable[int] | Iterable[bool]
-    ) -> "ListWrapper[_T]": ...
+    ) -> "ListWrapper[_T_co]": ...
 
     def __getitem__(
         self, index: int | Iterable[int] | slice | Iterable[bool]
-    ) -> "_T | ListWrapper[_T]":
+    ) -> "_T_co | ListWrapper[_T_co]":
         if isinstance(index, int):
             return self._data[index]
 
@@ -90,14 +136,14 @@ class ListWrapper(Generic[_T]):
     def __len__(self) -> int:
         return len(self._data)
 
-    def __iter__(self) -> Iterator[_T]:
+    def __iter__(self) -> Iterator[_T_co]:
         return iter(self._data)
 
     def __repr__(self) -> str:
         return f"ListWrapper({self._data})"
 
     @overload
-    def __add__(self, other: Iterable[_T] | _T, /) -> "ListWrapper[_T]": ...
+    def __add__(self, other: Iterable[_T_co] | _T_co, /) -> "ListWrapper[_T_co]": ...
     @overload
     def __add__(self, other: Any, /) -> "ListWrapper[Any]": ...
 
@@ -117,7 +163,7 @@ class ListWrapper(Generic[_T]):
         return self.__add__(other)
 
     @overload
-    def __sub__(self, other: Iterable[_T] | _T, /) -> "ListWrapper[_T]": ...
+    def __sub__(self, other: Iterable[_T_co] | _T_co, /) -> "ListWrapper[_T_co]": ...
     @overload
     def __sub__(self, other: Any, /) -> "ListWrapper[Any]": ...
 
@@ -134,7 +180,7 @@ class ListWrapper(Generic[_T]):
         return ListWrapper([x - other for x in self._data])
 
     @overload
-    def __rsub__(self, other: Iterable[_T] | _T, /) -> "ListWrapper[_T]": ...
+    def __rsub__(self, other: Iterable[_T_co] | _T_co, /) -> "ListWrapper[_T_co]": ...
     @overload
     def __rsub__(self, other: Any, /) -> "ListWrapper[Any]": ...
 
@@ -150,11 +196,11 @@ class ListWrapper(Generic[_T]):
 
         return ListWrapper([other - x for x in self._data])
 
-    def __neg__(self) -> "ListWrapper[_T]":
+    def __neg__(self) -> "ListWrapper[_T_co]":
         return ListWrapper([-x for x in self._data])
 
     @overload
-    def __mul__(self, other: Iterable[_T] | _T, /) -> "ListWrapper[_T]": ...
+    def __mul__(self, other: Iterable[_T_co] | _T_co, /) -> "ListWrapper[_T_co]": ...
     @overload
     def __mul__(self, other: Any, /) -> "ListWrapper[Any]": ...
 
@@ -278,13 +324,13 @@ class ListWrapper(Generic[_T]):
     def __hash__(self) -> int:
         return hash(tuple(self._data))
 
-    def max(self) -> _T:
+    def max(self) -> _T_co:
         return max(self._data)
 
-    def min(self) -> _T:
+    def min(self) -> _T_co:
         return min(self._data)
 
-    def sum(self) -> _T:
+    def sum(self) -> _T_co:
         sum_value = self._data[0]
 
         for x in self._data[1:]:
@@ -300,7 +346,7 @@ class ListWrapper(Generic[_T]):
 
     @staticmethod
     def argsort(
-        x: Iterable[_T], reverse: bool = False, stable: bool = False
+        x: Iterable[_T_co], reverse: bool = False, stable: bool = False
     ) -> "ListWrapper[int]":
         if not stable:
             return ListWrapper(
@@ -329,9 +375,9 @@ class ListWrapper(Generic[_T]):
 
     @staticmethod
     def maximum(
-        x1: Iterable[_T] | _T,
-        x2: Iterable[_T] | _T,
-    ) -> "ListWrapper[_T]":
+        x1: Iterable[_T_co] | _T_co,
+        x2: Iterable[_T_co] | _T_co,
+    ) -> "ListWrapper[_T_co]":
         if is_pure_iterable(x1):
             if is_pure_iterable(x2):
                 return ListWrapper([a if a > b else b for a, b in zip(x1, x2)])
@@ -346,9 +392,9 @@ class ListWrapper(Generic[_T]):
 
     @staticmethod
     def minimum(
-        x1: Iterable[_T] | _T,
-        x2: Iterable[_T] | _T,
-    ) -> "ListWrapper[_T]":
+        x1: Iterable[_T_co] | _T_co,
+        x2: Iterable[_T_co] | _T_co,
+    ) -> "ListWrapper[_T_co]":
         if is_pure_iterable(x1):
             if is_pure_iterable(x2):
                 return ListWrapper([a if a < b else b for a, b in zip(x1, x2)])
@@ -362,23 +408,23 @@ class ListWrapper(Generic[_T]):
         return ListWrapper([min(x1, x2)])
 
     @staticmethod
-    def log(x: Iterable[_T]) -> "ListWrapper[float]":
+    def log(x: Iterable[_T_co]) -> "ListWrapper[float]":
         return ListWrapper([math.log(a) for a in x])
 
     @staticmethod
-    def exp(x: Iterable[_T]) -> "ListWrapper[float]":
+    def exp(x: Iterable[_T_co]) -> "ListWrapper[float]":
         return ListWrapper([math.exp(a) for a in x])
 
     @staticmethod
-    def sqrt(x: Iterable[_T]) -> "ListWrapper[float]":
+    def sqrt(x: Iterable[_T_co]) -> "ListWrapper[float]":
         return ListWrapper([math.sqrt(a) for a in x])
 
     @staticmethod
     def where(
         condition: Iterable[bool],
-        x1: Iterable[_T] | _T,
-        x2: Iterable[_T] | _T,
-    ) -> "ListWrapper[_T]":
+        x1: Iterable[_T_co] | _T_co,
+        x2: Iterable[_T_co] | _T_co,
+    ) -> "ListWrapper[_T_co]":
         if is_pure_iterable(x1):
             if is_pure_iterable(x2):
                 return ListWrapper(
@@ -397,7 +443,7 @@ class ListWrapper(Generic[_T]):
 
     @staticmethod
     def sort(
-        x: Iterable[_T], reverse: bool = False, stable: bool = False
+        x: Iterable[_T_co], reverse: bool = False, stable: bool = False
     ) -> "ListWrapper[int]":
         if not stable:
             return ListWrapper(sorted(x, reverse=reverse))

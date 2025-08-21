@@ -16,7 +16,7 @@ from mypy_extensions import mypyc_attr
 from ._common import TIME, Int, Float
 from .data import SchedulingData
 from .tasks import Tasks
-from .utils import convert_to_list
+from cpscheduler.utils.list_utils import convert_to_list
 
 objectives: dict[str, type["Objective"]] = {}
 
