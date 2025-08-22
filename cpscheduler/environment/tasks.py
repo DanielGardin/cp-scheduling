@@ -140,6 +140,7 @@ class Task:
 
         self.machines = list(self._remaining_times.keys())
         self.start_bounds = {machine: Bounds() for machine in self.machines}
+        self.global_bounds = Bounds()
 
     def __reduce__(self) -> Any:
         return (
@@ -261,27 +262,18 @@ class Task:
 
     def get_start_lb(self, machine: MACHINE_ID = -1) -> TIME:
         "Get the current lower bound for the starting time in a machine."
-        if machine != -1:
-            return self.start_bounds[machine].lb
-
-        start_lb = MAX_INT
-        for start_bound in self.start_bounds.values():
-            if start_bound.lb < start_lb:
-                start_lb = start_bound.lb
-
-        return start_lb
+        return (
+            self.global_bounds.lb
+            if machine == -1
+            else self.start_bounds[machine].lb
+        )
 
     def get_start_ub(self, machine: MACHINE_ID = -1) -> TIME:
-        "Get the current upper bound for the starting time in a machine."
-        if machine != -1:
-            return self.start_bounds[machine].ub
-
-        start_ub = 0
-        for start_bound in self.start_bounds.values():
-            if start_bound.ub > start_ub:
-                start_ub = start_bound.ub
-
-        return start_ub
+        return (
+            self.global_bounds.ub
+            if machine == -1
+            else self.start_bounds[machine].ub
+        )
 
     def get_end_lb(self, machine: MACHINE_ID = -1) -> TIME:
         "Get the current lower bound for the ending time in a machine."
@@ -318,29 +310,38 @@ class Task:
         if time < 0:
             time = 0
 
+        if self.global_bounds.lb < time:
+            self.global_bounds.lb = time
+
         if machine != -1:
             self.start_bounds[machine].lb = time
-            return
-
-        for start_bound in self.start_bounds.values():
-            start_bound.lb = time
+        
+        else:
+            for start_bound in self.start_bounds.values():
+                start_bound.lb = time
 
     def set_start_ub(self, time: TIME, machine: MACHINE_ID = -1) -> None:
         "Set the upper bound for the starting time in a machine."
         if time > MAX_INT:
             time = MAX_INT
 
+        if self.global_bounds.ub > time:
+            self.global_bounds.ub = time
+
         if machine != -1:
             self.start_bounds[machine].ub = time
-            return
 
-        for start_bound in self.start_bounds.values():
-            start_bound.ub = time
+        else:
+            for start_bound in self.start_bounds.values():
+                start_bound.ub = time
 
     def set_end_lb(self, time: TIME, machine: MACHINE_ID = -1) -> None:
         "Set the lower bound for the ending time in a machine."
         if time < 0:
             time = 0
+
+        if self.global_bounds.lb < time:
+            self.global_bounds.lb = time
 
         if machine != -1:
             self.start_bounds[machine].lb = time - self._remaining_times[machine]
@@ -353,6 +354,9 @@ class Task:
         "Set the upper bound for the ending time in a machine."
         if time > MAX_INT:
             time = MAX_INT
+
+        if self.global_bounds.ub > time:
+            self.global_bounds.ub = time
 
         if machine != -1:
             self.start_bounds[machine].ub = time - self._remaining_times[machine]
@@ -431,11 +435,7 @@ class Task:
                 self.start_bounds[machine].lb <= time <= self.start_bounds[machine].ub
             )
 
-        for machine in self.machines:
-            if self.start_bounds[machine].lb <= time <= self.start_bounds[machine].ub:
-                return True
-
-        return False
+        return self.global_bounds.lb <= time <= self.global_bounds.ub
 
     def is_awaiting(self) -> bool:
         "Check if the task is currently awaiting execution."

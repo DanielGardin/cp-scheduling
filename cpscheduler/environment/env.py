@@ -443,9 +443,9 @@ class SchedulingEnv:
     def _is_schedule_empty(self) -> bool:
         return not self.schedule[-1] and len(self.schedule) == 1
 
-    def _next_decision_time(self, strict: bool = False) -> TIME:
+    def _advance_to_decision_point(self, strict: bool = False) -> None:
         "Obtain the next decision time to advance. If strict, only consider future tasks."
-        next_time = MAX_INT
+        next_time = MAX_INT if self.current_time >= self.advancing_to else self.advancing_to
 
         if strict:
             for task_id in self.tasks.awaiting_tasks:
@@ -463,6 +463,10 @@ class SchedulingEnv:
             for task_id in self.tasks.awaiting_tasks:
                 task = self.tasks[task_id]
                 start_lb = task.get_start_lb()
+
+                if start_lb <= self.current_time:
+                    return
+
                 if start_lb < next_time:
                     next_time = start_lb
 
@@ -470,16 +474,11 @@ class SchedulingEnv:
                 if self.current_time <= instruction_time < next_time:
                     next_time = instruction_time
 
-        if self.current_time < self.advancing_to < next_time:
-            next_time = self.advancing_to
-
         if next_time == MAX_INT:
-            return self.tasks.get_time_ub()
-
-        if next_time < self.current_time:
-            next_time = self.current_time
-
-        return next_time
+            self.current_time = self.tasks.get_time_ub()
+        
+        elif next_time > self.current_time:
+            self.current_time = next_time
 
     def _advance_to_next_instruction(self) -> None:
         "Advance the environment to the next instruction time."
@@ -488,11 +487,6 @@ class SchedulingEnv:
             if self.current_time <= instruction_time < next_time:
                 next_time = instruction_time
 
-        self.current_time = next_time
-
-    def _advance_to_decision_point(self, strict: bool) -> None:
-        "Advance the environment to the next decision point."
-        next_time = self._next_decision_time(strict)
         self.current_time = next_time
 
     def _schedule_instruction(

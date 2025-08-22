@@ -272,6 +272,10 @@ class PrecedenceConstraint(Constraint):
         for task_id in list(self.topological_order):
             task = tasks[task_id]
 
+            if task.is_completed(time):
+                self.topological_order.remove(task_id)
+                continue
+
             end_time = task.get_end_lb()
 
             for child_id in self.precedence[task_id]:
@@ -279,9 +283,6 @@ class PrecedenceConstraint(Constraint):
 
                 if child.get_start_lb() < end_time:
                     child.set_start_lb(end_time)
-
-            if task.is_completed(time):
-                self.topological_order.remove(task_id)
 
     def refresh(self, time: TIME, tasks: Tasks) -> None:
         self.reset(tasks)
