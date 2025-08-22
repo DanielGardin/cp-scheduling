@@ -1,23 +1,29 @@
+import os
+from setuptools import setup, Extension
 from pathlib import Path
-import sys
 
-from setuptools import setup
-from mypyc.build import mypycify
+# This solution is a workaround, rethink it
+USE_MYPYC = os.environ.get("DISABLE_MYPYC", "0") != "1"
 
-compiling_dirs = [
-    "cpscheduler/environment",
-    "cpscheduler/instances",
-    "cpscheduler/heuristics",
-    "cpscheduler/utils",
-]
+ext_modules: list[Extension] = []
+if USE_MYPYC:
+    from mypyc.build import mypycify
+    compiling_dirs = [
+        "cpscheduler/environment",
+        "cpscheduler/instances",
+        "cpscheduler/heuristics",
+        "cpscheduler/utils",
+    ]
 
-compiling_files: list[str] = []
+    compiling_files = [
+        str(file)
+        for d in compiling_dirs
+        for file in Path(d).rglob("*.py")
+        if not file.name.startswith("_")
+    ]
 
-for dir_name in compiling_dirs:
-    compiling_files.extend(
-        [str(file) for file in Path(dir_name).rglob("*.py") if not file.name.startswith("_")]
-    )
+    ext_modules = mypycify(compiling_files)
 
 setup(
-    ext_modules=mypycify(compiling_files),
+    ext_modules=ext_modules,
 )
