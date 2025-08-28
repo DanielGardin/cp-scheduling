@@ -62,10 +62,9 @@ class Bounds:
     def __setstate__(self, state: tuple[TIME, TIME]) -> None:
         self.lb, self.ub = state
 
-    def reset(self) -> None:
-        "Reset the bounds to their initial state."
-        self.lb = 0
-        self.ub = MAX_INT
+    def set(self, lb: TIME = 0, ub: TIME = MAX_INT) -> None:
+        self.lb = lb
+        self.ub = ub
 
     def fix(self, time: TIME) -> None:
         self.lb = time
@@ -84,7 +83,7 @@ class Bounds:
     def __repr__(self) -> str:
         return f"Bounds(lb={self.lb}, ub={self.ub})"
 
-
+# There are several bugs hidden in the implementation of `global_bounds`
 class Task:
     """
     Minimal unit of work that can be scheduled. The task does not know anything about the
@@ -106,6 +105,7 @@ class Task:
     assignments: list[MACHINE_ID]
 
     start_bounds: dict[MACHINE_ID, Bounds]
+    global_bounds: Bounds
 
     n_parts: PART_ID
 
@@ -139,8 +139,10 @@ class Task:
             self.release_date = 0
 
         self.machines = list(self._remaining_times.keys())
-        self.start_bounds = {machine: Bounds() for machine in self.machines}
-        self.global_bounds = Bounds()
+        self.global_bounds = Bounds(self.release_date, self.due_date)
+        self.start_bounds = {
+            machine: Bounds(self.release_date, self.due_date) for machine in self.machines
+        }
 
     def __hash__(self) -> int:
         return hash((self.task_id, self.job_id))
@@ -217,8 +219,9 @@ class Task:
                 machine
             ]
 
+        self.global_bounds.set(self.release_date, self.due_date)
         for start_bound in self.start_bounds.values():
-            start_bound.reset()
+            start_bound.set(self.release_date, self.due_date)
 
     def is_fixed(self) -> bool:
         "Checks if the task has its decision variables fixed."

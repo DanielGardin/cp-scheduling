@@ -406,11 +406,14 @@ class SchedulingEnv:
         previous_objective = self._get_objective()
 
         while True:
+            # In dynamic usage, this runs twice as necessary (checking for an empty schedule)
+            # Ideally, we want to break this loop whenever the schedule is empty or an instruction halts.
             if self._dispatch_instruction():
                 break
 
             self.render()
 
+        # Heavy: 30% of step time in dynamic usage.
         obs = self._get_state()
 
         reward = self._get_objective() - previous_objective
