@@ -1,6 +1,6 @@
-from typing import Any, TypeAlias, Final, overload
+from typing import Any, overload
 from collections.abc import Iterable, Sequence
-from typing_extensions import TypedDict, Unpack
+from typing_extensions import TypedDict, Unpack, TypeAlias
 
 import math
 

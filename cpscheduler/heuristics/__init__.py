@@ -15,12 +15,9 @@ __all__ = [
     "TrafficPriority",
 ]
 
-from .legacy_pdr import (
+from ._pdr import (
     PriorityDispatchingRule,
-    RandomPriority,
     ShortestProcessingTime,
-    MostOperationsRemaining,
-    MostWorkRemaining,
     EarliestDueDate,
     ModifiedDueDate,
     WeightedShortestProcessingTime,
@@ -30,4 +27,10 @@ from .legacy_pdr import (
     CriticalRatio,
     ApparentTardinessCost,
     TrafficPriority,
+)
+
+from .legacy_pdr import (
+    RandomPriority,
+    MostOperationsRemaining,
+    MostWorkRemaining,
 )

@@ -12,7 +12,7 @@ from gymnasium import ObservationWrapper, Env, Space
 
 from cpscheduler.environment._common import ObsType, MAX_INT as MAX_INT_TIME
 from cpscheduler.environment.tasks import Tasks
-from cpscheduler.environment.utils import is_iterable_type
+from cpscheduler.utils.typing_utils import is_iterable_type
 
 from cpscheduler.gym.common import Options
 
