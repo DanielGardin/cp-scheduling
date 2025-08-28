@@ -142,6 +142,15 @@ class Task:
         self.start_bounds = {machine: Bounds() for machine in self.machines}
         self.global_bounds = Bounds()
 
+    def __hash__(self) -> int:
+        return hash((self.task_id, self.job_id))
+
+    def __eq__(self, value: object) -> bool:
+        if not isinstance(value, Task):
+            return NotImplemented
+
+        return (self.task_id == value.task_id) and (self.job_id == value.job_id)
+
     def __reduce__(self) -> Any:
         return (
             self.__class__,
@@ -468,9 +477,9 @@ class Tasks:
     tasks: list[Task]
     jobs: list[list[Task]]
 
-    awaiting_tasks: set[TASK_ID]
-    transition_tasks: set[TASK_ID]
-    fixed_tasks: set[TASK_ID]
+    awaiting_tasks: set[Task]
+    transition_tasks: set[Task]
+    fixed_tasks: set[Task]
 
     def __init__(self, allow_preemption: bool) -> None:
         self.tasks = []
@@ -531,7 +540,7 @@ class Tasks:
             task = Task(task_id, job_id, data)
 
             self.tasks.append(task)
-            self.awaiting_tasks.add(task_id)
+            self.awaiting_tasks.add(task)
 
             self.jobs[job_id].append(task)
 
@@ -542,25 +551,25 @@ class Tasks:
 
         for task in self.tasks:
             task.reset(data)
-            self.awaiting_tasks.add(task.task_id)
+            self.awaiting_tasks.add(task)
 
     def fix_task(self, task_id: TASK_ID, machine_id: MACHINE_ID, time: TIME) -> None:
         "Fix the decision variables of a task, making it immutable."
         task = self.tasks[task_id]
 
         task.assign(time, machine_id)
-        self.awaiting_tasks.remove(task_id)
-        self.transition_tasks.add(task_id)
-        self.fixed_tasks.add(task_id)
+        self.awaiting_tasks.remove(task)
+        self.transition_tasks.add(task)
+        self.fixed_tasks.add(task)
 
     def unfix_task(self, task_id: TASK_ID, time: TIME) -> None:
         if self.allow_preemption:
             task = self.tasks[task_id]
 
             task.interrupt(time)
-            self.awaiting_tasks.add(task_id)
-            self.transition_tasks.add(task_id)
-            self.fixed_tasks.remove(task_id)
+            self.awaiting_tasks.add(task)
+            self.transition_tasks.add(task)
+            self.fixed_tasks.remove(task)
 
         else:
             warn("Preemption is not allowed in this environment. Skipping Instruction.")
@@ -603,15 +612,13 @@ class Tasks:
         max_time = time + sum(
             [
                 max(
-                    p_times for p_times in self.tasks[task_id]._remaining_times.values()
+                    p_times for p_times in task._remaining_times.values()
                 )
-                for task_id in self.awaiting_tasks
+                for task in self.awaiting_tasks
             ]
         )
 
-        for task_id in self.awaiting_tasks:
-            task = self.tasks[task_id]
-
+        for task in self.awaiting_tasks:
             if task.get_start_lb() < time:
                 task.set_start_lb(time)
 

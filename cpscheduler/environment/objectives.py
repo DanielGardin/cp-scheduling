@@ -198,9 +198,7 @@ class Makespan(Objective):
 
     def get_current(self, time: TIME, tasks: Tasks) -> int:
         makespan = 0
-        for task_id in tasks.fixed_tasks:
-            task = tasks[task_id]
-
+        for task in tasks.fixed_tasks:
             if not task.is_completed(time):
                 continue
 

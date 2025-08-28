@@ -112,18 +112,15 @@ class MachineConstraint(Constraint):
 
     def propagate(self, time: TIME, tasks: Tasks) -> None:
         changed_machines: set[MACHINE_ID] = set()
-
-        for task_id in tasks.transition_tasks:
-            task = tasks[task_id]
+        for task in tasks.transition_tasks:
             machine = task.get_assignment()
 
             self.machine_free[machine] = task.get_end()
             changed_machines.add(machine)
 
         for machine in changed_machines:
-            for task_id in tasks.awaiting_tasks:
-                if machine in tasks[task_id].machines:
-                    task = tasks[task_id]
+            for task in tasks.awaiting_tasks:
+                if machine in task.machines:
 
                     if task.get_start_lb(machine) < self.machine_free[machine]:
                         task.set_start_lb(self.machine_free[machine], machine)
@@ -132,8 +129,8 @@ class MachineConstraint(Constraint):
         for machine in range(len(self.machine_free)):
             self.machine_free[machine] = time
 
-        for task_id in tasks.fixed_tasks:
-            task = tasks[task_id]
+        for task in tasks.fixed_tasks:
+            task = tasks[task.task_id]
 
             for part in range(task.n_parts):
                 machine = task.get_assignment(part)
@@ -266,19 +263,20 @@ class PrecedenceConstraint(Constraint):
             data.add_data("predecessor", predecessors)
 
     def reset(self, tasks: Tasks) -> None:
-        self.topological_order = self.original_order.copy()
+        self.tasks_order = [
+            tasks[task_id] for task_id in self.original_order
+        ]
 
     def propagate(self, time: TIME, tasks: Tasks) -> None:
-        for task_id in list(self.topological_order):
-            task = tasks[task_id]
+        for task in list(self.tasks_order):
 
             if task.is_completed(time):
-                self.topological_order.remove(task_id)
+                self.tasks_order.remove(task)
                 continue
 
             end_time = task.get_end_lb()
 
-            for child_id in self.precedence[task_id]:
+            for child_id in self.precedence[task.task_id]:
                 child = tasks[child_id]
 
                 if child.get_start_lb() < end_time:
@@ -287,9 +285,9 @@ class PrecedenceConstraint(Constraint):
     def refresh(self, time: TIME, tasks: Tasks) -> None:
         self.reset(tasks)
 
-        for task_id in list(self.topological_order):
-            if tasks[task_id].is_completed(time):
-                self.topological_order.remove(task_id)
+        for task in list(self.tasks_order):
+            if task.is_completed(time):
+                self.tasks_order.remove(task)
 
     def get_entry(self) -> str:
         intree = self.is_intree()
@@ -446,16 +444,12 @@ class DisjunctiveConstraint(Constraint):
                     self.group_free[group] = 0
 
     def propagate(self, time: TIME, tasks: Tasks) -> None:
-        for task_id in tasks.transition_tasks:
-            task = tasks[task_id]
-
-            for group in self.task_groups[task_id]:
+        for task in tasks.transition_tasks:
+            for group in self.task_groups[task.task_id]:
                 self.group_free[group] = task.get_end()
 
-        for task_id in tasks.awaiting_tasks:
-            task = tasks[task_id]
-
-            for group in self.task_groups[task_id]:
+        for task in tasks.awaiting_tasks:
+            for group in self.task_groups[task.task_id]:
                 if task.get_start_lb(group) < self.group_free[group]:
                     task.set_start_lb(self.group_free[group], group)
 
@@ -463,11 +457,9 @@ class DisjunctiveConstraint(Constraint):
         for group in self.group_free:
             self.group_free[group] = time
 
-        for task_id in tasks.fixed_tasks:
-            task = tasks[task_id]
-
+        for task in tasks.fixed_tasks:
             for part in range(task.n_parts):
-                for group in self.task_groups[task_id]:
+                for group in self.task_groups[task.task_id]:
                     if task.get_end(part) > self.group_free[group]:
                         self.group_free[group] = task.get_end(part)
 

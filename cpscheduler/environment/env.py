@@ -436,8 +436,8 @@ class SchedulingEnv:
             return False
 
         return all(
-            self.tasks[task_id].is_completed(self.current_time)
-            for task_id in self.tasks.fixed_tasks
+            task.is_completed(self.current_time)
+            for task in self.tasks.fixed_tasks
         )
 
     def _is_schedule_empty(self) -> bool:
@@ -448,8 +448,7 @@ class SchedulingEnv:
         next_time = MAX_INT if self.current_time >= self.advancing_to else self.advancing_to
 
         if strict:
-            for task_id in self.tasks.awaiting_tasks:
-                task = self.tasks[task_id]
+            for task in self.tasks.awaiting_tasks:
                 start_lb = task.get_start_lb()
 
                 if self.current_time < start_lb < next_time:
@@ -460,8 +459,7 @@ class SchedulingEnv:
                     next_time = instruction_time
 
         else:
-            for task_id in self.tasks.awaiting_tasks:
-                task = self.tasks[task_id]
+            for task in self.tasks.awaiting_tasks:
                 start_lb = task.get_start_lb()
 
                 if start_lb <= self.current_time:
@@ -535,8 +533,8 @@ class SchedulingEnv:
 
         if action & Action.SKIPPED:
             if any(
-                self.tasks[task_id].is_executing(self.current_time)
-                for task_id in self.tasks.fixed_tasks
+                task.is_executing(self.current_time)
+                for task in self.tasks.fixed_tasks
             ):
                 action = Action.WAIT
 
@@ -547,8 +545,8 @@ class SchedulingEnv:
             schedule.pop(i)
 
         if action & Action.REEVALUATE:
-            for task_id in self.tasks.awaiting_tasks:
-                self.tasks[task_id].set_start_lb(self.current_time)
+            for task in self.tasks.awaiting_tasks:
+                task.set_start_lb(self.current_time)
 
         if action & Action.PROPAGATE:
             self._propagate()

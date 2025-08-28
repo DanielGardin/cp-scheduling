@@ -17,8 +17,8 @@ def machine_utilization(
 
     total_time = time
     busy_time = 0
-    for task_id in tasks.fixed_tasks:
-        busy_time += tasks[task_id].get_processed_time(time)
+    for task in tasks.fixed_tasks:
+        busy_time += task.get_processed_time(time)
 
     return data.n_machines * busy_time / total_time if total_time > 0 else 1
 
