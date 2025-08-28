@@ -54,3 +54,25 @@ def test_pdr(instance_name: str, heuristic: str) -> None:
 
     assert info["current_time"] == pdr_expected_results[instance_name][heuristic]
     assert terminated
+
+@pytest.mark.heuristics
+@pytest.mark.parametrize("instance_name", pdr_expected_results)
+def test_dynamic(instance_name: str) -> None:
+    env = env_setup(instance_name)
+
+    obs, info = env.reset()
+
+    action = ShortestProcessingTime()(obs)
+    *_, info = env.step(action)
+
+    static_time = info["current_time"]
+
+    obs, info = env.reset()
+
+    done = False
+    dynamic_actor = ShortestProcessingTime(available=True)
+    while not done:
+        action = dynamic_actor(obs)[0]
+        obs, _, done, _, info = env.step(action)
+
+    assert info["current_time"] == static_time

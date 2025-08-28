@@ -149,6 +149,7 @@ def test_speed(
     quiet: Annotated[bool, arg(aliases=("-q",))] = False,
     plot: bool = False,
     numpy: bool = True,
+    dynamic: bool = False,
 ) -> None:
     """
     Test the speed of the Shortest Processing Time heuristic on various job shop instances.
@@ -218,7 +219,7 @@ def test_speed(
             end="",
         )
 
-    spt_agent = ShortestProcessingTime()
+    spt_agent = ShortestProcessingTime(available=dynamic)
     for instance_name, bench_time in benchmark_times.items():
         instance_path = root / "instances/jobshop" / f"{instance_name}.txt"
 
@@ -275,14 +276,36 @@ def test_speed(
                     action = spt_agent(obs)
                     tock = perf_counter()
 
-            tick = perf_counter()
-            action = spt_agent(obs)
-            tock = perf_counter()
-            time_dict["pdr"].append(tock - tick)
+            if dynamic:
+                pdr_time = 0.
+                step_time = 0.
 
-            tick = perf_counter()
-            env.step(action)
-            time_dict["step"].append(perf_counter() - tick)
+
+                done = False
+                while not done:
+                    tick = perf_counter()
+                    action = spt_agent(obs)[0]
+                    tock = perf_counter()
+                    pdr_time += tock - tick
+
+                    tick = perf_counter()
+                    obs, _, done, _, _ = env.step(action)
+                    tock = perf_counter()
+                    step_time += tock - tick
+
+                time_dict["pdr"].append(pdr_time)
+                time_dict["step"].append(step_time)
+
+
+            else:
+                tick = perf_counter()
+                action = spt_agent(obs)
+                tock = perf_counter()
+                time_dict["pdr"].append(tock - tick)
+
+                tick = perf_counter()
+                env.step(action)
+                time_dict["step"].append(perf_counter() - tick)
 
             global_tock = perf_counter()
             time_dict["all"].append(global_tock - global_tick)

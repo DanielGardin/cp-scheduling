@@ -3,6 +3,7 @@ from collections.abc import Iterable, Sequence
 from typing_extensions import TypedDict, Unpack, TypeAlias
 
 import math
+from warnings import warn
 
 from abc import ABC, abstractmethod
 from mypy_extensions import mypyc_attr
@@ -146,12 +147,17 @@ class BasePriorityKwargs(TypedDict, total=False):
     """
     If True, the output action is strictly to execute the tasks in the given order.
     Alternatively, the output action will be to submit the tasks to be executed whenever
-    the task is available, following the order given by the priority rule.
+    the task will be available, following the order given by the priority rule.
     """
 
     job_oriented: bool
     """
     If True, the output action will refer to jobs instead of tasks.
+    """
+    
+    available: bool
+    """
+    If True, the output will be filtered to only include available tasks.
     """
 
 
@@ -172,10 +178,12 @@ class PriorityDispatchingRule(ABC):
         status: FeatureTag | None = "status",
         strict: bool = False,
         job_oriented: bool = False,
-        **kwargs: Any,
+        available: bool = False,
+        memory: bool = True
     ) -> None:
         self.status = status
         self.job_oriented = job_oriented
+        self.available = available
 
         self.instruction = "execute" if strict else "submit"
         if job_oriented:
@@ -200,7 +208,11 @@ class PriorityDispatchingRule(ABC):
         priorities = astype(priorities, float)
 
         if self.status is not None:
-            mask = array_obs[self.status] >= Status.EXECUTING
+            if self.available:
+                mask = array_obs[self.status] != Status.AVAILABLE
+
+            else:
+                mask = array_obs[self.status] >= Status.EXECUTING
 
             priorities[mask] = float("-inf")
 
@@ -266,7 +278,7 @@ class PriorityDispatchingRule(ABC):
         *batch, n_tasks = order.shape
 
         if len(batch) == 0:
-            return [(self.instruction, int(task_id)) for task_id in order]
+            return [(self.instruction, int(task_id)) for task_id in order if priorities[task_id] != float("-inf")]
 
         return [
             [(self.instruction, int(task_id)) for task_id in order[batch_index]]

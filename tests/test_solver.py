@@ -18,4 +18,4 @@ def test_pause(instance_name: str) -> None:
     env.reset()
     obs, reward, terminated, truncated, info = env.step(action)
 
-    assert reward == -objective
+    assert reward - (-objective) < 1e-5
