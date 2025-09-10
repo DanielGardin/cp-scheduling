@@ -75,13 +75,14 @@ class PulpVariables(ABC):
         """
 
     @abstractmethod
-    def get_assignments(
-        self, task_ids: Iterable[int] | None = None
-    ) -> list[tuple[int, int]]:
+    def get_assigment(self, task_id: int) -> tuple[int, int]:
         """
-        Get the assignments of tasks to machines.
+        Get the machine assignment for a specific task.
+        Args:
+            task_id: int
+                The ID of the task to get the assignment for.
         Returns:
-            A list of tuples where each tuple contains the machine ID and the start time of the task.
+            A tuple (start_time, machine_id) representing the assignment.
         """
 
     def warm_start(self, env: SchedulingEnv) -> None:
@@ -177,8 +178,8 @@ class PulpSchedulingVariables(PulpVariables):
         """
         super().warm_start(env)
 
-        for task_id in env.tasks.fixed_tasks:
-            task = env.tasks[task_id]
+        for task in env.tasks.fixed_tasks:
+            task_id = task.task_id
 
             start_var = self.start_times[task_id]
             end_var = self._end_times[task_id]
@@ -213,28 +214,19 @@ class PulpSchedulingVariables(PulpVariables):
             else:
                 set_initial_value(order, 0, check=False)
 
-    def get_assignments(
-        self, task_ids: Iterable[int] | None = None
-    ) -> list[tuple[int, int]]:
-        assignments: list[tuple[int, int]] = []
+    def get_assigment(self, task_id: int) -> tuple[int, int]:
+        "Get the machine assignment for a specific task."
+        start_value = get_value(self.start_times[task_id])
 
-        if task_ids is None:
-            task_ids = range(self.n_tasks)
+        start_time = round(start_value) if start_value is not None else -1
+        machine_id = -1
+        for machine_id in range(self.n_machines):
+            if get_value(self.assignments[task_id][machine_id]) > 1 / len(
+                self.assignments[task_id]
+            ):
+                break
 
-        for task_id in task_ids:
-            start_value = get_value(self.start_times[task_id])
-
-            start_time = round(start_value) if start_value is not None else -1
-            machine_id = -1
-            for machine_id in range(self.n_machines):
-                if get_value(self.assignments[task_id][machine_id]) > 1 / len(
-                    self.assignments[task_id]
-                ):
-                    break
-
-            assignments.append((machine_id, start_time))
-
-        return assignments
+        return start_time, machine_id
 
     def has_order(self, i: int, j: int) -> bool:
         "Check if an order i < j, or j < i exists between two tasks."
@@ -326,18 +318,15 @@ class PulpTimetable(PulpVariables):
             for task_id in range(self.n_tasks)
         ]
 
-    def get_assignments(
-        self, task_ids: Iterable[int] | None = None
-    ) -> list[tuple[int, int]]:
-        assignments: list[tuple[int, int]] = []
+    def get_assigment(self, task_id: int) -> tuple[int, int]:
+        start_time = -1
+        machine_id = -1
 
-        if task_ids is None:
-            task_ids = range(self.n_tasks)
+        for machine_id in range(self.n_machines):
+            for time in range(self.T):
+                if get_value(self.start_times[task_id][machine_id][time]):
+                    start_time = time
+                    machine_id = machine_id
+                    break
 
-        for task_id in task_ids:
-            for machine_id in range(self.n_machines):
-                for time in range(self.T):
-                    if get_value(self.start_times[task_id][machine_id][time]):
-                        assignments.append((machine_id, time))
-
-        return assignments
+        return start_time, machine_id

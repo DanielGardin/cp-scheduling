@@ -11,7 +11,7 @@ implementing the required methods.
 
 """
 
-from typing import Any
+from typing import Any, Callable, TypeAlias
 from collections.abc import Iterable, Mapping, Sequence
 from typing_extensions import Self
 
@@ -263,9 +263,7 @@ class PrecedenceConstraint(Constraint):
             data.add_data("predecessor", predecessors)
 
     def reset(self, tasks: Tasks) -> None:
-        self.tasks_order = [
-            tasks[task_id] for task_id in self.original_order
-        ]
+        self.tasks_order = [tasks[task_id] for task_id in self.original_order]
 
     def propagate(self, time: TIME, tasks: Tasks) -> None:
         for task in list(self.tasks_order):
@@ -743,6 +741,9 @@ class ResourceConstraint(Constraint):
         }
 
 
+SetupTimes: TypeAlias = Mapping[Int, Mapping[Int, Int]] | Callable[[int, int, Any], Int]
+
+
 # TODO: Check literature if the setup time only happens when in the same machine
 class SetupConstraint(Constraint):
     """
@@ -753,30 +754,53 @@ class SetupConstraint(Constraint):
     and their respective setup times, or as a string that refers to a column in the tasks data.
 
     Arguments:
-        setup_times: Mapping[int, Mapping[int, int]] | str
+        setup_times: Mapping[int, Mapping[int, int]] | Callable[[int, int, SchedulingData], int]
             A mapping of task IDs to a mapping of child task IDs and their respective setup times.
-            If a string is provided, it refers to a column in the tasks data that contains the setup
-            times.
+            Alternatively, a callable function that takes in two task IDs and the scheduling data,
+            and returns the setup time between the two tasks.
 
         name: Optional[str] = None
             An optional name for the constraint.
     """
 
     original_setup_times: dict[TASK_ID, dict[TASK_ID, TIME]]
+    setup_fn: Callable[[int, int, SchedulingData], Int] | None = None
 
     def __init__(
         self,
-        setup_times: Mapping[Int, Mapping[Int, Int]],
+        setup_times: SetupTimes,
         name: str | None = None,
     ) -> None:
         super().__init__(name)
+        if callable(setup_times):
+            self.setup_fn = setup_times
+            self.original_setup_times = {}
 
-        self.original_setup_times = {
-            TASK_ID(task): {
-                TASK_ID(child): TIME(time) for child, time in children.items()
+        else:
+            self.original_setup_times = {
+                TASK_ID(task): {
+                    TASK_ID(child): TIME(time) for child, time in children.items()
+                }
+                for task, children in setup_times.items()
             }
-            for task, children in setup_times.items()
-        }
+
+    def import_data(self, data: SchedulingData) -> None:
+        if self.setup_fn is not None:
+            self.original_setup_times = {}
+
+            for task_id in range(data.n_tasks):
+                self.original_setup_times[TASK_ID(task_id)] = {}
+
+                for child_id in range(data.n_tasks):
+                    if task_id == child_id:
+                        continue
+
+                    setup_time = TIME(self.setup_fn(task_id, child_id, data))
+
+                    if setup_time > 0:
+                        self.original_setup_times[TASK_ID(task_id)][
+                            TASK_ID(child_id)
+                        ] = setup_time
 
     def reset(self, tasks: Tasks) -> None:
         self.setup_times = {

@@ -2,8 +2,6 @@ from typing import Any
 
 from cpscheduler.environment.env import SchedulingEnv
 
-MAX_ENV_DEPTH = 10  # Maximum depth for the environment wrapping
-
 
 def is_compiled() -> bool:
     import cpscheduler.environment.env as _
@@ -11,7 +9,7 @@ def is_compiled() -> bool:
     return _.__file__.endswith(".so") or _.__file__.endswith(".pyd")
 
 
-def unwrap_env(env: Any | SchedulingEnv) -> SchedulingEnv:
+def unwrap_env(env: Any | SchedulingEnv, max_depth: int = 10) -> SchedulingEnv:
     """
     Unwraps the environment to get the underlying SchedulingEnv instance.
 
@@ -26,7 +24,7 @@ def unwrap_env(env: Any | SchedulingEnv) -> SchedulingEnv:
         The unwrapped SchedulingEnv instance.
     """
     depth = 0
-    while not isinstance(env, SchedulingEnv) and depth < MAX_ENV_DEPTH:
+    while not isinstance(env, SchedulingEnv) and depth < max_depth:
         if not hasattr(env, "unwrapped"):
             raise TypeError(
                 f"Expected env to be of type SchedulingEnv or a Wrapped env, got {type(env)} instead."

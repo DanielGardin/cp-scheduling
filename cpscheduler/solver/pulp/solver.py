@@ -160,12 +160,13 @@ class PulpSolver:
                 f"Solver failed with status: {LpSolution[self.model.status]}"
             )
 
-        assignments = self.variables.get_assignments(self.env.tasks.awaiting_tasks)
+        actions: list[tuple[str, int, int, int]] = []
 
-        actions = [
-            ("execute", task_id, machine_id, start_time)
-            for task_id, (machine_id, start_time) in enumerate(assignments)
-        ]
+        for task in self.env.tasks.awaiting_tasks:
+            task_id = task.task_id
+            assignment = self.variables.get_assigment(task_id)
+
+            actions.append(("execute", task_id, *assignment))
 
         actions.sort(key=lambda x: (x[-1], x[1]))
 
