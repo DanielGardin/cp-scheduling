@@ -1,4 +1,4 @@
-from typing import Any, Protocol, TypeVar
+from typing import Any
 from collections.abc import Mapping, Iterable
 
 from cpscheduler.utils.typing_utils import is_iterable_type

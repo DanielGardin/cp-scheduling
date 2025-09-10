@@ -439,8 +439,7 @@ class SchedulingEnv:
             return False
 
         return all(
-            task.is_completed(self.current_time)
-            for task in self.tasks.fixed_tasks
+            task.is_completed(self.current_time) for task in self.tasks.fixed_tasks
         )
 
     def _is_schedule_empty(self) -> bool:
@@ -448,7 +447,9 @@ class SchedulingEnv:
 
     def _advance_to_decision_point(self, strict: bool = False) -> None:
         "Obtain the next decision time to advance. If strict, only consider future tasks."
-        next_time = MAX_INT if self.current_time >= self.advancing_to else self.advancing_to
+        next_time = (
+            MAX_INT if self.current_time >= self.advancing_to else self.advancing_to
+        )
 
         if strict:
             for task in self.tasks.awaiting_tasks:
@@ -477,7 +478,7 @@ class SchedulingEnv:
 
         if next_time == MAX_INT:
             self.current_time = self.tasks.get_time_ub()
-        
+
         elif next_time > self.current_time:
             self.current_time = next_time
 
@@ -536,8 +537,7 @@ class SchedulingEnv:
 
         if action & Action.SKIPPED:
             if any(
-                task.is_executing(self.current_time)
-                for task in self.tasks.fixed_tasks
+                task.is_executing(self.current_time) for task in self.tasks.fixed_tasks
             ):
                 action = Action.WAIT
 

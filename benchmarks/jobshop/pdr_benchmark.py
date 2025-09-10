@@ -14,7 +14,7 @@ from cpscheduler.heuristics import (
     PriorityDispatchingRule,
 )
 
-root = Path(__file__).parent.parent
+root = Path(__file__).parent.parent.parent
 
 heuristics: dict[str, PriorityDispatchingRule] = {
     "SPT": ShortestProcessingTime(),
@@ -91,4 +91,4 @@ for dataset in datasets:
     }
 
     results = pd.DataFrame.from_dict(dict_data, orient="tight")
-    results.to_csv(root / "benchmarks" / "pdr_benchmark.csv")
+    results.to_csv(root / "benchmarks/jobshop/pdr_benchmark.csv")

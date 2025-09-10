@@ -72,7 +72,7 @@ def test_dynamic(instance_name: str) -> None:
     done = False
     dynamic_actor = ShortestProcessingTime(available=True)
     while not done:
-        action = dynamic_actor(obs)[0]
-        obs, _, done, _, info = env.step(action)
+        single_action = dynamic_actor(obs)[0]
+        obs, _, done, _, info = env.step(single_action)
 
     assert info["current_time"] == static_time

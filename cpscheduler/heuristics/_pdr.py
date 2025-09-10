@@ -154,7 +154,7 @@ class BasePriorityKwargs(TypedDict, total=False):
     """
     If True, the output action will refer to jobs instead of tasks.
     """
-    
+
     available: bool
     """
     If True, the output will be filtered to only include available tasks.
@@ -179,7 +179,7 @@ class PriorityDispatchingRule(ABC):
         strict: bool = False,
         job_oriented: bool = False,
         available: bool = False,
-        memory: bool = True
+        memory: bool = True,
     ) -> None:
         self.status = status
         self.job_oriented = job_oriented
@@ -278,7 +278,11 @@ class PriorityDispatchingRule(ABC):
         *batch, n_tasks = order.shape
 
         if len(batch) == 0:
-            return [(self.instruction, int(task_id)) for task_id in order if priorities[task_id] != float("-inf")]
+            return [
+                (self.instruction, int(task_id))
+                for task_id in order
+                if priorities[task_id] != float("-inf")
+            ]
 
         return [
             [(self.instruction, int(task_id)) for task_id in order[batch_index]]

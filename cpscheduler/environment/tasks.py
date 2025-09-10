@@ -83,6 +83,7 @@ class Bounds:
     def __repr__(self) -> str:
         return f"Bounds(lb={self.lb}, ub={self.ub})"
 
+
 # There are several bugs hidden in the implementation of `global_bounds`
 class Task:
     """
@@ -141,7 +142,8 @@ class Task:
         self.machines = list(self._remaining_times.keys())
         self.global_bounds = Bounds(self.release_date, self.due_date)
         self.start_bounds = {
-            machine: Bounds(self.release_date, self.due_date) for machine in self.machines
+            machine: Bounds(self.release_date, self.due_date)
+            for machine in self.machines
         }
 
     def __hash__(self) -> int:
@@ -274,18 +276,10 @@ class Task:
 
     def get_start_lb(self, machine: MACHINE_ID = -1) -> TIME:
         "Get the current lower bound for the starting time in a machine."
-        return (
-            self.global_bounds.lb
-            if machine == -1
-            else self.start_bounds[machine].lb
-        )
+        return self.global_bounds.lb if machine == -1 else self.start_bounds[machine].lb
 
     def get_start_ub(self, machine: MACHINE_ID = -1) -> TIME:
-        return (
-            self.global_bounds.ub
-            if machine == -1
-            else self.start_bounds[machine].ub
-        )
+        return self.global_bounds.ub if machine == -1 else self.start_bounds[machine].ub
 
     def get_end_lb(self, machine: MACHINE_ID = -1) -> TIME:
         "Get the current lower bound for the ending time in a machine."
@@ -327,7 +321,7 @@ class Task:
 
         if machine != -1:
             self.start_bounds[machine].lb = time
-        
+
         else:
             for start_bound in self.start_bounds.values():
                 start_bound.lb = time
@@ -614,9 +608,7 @@ class Tasks:
 
         max_time = time + sum(
             [
-                max(
-                    p_times for p_times in task._remaining_times.values()
-                )
+                max(p_times for p_times in task._remaining_times.values())
                 for task in self.awaiting_tasks
             ]
         )
