@@ -2,6 +2,7 @@ from typing import Any, TypeVar, SupportsInt
 from collections.abc import Iterable
 from typing_extensions import TypeIs
 
+
 _T = TypeVar("_T")
 
 
@@ -56,3 +57,16 @@ def is_iterable_int(obj: Any, lazy: bool = True) -> TypeIs[Iterable[SupportsInt 
     except TypeError:
         # If the iterable is not a collection, it will raise a TypeError
         return False
+
+
+def iterate_indexed(obj: Iterable[Any]) -> list[dict[int, int]]:
+    lst = []
+
+    for item in obj:
+        if isinstance(item, dict):
+            lst.append({int(k): int(v) for k, v in item.items()})
+
+        if is_iterable_int(item):
+            lst.append({i: int(v) for i, v in enumerate(item)})
+
+    return lst

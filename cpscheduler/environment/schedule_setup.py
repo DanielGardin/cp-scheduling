@@ -13,7 +13,11 @@ from typing_extensions import Self
 from mypy_extensions import mypyc_attr
 
 from cpscheduler.utils.list_utils import convert_to_list
-from cpscheduler.utils.typing_utils import is_iterable_type, is_iterable_int
+from cpscheduler.utils.typing_utils import (
+    is_iterable_type,
+    is_iterable_int,
+    iterate_indexed,
+)
 
 from ._common import ProcessTimeAllowedTypes, MACHINE_ID, TIME, Int
 from .data import SchedulingData
@@ -299,22 +303,24 @@ class UnrelatedParallelMachineSetup(ScheduleSetup):
                 "Unrelated parallel machine setup requires one processing time for each machine."
             )
 
-        if is_iterable_type(process_time, Mapping):
-            return [
-                {
-                    MACHINE_ID(machine): TIME(p_time)
-                    for machine, p_time in p_times.items()
-                }
-                for p_times in process_time
-            ]
+        return iterate_indexed(process_time)
 
-        return [
-            {
-                MACHINE_ID(machine): TIME(p_time)
-                for machine, p_time in enumerate(p_times)
-            }
-            for p_times in process_time
-        ]
+        # if is_iterable_type(process_time, Mapping):
+        #     return [
+        #         {
+        #             MACHINE_ID(machine): TIME(p_time)
+        #             for machine, p_time in p_times.items()
+        #         }
+        #         for p_times in process_time
+        #     ]
+
+        # return [
+        #     {
+        #         MACHINE_ID(machine): TIME(p_time)
+        #         for machine, p_time in enumerate(p_times)
+        #     }
+        #     for p_times in process_time
+        # ]
 
     def get_entry(self) -> str:
         return "Rm"
