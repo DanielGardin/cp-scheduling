@@ -226,7 +226,7 @@ class PulpSchedulingVariables(PulpVariables):
             ):
                 break
 
-        return start_time, machine_id
+        return machine_id, start_time
 
     def has_order(self, i: int, j: int) -> bool:
         "Check if an order i < j, or j < i exists between two tasks."
