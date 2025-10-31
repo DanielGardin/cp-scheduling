@@ -256,7 +256,7 @@ def test_speed(
 
             tick = perf_counter()
             env = SchedulingEnv(JobShopSetup())
-            env.set_instance(instance, processing_times="processing_time")
+            env.set_instance(instance)
             tock = perf_counter()
             time_dict["setup"].append(tock - tick)
 
@@ -310,7 +310,7 @@ def test_speed(
             global_tock = perf_counter()
             time_dict["all"].append(global_tock - global_tick)
 
-            n_tasks = env.tasks.n_tasks
+            n_tasks = env.state.n_tasks
 
             del env
 

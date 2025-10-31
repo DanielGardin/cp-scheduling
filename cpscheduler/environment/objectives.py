@@ -13,10 +13,9 @@ from typing_extensions import Self
 
 from mypy_extensions import mypyc_attr
 
-from ._common import TIME, Int, Float
-from .data import SchedulingData
-from .tasks import Tasks
 from cpscheduler.utils.list_utils import convert_to_list
+from cpscheduler.environment._common import TIME, Int, Float
+from cpscheduler.environment.state import ScheduleState
 
 objectives: dict[str, type["Objective"]] = {}
 
@@ -47,13 +46,10 @@ class Objective:
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}()"
 
-    def import_data(self, data: SchedulingData) -> None:
-        "Import data from the instance when necessary."
+    def initialize(self, state: ScheduleState) -> None:
+        "Initialize the objective with the given schedule state."
 
-    def export_data(self, data: SchedulingData) -> None:
-        "Export data to the instance when necessary."
-
-    def get_current(self, time: TIME, tasks: Tasks) -> float:
+    def get_current(self, time: TIME, state: ScheduleState) -> float:
         """
         Get the current value of the objective function. This is useful for checking
         the performance of the scheduling algorithm along the episode.
@@ -61,29 +57,14 @@ class Objective:
         return 0
 
     def __call__(
-        self, time: int, tasks: Tasks, data: SchedulingData, objective: float
+        self, time: int, state: ScheduleState, objective: float
     ) -> float:
         "Call the objective function to get the current value."
-        return self.get_current(time, tasks)
+        return self.get_current(time, state)
 
     def get_entry(self) -> str:
         "Produce the γ entry for the constraint."
         return ""
-
-    def to_dict(self) -> dict[str, Any]:
-        "Serialize the objective to a dictionary."
-        return {
-            "minimize": self.minimize,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Self:
-        "Deserialize the objective from a dictionary."
-        return cls(**data)
-
-    def __reduce__(self) -> tuple[Any, ...]:
-        "Support for pickling the objective."
-        return (self.__class__, tuple(self.to_dict().values()))
 
 
 class ComposedObjective(Objective):
@@ -125,19 +106,15 @@ class ComposedObjective(Objective):
             else convert_to_list(coefficients, float)
         )
 
-    def import_data(self, data: SchedulingData) -> None:
+    def initialize(self, state: ScheduleState) -> None:
         for objective in self.objectives:
-            objective.import_data(data)
+            objective.initialize(state)
 
-    def export_data(self, data: SchedulingData) -> None:
-        for objective in self.objectives:
-            objective.export_data(data)
-
-    def get_current(self, time: TIME, tasks: Tasks) -> float:
+    def get_current(self, time: TIME, state: ScheduleState) -> float:
         current_value = 0.0
 
         for objective, coefficient in zip(self.objectives, self.coefficients):
-            current_value += coefficient * objective.get_current(time, tasks)
+            current_value += coefficient * objective.get_current(time, state)
 
         return current_value
 
@@ -163,42 +140,14 @@ class ComposedObjective(Objective):
 
         return entry
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "objectives": [
-                objective.to_dict() | {"type": objective.__class__.__name__}
-                for objective in self.objectives
-            ],
-            "coefficients": self.coefficients,
-            "minimize": self.minimize,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Self:
-        global objectives
-
-        obj_dict: list[dict[str, Any]] = data["objectives"]
-
-        objectives_list = [
-            objectives[objective_data.pop("type")].from_dict(objective_data)
-            for objective_data in obj_dict
-        ]
-
-        return cls(
-            objectives=objectives_list,
-            coefficients=data["coefficients"],
-            minimize=data["minimize"],
-        )
-
-
 class Makespan(Objective):
     """
     Classic makespan objective function, which aims to minimize the time at which all tasks are completed.
     """
 
-    def get_current(self, time: TIME, tasks: Tasks) -> int:
+    def get_current(self, time: TIME, state: ScheduleState) -> int:
         makespan = 0
-        for task in tasks.fixed_tasks:
+        for task in state.fixed_tasks:
             if not task.is_completed(time):
                 continue
 
@@ -218,10 +167,10 @@ class TotalCompletionTime(Objective):
     of all tasks.
     """
 
-    def get_current(self, time: TIME, tasks: Tasks) -> int:
+    def get_current(self, time: TIME, state: ScheduleState) -> int:
         total_completion_time = 0
-        for job in range(tasks.n_jobs):
-            job_completion = tasks.get_job_completion(job, time)
+        for job in range(state.n_jobs):
+            job_completion = state.get_job_completion_time(job, time)
             total_completion_time += job_completion
 
         return total_completion_time
@@ -251,22 +200,15 @@ class WeightedCompletionTime(Objective):
         else:
             self.job_weights = convert_to_list(job_weights, float)
 
-    def import_data(self, data: SchedulingData) -> None:
+    def initialize(self, state: ScheduleState) -> None:
         if "job_weights" in self.tags:
-            self.job_weights = data.get_job_level_data(self.tags["job_weights"])
+            self.job_weights = state.instance[self.tags["job_weights"]]
 
-    def export_data(self, data: SchedulingData) -> None:
-        if not self.tags:
-            data.add_data("weight", self.job_weights)
-
-        else:
-            data.add_alias("weight", self.tags["job_weights"])
-
-    def get_current(self, time: TIME, tasks: Tasks) -> float:
+    def get_current(self, time: TIME, state: ScheduleState) -> float:
         weighted_completion_time = 0.0
-        for job in range(tasks.n_jobs):
+        for job in range(state.n_jobs):
             weight = self.job_weights[job]
-            job_completion = tasks.get_job_completion(job, time)
+            job_completion = state.get_job_completion_time(job, time)
 
             weighted_completion_time += weight * float(job_completion)
 
@@ -274,12 +216,6 @@ class WeightedCompletionTime(Objective):
 
     def get_entry(self) -> str:
         return "Σw_jC_j"
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "job_weights": self.tags.get("job_weights", "weight"),
-            "minimize": self.minimize,
-        }
 
 
 class MaximumLateness(Objective):
@@ -302,22 +238,15 @@ class MaximumLateness(Objective):
         else:
             self.due_dates = convert_to_list(due_dates, TIME)
 
-    def import_data(self, data: SchedulingData) -> None:
+    def initialize(self, state: ScheduleState) -> None:
         if "due_dates" in self.tags:
-            self.due_dates = data.get_job_level_data(self.tags["due_dates"])
+            self.due_dates = state.instance[self.tags["due_dates"]]
 
-    def export_data(self, data: SchedulingData) -> None:
-        if not self.tags:
-            data.add_data("due_date", self.due_dates)
-
-        else:
-            data.add_alias("due_date", self.tags["due_dates"])
-
-    def get_current(self, time: TIME, tasks: Tasks) -> int:
+    def get_current(self, time: TIME, state: ScheduleState) -> int:
         max_lateness = 0
 
-        for job in range(tasks.n_jobs):
-            job_completion = tasks.get_job_completion(job, time)
+        for job in range(state.n_jobs):
+            job_completion = state.get_job_completion_time(job, time)
             job_lateness = job_completion - self.due_dates[job]
 
             if max_lateness < job_lateness:
@@ -327,12 +256,6 @@ class MaximumLateness(Objective):
 
     def get_entry(self) -> str:
         return "L_max"
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "due_dates": self.tags.get("due_dates", "due_date"),
-            "minimize": self.minimize,
-        }
 
 
 class TotalTardiness(Objective):
@@ -356,22 +279,15 @@ class TotalTardiness(Objective):
         else:
             self.due_dates = convert_to_list(due_dates, TIME)
 
-    def import_data(self, data: SchedulingData) -> None:
+    def initialize(self, state: ScheduleState) -> None:
         if "due_dates" in self.tags:
-            self.due_dates = data.get_job_level_data(self.tags["due_dates"])
+            self.due_dates = state.instance[self.tags["due_dates"]]
 
-    def export_data(self, data: SchedulingData) -> None:
-        if not self.tags:
-            data.add_data("due_date", self.due_dates)
-
-        else:
-            data.add_alias("due_date", self.tags["due_dates"])
-
-    def get_current(self, time: TIME, tasks: Tasks) -> int:
+    def get_current(self, time: TIME, state: ScheduleState) -> int:
         total_tardiness = 0
-        for job in range(tasks.n_jobs):
+        for job in range(state.n_jobs):
             due_date = self.due_dates[job]
-            job_completion = tasks.get_job_completion(job, time)
+            job_completion = state.get_job_completion_time(job, time)
 
             job_tardiness = (
                 job_completion - due_date if job_completion > due_date else 0
@@ -383,13 +299,6 @@ class TotalTardiness(Objective):
 
     def get_entry(self) -> str:
         return "ΣT_j"
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "due_dates": self.tags.get("due_dates", "due_date"),
-            "minimize": self.minimize,
-        }
-
 
 class WeightedTardiness(Objective):
     """
@@ -420,32 +329,19 @@ class WeightedTardiness(Objective):
         else:
             self.job_weights = convert_to_list(job_weights, float)
 
-    def import_data(self, data: SchedulingData) -> None:
+    def initialize(self, state: ScheduleState) -> None:
         if "due_dates" in self.tags:
-            self.due_dates = data.get_job_level_data(self.tags["due_dates"])
+            self.due_dates = state.instance[self.tags["due_dates"]]
 
         if "job_weights" in self.tags:
-            self.job_weights = data.get_job_level_data(self.tags["job_weights"])
+            self.job_weights = state.instance[self.tags["job_weights"]]
 
-    def export_data(self, data: SchedulingData) -> None:
-        if "due_dates" not in self.tags:
-            data.add_data("due_date", self.due_dates)
-
-        else:
-            data.add_alias("due_date", self.tags["due_dates"])
-
-        if "job_weights" not in self.tags:
-            data.add_data("weight", self.job_weights)
-
-        else:
-            data.add_alias("weight", self.tags["job_weights"])
-
-    def get_current(self, time: TIME, tasks: Tasks) -> float:
+    def get_current(self, time: TIME, state: ScheduleState) -> float:
         weighted_tardiness = 0.0
-        for job in range(tasks.n_jobs):
+        for job in range(state.n_jobs):
             weight = self.job_weights[job]
             due_date = self.due_dates[job]
-            job_completion = tasks.get_job_completion(job, time)
+            job_completion = state.get_job_completion_time(job, time)
 
             job_tardiness = (
                 float(job_completion - due_date) if job_completion > due_date else 0.0
@@ -457,13 +353,6 @@ class WeightedTardiness(Objective):
 
     def get_entry(self) -> str:
         return "Σw_jT_j"
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "due_dates": self.tags.get("due_dates", "due_date"),
-            "job_weights": self.tags.get("job_weights", "weight"),
-            "minimize": self.minimize,
-        }
 
 
 class TotalEarliness(Objective):
@@ -487,22 +376,15 @@ class TotalEarliness(Objective):
         else:
             self.due_dates = convert_to_list(due_dates, TIME)
 
-    def import_data(self, data: SchedulingData) -> None:
+    def initialize(self, state: ScheduleState) -> None:
         if "due_dates" in self.tags:
-            self.due_dates = data.get_job_level_data(self.tags["due_dates"])
+            self.due_dates = state.instance[self.tags["due_dates"]]
 
-    def export_data(self, data: SchedulingData) -> None:
-        if not self.tags:
-            data.add_data("due_date", self.due_dates)
-
-        else:
-            data.add_alias("due_date", self.tags["due_dates"])
-
-    def get_current(self, time: TIME, tasks: Tasks) -> int:
+    def get_current(self, time: TIME, state: ScheduleState) -> int:
         total_earliness = 0
-        for job in range(tasks.n_jobs):
+        for job in range(state.n_jobs):
             due_date = self.due_dates[job]
-            job_completion = tasks.get_job_completion(job, time)
+            job_completion = state.get_job_completion_time(job, time)
 
             job_earliness = (
                 due_date - job_completion if job_completion < due_date else 0
@@ -514,12 +396,6 @@ class TotalEarliness(Objective):
 
     def get_entry(self) -> str:
         return "ΣE_j"
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "due_dates": self.tags.get("due_dates", "due_date"),
-            "minimize": self.minimize,
-        }
 
 
 class WeightedEarliness(Objective):
@@ -550,32 +426,20 @@ class WeightedEarliness(Objective):
         else:
             self.job_weights = convert_to_list(job_weights, float)
 
-    def import_data(self, data: SchedulingData) -> None:
+
+    def initialize(self, state: ScheduleState) -> None:
         if "due_dates" in self.tags:
-            self.due_dates = data.get_job_level_data(self.tags["due_dates"])
+            self.due_dates = state.instance[self.tags["due_dates"]]
 
         if "job_weights" in self.tags:
-            self.job_weights = data.get_job_level_data(self.tags["job_weights"])
+            self.job_weights = state.instance[self.tags["job_weights"]]
 
-    def export_data(self, data: SchedulingData) -> None:
-        if "due_dates" not in self.tags:
-            data.add_data("due_date", self.due_dates)
-
-        else:
-            data.add_alias("due_date", self.tags["due_dates"])
-
-        if "job_weights" not in self.tags:
-            data.add_data("weight", self.job_weights)
-
-        else:
-            data.add_alias("weight", self.tags["job_weights"])
-
-    def get_current(self, time: TIME, tasks: Tasks) -> float:
+    def get_current(self, time: TIME, state: ScheduleState) -> float:
         weighted_earliness = 0.0
-        for job in range(tasks.n_jobs):
+        for job in range(state.n_jobs):
             weight = self.job_weights[job]
             due_date = self.due_dates[job]
-            job_completion = tasks.get_job_completion(job, time)
+            job_completion = state.get_job_completion_time(job, time)
 
             job_earliness = (
                 float(due_date - job_completion) if job_completion < due_date else 0
@@ -587,13 +451,6 @@ class WeightedEarliness(Objective):
 
     def get_entry(self) -> str:
         return "Σw_jE_j"
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "due_dates": self.tags.get("due_dates", "due_date"),
-            "job_weights": self.tags.get("job_weights", "weight"),
-            "minimize": self.minimize,
-        }
 
 
 class TotalTardyJobs(Objective):
@@ -616,24 +473,15 @@ class TotalTardyJobs(Objective):
         else:
             self.due_dates = convert_to_list(due_dates, TIME)
 
-    def import_data(self, data: SchedulingData) -> None:
+    def initialize(self, state: ScheduleState) -> None:
         if "due_dates" in self.tags:
-            self.due_dates = convert_to_list(
-                data.get_job_level_data(self.tags["due_dates"]), TIME
-            )
+            self.due_dates = state.instance[self.tags["due_dates"]]
 
-    def export_data(self, data: SchedulingData) -> None:
-        if not self.tags:
-            data.add_data("due_date", self.due_dates)
-
-        else:
-            data.add_alias("due_date", self.tags["due_dates"])
-
-    def get_current(self, time: TIME, tasks: Tasks) -> int:
+    def get_current(self, time: TIME, state: ScheduleState) -> int:
         tardy_jobs = 0
-        for job in range(tasks.n_jobs):
+        for job in range(state.n_jobs):
             due_date = self.due_dates[job]
-            job_completion = tasks.get_job_completion(job, time)
+            job_completion = state.get_job_completion_time(job, time)
 
             tardy = 1 if job_completion > due_date else 0
             tardy_jobs += tardy
@@ -642,12 +490,6 @@ class TotalTardyJobs(Objective):
 
     def get_entry(self) -> str:
         return "ΣU_j"
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "due_dates": self.tags.get("due_dates", "due_date"),
-            "minimize": self.minimize,
-        }
 
 
 class WeightedTardyJobs(Objective):
@@ -678,32 +520,19 @@ class WeightedTardyJobs(Objective):
         else:
             self.job_weights = convert_to_list(job_weights, float)
 
-    def import_data(self, data: SchedulingData) -> None:
+    def initialize(self, state: ScheduleState) -> None:
         if "due_dates" in self.tags:
-            self.due_dates = data.get_job_level_data(self.tags["due_dates"])
+            self.due_dates = state.instance[self.tags["due_dates"]]
 
         if "job_weights" in self.tags:
-            self.job_weights = data.get_job_level_data(self.tags["job_weights"])
+            self.job_weights = state.instance[self.tags["job_weights"]]
 
-    def export_data(self, data: SchedulingData) -> None:
-        if "due_dates" not in self.tags:
-            data.add_data("due_date", self.due_dates)
-
-        else:
-            data.add_alias("due_date", self.tags["due_dates"])
-
-        if "job_weights" not in self.tags:
-            data.add_data("weight", self.job_weights)
-
-        else:
-            data.add_alias("weight", self.tags["job_weights"])
-
-    def get_current(self, time: TIME, tasks: Tasks) -> float:
+    def get_current(self, time: TIME, state: ScheduleState) -> float:
         weighted_tardy_jobs = 0.0
-        for job in range(tasks.n_jobs):
+        for job in range(state.n_jobs):
             weight = self.job_weights[job]
             due_date = self.due_dates[job]
-            job_completion = tasks.get_job_completion(job, time)
+            job_completion = state.get_job_completion_time(job, time)
 
             tardy = weight if job_completion > due_date else 0.0
             weighted_tardy_jobs += tardy
@@ -712,14 +541,6 @@ class WeightedTardyJobs(Objective):
 
     def get_entry(self) -> str:
         return "Σw_jU_j"
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "due_dates": self.tags.get("due_dates", "due_date"),
-            "job_weights": self.tags.get("job_weights", "weight"),
-            "minimize": self.minimize,
-        }
-
 
 class TotalFlowTime(Objective):
     """
@@ -741,22 +562,15 @@ class TotalFlowTime(Objective):
         else:
             self.release_times = convert_to_list(release_times, TIME)
 
-    def import_data(self, data: SchedulingData) -> None:
+    def initialize(self, state: ScheduleState) -> None:
         if "release_times" in self.tags:
-            self.release_times = data.get_job_level_data(self.tags["release_times"])
+            self.release_times = state.instance[self.tags["release_times"]]
 
-    def export_data(self, data: SchedulingData) -> None:
-        if not self.tags:
-            data.add_data("release_time", self.release_times)
-
-        else:
-            data.add_alias("release_time", self.tags["release_times"])
-
-    def get_current(self, time: TIME, tasks: Tasks) -> int:
+    def get_current(self, time: TIME, state: ScheduleState) -> int:
         total_flowtime = 0
-        for job in range(tasks.n_jobs):
+        for job in range(state.n_jobs):
             release_time = self.release_times[job]
-            job_completion = tasks.get_job_completion(job, time)
+            job_completion = state.get_job_completion_time(job, time)
 
             job_flowtime = (
                 job_completion - release_time if job_completion > release_time else 0
@@ -768,9 +582,3 @@ class TotalFlowTime(Objective):
 
     def get_entry(self) -> str:
         return "ΣF_j"
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "release_times": self.tags.get("release_times", "release_time"),
-            "minimize": self.minimize,
-        }

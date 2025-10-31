@@ -3,13 +3,12 @@ from collections.abc import Mapping, Iterable
 
 from cpscheduler.utils.typing_utils import is_iterable_type
 
-from .tasks import Tasks
-from .data import SchedulingData
-from ._common import Int, TASK_ID, TIME
+from cpscheduler.environment._common import Int, TASK_ID, TIME
+from cpscheduler.environment.state import ScheduleState
 
 
 def machine_utilization(
-    time: int, tasks: Tasks, data: SchedulingData, objective: float
+    time: int, state: ScheduleState, objective: float
 ) -> float:
     """
     Calculate the percentage of time that machines are utilized during the scheduling period.
@@ -17,18 +16,18 @@ def machine_utilization(
 
     total_time = time
     busy_time = 0
-    for task in tasks.fixed_tasks:
+    for task in state.fixed_tasks:
         busy_time += task.get_processed_time(time)
 
-    return data.n_machines * busy_time / total_time if total_time > 0 else 1
+    return state.n_machines * busy_time / total_time if total_time > 0 else 1
 
 
 def max_preemptions(
-    time: int, tasks: Tasks, data: SchedulingData, objective: float
+    time: int, state: ScheduleState, objective: float
 ) -> int:
     "Calculate the maximum number of preemption switches that occurred during the scheduling period."
     max_switches = 0
-    for task in tasks:
+    for task in state.fixed_tasks:
         n_switches = task.n_parts - 1
 
         if n_switches > max_switches:
@@ -87,24 +86,24 @@ class ReferenceScheduleMetrics:
         )
 
     def __call__(
-        self, time: int, tasks: Tasks, data: SchedulingData, objective: float
+        self, time: int, state: ScheduleState, objective: float
     ) -> dict[str, float]:
         self.force_import = False
 
         metrics = {
             "mean_displacement_distance": self.mean_displacement_distance(
-                time, tasks, data, objective
+                time, state, objective
             ),
-            "order_preservation": self.order_preservation(time, tasks, data, objective),
+            "order_preservation": self.order_preservation(time, state, objective),
         }
 
         if self.permutation_based:
             metrics.update(
                 {
                     "hamming_accuracy": self.hamming_accuracy(
-                        time, tasks, data, objective
+                        time, state, objective
                     ),
-                    "kendall_tau": self.kendall_tau(time, tasks, data, objective),
+                    "kendall_tau": self.kendall_tau(time, state, objective),
                 }
             )
 
@@ -112,31 +111,19 @@ class ReferenceScheduleMetrics:
 
         return metrics
 
-    def import_data(self, data: SchedulingData) -> None:
-        if self.tag:
-            schedule_info = data.get_task_level_data(self.tag)
-
-            self.reference_schedule = {
-                TASK_ID(task_id): TIME(start_time)
-                for task_id, start_time in enumerate(schedule_info)
-            }
-
     def mean_displacement_distance(
-        self, time: int, tasks: Tasks, data: SchedulingData, objective: float
+        self, time: int, state: ScheduleState, objective: float
     ) -> float:
         """
         Calculate the mean displacement distance of the reference schedule.
         The displacement distance is the sum of the absolute differences between
         the scheduled and actual start times of each task.
         """
-        if self.force_import:
-            self.import_data(data)
-
         distance = 0
         count = 0
 
         for task_id, reference_time in self.reference_schedule.items():
-            task = tasks[task_id]
+            task = state.tasks[task_id]
 
             if task.is_fixed():
                 actual_time = task.get_start()
@@ -152,28 +139,25 @@ class ReferenceScheduleMetrics:
         return distance / count if count > 0 else 0.0
 
     def order_preservation(
-        self, time: int, tasks: Tasks, data: SchedulingData, objective: float
+        self, time: int, state: ScheduleState, objective: float
     ) -> float:
         """
         Calculate the order preservation metric based on the reference schedule.
         This metric is the ratio of the number of tasks that maintain their order
         in the reference schedule to the total number of tasks.
         """
-        if self.force_import:
-            self.import_data(data)
-
         reference_count = 0
         preserved_count = 0
 
         for task_i in self.reference_schedule:
-            if not tasks[task_i].is_fixed():
+            if not state.tasks[task_i].is_fixed():
                 continue
 
             ref_start_i = self.reference_schedule[task_i]
-            actual_start_i = tasks[task_i].get_start()
+            actual_start_i = state.tasks[task_i].get_start()
 
             for task_j in self.reference_schedule:
-                if not tasks[task_j].is_fixed():
+                if not state.tasks[task_j].is_fixed():
                     continue
 
                 ref_start_j = self.reference_schedule[task_j]
@@ -182,41 +166,38 @@ class ReferenceScheduleMetrics:
 
                 reference_count += 1
 
-                actual_start_j = tasks[task_j].get_start()
+                actual_start_j = state.tasks[task_j].get_start()
                 if actual_start_j < actual_start_i:
                     preserved_count += 1
 
         return preserved_count / reference_count if reference_count > 0 else 1.0
 
     # The following are useful when the schedule is a permutation of the tasks
-    def _get_permutations(self, tasks: Tasks) -> tuple[list[TASK_ID], list[TASK_ID]]:
+    def _get_permutations(self, state: ScheduleState) -> tuple[list[TASK_ID], list[TASK_ID]]:
         reference_perm = sorted(
             [
                 task_id
                 for task_id in self.reference_schedule
-                if tasks[task_id].is_fixed()
+                if state.tasks[task_id].is_fixed()
             ],
             key=lambda task_id: self.reference_schedule[task_id],
         )
 
         actual_perm = sorted(
-            reference_perm, key=lambda task_id: tasks[task_id].get_start()
+            reference_perm, key=lambda task_id: state.tasks[task_id].get_start()
         )
 
         return reference_perm, actual_perm
 
     def hamming_accuracy(
-        self, time: int, tasks: Tasks, data: SchedulingData, objective: float
+        self, time: int, state: ScheduleState, objective: float
     ) -> float:
         """
         Calculate the Hamming similarity of the schedule permutation compared to the reference
         schedule. This metric is the number of tasks that are in the same position
         as in the reference schedule.
         """
-        if self.force_import:
-            self.import_data(data)
-
-        reference_perm, actual_perm = self._get_permutations(tasks)
+        reference_perm, actual_perm = self._get_permutations(state)
 
         hamming_count = 0
         for ref_task, act_task in zip(reference_perm, actual_perm):
@@ -226,16 +207,13 @@ class ReferenceScheduleMetrics:
         return hamming_count / len(reference_perm) if reference_perm else 1.0
 
     def kendall_tau(
-        self, time: int, tasks: Tasks, data: SchedulingData, objective: float
+        self, time: int, state: ScheduleState, objective: float
     ) -> float:
         """
         Calculate the Kendall Tau distance between the reference schedule and the actual schedule.
         This metric is the number of discordant pairs in the schedule.
         """
-        if self.force_import:
-            self.import_data(data)
-
-        reference_perm, actual_perm = self._get_permutations(tasks)
+        reference_perm, actual_perm = self._get_permutations(state)
         n = len(reference_perm)
 
         concordant = 0
@@ -299,7 +277,7 @@ class OptimalReferenceMetrics(ReferenceScheduleMetrics):
         return (self.__class__, (schedule, self.optimal_value, perm))
 
     def regret(
-        self, time: int, tasks: Tasks, data: SchedulingData, objective: float
+        self, time: int, state: ScheduleState, objective: float
     ) -> float:
         """
         Calculate the regret of the current schedule compared to the optimal schedule.
@@ -308,7 +286,7 @@ class OptimalReferenceMetrics(ReferenceScheduleMetrics):
         return self.optimal_value - objective
 
     def optimality_gap(
-        self, time: int, tasks: Tasks, data: SchedulingData, objective: float
+        self, time: int, state: ScheduleState, objective: float
     ) -> float:
         """
         Calculate the optimality gap of the current schedule compared to the optimal schedule.

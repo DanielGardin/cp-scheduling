@@ -19,23 +19,19 @@ from collections.abc import Iterable, Mapping
 from mypy_extensions import u8, i64
 
 from cpscheduler.utils.list_utils import convert_to_list
-from cpscheduler.utils._protocols import Metric, ImportableMetric
+from cpscheduler.utils._protocols import Metric
 
-from ._common import (
+from cpscheduler.environment._common import (
     MAX_INT,
-    ProcessTimeAllowedTypes,
     InstanceTypes,
-    MachineDataTypes,
     TASK_ID,
     TIME,
     InfoType,
     ObsType,
-    InstanceConfig,
     EnvSerialization,
 )
-from .data import SchedulingData
-from .tasks import Tasks
-from .instructions import (
+from cpscheduler.environment.state import ScheduleState
+from cpscheduler.environment.instructions import (
     Instruction,
     Signal,
     parse_instruction,
@@ -43,17 +39,14 @@ from .instructions import (
     ActionType,
     is_single_action,
 )
-from .schedule_setup import ScheduleSetup, setups
-from .constraints import Constraint, constraints
-from .objectives import Objective, objectives
+from cpscheduler.environment.schedule_setup import ScheduleSetup, setups
+from cpscheduler.environment.constraints import Constraint, constraints
+from cpscheduler.environment.objectives import Objective, objectives
 
-from ._render import Renderer
-
+from cpscheduler.environment._render import Renderer
 
 def prepare_instance(instance: InstanceTypes) -> dict[str, list[Any]]:
     "Prepare the instance data to a standard dictionary format."
-    # features = instance.keys() if isinstance(instance, Mapping) else instance.columns
-
     return {str(feature): convert_to_list(instance[feature]) for feature in instance}
 
 
@@ -113,29 +106,31 @@ class SchedulingEnv:
     setup: ScheduleSetup
     constraints: dict[str, Constraint]
     objective: Objective
-    data: SchedulingData
 
     metrics: dict[str, Metric[Any]]
 
+    renderer: Renderer
+
     # Environment dynamic variables
-    tasks: Tasks
+    state: ScheduleState
     schedule: dict[TASK_ID, list[Instruction]]
     current_time: TIME
     advancing_to: TIME
+    query_times: list[TIME]
+    force_reset: bool = False
 
     def __init__(
         self,
         machine_setup: ScheduleSetup,
         constraints: Iterable[Constraint] | None = None,
         objective: Objective | None = None,
-        instance_config: InstanceConfig | None = None,
+        instance: InstanceTypes | None = None,
         metrics: Mapping[str, Metric[Any]] | None = None,
         render_mode: Renderer | str | None = None,
         allow_preemption: bool = False,
     ):
-        self.loaded = False
-        self.force_reset = True
-
+        self.state = ScheduleState()
+        self.state.set_preemptive(allow_preemption)
         self.preemptive = allow_preemption
         self.setup = machine_setup
 
@@ -154,9 +149,6 @@ class SchedulingEnv:
 
         self.set_objective(objective)
 
-        self.tasks = Tasks(allow_preemption)
-        self.data = SchedulingData()
-
         self.schedule = {-1: []}
 
         self.current_time = 0
@@ -169,19 +161,14 @@ class SchedulingEnv:
             else Renderer.get_renderer(render_mode)
         )
 
-        if instance_config is not None:
-            self.set_instance(
-                instance=instance_config.get("instance", {}),
-                processing_times=instance_config.get("processing_times", None),
-                job_instance=instance_config.get("job_instance", None),
-                job_feature=instance_config.get("job_feature", ""),
-                machine_instance=instance_config.get("machine_instance", None),
-            )
+        if instance is not None:
+            self.set_instance(instance)
+
 
     def __repr__(self) -> str:
-        if self.loaded:
+        if self.state.loaded:
             return (
-                f"SchedulingEnv({self.get_entry()}, n_tasks={self.tasks.n_tasks}, "
+                f"SchedulingEnv({self.get_entry()}, n_tasks={self.state.n_tasks}, "
                 f"current_time={self.current_time}, objective={self._get_objective()})"
             )
 
@@ -196,18 +183,16 @@ class SchedulingEnv:
             raise ValueError(
                 f"Constraint with name {name} already exists. Please use a different name."
             )
-
-        if self.loaded:
-            constraint.import_data(self.data)
-            constraint.export_data(self.data)
+        
+        if self.state.loaded:
+            constraint.initialize(self.state)
 
         self.constraints[name] = constraint
 
     def set_objective(self, objective: Objective) -> None:
         "Set the objective function for the environment."
-        if self.loaded:
-            objective.import_data(self.data)
-            objective.export_data(self.data)
+        if self.state.loaded:
+            objective.initialize(self.state)
 
         self.objective = objective
 
@@ -215,73 +200,29 @@ class SchedulingEnv:
         "Add a metric to the environment."
         self.metrics[name] = metric
 
-    def set_instance(
-        self,
-        instance: InstanceTypes,
-        processing_times: ProcessTimeAllowedTypes = None,
-        job_instance: InstanceTypes | None = None,
-        job_feature: str = "",
-        machine_instance: MachineDataTypes | None = None,
-    ) -> None:
+    def set_instance(self, instance: InstanceTypes) -> None:
         """
         Set the instance data for the environment.
 
         Parameters:
             instance: InstanceTypes
                 The instance data for the scheduling problem, can be a DataFrame or a dictionary.
-
-            processing_times: ProcessTimeAllowedTypes
-                The processing times for the tasks, can be a list of dictionaries, a list of lists,
-                a list of integers, or a string representing a column in the instance data.
-
-            job_instance: Optional[InstanceTypes]
-                The job instance data for the scheduling problem, can be a DataFrame or a
-                dictionary. If None, no job instance is set.
-
-            job_ids: Optional[Iterable[int] | str]
-                The job IDs for the tasks. If None, job IDs are as the default index of the
-                job_instance.
-
-            n_parts: Optional[int]
-                The number of parts to split the tasks into. If None, it defaults to 16 if
-                preemption is allowed, otherwise 1.
         """
-        self.data.clear()
-        self.tasks.clear()
+        instance = prepare_instance(instance)
 
-        task_data = prepare_instance(instance)
-        job_data = prepare_instance(job_instance) if job_instance is not None else {}
-        machine_data = (
-            prepare_instance(machine_instance) if machine_instance is not None else {}
-        )
+        self.state.read_instance(instance)
+        self.setup.initialize(self.state)
 
-        parsed_processing_times = self.setup.parse_process_time(
-            task_data, processing_times
-        )
+        self.state.set_n_machines(self.setup.n_machines)
 
-        self.data.add_task_data(parsed_processing_times, task_data, job_feature)
-        self.data.add_job_data(job_data)
-        self.data.add_machine_data(machine_data)
-
-        for constraint in self.setup.setup_constraints(self.data):
+        for constraint in self.setup.setup_constraints(self.state):
             constraint.setup_constraint = True
             self.add_constraint(constraint, replace=True)
-
+        
+        self.objective.initialize(self.state)
         for constraint in self.constraints.values():
-            constraint.import_data(self.data)
-
-            if not constraint.setup_constraint:
-                constraint.export_data(self.data)
-
-        self.objective.import_data(self.data)
-        self.objective.export_data(self.data)
-
-        for metric in self.metrics.values():
-            if isinstance(metric, ImportableMetric):
-                metric.import_data(self.data)
-
-        self.tasks.add_tasks(self.data)
-        self.loaded = True
+            constraint.initialize(self.state)
+        
         self.force_reset = True
 
     def get_entry(self) -> str:
@@ -306,13 +247,7 @@ class SchedulingEnv:
     # Environment state retrieval methods
     def _get_state(self) -> ObsType:
         "Retrieve the current state of the environment from tasks."
-        task_data, job_data = self.data.export_state()
-        dynamic_task_data, dynamic_job_data = self.tasks.export_state(self.current_time)
-
-        task_data.update(dynamic_task_data)
-        job_data.update(dynamic_job_data)
-
-        return task_data, job_data
+        return self.state.get_observation(self.current_time)
 
     def _get_info(self) -> InfoType:
         "Retrieve additional information about the environment."
@@ -324,9 +259,7 @@ class SchedulingEnv:
         }
 
         for metric_name, metric in self.metrics.items():
-            metric_value = metric(
-                self.current_time, self.tasks, self.data, objective_value
-            )
+            metric_value = metric(self.current_time, self.state, objective_value)
 
             if isinstance(metric_value, Mapping):
                 info.update(metric_value)
@@ -340,33 +273,28 @@ class SchedulingEnv:
         "Propagate the new bounds through the constraints"
         # Currently not sure if this is needed, but keeping it for future reference.
 
-        # for task_id in self.tasks.awaiting_tasks:
-        #     task = self.tasks[task_id]
+        # for task_id in self.state.awaiting_tasks:
+        #     task = self.state[task_id]
         #     if task.get_start_lb() < self.current_time:
         #         task.set_start_lb(self.current_time)
 
         for constraint in self.constraints.values():
-            constraint.propagate(self.current_time, self.tasks)
+            constraint.propagate(self.current_time, self.state)
 
-        self.tasks.finish_propagation()
+        self.state.transition_tasks.clear()
 
     # Environment API methods
     def reset(
-        self, *, options: dict[str, Any] | InstanceConfig | None = None
+        self, *, options: dict[str, Any] | None = None
     ) -> tuple[ObsType, InfoType]:
-        if options is not None:
-            self.set_instance(
-                instance=options.get("instance", {}),
-                processing_times=options.get("processing_times", None),
-                job_instance=options.get("job_instance", None),
-                job_feature=options.get("job_feature", ""),
-                machine_instance=options.get("machine_instance", None),
+        if isinstance(options, dict) and "instance" in options:
+            self.set_instance(options["instance"])
+
+        if not self.state.loaded:
+            raise ValueError(
+                "Environment has not been loaded with an instance. "
+                "Please call reset(options={'instance':<instance>}) or set_instance(<instance>) before resetting."
             )
-
-        if not self.loaded:
-            raise ValueError("Environment not loaded. Please set an instance first.")
-
-        self.force_reset = False
 
         self.schedule.clear()
         self.schedule[-1] = []
@@ -375,11 +303,13 @@ class SchedulingEnv:
         self.advancing_to = 0
         self.query_times.clear()
 
-        self.tasks.reset(self.data)
+        self.state.reset()
         for constraint in self.constraints.values():
-            constraint.reset(self.tasks)
+            constraint.reset(self.state)
 
         self._propagate()
+
+        self.force_reset = False
 
         return self._get_state(), self._get_info()
 
@@ -387,10 +317,10 @@ class SchedulingEnv:
         self,
         action: ActionType = None,
     ) -> tuple[ObsType, float, bool, bool, InfoType]:
-        if self.force_reset or not self.loaded:
+        if not self.state.loaded or self.force_reset:
             raise RuntimeError(
                 "Environment was not reset after loading an instance, or wasn't loaded. "
-                "Please call reset() after set_instance(...)."
+                "Please call reset(options={'instance':<instance>}) or set_instance(<instance>), then reset()."
             )
 
         if is_single_action(action):
@@ -427,19 +357,19 @@ class SchedulingEnv:
         return obs, reward, terminal, truncated, info
 
     def render(self) -> None:
-        self.renderer.render(self.current_time, self.tasks, self.data)
+        self.renderer.render(self.current_time, self.state)
 
     def _get_objective(self) -> float:
         "Get the current value of the objective function."
-        return float(self.objective.get_current(self.current_time, self.tasks))
+        return float(self.objective.get_current(self.current_time, self.state))
 
     def _is_terminal(self) -> bool:
         "Check if the environment is in a terminal state."
-        if self.tasks.awaiting_tasks:
+        if self.state.awaiting_tasks:
             return False
 
         return all(
-            task.is_completed(self.current_time) for task in self.tasks.fixed_tasks
+            task.is_completed(self.current_time) for task in self.state.fixed_tasks
         )
 
     def _is_schedule_empty(self) -> bool:
@@ -452,7 +382,7 @@ class SchedulingEnv:
         )
 
         if strict:
-            for task in self.tasks.awaiting_tasks:
+            for task in self.state.awaiting_tasks:
                 start_lb = task.get_start_lb()
 
                 if self.current_time < start_lb < next_time:
@@ -463,7 +393,7 @@ class SchedulingEnv:
                     next_time = instruction_time
 
         else:
-            for task in self.tasks.awaiting_tasks:
+            for task in self.state.awaiting_tasks:
                 start_lb = task.get_start_lb()
 
                 if start_lb <= self.current_time:
@@ -477,7 +407,9 @@ class SchedulingEnv:
                     next_time = instruction_time
 
         if next_time == MAX_INT:
-            self.current_time = self.tasks.get_time_ub()
+            self.current_time = max(
+                task.get_end_ub() for task in self.state.fixed_tasks
+            )
 
         elif next_time > self.current_time:
             self.current_time = next_time
@@ -495,7 +427,7 @@ class SchedulingEnv:
         self, action: str | Instruction, args: tuple[int, ...]
     ) -> None:
         "Add a single instruction to the schedule."
-        instruction, time = parse_instruction(action, args, self.tasks)
+        instruction, time = parse_instruction(action, args, self.state)
 
         if 0 <= time < self.current_time:
             warn(
@@ -527,7 +459,7 @@ class SchedulingEnv:
             i += 1
             instruction = schedule[i]
 
-            signal = instruction.process(self.current_time, self.tasks, self.schedule)
+            signal = instruction.process(self.current_time, self.state, self.schedule)
 
         action: u8 = signal.action
         if not allow_wait and action == Action.WAIT:
@@ -537,7 +469,7 @@ class SchedulingEnv:
 
         if action & Action.SKIPPED:
             if any(
-                task.is_executing(self.current_time) for task in self.tasks.fixed_tasks
+                task.is_executing(self.current_time) for task in self.state.fixed_tasks
             ):
                 action = Action.WAIT
 
@@ -548,7 +480,7 @@ class SchedulingEnv:
             schedule.pop(i)
 
         if action & Action.REEVALUATE:
-            for task in self.tasks.awaiting_tasks:
+            for task in self.state.awaiting_tasks:
                 task.set_start_lb(self.current_time)
 
         if action & Action.PROPAGATE:
@@ -587,8 +519,10 @@ class SchedulingEnv:
             return False
 
         if self._is_schedule_empty():
-            if not self.tasks.awaiting_tasks:
-                self.current_time = self.tasks.get_time_ub()
+            if not self.state.awaiting_tasks:
+                self.current_time = max(
+                task.get_end_ub() for task in self.state.fixed_tasks
+            )
 
             return True
 
@@ -615,14 +549,13 @@ class SchedulingEnv:
             (
                 self.constraints,
                 self.objective,
-                self.data,
-                self.tasks,
+                self.metrics,
+                self.renderer,
+                self.state,
                 self.schedule,
                 self.current_time,
                 self.advancing_to,
                 self.query_times,
-                self.loaded,
-                self.force_reset,
             ),
         )
 
@@ -632,86 +565,14 @@ class SchedulingEnv:
         This is necessary to ensure the environment is correctly initialized with its
         data and tasks.
         """
-        constraints: dict[str, Constraint]
         (
-            constraints,
+            self.constraints,
             self.objective,
-            self.data,
-            self.tasks,
+            self.metrics,
+            self.renderer,
+            self.state,
             self.schedule,
             self.current_time,
             self.advancing_to,
             self.query_times,
-            self.loaded,
-            self.force_reset,
         ) = state
-
-        for name, constraint in constraints.items():
-            if self.loaded:
-                constraint.import_data(self.data)
-                constraint.refresh(self.current_time, self.tasks)
-
-            self.constraints[name] = constraint
-
-        if self.loaded:
-            self.objective.import_data(self.data)
-
-    def to_dict(self, export_data: bool = False) -> EnvSerialization:
-        """
-        Serialize the environment to a dictionary.
-
-        The resulting serialization is lazily generated, incorporating custom parameters
-        for the setup, constraints, and objective into the instance, whenever it's possible.
-
-        For example, if a ReleaseDateConstraint explicitly gets a release time list, instead
-        of a tag, the serialization will include that list to the instance, instead of storing
-        it on the constraint itself.
-        """
-
-        setup_dict = self.setup.to_dict()
-        setup_dict["setup"] = self.setup.__class__.__name__
-
-        objective_dict = self.objective.to_dict()
-        objective_dict["objective"] = self.objective.__class__.__name__
-
-        constraint_dict: dict[str, dict[str, Any]] = {}
-        for constraint in self.constraints.values():
-            if constraint.setup_constraint:
-                continue
-
-            cls_name = constraint.__class__.__name__
-            constraint_dict[cls_name] = constraint.to_dict()
-
-        serialization_dict: EnvSerialization = {
-            "setup": setup_dict,
-            "constraints": constraint_dict,
-            "objective": objective_dict,
-        }
-
-        if export_data:
-            serialization_dict["instance"] = self.data.to_dict()
-
-        return serialization_dict
-
-    @classmethod
-    def from_dict(cls, data: EnvSerialization) -> "SchedulingEnv":
-        "Deserialize the environment from a dictionary."
-        setup_class = setups[data["setup"].pop("setup")]
-        setup = setup_class.from_dict(data["setup"])
-
-        objective_class = objectives[data["objective"].pop("objective")]
-        objective = objective_class.from_dict(data["objective"])
-
-        constraints_list = [
-            constraints[cls_name].from_dict(constraint_data)
-            for cls_name, constraint_data in data["constraints"].items()
-        ]
-
-        instance_data = data["instance"] if "instance" in data else None
-
-        return SchedulingEnv(
-            machine_setup=setup,
-            constraints=constraints_list,
-            objective=objective,
-            instance_config=instance_data,
-        )

@@ -19,26 +19,14 @@ from cpscheduler.utils.typing_utils import (
     iterate_indexed,
 )
 
-from ._common import ProcessTimeAllowedTypes, MACHINE_ID, TIME, Int
-from .data import SchedulingData
-from .constraints import (
+from cpscheduler.environment._common import MACHINE_ID, TIME, Int, ceil_div
+from cpscheduler.environment.state import ScheduleState
+from cpscheduler.environment.constraints import (
     Constraint,
     DisjunctiveConstraint,
     PrecedenceConstraint,
     MachineConstraint,
 )
-
-PTIME_ALIASES = ["processing_time", "process_time", "processing time"]
-
-
-# TODO: Expand the inference logic to handle more complex cases
-def infer_processing_time(data: dict[str, list[Any]]) -> ProcessTimeAllowedTypes:
-    for alias in PTIME_ALIASES:
-        if alias in data:
-            return alias
-
-    raise ValueError(f"Cannot infer processing time from the data.")
-
 
 setups: dict[str, type["ScheduleSetup"]] = {}
 
@@ -49,33 +37,18 @@ class ScheduleSetup:
     Base class for scheduling setups. It defines the common interface for all scheduling setups
     and provides methods to parse process times, set tasks, and setup constraints.
     """
+    n_machines: int = 0
 
     def __init_subclass__(cls) -> None:
         super().__init_subclass__()
 
         setups[cls.__name__] = cls
 
-    def parse_process_time(
-        self,
-        task_data: dict[str, list[Any]],
-        process_time: ProcessTimeAllowedTypes,
-    ) -> list[dict[MACHINE_ID, TIME]]:
-        """
-        Parse the process time of the tasks. The process time can be a list of dictionaries, a
-        dictionary of lists, or a pandas DataFrame. The function will return a list of dictionaries
-        with the machine as key and the process time as value.
-
-        Parameters:
-        data (dict): Dictionary containing the data of the tasks.
-        process_time (ProcessTimeAllowedTypes): Process time of the tasks.
-
-        Returns:
-        list[dict[MACHINE_ID, TIME]]: List of dictionaries with the machine as key and the process time
-        as value.
-        """
+    def initialize(self, state: ScheduleState) -> None:
+        "Initialize the setup with the given schedule state."
         raise NotImplementedError()
 
-    def setup_constraints(self, data: SchedulingData) -> tuple[Constraint, ...]:
+    def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
         "Build the constraint for that setup."
         return ()
 
@@ -103,29 +76,21 @@ class SingleMachineSetup(ScheduleSetup):
 
     This setup is used for scheduling tasks on a single machine.
     """
+    n_machines: int = 1
 
-    def __init__(self, disjunctive: bool = True) -> None:
+    def __init__(
+        self,
+        processing_times: str = "processing_time",
+        disjunctive: bool = True
+    ) -> None:
+        self.processing_times = processing_times
         self.disjunctive = disjunctive
 
-    def parse_process_time(
-        self,
-        task_data: dict[str, list[Any]],
-        process_time: ProcessTimeAllowedTypes,
-    ) -> list[dict[MACHINE_ID, TIME]]:
-        if process_time is None:
-            process_time = infer_processing_time(task_data)
+    def initialize(self, state: ScheduleState) -> None:
+        for task, p_time in zip(state.tasks, state.instance[self.processing_times]):
+            task.set_processing_time(0, TIME(p_time))
 
-        if is_iterable_int(process_time):
-            return [{0: TIME(p_time)} for p_time in process_time]
-
-        if isinstance(process_time, str):
-            return [{0: TIME(p_time)} for p_time in task_data[process_time]]
-
-        raise ValueError(
-            "Cannot parse the process time. Please provide an iterable of integers or a string."
-        )
-
-    def setup_constraints(self, data: SchedulingData) -> tuple[Constraint, ...]:
+    def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
         if not self.disjunctive:
             return ()
 
@@ -148,46 +113,23 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
     def __init__(
         self,
         n_machines: int,
+        processing_times: str = "processing_time",
         disjunctive: bool = True,
     ):
         self.n_machines = n_machines
+        self.processing_times = processing_times
         self.disjunctive = disjunctive
 
-    def setup_constraints(self, data: SchedulingData) -> tuple[Constraint, ...]:
+    def initialize(self, state: ScheduleState) -> None:
+        for task, p_time in zip(state.tasks, state.instance[self.processing_times]):
+            for machine in range(self.n_machines):
+                task.set_processing_time(machine, TIME(p_time))
+
+    def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
         return (
             (MachineConstraint(name="setup_machine_disjunctive"),)
             if self.disjunctive
             else ()
-        )
-
-    def parse_process_time(
-        self,
-        task_data: dict[str, list[Any]],
-        process_time: ProcessTimeAllowedTypes,
-    ) -> list[dict[MACHINE_ID, TIME]]:
-        if process_time is None:
-            process_time = infer_processing_time(task_data)
-
-        if is_iterable_int(process_time):
-            return [
-                {
-                    MACHINE_ID(machine): TIME(p_time)
-                    for machine in range(self.n_machines)
-                }
-                for p_time in process_time
-            ]
-
-        if isinstance(process_time, str):
-            return [
-                {
-                    MACHINE_ID(machine): TIME(p_time)
-                    for machine in range(self.n_machines)
-                }
-                for p_time in task_data[process_time]
-            ]
-
-        raise ValueError(
-            "Cannot parse the process time. Please provide an iterable of integers or a string."
         )
 
     def get_entry(self) -> str:
@@ -207,48 +149,27 @@ class UniformParallelMachineSetup(ScheduleSetup):
     def __init__(
         self,
         speed: Iterable[Int],
+        processing_times: str = "processing_time",
         disjunctive: bool = True,
     ):
         self.speed = convert_to_list(speed, int)
 
+        self.processing_times = processing_times
         self.disjunctive = disjunctive
         self.n_machines = len(self.speed)
 
-    def setup_constraints(self, data: SchedulingData) -> tuple[Constraint, ...]:
+    def initialize(self, state: ScheduleState) -> None:
+        for task, p_time in zip(state.tasks, state.instance[self.processing_times]):
+            for machine, speed in enumerate(self.speed):
+                p_time = ceil_div(TIME(p_time), speed)
+
+                task.set_processing_time(machine, p_time)
+
+    def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
         return (
             (MachineConstraint(name="setup_machine_disjunctive"),)
             if self.disjunctive
             else ()
-        )
-
-    def parse_process_time(
-        self,
-        task_data: dict[str, list[Any]],
-        process_time: ProcessTimeAllowedTypes,
-    ) -> list[dict[MACHINE_ID, TIME]]:
-        if process_time is None:
-            process_time = infer_processing_time(task_data)
-
-        if is_iterable_int(process_time):
-            return [
-                {
-                    MACHINE_ID(machine): TIME(p_time) // self.speed[machine]
-                    for machine in range(self.n_machines)
-                }
-                for p_time in process_time
-            ]
-
-        if isinstance(process_time, str):
-            return [
-                {
-                    machine: p_time // self.speed[machine]
-                    for machine in range(self.n_machines)
-                }
-                for p_time in task_data[process_time]
-            ]
-
-        raise ValueError(
-            "Cannot parse the process time. Please provide an iterable of integers or a string."
         )
 
     def get_entry(self) -> str:
@@ -261,66 +182,41 @@ class UniformParallelMachineSetup(ScheduleSetup):
 class UnrelatedParallelMachineSetup(ScheduleSetup):
     def __init__(
         self,
+        processing_times: str = "processing_time",
         disjunctive: bool = True,
     ):
+        self.processing_times = processing_times
         self.disjunctive = disjunctive
 
-    def setup_constraints(self, data: SchedulingData) -> tuple[Constraint, ...]:
+    def initialize(self, state: ScheduleState) -> None:
+        n_machines = 0
+
+        for task, p_times in zip(state.tasks, state.instance[self.processing_times]):
+            if isinstance(p_times, Mapping):
+                for machine, p_time in p_times.items():
+                    task.set_processing_time(MACHINE_ID(machine), TIME(p_time))
+
+                    n_machines = max(n_machines, machine + 1)
+
+            elif is_iterable_type(p_times, int):
+                for machine, p_time in enumerate(p_times):
+                    task.set_processing_time(MACHINE_ID(machine), TIME(p_time))
+
+                    n_machines = max(n_machines, machine + 1)
+
+            else:
+                raise ValueError(
+                    "Processing times must be a dictionary or an iterable of integers."
+                )
+
+        self.n_machines = n_machines
+
+    def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
         return (
             (MachineConstraint(name="setup_machine_disjunctive"),)
             if self.disjunctive
             else ()
         )
-
-    def parse_process_time(
-        self,
-        task_data: dict[str, list[Any]],
-        process_time: ProcessTimeAllowedTypes,
-    ) -> list[dict[MACHINE_ID, TIME]]:
-        if process_time is None:
-            raise ValueError(
-                "Cannot infer processing time for unrelated parallel machines."
-            )
-
-        if isinstance(process_time, str):
-            raise ValueError(
-                "Unrelated parallel machine setup requires one processing time for each machine."
-            )
-
-        if is_iterable_type(process_time, str):
-            processing_times = zip(*[task_data[feat] for feat in process_time])
-
-            return [
-                {
-                    MACHINE_ID(machine): TIME(p_time)
-                    for machine, p_time in enumerate(p_times)
-                }
-                for p_times in processing_times
-            ]
-
-        if is_iterable_int(process_time):
-            raise ValueError(
-                "Unrelated parallel machine setup requires one processing time for each machine."
-            )
-
-        return iterate_indexed(process_time)
-
-        # if is_iterable_type(process_time, Mapping):
-        #     return [
-        #         {
-        #             MACHINE_ID(machine): TIME(p_time)
-        #             for machine, p_time in p_times.items()
-        #         }
-        #         for p_times in process_time
-        #     ]
-
-        # return [
-        #     {
-        #         MACHINE_ID(machine): TIME(p_time)
-        #         for machine, p_time in enumerate(p_times)
-        #     }
-        #     for p_times in process_time
-        # ]
 
     def get_entry(self) -> str:
         return "Rm"
@@ -339,27 +235,46 @@ class JobShopSetup(ScheduleSetup):
 
     def __init__(
         self,
+        processing_times: str = "processing_time",
         operation_order: str = "operation",
         machine_feature: str = "machine",
     ):
+        self.processing_times = processing_times
         self.operation_order = operation_order
         self.machine_feature = machine_feature
 
-    def setup_constraints(self, data: SchedulingData) -> tuple[Constraint, ...]:
+
+    def initialize(self, state: ScheduleState) -> None:
+        n_machines = 0
+
+        for task, p_time, machine in zip(
+            state.tasks,
+            state.instance[self.processing_times],
+            state.instance[self.machine_feature]
+        ):
+            task.set_processing_time(MACHINE_ID(machine), TIME(p_time))
+
+            n_machines = max(n_machines, int(machine) + 1)
+
+        self.n_machines = n_machines
+
+
+    def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
         disjunctive_constraint = MachineConstraint(name="setup_machine_disjunctive")
 
-        operations: list[int] = data[self.operation_order]
+        operations: list[int] = state.instance[self.operation_order]
         precedence_mapping: dict[Int, list[Int]] = {}
 
-        task_orders: list[list[int]] = [[] for _ in range(data.n_jobs)]
+        task_orders: list[list[int]] = [[] for _ in range(state.n_jobs)]
 
-        for task_id, (job_id, operation) in enumerate(zip(data.job_ids, operations)):
-            if len(task_orders[job_id]) <= operation:
-                task_orders[job_id].extend(
-                    [-1] * (operation - len(task_orders[job_id]) + 1)
-                )
 
-            task_orders[job_id][operation] = task_id
+        for task, operation in zip(state.tasks, operations):
+            job_id = task.job_id
+
+            while len(task_orders[job_id]) <= operation:
+                task_orders[job_id].append(-1)
+            
+            task_orders[job_id][operation] = task.task_id
 
         for tasks in task_orders:
             prec = tasks[0]
@@ -374,36 +289,8 @@ class JobShopSetup(ScheduleSetup):
 
         return (disjunctive_constraint, precedence_constraint)
 
-    def parse_process_time(
-        self,
-        task_data: dict[str, list[Any]],
-        process_time: ProcessTimeAllowedTypes,
-    ) -> list[dict[MACHINE_ID, TIME]]:
-        if process_time is None:
-            process_time = infer_processing_time(task_data)
-
-        if is_iterable_int(process_time):
-            return [
-                {MACHINE_ID(machine): TIME(p_time)}
-                for machine, p_time in zip(
-                    task_data[self.machine_feature], process_time
-                )
-            ]
-
-        if isinstance(process_time, str):
-            return [
-                {MACHINE_ID(machine): TIME(p_time)}
-                for machine, p_time in zip(
-                    task_data[self.machine_feature], task_data[process_time]
-                )
-            ]
-
-        raise ValueError(
-            "Cannot parse the process time. Please provide an iterable of integers or a string."
-        )
-
     def get_entry(self) -> str:
-        return "Jm"
+        return f"J{self.n_machines}" if self.n_machines > 1 else "Jm"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -422,59 +309,62 @@ class OpenShopSetup(ScheduleSetup):
 
     def __init__(
         self,
-        machine_feature: str = "machine",
+        n_machines: int | None = None,
+        processing_times: str = "processing_time",
         disjunctive: bool = True,
     ):
-        self.machine_feature = machine_feature
+        self.processing_times = processing_times
         self.disjunctive = disjunctive
 
-    def setup_constraints(self, data: SchedulingData) -> tuple[Constraint, ...]:
+        if n_machines is not None:
+            self.n_machines = n_machines
+
+    def initialize(self, state: ScheduleState) -> None:
+        n_machines = 0
+
+        for task, p_times in zip(state.tasks, state.instance[self.processing_times]):
+            if isinstance(p_times, Int):
+                for machine in range(self.n_machines):
+                    task.set_processing_time(MACHINE_ID(machine), TIME(p_times))
+
+            if isinstance(p_times, Mapping):
+                for machine, p_time in p_times.items():
+                    task.set_processing_time(MACHINE_ID(machine), TIME(p_time))
+
+                    n_machines = max(n_machines, machine + 1)
+
+            elif is_iterable_type(p_times, int):
+                for machine, p_time in enumerate(p_times):
+                    task.set_processing_time(MACHINE_ID(machine), TIME(p_time))
+
+                    n_machines = max(n_machines, machine + 1)
+
+            else:
+                raise ValueError(
+                    "Processing times must be a dictionary or an iterable of integers."
+                )
+
+        if self.n_machines > 0:
+            self.n_machines = n_machines
+
+
+    def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
         task_disjunction = DisjunctiveConstraint(
-            data.job_ids, name="setup_task_disjunctive"
+            [task.job_id for task in state.tasks],
+            name="setup_task_disjunctive"
         )
 
         if not self.disjunctive:
             return (task_disjunction,)
 
-        machine_disjunction = DisjunctiveConstraint(
-            self.machine_feature, name="setup_machine_disjunctive"
-        )
+        machine_disjunction = MachineConstraint(name="setup_machine_disjunctive")
 
         return (task_disjunction, machine_disjunction)
 
-    def parse_process_time(
-        self,
-        task_data: dict[str, list[Any]],
-        process_time: ProcessTimeAllowedTypes,
-    ) -> list[dict[MACHINE_ID, TIME]]:
-        if process_time is None:
-            process_time = infer_processing_time(task_data)
-
-        if is_iterable_int(process_time):
-            return [
-                {MACHINE_ID(machine): TIME(p_time)}
-                for machine, p_time in zip(
-                    task_data[self.machine_feature], process_time
-                )
-            ]
-
-        if isinstance(process_time, str):
-            return [
-                {MACHINE_ID(machine): TIME(p_time)}
-                for machine, p_time in zip(
-                    task_data[self.machine_feature], task_data[process_time]
-                )
-            ]
-
-        raise ValueError(
-            "Cannot parse the process time. Please provide an iterable of integers or a string."
-        )
-
     def get_entry(self) -> str:
-        return "Om"
+        return f"O{self.n_machines}" if self.n_machines > 1 else "Om"
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "machine_feature": self.machine_feature,
             "disjunctive": self.disjunctive,
         }

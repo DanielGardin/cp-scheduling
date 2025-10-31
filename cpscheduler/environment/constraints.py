@@ -23,9 +23,10 @@ from cpscheduler.utils.list_utils import convert_to_list
 from cpscheduler.utils.typing_utils import is_iterable_type
 from cpscheduler.utils.general_algo import topological_sort, binary_search
 
-from ._common import TASK_ID, TIME, MACHINE_ID, Int, Float
-from .data import SchedulingData
-from .tasks import Tasks
+from cpscheduler.environment._common import TASK_ID, TIME, MACHINE_ID, Int, Float
+from cpscheduler.environment.state import ScheduleState
+from cpscheduler.environment.tasks import Task
+
 
 constraints: dict[str, type["Constraint"]] = {}
 
@@ -61,37 +62,21 @@ class Constraint:
     def __repr__(self) -> str:
         return f"{self.name.capitalize()}()"
 
-    def import_data(self, data: SchedulingData) -> None:
-        "Import data from the instance when necessary."
+    def initialize(self, state: ScheduleState) -> None:
+        "Initialize the constraint with the scheduling state."
 
-    def export_data(self, data: SchedulingData) -> None:
-        "Export data to the instance when necessary."
-
-    def reset(self, tasks: Tasks) -> None:
+    def reset(self, state: ScheduleState) -> None:
         "Reset the constraint to its initial state."
 
-    def propagate(self, time: TIME, tasks: Tasks) -> None:
+    def propagate(self, time: TIME, state: ScheduleState) -> None:
         "Given a bound change, propagate the constraint to other tasks."
 
-    def refresh(self, time: TIME, tasks: Tasks) -> None:
+    def refresh(self, time: TIME, state: ScheduleState) -> None:
         "Updates constraint internal state when propagate cannot handle."
 
     def get_entry(self) -> str:
         "Produce the β entry for the constraint."
         return ""
-
-    def to_dict(self) -> dict[str, Any]:
-        "Serialize the objective to a dictionary."
-        return {"name": self.name}
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Self:
-        "Deserialize the objective from a dictionary."
-        return cls(**data)
-
-    def __reduce__(self) -> tuple[type[Self], tuple[Any, ...]]:
-        "Support for pickling the constraint."
-        return (self.__class__, tuple(self.to_dict().values()))
 
 
 class MachineConstraint(Constraint):
@@ -100,48 +85,46 @@ class MachineConstraint(Constraint):
     constraint have groups with predefined tasks, while the machine constraint defines its groups
     based on the machine assignment of the tasks.
     """
-
     machine_free: list[TIME]
 
-    def import_data(self, data: SchedulingData) -> None:
-        self.machine_free = [0 for _ in range(data.n_machines)]
+    def initialize(self, state: ScheduleState) -> None:
+        self.machine_free = [0 for _ in range(state.n_machines)]
 
-    def reset(self, tasks: Tasks) -> None:
+    def reset(self, state: ScheduleState) -> None:
         for machine, _ in enumerate(self.machine_free):
             self.machine_free[machine] = 0
 
-    def propagate(self, time: TIME, tasks: Tasks) -> None:
+    def propagate(self, time: TIME, state: ScheduleState) -> None:
         changed_machines: set[MACHINE_ID] = set()
-        for task in tasks.transition_tasks:
+        for task in state.transition_tasks:
             machine = task.get_assignment()
 
             self.machine_free[machine] = task.get_end()
             changed_machines.add(machine)
 
-        for machine in changed_machines:
-            for task in tasks.awaiting_tasks:
-                if machine in task.machines:
+        for task in state.awaiting_tasks:
+            for machine in changed_machines:
+                if machine not in task.machines:
+                    continue
 
-                    if task.get_start_lb(machine) < self.machine_free[machine]:
-                        task.set_start_lb(self.machine_free[machine], machine)
+                if task.get_start_lb(machine) < self.machine_free[machine]:
+                    task.set_start_lb(self.machine_free[machine], machine)
 
-    def refresh(self, time: TIME, tasks: Tasks) -> None:
+    def refresh(self, time: TIME, state: ScheduleState) -> None:
         for machine in range(len(self.machine_free)):
             self.machine_free[machine] = time
 
-        for task in tasks.fixed_tasks:
-            task = tasks[task.task_id]
-
+        for task in state.fixed_tasks:
             for part in range(task.n_parts):
                 machine = task.get_assignment(part)
 
                 if task.get_end(part) > self.machine_free[machine]:
                     self.machine_free[machine] = task.get_end(part)
 
-    def is_complete(self, tasks: Tasks) -> bool:
+    def is_complete(self, state: ScheduleState) -> bool:
         "Check if the machine constraint is complete."
         n_machines = len(self.machine_free)
-        return all(len(task.machines) == n_machines for task in tasks)
+        return all(len(task.machines) == n_machines for task in state.tasks)
 
 
 class PrecedenceConstraint(Constraint):
@@ -169,6 +152,8 @@ class PrecedenceConstraint(Constraint):
     # original_precedence: dict[int, list[int]]
     precedence: dict[TASK_ID, list[TASK_ID]]
     original_order: list[TASK_ID]
+
+    tasks_order: list[Task]
 
     def __init__(
         self,
@@ -238,35 +223,14 @@ class PrecedenceConstraint(Constraint):
 
         return n_children == len(unique_children)
 
-    def import_data(self, data: SchedulingData) -> None:
-        self.original_order = topological_sort(self.precedence, data.n_tasks)
+    def initialize(self, state: ScheduleState) -> None:
+        self.original_order = topological_sort(self.precedence, state.n_tasks)
 
-    def export_data(self, data: SchedulingData) -> None:
-        if self.is_intree():
-            successors = [
-                (
-                    next(iter(self.precedence[task_id]))
-                    if task_id in self.precedence
-                    else -1
-                )
-                for task_id in range(data.n_tasks)
-            ]
+    def reset(self, state: ScheduleState) -> None:
+        self.tasks_order = [state.tasks[task_id] for task_id in self.original_order]
 
-            data.add_data("successor", successors)
-
-        if self.is_outtree():
-            predecessors = [-1 for _ in range(data.n_tasks)]
-            for task_id, children in self.precedence.items():
-                for child_id in children:
-                    predecessors[child_id] = task_id
-
-            data.add_data("predecessor", predecessors)
-
-    def reset(self, tasks: Tasks) -> None:
-        self.tasks_order = [tasks[task_id] for task_id in self.original_order]
-
-    def propagate(self, time: TIME, tasks: Tasks) -> None:
-        for task in list(self.tasks_order):
+    def propagate(self, time: TIME, state: ScheduleState) -> None:
+         for task in list(self.tasks_order):
 
             if task.is_completed(time):
                 self.tasks_order.remove(task)
@@ -275,13 +239,13 @@ class PrecedenceConstraint(Constraint):
             end_time = task.get_end_lb()
 
             for child_id in self.precedence[task.task_id]:
-                child = tasks[child_id]
+                child = state.tasks[child_id]
 
                 if child.get_start_lb() < end_time:
                     child.set_start_lb(end_time)
 
-    def refresh(self, time: TIME, tasks: Tasks) -> None:
-        self.reset(tasks)
+    def refresh(self, time: TIME, state: ScheduleState) -> None:
+        self.reset(state)
 
         for task in list(self.tasks_order):
             if task.is_completed(time):
@@ -305,15 +269,6 @@ class PrecedenceConstraint(Constraint):
             graph += ", nwt"
 
         return graph
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "precedence": {
-                task_id: list(children) for task_id, children in self.precedence.items()
-            },
-            "no_wait": self.no_wait,
-            "name": self.name,
-        }
 
 
 class NoWait(PrecedenceConstraint):
@@ -341,14 +296,6 @@ class NoWait(PrecedenceConstraint):
     ):
         super().__init__(precedence, no_wait=True, name=name)
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "precedence": {
-                task_id: list(children) for task_id, children in self.precedence.items()
-            },
-            "name": self.name,
-        }
-
 
 class ConstantProcessingTime(Constraint):
     """
@@ -365,20 +312,14 @@ class ConstantProcessingTime(Constraint):
             An optional name for the constraint.
     """
 
-    def __init__(self, processing_time: Int, name: str | None = None):
+    def __init__(self, processing_time: Int = 1, name: str | None = None):
         super().__init__(name)
         self.processing_time = TIME(processing_time)
 
-    def export_data(self, data: SchedulingData) -> None:
-        for task_id in range(data.n_tasks):
-            for machine in data.processing_times[task_id]:
-                data.processing_times[task_id][machine] = self.processing_time
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "processing_time": self.processing_time,
-            "name": self.name,
-        }
+    def initialize(self, state: ScheduleState) -> None:
+        for task in state.tasks:
+            for machine in task.machines:
+                task.set_processing_time(machine, self.processing_time)
 
 
 class DisjunctiveConstraint(Constraint):
@@ -417,23 +358,7 @@ class DisjunctiveConstraint(Constraint):
         else:
             self.task_groups = [convert_to_list(group, int) for group in task_groups]
 
-    def import_data(self, data: SchedulingData) -> None:
-        if "task_groups" in self.tags:
-            groups = data.get_task_level_data(self.tags["task_groups"])
-
-            self.task_groups = []
-            for task_id in range(data.n_tasks):
-                group = groups[task_id]
-
-                task_group = (
-                    convert_to_list(group, int)
-                    if isinstance(group, Iterable)
-                    else [int(group)]
-                )
-
-                self.task_groups.append(task_group)
-
-    def reset(self, tasks: Tasks) -> None:
+    def reset(self, state: ScheduleState) -> None:
         self.group_free = {}
 
         for groups in self.task_groups:
@@ -441,33 +366,25 @@ class DisjunctiveConstraint(Constraint):
                 if group not in self.group_free:
                     self.group_free[group] = 0
 
-    def propagate(self, time: TIME, tasks: Tasks) -> None:
-        for task in tasks.transition_tasks:
+    def propagate(self, time: TIME, state: ScheduleState) -> None:
+        for task in state.transition_tasks:
             for group in self.task_groups[task.task_id]:
                 self.group_free[group] = task.get_end()
 
-        for task in tasks.awaiting_tasks:
+        for task in state.awaiting_tasks:
             for group in self.task_groups[task.task_id]:
                 if task.get_start_lb(group) < self.group_free[group]:
                     task.set_start_lb(self.group_free[group], group)
 
-    def refresh(self, time: TIME, tasks: Tasks) -> None:
+    def refresh(self, time: TIME, state: ScheduleState) -> None:
         for group in self.group_free:
             self.group_free[group] = time
 
-        for task in tasks.fixed_tasks:
+        for task in state.fixed_tasks:
             for part in range(task.n_parts):
                 for group in self.task_groups[task.task_id]:
                     if task.get_end(part) > self.group_free[group]:
                         self.group_free[group] = task.get_end(part)
-
-    def to_dict(self) -> dict[str, Any]:
-        task_groups = self.tags.get("task_groups", self.task_groups)
-
-        return {
-            "task_groups": task_groups,
-            "name": self.name,
-        }
 
 
 class ReleaseDateConstraint(Constraint):
@@ -509,41 +426,21 @@ class ReleaseDateConstraint(Constraint):
                 TASK_ID(task): TIME(date) for task, date in enumerate(release_dates)
             }
 
-    def import_data(self, data: SchedulingData) -> None:
+    def initialize(self, state: ScheduleState) -> None:
         if "release_time" in self.tags:
-            release_times = data.get_task_level_data(self.tags["release_time"])
+            release_times = state.instance[self.tags["release_time"]]
 
             self.release_dates = {
                 TASK_ID(task_id): TIME(release_time)
                 for task_id, release_time in enumerate(release_times)
             }
 
-    def export_data(self, data: SchedulingData) -> None:
-        if not self.release_dates:
-            data.add_data(
-                "release_time",
-                [
-                    self.release_dates.get(TASK_ID(task), TIME(0))
-                    for task in range(data.n_tasks)
-                ],
-            )
-
-        else:
-            data.add_alias("release_time", self.tags["release_time"])
-
-    def reset(self, tasks: Tasks) -> None:
-        for task_id, date in self.release_dates.items():
-            tasks[task_id].set_start_lb(date)
+    def reset(self, state: ScheduleState) -> None:
+        for task_id, release_time in self.release_dates.items():
+            state.tasks[task_id].set_start_lb(release_time)
 
     def get_entry(self) -> str:
         return "r_j"
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "release_dates": self.tags.get("release_time", self.release_dates),
-            "name": self.name,
-        }
-
 
 class DeadlineConstraint(Constraint):
     """
@@ -584,40 +481,21 @@ class DeadlineConstraint(Constraint):
                 TASK_ID(task): TIME(date) for task, date in enumerate(deadlines)
             }
 
-    def import_data(self, data: SchedulingData) -> None:
-        if "due_date" in self.tags:
-            due_dates = data.get_task_level_data(self.tags["due_date"])
+    def initialize(self, state: ScheduleState) -> None:
+        if "release_time" in self.tags:
+            due_times = state.instance[self.tags["due_dates"]]
 
             self.deadlines = {
-                TASK_ID(task_id): TIME(due_date)
-                for task_id, due_date in enumerate(due_dates)
+                TASK_ID(task_id): TIME(due_time)
+                for task_id, due_time in enumerate(due_times)
             }
 
-    def export_data(self, data: SchedulingData) -> None:
-        if not self.deadlines:
-            data.add_data(
-                "due_date",
-                [
-                    self.deadlines.get(TASK_ID(task), TIME(0))
-                    for task in range(data.n_tasks)
-                ],
-            )
-
-        else:
-            data.add_alias("due_date", self.tags["due_date"])
-
-    def reset(self, tasks: Tasks) -> None:
-        for task_id, date in self.deadlines.items():
-            tasks[task_id].set_end_ub(date)
+    def reset(self, state: ScheduleState) -> None:
+        for task_id, due_time in self.deadlines.items():
+            state.tasks[task_id].set_end_ub(due_time)
 
     def get_entry(self) -> str:
         return "d_j"
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "deadlines": self.tags.get("due_date", self.deadlines),
-            "name": self.name,
-        }
 
 
 class ResourceConstraint(Constraint):
@@ -664,26 +542,27 @@ class ResourceConstraint(Constraint):
                 for resources in resource_usage
             ]
 
-    def import_data(self, data: SchedulingData) -> None:
-        self.original_resources = [
-            {
-                TASK_ID(task_id): float(usage)
-                for task_id, usage in enumerate(
-                    data.get_task_level_data(self.tags[f"resource_{resource_id}"])
-                )
-            }
-            for resource_id in self.tags
-        ]
+    def initialize(self, state: ScheduleState) -> None:
+        if self.tags:
+            self.original_resources = [
+                {
+                    TASK_ID(task_id): float(usage)
+                    for task_id, usage in enumerate(
+                        state.instance[self.tags[f"resource_{resource_id}"]]
+                    )
+                }
+                for resource_id in self.tags
+            ]
 
-    def reset(self, tasks: Tasks) -> None:
+    def reset(self, state: ScheduleState) -> None:
         self.resources = [resources.copy() for resources in self.original_resources]
 
-    def propagate(self, time: TIME, tasks: Tasks) -> None:
+    def propagate(self, time: TIME, state: ScheduleState) -> None:
         for i, task_resources in enumerate(self.resources):
             minimum_end_time: list[TIME] = []
             resource_taken: list[float] = []
             for task_id in list(task_resources.keys()):
-                task = tasks[task_id]
+                task = state.tasks[task_id]
 
                 if task.is_executing(time):
                     resource = task_resources[task_id]
@@ -713,7 +592,7 @@ class ResourceConstraint(Constraint):
                 )
 
             for task_id in self.resources[i]:
-                task = tasks[task_id]
+                task = state.tasks[task_id]
                 resource = task_resources[task_id]
 
                 if task.is_fixed():
@@ -726,23 +605,12 @@ class ResourceConstraint(Constraint):
                 if task.get_start_lb() < minimum_start_time:
                     task.set_start_lb(minimum_start_time)
 
-    def refresh(self, time: TIME, tasks: Tasks) -> None:
+    def refresh(self, time: TIME, state: ScheduleState) -> None:
         raise NotImplementedError(
             "Refresh method is not implemented for ResourceConstraint yet."
         )
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "capacities": self.capacities,
-            "resources": (
-                list(self.tags.keys()) if self.tags else self.original_resources
-            ),
-            "name": self.name,
-        }
-
-
 SetupTimes: TypeAlias = Mapping[Int, Mapping[Int, Int]] | Callable[[int, int, Any], Int]
-
 
 # TODO: Check literature if the setup time only happens when in the same machine
 class SetupConstraint(Constraint):
@@ -754,7 +622,7 @@ class SetupConstraint(Constraint):
     and their respective setup times, or as a string that refers to a column in the tasks data.
 
     Arguments:
-        setup_times: Mapping[int, Mapping[int, int]] | Callable[[int, int, SchedulingData], int]
+        setup_times: Mapping[int, Mapping[int, int]] | Callable[[int, int, ScheduleState], int]
             A mapping of task IDs to a mapping of child task IDs and their respective setup times.
             Alternatively, a callable function that takes in two task IDs and the scheduling data,
             and returns the setup time between the two tasks.
@@ -764,7 +632,7 @@ class SetupConstraint(Constraint):
     """
 
     original_setup_times: dict[TASK_ID, dict[TASK_ID, TIME]]
-    setup_fn: Callable[[int, int, SchedulingData], Int] | None = None
+    setup_fn: Callable[[int, int, ScheduleState], Int] | None = None
 
     def __init__(
         self,
@@ -784,33 +652,33 @@ class SetupConstraint(Constraint):
                 for task, children in setup_times.items()
             }
 
-    def import_data(self, data: SchedulingData) -> None:
+    def initialize(self, state: ScheduleState) -> None:
         if self.setup_fn is not None:
             self.original_setup_times = {}
 
-            for task_id in range(data.n_tasks):
+            for task_id in range(state.n_tasks):
                 self.original_setup_times[TASK_ID(task_id)] = {}
 
-                for child_id in range(data.n_tasks):
+                for child_id in range(state.n_tasks):
                     if task_id == child_id:
                         continue
 
-                    setup_time = TIME(self.setup_fn(task_id, child_id, data))
+                    setup_time = TIME(self.setup_fn(task_id, child_id, state))
 
                     if setup_time > 0:
                         self.original_setup_times[TASK_ID(task_id)][
                             TASK_ID(child_id)
                         ] = setup_time
 
-    def reset(self, tasks: Tasks) -> None:
+    def reset(self, state: ScheduleState) -> None:
         self.setup_times = {
             task_id: children.copy()
             for task_id, children in self.original_setup_times.items()
         }
 
-    def propagate(self, time: TIME, tasks: Tasks) -> None:
+    def propagate(self, time: TIME, state: ScheduleState) -> None:
         for task_id in list(self.setup_times.keys()):
-            task = tasks[task_id]
+            task = state.tasks[task_id]
 
             if task.is_completed(time):
                 self.setup_times.pop(task_id)
@@ -822,7 +690,7 @@ class SetupConstraint(Constraint):
             children = self.setup_times[task_id]
 
             for child_id, setup_time in children.items():
-                child = tasks[child_id]
+                child = state.tasks[child_id]
 
                 if child.is_fixed():
                     continue
@@ -830,13 +698,7 @@ class SetupConstraint(Constraint):
                 if task.get_end_lb() + setup_time > child.get_start_lb():
                     child.set_start_lb(task.get_end_lb() + setup_time)
 
-    def refresh(self, time: TIME, tasks: Tasks) -> None:
+    def refresh(self, time: TIME, state: ScheduleState) -> None:
         raise NotImplementedError(
             "Refresh method is not implemented for SetupConstraint yet."
         )
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "setup_times": self.setup_times,
-            "name": self.name,
-        }

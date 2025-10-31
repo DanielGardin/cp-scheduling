@@ -2,8 +2,7 @@ from typing import Any, Protocol, TypeVar, runtime_checkable
 from collections.abc import Iterator
 
 
-from cpscheduler.environment.data import SchedulingData
-from cpscheduler.environment.tasks import Tasks
+from cpscheduler.environment.state import ScheduleState
 
 
 _T_co = TypeVar("_T_co", covariant=True)
@@ -17,19 +16,8 @@ class Metric(Protocol[_T_co]):
     """
 
     def __call__(
-        self, time: int, tasks: Tasks, data: SchedulingData, objective: float
+        self, time: int, state: ScheduleState, objective: float
     ) -> _T_co: ...
-
-
-@runtime_checkable
-class ImportableMetric(Metric[_T_co], Protocol):
-    def import_data(self, data: SchedulingData) -> None:
-        """
-        Import data from the SchedulingData object.
-        This method is used to initialize the metric with the necessary data.
-        """
-        pass
-
 
 @runtime_checkable
 class ArrayLike(Protocol):

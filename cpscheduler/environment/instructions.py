@@ -13,8 +13,8 @@ from dataclasses import dataclass
 
 from mypy_extensions import mypyc_attr, u8
 
-from ._common import TASK_ID, TIME, MACHINE_ID, Int
-from .tasks import Tasks
+from cpscheduler.environment._common import TASK_ID, TIME, MACHINE_ID, Int
+from cpscheduler.environment.state import ScheduleState
 
 SingleAction: TypeAlias = tuple["str | Instruction", Unpack[tuple[Int, ...]]]
 ActionType: TypeAlias = SingleAction | Iterable[SingleAction] | None
@@ -86,25 +86,21 @@ class Instruction:
     new ones should be implemented carefully.
     """
 
-    name: ClassVar[str]
-
     def process(
         self,
         current_time: TIME,
-        tasks: Tasks,
+        state: ScheduleState,
         scheduled_instructions: dict[TIME, list["Instruction"]],
     ) -> Signal:
         "Process the instruction at the given current time."
         raise NotImplementedError
 
     def __repr__(self) -> str:
-        return f"Instruction: {self.name}"
+        return f"{self.__class__.__name__}()"
 
 
 class Execute(Instruction):
     "Executes a task on a specific machine. If the task cannot be executed, it is waited for."
-
-    name = "execute"
 
     def __init__(
         self,
@@ -119,56 +115,57 @@ class Execute(Instruction):
         self.wait = wait
 
     def __repr__(self) -> str:
-        instruction = "Submit" if self.wait else "Execute"
-        unit = "job" if self.job_oriented else "task"
+        representation = "Submit(" if self.wait else "Execute("
+        representation += "job" if self.job_oriented else "task"
+        representation += f"={self.id}"
 
-        return f"{instruction} {unit} {self.id} on machine {self.machine}"
+        if self.machine != -1:
+            representation += f", machine={self.machine}"
+
+        return representation + ')'
 
     def process(
         self,
         current_time: TIME,
-        tasks: Tasks,
+        state: ScheduleState,
         scheduled_instructions: dict[TIME, list[Instruction]],
     ) -> Signal:
         if self.job_oriented:
-            all_fixed = True
-            for task in tasks.jobs[self.id]:
-                if task.is_available(current_time, self.machine):
-                    tasks.fix_task(self.id, self.machine, current_time)
+            execute = state.execute_job(self.id, current_time, self.machine)
 
-                    return Signal(Action.DONE)
+            if execute:
+                return Signal(Action.DONE)
 
-                if not task.is_fixed():
-                    all_fixed = False
-
-            if all_fixed:
+            elif all(task.fixed for task in state.jobs[self.id]):
                 return Signal(
                     Action.RAISE,
-                    info=f"Job {self.id} cannot be executed. All tasks are already fixed.",
+                    info=f"Every task in Job {self.id} has been executed.",
                 )
 
         else:
-            task = tasks[self.id]
-            if task.is_available(current_time, self.machine):
-                tasks.fix_task(self.id, self.machine, current_time)
+            execute = state.execute_task(self.id, current_time, self.machine)
 
+            if execute:
                 return Signal(Action.DONE)
 
-            if task.is_fixed():
+            elif state.tasks[self.id].fixed:
                 return Signal(
                     Action.RAISE,
-                    info=f"Task {self.id} cannot be executed. It is already being executed or completed",
+                    info=f"Task {self.id} was/is already executed.",
+                )
+
+            elif self.machine > 0 and not self.machine in state.tasks[self.id].machines:
+                return Signal(
+                    Action.RAISE,
+                    info=f"Task {self.id} cannot be executed on machine {self.machine}.",
                 )
 
         return Signal(
             Action.WAIT if self.wait else Action.SKIPPED,
         )
 
-
 class Submit(Execute):
     "Submits a task to a specific machine. If the task cannot be executed, it is waited for."
-
-    name = "submit"
 
     def __init__(
         self,
@@ -182,51 +179,68 @@ class Submit(Execute):
 class Pause(Instruction):
     "Pauses a task if it is currently executing. Can only be used in preemptive scheduling."
 
-    name = "pause"
-
-    def __init__(self, task_id: TASK_ID):
-        self.task_id = task_id
+    def __init__(
+        self,
+        id: TASK_ID,
+        job_oriented: bool = False,
+    ):
+        self.id = id
+        self.job_oriented = job_oriented
 
     def __repr__(self) -> str:
-        return super().__repr__() + f" task {self.task_id}"
+        unit = "job" if self.job_oriented else "task"
+
+        return f"Pause({unit}={self.id})"
 
     def process(
         self,
         current_time: TIME,
-        tasks: Tasks,
+        state: ScheduleState,
         scheduled_instructions: dict[TIME, list[Instruction]],
     ) -> Signal:
-        task = tasks[self.task_id]
 
-        if task.is_executing(current_time):
-            tasks.unfix_task(self.task_id, current_time)
+        if self.job_oriented:
+            can_pause = state.pause_job(self.id, current_time)
 
-            return Signal(Action.DONE | Action.REEVALUATE)
+            if can_pause:
+                return Signal(Action.DONE | Action.REEVALUATE)
 
-        if task.is_completed(current_time):
-            return Signal(Action.ERROR, info=f"Task {self.task_id} already terminated")
+            elif all(task.is_completed(current_time) for task in state.jobs[self.id]):
+                return Signal(
+                    Action.RAISE,
+                    info=f"Job {self.id} cannot be paused. It has been already completed.",
+                )
+
+        else:
+            can_pause = state.pause_task(self.id, current_time)
+
+            if can_pause:
+                return Signal(Action.DONE | Action.REEVALUATE)
+
+            elif state.tasks[self.id].is_completed(current_time):
+                return Signal(
+                    Action.RAISE,
+                    info=f"Task {self.id} cannot be paused. It has been already completed.",
+                )
 
         return Signal(Action.WAIT)
-
 
 class Complete(Instruction):
     "Advances the current time to the end of an executing task."
 
-    name = "complete"
-
     def __init__(self, task_id: TASK_ID):
         self.task_id = task_id
 
     def __repr__(self) -> str:
-        return super().__repr__() + f" task {self.task_id}"
+        return f"Complete(task={self.task_id})"
 
     def process(
         self,
         current_time: TIME,
-        tasks: Tasks,
+        state: ScheduleState,
         scheduled_instructions: dict[TIME, list[Instruction]],
     ) -> Signal:
-        task = tasks[self.task_id]
+        task = state.tasks[self.task_id]
         if task.is_executing(current_time):
             return Signal(Action.ADVANCE, task.get_end())
 
@@ -239,21 +253,19 @@ class Complete(Instruction):
 class Advance(Instruction):
     "Advances the current time by a specified amount or to the next decision point if not specified."
 
-    name = "advance"
-
     def __init__(self, time: TIME = -1):
         self.time = time
 
     def __repr__(self) -> str:
         if self.time == -1:
-            return super().__repr__() + " to the next decision point"
+            return "Advance()"
 
-        return super().__repr__() + f" by {self.time} units"
+        return f"Advance(time={self.time})"
 
     def process(
         self,
         current_time: TIME,
-        tasks: Tasks,
+        state: ScheduleState,
         scheduled_instructions: dict[TIME, list[Instruction]],
     ) -> Signal:
         if self.time == -1:
@@ -265,12 +277,10 @@ class Advance(Instruction):
 class Query(Instruction):
     "When processed, halts the environment and returns its current state."
 
-    name = "query"
-
     def process(
         self,
         current_time: TIME,
-        tasks: Tasks,
+        state: ScheduleState,
         scheduled_instructions: dict[TIME, list[Instruction]],
     ) -> Signal:
         return Signal(Action.HALT)
@@ -279,12 +289,10 @@ class Query(Instruction):
 class Clear(Instruction):
     "Clears all upcoming instructions and resets the schedule."
 
-    name = "clear"
-
     def process(
         self,
         current_time: TIME,
-        tasks: Tasks,
+        state: ScheduleState,
         scheduled_instructions: dict[TIME, list[Instruction]],
     ) -> Signal:
         scheduled_instructions.clear()
@@ -300,12 +308,8 @@ def parse_args(
     "Parse the raw instruction arguments into required and optional arguments."
     return args + (-1,) * (output_size - len(args))
 
-
-n_max_args: Final[int] = 3
-
-
 def parse_instruction(
-    action: str | Instruction, args: tuple[int, ...], tasks: Tasks
+    action: str | Instruction, args: tuple[int, ...], state: ScheduleState
 ) -> tuple[Instruction, TIME]:
     "Parse raw instruction arguments into an Instruction object and the scheduled time."
     if isinstance(action, Instruction):
@@ -319,10 +323,11 @@ def parse_instruction(
         if is_execute or is_submit:
             job_oriented = action.endswith("job")
 
-            if 0 < len(args) <= 2 and len(tasks[args[0]].machines) == 1:
-                # If the task has only one machine, we can skip the machine argument
-                machine = tasks[args[0]].machines[0]
+            if 0 < len(args) <= 2:
                 id, time = parse_args(args, 2)
+
+                machines = state.tasks[id].machines
+                machine = -1 if len(machines) > 1 else machines[0]
 
             else:
                 id, machine, time = parse_args(args, 3)

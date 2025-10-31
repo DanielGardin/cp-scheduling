@@ -8,8 +8,7 @@ interface for rendering tasks.
 
 from typing import Any, ClassVar
 
-from .tasks import Tasks
-from .data import SchedulingData
+from cpscheduler.environment.state import ScheduleState
 
 
 renderers: dict[str, "Renderer"] = {}
@@ -34,10 +33,10 @@ class Renderer:
 
         return renderers[render_mode]
 
-    def build_gantt(self, current_time: int, tasks: Tasks, data: SchedulingData) -> Any:
+    def build_gantt(self, current_time: int, state: ScheduleState) -> Any:
         "Build a figure-like object representing the Gantt chart."
 
-    def render(self, current_time: int, tasks: Tasks, data: SchedulingData) -> None:
+    def render(self, current_time: int, state: ScheduleState) -> None:
         "Render the built Gantt chart."
 
 
@@ -52,7 +51,7 @@ try:
         name = "plotly"
 
         def build_gantt(
-            self, current_time: int, tasks: Tasks, data: SchedulingData
+            self, current_time: int, state: ScheduleState
         ) -> Any:
             if go is None or glasbey_dark is None:
                 raise ImportError(
@@ -68,15 +67,15 @@ try:
             durations: list[int] = []
             machines: list[int] = []
             task_ids: list[int] = []
-            palette = glasbey_dark[: len(tasks.jobs)]
+            palette = glasbey_dark[:state.n_jobs]
             template = (
                 "Task %{customdata[0]} [Job %{customdata[1]}]:<br>"
                 "Period: %{customdata[2]}-%{customdata[3]}<br>"
                 "Machine: %{y}<extra></extra>"
             )
 
-            for job, job_tasks in enumerate(tasks.jobs):
-                for task in job_tasks:
+            for job, job_tasks in enumerate(state.jobs):
+                for task in job_tasks:  
                     for part in range(task.n_parts):
                         if not task.is_fixed():
                             break
@@ -119,7 +118,7 @@ try:
                 barmode="overlay",
                 yaxis=dict(
                     title="Assignment",
-                    tickvals=list(range(data.n_machines)),
+                    tickvals=list(range(state.n_machines)),
                     autorange="reversed",
                 ),
                 xaxis=dict(
@@ -130,13 +129,13 @@ try:
                 ),
             )
 
-            if len(tasks.jobs) <= 30:
+            if state.n_jobs <= 30:
                 fig.update_layout(legend_title_text="Task jobs")
 
             return fig
 
-        def render(self, current_time: int, tasks: Tasks, data: SchedulingData) -> None:
-            fig = self.build_gantt(current_time, tasks, data)
+        def render(self, current_time: int, state: ScheduleState) -> None:
+            fig = self.build_gantt(current_time, state)
             fig.show()
 
 except ImportError:
