@@ -45,6 +45,7 @@ from cpscheduler.environment.objectives import Objective, objectives
 
 from cpscheduler.environment._render import Renderer
 
+
 def prepare_instance(instance: InstanceTypes) -> dict[str, list[Any]]:
     "Prepare the instance data to a standard dictionary format."
     return {str(feature): convert_to_list(instance[feature]) for feature in instance}
@@ -164,7 +165,6 @@ class SchedulingEnv:
         if instance is not None:
             self.set_instance(instance)
 
-
     def __repr__(self) -> str:
         if self.state.loaded:
             return (
@@ -183,7 +183,7 @@ class SchedulingEnv:
             raise ValueError(
                 f"Constraint with name {name} already exists. Please use a different name."
             )
-        
+
         if self.state.loaded:
             constraint.initialize(self.state)
 
@@ -218,11 +218,11 @@ class SchedulingEnv:
         for constraint in self.setup.setup_constraints(self.state):
             constraint.setup_constraint = True
             self.add_constraint(constraint, replace=True)
-        
+
         self.objective.initialize(self.state)
         for constraint in self.constraints.values():
             constraint.initialize(self.state)
-        
+
         self.force_reset = True
 
     def get_entry(self) -> str:
@@ -521,8 +521,8 @@ class SchedulingEnv:
         if self._is_schedule_empty():
             if not self.state.awaiting_tasks:
                 self.current_time = max(
-                task.get_end_ub() for task in self.state.fixed_tasks
-            )
+                    task.get_end_ub() for task in self.state.fixed_tasks
+                )
 
             return True
 

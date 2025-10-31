@@ -50,9 +50,7 @@ try:
 
         name = "plotly"
 
-        def build_gantt(
-            self, current_time: int, state: ScheduleState
-        ) -> Any:
+        def build_gantt(self, current_time: int, state: ScheduleState) -> Any:
             if go is None or glasbey_dark is None:
                 raise ImportError(
                     "Plotly and Colorcet are required for rendering Gantt charts with PlotlyRenderer. "
@@ -67,7 +65,7 @@ try:
             durations: list[int] = []
             machines: list[int] = []
             task_ids: list[int] = []
-            palette = glasbey_dark[:state.n_jobs]
+            palette = glasbey_dark[: state.n_jobs]
             template = (
                 "Task %{customdata[0]} [Job %{customdata[1]}]:<br>"
                 "Period: %{customdata[2]}-%{customdata[3]}<br>"
@@ -75,7 +73,7 @@ try:
             )
 
             for job, job_tasks in enumerate(state.jobs):
-                for task in job_tasks:  
+                for task in job_tasks:
                     for part in range(task.n_parts):
                         if not task.is_fixed():
                             break

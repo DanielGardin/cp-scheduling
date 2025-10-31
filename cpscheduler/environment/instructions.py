@@ -6,7 +6,7 @@ Instructions are used to control the execution of tasks, manage their states, an
 with the scheduler.
 """
 
-from typing import ClassVar, Final, TypeAlias, Iterable
+from typing import Final, TypeAlias, Iterable
 from typing_extensions import Unpack, TypeIs
 
 from dataclasses import dataclass
@@ -122,7 +122,7 @@ class Execute(Instruction):
         if self.machine != -1:
             representation += f", machine={self.machine}"
 
-        return representation + ')'
+        return representation + ")"
 
     def process(
         self,
@@ -136,7 +136,7 @@ class Execute(Instruction):
             if execute:
                 return Signal(Action.DONE)
 
-            elif all(task.fixed for task in state.jobs[self.id]):
+            if all(task.fixed for task in state.jobs[self.id]):
                 return Signal(
                     Action.RAISE,
                     info=f"Every task in Job {self.id} has been executed.",
@@ -148,13 +148,13 @@ class Execute(Instruction):
             if execute:
                 return Signal(Action.DONE)
 
-            elif state.tasks[self.id].fixed:
+            if state.tasks[self.id].fixed:
                 return Signal(
                     Action.RAISE,
                     info=f"Task {self.id} was/is already executed.",
                 )
 
-            elif self.machine > 0 and not self.machine in state.tasks[self.id].machines:
+            if self.machine > 0 and not self.machine in state.tasks[self.id].machines:
                 return Signal(
                     Action.RAISE,
                     info=f"Task {self.id} cannot be executed on machine {self.machine}.",
@@ -163,6 +163,7 @@ class Execute(Instruction):
         return Signal(
             Action.WAIT if self.wait else Action.SKIPPED,
         )
+
 
 class Submit(Execute):
     "Submits a task to a specific machine. If the task cannot be executed, it is waited for."
@@ -224,6 +225,7 @@ class Pause(Instruction):
                 )
 
         return Signal(Action.WAIT)
+
 
 class Complete(Instruction):
     "Advances the current time to the end of an executing task."
@@ -296,7 +298,7 @@ class Clear(Instruction):
         scheduled_instructions: dict[TIME, list[Instruction]],
     ) -> Signal:
         scheduled_instructions.clear()
-        scheduled_instructions[-1] = list()
+        scheduled_instructions[-1] = []
 
         return Signal(Action.DONE)
 
@@ -307,6 +309,7 @@ def parse_args(
 ) -> tuple[int, ...]:
     "Parse the raw instruction arguments into required and optional arguments."
     return args + (-1,) * (output_size - len(args))
+
 
 def parse_instruction(
     action: str | Instruction, args: tuple[int, ...], state: ScheduleState

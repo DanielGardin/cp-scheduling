@@ -85,6 +85,7 @@ class MachineConstraint(Constraint):
     constraint have groups with predefined tasks, while the machine constraint defines its groups
     based on the machine assignment of the tasks.
     """
+
     machine_free: list[TIME]
 
     def initialize(self, state: ScheduleState) -> None:
@@ -230,7 +231,7 @@ class PrecedenceConstraint(Constraint):
         self.tasks_order = [state.tasks[task_id] for task_id in self.original_order]
 
     def propagate(self, time: TIME, state: ScheduleState) -> None:
-         for task in list(self.tasks_order):
+        for task in list(self.tasks_order):
 
             if task.is_completed(time):
                 self.tasks_order.remove(task)
@@ -442,6 +443,7 @@ class ReleaseDateConstraint(Constraint):
     def get_entry(self) -> str:
         return "r_j"
 
+
 class DeadlineConstraint(Constraint):
     """
     Deadline constraint for the scheduling environment.
@@ -610,7 +612,9 @@ class ResourceConstraint(Constraint):
             "Refresh method is not implemented for ResourceConstraint yet."
         )
 
+
 SetupTimes: TypeAlias = Mapping[Int, Mapping[Int, Int]] | Callable[[int, int, Any], Int]
+
 
 # TODO: Check literature if the setup time only happens when in the same machine
 class SetupConstraint(Constraint):

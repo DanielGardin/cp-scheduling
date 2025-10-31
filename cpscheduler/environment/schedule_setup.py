@@ -13,11 +13,7 @@ from typing_extensions import Self
 from mypy_extensions import mypyc_attr
 
 from cpscheduler.utils.list_utils import convert_to_list
-from cpscheduler.utils.typing_utils import (
-    is_iterable_type,
-    is_iterable_int,
-    iterate_indexed,
-)
+from cpscheduler.utils.typing_utils import is_iterable_type
 
 from cpscheduler.environment._common import MACHINE_ID, TIME, Int, ceil_div
 from cpscheduler.environment.state import ScheduleState
@@ -37,6 +33,7 @@ class ScheduleSetup:
     Base class for scheduling setups. It defines the common interface for all scheduling setups
     and provides methods to parse process times, set tasks, and setup constraints.
     """
+
     n_machines: int = 0
 
     def __init_subclass__(cls) -> None:
@@ -76,12 +73,11 @@ class SingleMachineSetup(ScheduleSetup):
 
     This setup is used for scheduling tasks on a single machine.
     """
+
     n_machines: int = 1
 
     def __init__(
-        self,
-        processing_times: str = "processing_time",
-        disjunctive: bool = True
+        self, processing_times: str = "processing_time", disjunctive: bool = True
     ) -> None:
         self.processing_times = processing_times
         self.disjunctive = disjunctive
@@ -243,21 +239,19 @@ class JobShopSetup(ScheduleSetup):
         self.operation_order = operation_order
         self.machine_feature = machine_feature
 
-
     def initialize(self, state: ScheduleState) -> None:
         n_machines = 0
 
         for task, p_time, machine in zip(
             state.tasks,
             state.instance[self.processing_times],
-            state.instance[self.machine_feature]
+            state.instance[self.machine_feature],
         ):
             task.set_processing_time(MACHINE_ID(machine), TIME(p_time))
 
             n_machines = max(n_machines, int(machine) + 1)
 
         self.n_machines = n_machines
-
 
     def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
         disjunctive_constraint = MachineConstraint(name="setup_machine_disjunctive")
@@ -267,13 +261,12 @@ class JobShopSetup(ScheduleSetup):
 
         task_orders: list[list[int]] = [[] for _ in range(state.n_jobs)]
 
-
         for task, operation in zip(state.tasks, operations):
             job_id = task.job_id
 
             while len(task_orders[job_id]) <= operation:
                 task_orders[job_id].append(-1)
-            
+
             task_orders[job_id][operation] = task.task_id
 
         for tasks in task_orders:
@@ -347,11 +340,9 @@ class OpenShopSetup(ScheduleSetup):
         if self.n_machines > 0:
             self.n_machines = n_machines
 
-
     def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
         task_disjunction = DisjunctiveConstraint(
-            [task.job_id for task in state.tasks],
-            name="setup_task_disjunctive"
+            [task.job_id for task in state.tasks], name="setup_task_disjunctive"
         )
 
         if not self.disjunctive:

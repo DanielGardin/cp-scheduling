@@ -23,10 +23,7 @@ We do not reccomend customizing this module, as it's tightly coupled with the ot
 in the environment, change with caution.
 """
 
-from warnings import warn
-
 from typing import Any
-from collections.abc import Iterator
 from typing_extensions import Self
 
 from mypy_extensions import u8
@@ -41,6 +38,7 @@ from cpscheduler.environment._common import (
     Status,
     ceil_div,
 )
+
 
 class Bounds:
     "Store the lower and upper bounds for decision variables."
@@ -91,6 +89,7 @@ class Task:
     process by modifying the task state.
     The task can be split into multiple parts, each with its own starting time and duration.
     """
+
     task_id: TASK_ID
     job_id: TASK_ID
     n_parts: PART_ID
@@ -116,7 +115,7 @@ class Task:
         self.starts = []
         self.durations = []
         self.assignments = []
-    
+
         self.processing_times = {}
         self.machines = []
 
@@ -188,7 +187,7 @@ class Task:
     def reset(self) -> None:
         "Resets the task to its initial state."
         self.n_parts = 0
-    
+
         self.starts.clear()
         self.durations.clear()
         self.assignments.clear()
@@ -350,7 +349,7 @@ class Task:
         "Set the processing time for a given machine."
         if time < 0:
             return
-        
+
         self.processing_times[machine] = time
         self.remaining_times[machine] = time
         self.machines.append(machine)
@@ -366,11 +365,13 @@ class Task:
             for machine in self.machines:
                 if self.is_available(time, machine):
                     break
-            
+
             else:
                 return False
 
-        elif machine not in self.processing_times or not self.is_available(time, machine):
+        elif machine not in self.processing_times or not self.is_available(
+            time, machine
+        ):
             return False
 
         self.n_parts += 1
@@ -398,21 +399,20 @@ class Task:
         actual_duration = time - self.starts[-1]
 
         remaining_time = prev_duration - actual_duration
-    
+
         if remaining_time <= 0:
             return False
 
         self.durations[-1] = remaining_time
         for machine in self.machines:
             self.remaining_times[machine] = ceil_div(
-                self.remaining_times[machine] * remaining_time,
-                prev_duration
+                self.remaining_times[machine] * remaining_time, prev_duration
             )
 
             self.start_bounds[machine].set(time)
 
         self.fixed = False
-        
+
         return True
 
     def get_status(self, time: TIME) -> u8:

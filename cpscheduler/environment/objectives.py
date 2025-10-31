@@ -7,9 +7,7 @@ and can be used to guide the search for an optimal schedule by providing a numer
 that represents the quality of the schedule.
 """
 
-from typing import Any
 from collections.abc import Iterable
-from typing_extensions import Self
 
 from mypy_extensions import mypyc_attr
 
@@ -56,9 +54,7 @@ class Objective:
         """
         return 0
 
-    def __call__(
-        self, time: int, state: ScheduleState, objective: float
-    ) -> float:
+    def __call__(self, time: int, state: ScheduleState, objective: float) -> float:
         "Call the objective function to get the current value."
         return self.get_current(time, state)
 
@@ -139,6 +135,7 @@ class ComposedObjective(Objective):
             entry += f"{coef_str} {objective.get_entry()}"
 
         return entry
+
 
 class Makespan(Objective):
     """
@@ -300,6 +297,7 @@ class TotalTardiness(Objective):
     def get_entry(self) -> str:
         return "ΣT_j"
 
+
 class WeightedTardiness(Objective):
     """
     The weighted tardiness objective function, which aims to minimize the weighted sum of tardiness
@@ -426,7 +424,6 @@ class WeightedEarliness(Objective):
         else:
             self.job_weights = convert_to_list(job_weights, float)
 
-
     def initialize(self, state: ScheduleState) -> None:
         if "due_dates" in self.tags:
             self.due_dates = state.instance[self.tags["due_dates"]]
@@ -541,6 +538,7 @@ class WeightedTardyJobs(Objective):
 
     def get_entry(self) -> str:
         return "Σw_jU_j"
+
 
 class TotalFlowTime(Objective):
     """

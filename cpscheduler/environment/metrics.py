@@ -7,9 +7,7 @@ from cpscheduler.environment._common import Int, TASK_ID, TIME
 from cpscheduler.environment.state import ScheduleState
 
 
-def machine_utilization(
-    time: int, state: ScheduleState, objective: float
-) -> float:
+def machine_utilization(time: int, state: ScheduleState, objective: float) -> float:
     """
     Calculate the percentage of time that machines are utilized during the scheduling period.
     """
@@ -22,9 +20,7 @@ def machine_utilization(
     return state.n_machines * busy_time / total_time if total_time > 0 else 1
 
 
-def max_preemptions(
-    time: int, state: ScheduleState, objective: float
-) -> int:
+def max_preemptions(time: int, state: ScheduleState, objective: float) -> int:
     "Calculate the maximum number of preemption switches that occurred during the scheduling period."
     max_switches = 0
     for task in state.fixed_tasks:
@@ -100,9 +96,7 @@ class ReferenceScheduleMetrics:
         if self.permutation_based:
             metrics.update(
                 {
-                    "hamming_accuracy": self.hamming_accuracy(
-                        time, state, objective
-                    ),
+                    "hamming_accuracy": self.hamming_accuracy(time, state, objective),
                     "kendall_tau": self.kendall_tau(time, state, objective),
                 }
             )
@@ -173,7 +167,9 @@ class ReferenceScheduleMetrics:
         return preserved_count / reference_count if reference_count > 0 else 1.0
 
     # The following are useful when the schedule is a permutation of the tasks
-    def _get_permutations(self, state: ScheduleState) -> tuple[list[TASK_ID], list[TASK_ID]]:
+    def _get_permutations(
+        self, state: ScheduleState
+    ) -> tuple[list[TASK_ID], list[TASK_ID]]:
         reference_perm = sorted(
             [
                 task_id
@@ -206,9 +202,7 @@ class ReferenceScheduleMetrics:
 
         return hamming_count / len(reference_perm) if reference_perm else 1.0
 
-    def kendall_tau(
-        self, time: int, state: ScheduleState, objective: float
-    ) -> float:
+    def kendall_tau(self, time: int, state: ScheduleState, objective: float) -> float:
         """
         Calculate the Kendall Tau distance between the reference schedule and the actual schedule.
         This metric is the number of discordant pairs in the schedule.
@@ -231,7 +225,7 @@ class ReferenceScheduleMetrics:
                 if ref_i == ref_j and act_i == act_j:
                     continue
 
-                elif ref_i == ref_j:
+                if ref_i == ref_j:
                     ties_ref += 1
 
                 elif act_i == act_j:
@@ -276,9 +270,7 @@ class OptimalReferenceMetrics(ReferenceScheduleMetrics):
 
         return (self.__class__, (schedule, self.optimal_value, perm))
 
-    def regret(
-        self, time: int, state: ScheduleState, objective: float
-    ) -> float:
+    def regret(self, time: int, state: ScheduleState, objective: float) -> float:
         """
         Calculate the regret of the current schedule compared to the optimal schedule.
         Regret is defined as the difference between the optimal value and the current objective value.

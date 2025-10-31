@@ -3,15 +3,13 @@
 from typing import (
     Any,
     Final,
-    TypeAlias,
     SupportsInt,
     SupportsFloat,
-    Hashable,
     Iterator,
     Protocol,
     runtime_checkable,
 )
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Hashable
 from typing_extensions import TypedDict, TypeAlias
 
 from mypy_extensions import i64, i32, i16, u8
@@ -29,6 +27,7 @@ Float: TypeAlias = SupportsFloat | float | i64 | i32 | i16 | u8
 MIN_INT: Final[TIME] = -(2**24 + 1)
 MAX_INT: Final[TIME] = 2**24 - 1
 
+
 @runtime_checkable
 class DataFrameLike(Protocol):
     @property
@@ -41,11 +40,13 @@ class DataFrameLike(Protocol):
 
     def __iter__(self) -> Iterator[Hashable]: ...
 
+
 InstanceTypes: TypeAlias = DataFrameLike | Mapping[Any, Iterable[Any]]
 
 ObsType: TypeAlias = tuple[dict[str, list[Any]], dict[str, list[Any]]]
 
 InfoType: TypeAlias = dict[str, Any]
+
 
 class EnvSerialization(TypedDict):
     "Serialization format for the environment."
@@ -54,8 +55,10 @@ class EnvSerialization(TypedDict):
     constraints: dict[str, dict[str, Any]]
     objective: dict[str, Any]
 
+
 class Status:
     "Possible statuses of a task at a given time."
+
     # awaiting:  time < start_lb[0] or waiting for a machine
     AWAITING: Final[u8] = 0
 

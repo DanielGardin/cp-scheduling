@@ -1,22 +1,21 @@
 from typing import Any
 
-from cpscheduler.environment._common import (
-    MACHINE_ID,
-    TASK_ID,
-    TIME,
-    ObsType
-)
+from cpscheduler.environment._common import MACHINE_ID, TASK_ID, TIME, ObsType
 from cpscheduler.environment.tasks import Task
 from cpscheduler.utils.list_utils import convert_to_list
+
 
 def check_instance_consistency(instance: dict[str, list[Any]]) -> int:
     "Check if all lists in the instance have the same length."
     lengths = {len(v) for v in instance.values()}
 
     if len(lengths) > 1:
-        raise ValueError("Inconsistent instance data: all lists must have the same length.")
+        raise ValueError(
+            "Inconsistent instance data: all lists must have the same length."
+        )
 
     return lengths.pop() if lengths else 0
+
 
 # TODO: Manage task and job data
 class ScheduleState:
@@ -53,7 +52,7 @@ class ScheduleState:
     @property
     def n_tasks(self) -> int:
         return len(self.tasks)
-    
+
     @property
     def n_jobs(self) -> int:
         return len(self.jobs)
@@ -71,15 +70,15 @@ class ScheduleState:
         self.fixed_tasks.clear()
 
         self.instance.clear()
-    
+
     def reset(self) -> None:
         for task in self.tasks:
             task.reset()
             self.awaiting_tasks.add(task)
-        
+
         self.transition_tasks.clear()
         self.fixed_tasks.clear()
-        
+
     def read_instance(
         self,
         task_data: dict[str, list[Any]],
@@ -99,23 +98,20 @@ class ScheduleState:
 
         for _ in set(job_ids):
             self.jobs.append([])
-        
+
         for task_id, job_id in enumerate(job_ids):
             task = Task(task_id, job_id)
 
             self.tasks.append(task)
             self.jobs[job_id].append(task)
 
-        self.instance['task_id'] = list(range(n_tasks))
-        self.instance['job_id'] = job_ids
-        self.job_instance['job_id'] = list(range(self.n_jobs))
-
+        self.instance["task_id"] = list(range(n_tasks))
+        self.instance["job_id"] = job_ids
+        self.job_instance["job_id"] = list(range(self.n_jobs))
 
     def get_job_completion_time(self, job_id: TASK_ID, time: TIME) -> TIME:
         return max(
-            task.get_end()
-            for task in self.jobs[job_id]
-            if task.is_completed(time)
+            task.get_end() for task in self.jobs[job_id] if task.is_completed(time)
         )
 
     def execute_task(
@@ -141,7 +137,9 @@ class ScheduleState:
         current_time: TIME,
     ) -> bool:
         if not self.preemptive:
-            raise RuntimeError("Cannot pause tasks in a non-preemptive scheduling environment.")
+            raise RuntimeError(
+                "Cannot pause tasks in a non-preemptive scheduling environment."
+            )
 
         task = self.tasks[task_id]
 
@@ -153,7 +151,7 @@ class ScheduleState:
             self.fixed_tasks.remove(task)
 
         return paused
-    
+
     def execute_job(
         self,
         job_id: TASK_ID,
@@ -177,7 +175,9 @@ class ScheduleState:
         current_time: TIME,
     ) -> bool:
         if not self.preemptive:
-            raise RuntimeError("Cannot pause tasks in a non-preemptive scheduling environment.")
+            raise RuntimeError(
+                "Cannot pause tasks in a non-preemptive scheduling environment."
+            )
 
         for task in self.jobs[job_id]:
             paused = task.pause(current_time)
@@ -194,8 +194,7 @@ class ScheduleState:
         task_obs = self.instance.copy()
         job_obs = self.job_instance.copy()
 
-        task_obs['status'] = [task.get_status(time) for task in self.tasks]
-        task_obs['available'] = [task.is_available(time) for task in self.tasks]
+        task_obs["status"] = [task.get_status(time) for task in self.tasks]
+        task_obs["available"] = [task.is_available(time) for task in self.tasks]
 
         return task_obs, job_obs
-
