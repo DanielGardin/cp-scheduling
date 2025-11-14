@@ -43,6 +43,70 @@ class ScheduleState:
         self.n_machines = 0
         self.preemptive = False
 
+    def __repr__(self) -> str:
+        cls_name = self.__class__.__name__
+
+        if self.loaded:
+            return (
+                f"{cls_name}("
+                f"n_machines={self.n_machines}, "
+                f"n_jobs={self.n_jobs}, "
+                f"n_tasks={self.n_tasks}, "
+                f"preemptive={self.preemptive}, "
+                f"awaiting={len(self.awaiting_tasks)}, "
+                f"transition={len(self.transition_tasks)}, "
+                f"fixed={len(self.fixed_tasks)}"
+                f")"
+            )
+    
+        return f"{cls_name}(loaded={self.loaded})"
+
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, ScheduleState):
+            return False
+
+        return (
+            self.tasks == other.tasks
+            and self.jobs == other.jobs
+            and self.awaiting_tasks == other.awaiting_tasks
+            and self.transition_tasks == other.transition_tasks
+            and self.fixed_tasks == other.fixed_tasks
+            and self.instance == other.instance
+            and self.job_instance == other.job_instance
+            and self.n_machines == other.n_machines
+            and self.preemptive == other.preemptive
+        )
+
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (),
+            (
+                self.tasks,
+                self.jobs,
+                self.awaiting_tasks,
+                self.transition_tasks,
+                self.fixed_tasks,
+                self.instance,
+                self.job_instance,
+                self.n_machines,
+                self.preemptive,
+            ),
+        )
+
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        (
+            self.tasks,
+            self.jobs,
+            self.awaiting_tasks,
+            self.transition_tasks,
+            self.fixed_tasks,
+            self.instance,
+            self.job_instance,
+            self.n_machines,
+            self.preemptive,
+        ) = state
+
     def set_n_machines(self, n: int) -> None:
         self.n_machines = n
 

@@ -85,6 +85,16 @@ class MachineConstraint(Constraint):
 
     machine_free: list[TIME]
 
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (self.name,),
+            (self.tags, self.machine_free),
+        )
+
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        self.tags, self.machine_free = state
+
     def initialize(self, state: ScheduleState) -> None:
         self.machine_free = [0 for _ in range(state.n_machines)]
 
@@ -124,6 +134,8 @@ class MachineConstraint(Constraint):
         n_machines = len(self.machine_free)
         return all(len(task.machines) == n_machines for task in state.tasks)
 
+    def get_entry(self) -> str:
+        return "M_j"
 
 class PrecedenceConstraint(Constraint):
     """
@@ -167,6 +179,16 @@ class PrecedenceConstraint(Constraint):
         }
 
         self.no_wait = no_wait
+
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (self.precedence, self.no_wait, self.name),
+            (self.tags, self.original_order, self.tasks_order),
+        )
+
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        self.tags, self.original_order, self.tasks_order = state
 
     @classmethod
     def from_edges(
@@ -294,6 +316,16 @@ class NoWait(PrecedenceConstraint):
     ):
         super().__init__(precedence, no_wait=True, name=name)
 
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (self.precedence, self.name),
+            (self.tags, self.original_order, self.tasks_order),
+        )
+
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        self.tags, self.original_order, self.tasks_order = state
+
 
 class ConstantProcessingTime(Constraint):
     """
@@ -319,6 +351,12 @@ class ConstantProcessingTime(Constraint):
             for machine in task.machines:
                 task.set_processing_time(machine, self.processing_time)
 
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (self.processing_time, self.name),
+            (),
+        )
 
 class DisjunctiveConstraint(Constraint):
     """
@@ -355,6 +393,16 @@ class DisjunctiveConstraint(Constraint):
 
         else:
             self.task_groups = [convert_to_list(group, int) for group in task_groups]
+
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (self.task_groups, self.name),
+            (self.tags, self.group_free),
+        )
+
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        self.tags, self.group_free = state
 
     def reset(self, state: ScheduleState) -> None:
         self.group_free = {}
@@ -424,6 +472,16 @@ class ReleaseDateConstraint(Constraint):
                 TASK_ID(task): TIME(date) for task, date in enumerate(release_dates)
             }
 
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (self.release_dates, self.name),
+            (self.tags,),
+        )
+
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        self.tags, = state
+
     def initialize(self, state: ScheduleState) -> None:
         if "release_time" in self.tags:
             release_times = state.instance[self.tags["release_time"]]
@@ -480,6 +538,16 @@ class DeadlineConstraint(Constraint):
                 TASK_ID(task): TIME(date) for task, date in enumerate(deadlines)
             }
 
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (self.deadlines, self.name),
+            (self.tags,),
+        )
+
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        self.tags, = state
+
     def initialize(self, state: ScheduleState) -> None:
         if "release_time" in self.tags:
             due_times = state.instance[self.tags["due_dates"]]
@@ -521,6 +589,8 @@ class ResourceConstraint(Constraint):
     capacities: list[float]
     original_resources: list[dict[TASK_ID, float]]
 
+    resources: list[dict[TASK_ID, float]]
+
     def __init__(
         self,
         capacities: Iterable[Float],
@@ -540,6 +610,16 @@ class ResourceConstraint(Constraint):
                 {TASK_ID(task_id): float(usage) for task_id, usage in resources.items()}
                 for resources in resource_usage
             ]
+
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (self.capacities, self.original_resources, self.name),
+            (self.tags, self.resources),
+        )
+
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        self.tags, self.resources= state
 
     def initialize(self, state: ScheduleState) -> None:
         if self.tags:
@@ -652,6 +732,16 @@ class SetupConstraint(Constraint):
                 }
                 for task, children in setup_times.items()
             }
+
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (),
+            (self.original_setup_times, self.setup_fn, self.setup_times),
+        )
+
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        self.task_groups, self.group_free = state
 
     def initialize(self, state: ScheduleState) -> None:
         if self.setup_fn is not None:

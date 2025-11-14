@@ -62,11 +62,6 @@ class ScheduleSetup:
         "Deserialize the setup from a dictionary."
         return cls(**data)
 
-    def __reduce__(self) -> tuple[Any, ...]:
-        "Support for pickling the setup."
-        return (self.__class__, tuple(self.to_dict().values()))
-
-
 class SingleMachineSetup(ScheduleSetup):
     """
     Single Machine Scheduling Setup.

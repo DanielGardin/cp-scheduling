@@ -6,7 +6,7 @@ Objective functions are used to evaluate the performance of a scheduling algorit
 and can be used to guide the search for an optimal schedule by providing a numerical value
 that represents the quality of the schedule.
 """
-
+from typing import Any
 from collections.abc import Iterable
 
 from mypy_extensions import mypyc_attr
@@ -29,7 +29,6 @@ class Objective:
     """
 
     minimize: bool
-
     tags: dict[str, str]
 
     def __init_subclass__(cls) -> None:
@@ -42,7 +41,9 @@ class Objective:
         self.tags = {}
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}()"
+        sense = "minimize" if self.minimize else "maximize"
+
+        return f"{self.__class__.__name__}(sense={sense})"
 
     def initialize(self, state: ScheduleState) -> None:
         "Initialize the objective with the given schedule state."
@@ -100,6 +101,13 @@ class ComposedObjective(Objective):
             [1.0] * len(self.objectives)
             if coefficients is None
             else convert_to_list(coefficients, float)
+        )
+
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (self.objectives, self.coefficients, self.minimize),
+            (),
         )
 
     def initialize(self, state: ScheduleState) -> None:
@@ -197,6 +205,17 @@ class WeightedCompletionTime(Objective):
         else:
             self.job_weights = convert_to_list(job_weights, float)
 
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (self.job_weights, self.minimize),
+            (self.tags,),
+        )
+
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        self.tags, = state
+
+
     def initialize(self, state: ScheduleState) -> None:
         if "job_weights" in self.tags:
             self.job_weights = state.instance[self.tags["job_weights"]]
@@ -234,6 +253,16 @@ class MaximumLateness(Objective):
 
         else:
             self.due_dates = convert_to_list(due_dates, TIME)
+
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (self.due_dates, self.minimize),
+            (self.tags,),
+        )
+
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        self.tags, = state
 
     def initialize(self, state: ScheduleState) -> None:
         if "due_dates" in self.tags:
@@ -275,6 +304,17 @@ class TotalTardiness(Objective):
 
         else:
             self.due_dates = convert_to_list(due_dates, TIME)
+
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (self.due_dates, self.minimize),
+            (self.tags,),
+        )
+
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        self.tags, = state
+
 
     def initialize(self, state: ScheduleState) -> None:
         if "due_dates" in self.tags:
@@ -327,6 +367,17 @@ class WeightedTardiness(Objective):
         else:
             self.job_weights = convert_to_list(job_weights, float)
 
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (self.due_dates, self.job_weights, self.minimize),
+            (self.tags,),
+        )
+
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        self.tags, = state
+
+
     def initialize(self, state: ScheduleState) -> None:
         if "due_dates" in self.tags:
             self.due_dates = state.instance[self.tags["due_dates"]]
@@ -373,6 +424,16 @@ class TotalEarliness(Objective):
 
         else:
             self.due_dates = convert_to_list(due_dates, TIME)
+
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (self.due_dates, self.minimize),
+            (self.tags,),
+        )
+
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        self.tags, = state
 
     def initialize(self, state: ScheduleState) -> None:
         if "due_dates" in self.tags:
@@ -424,6 +485,16 @@ class WeightedEarliness(Objective):
         else:
             self.job_weights = convert_to_list(job_weights, float)
 
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (self.due_dates, self.job_weights, self.minimize),
+            (self.tags,),
+        )
+
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        self.tags, = state
+
     def initialize(self, state: ScheduleState) -> None:
         if "due_dates" in self.tags:
             self.due_dates = state.instance[self.tags["due_dates"]]
@@ -469,6 +540,16 @@ class TotalTardyJobs(Objective):
 
         else:
             self.due_dates = convert_to_list(due_dates, TIME)
+
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (self.due_dates, self.minimize),
+            (self.tags,),
+        )
+
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        self.tags, = state
 
     def initialize(self, state: ScheduleState) -> None:
         if "due_dates" in self.tags:
@@ -517,6 +598,16 @@ class WeightedTardyJobs(Objective):
         else:
             self.job_weights = convert_to_list(job_weights, float)
 
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (self.due_dates, self.job_weights, self.minimize),
+            (self.tags,),
+        )
+
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        self.tags, = state
+
     def initialize(self, state: ScheduleState) -> None:
         if "due_dates" in self.tags:
             self.due_dates = state.instance[self.tags["due_dates"]]
@@ -559,6 +650,16 @@ class TotalFlowTime(Objective):
 
         else:
             self.release_times = convert_to_list(release_times, TIME)
+
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (self.release_times, self.minimize),
+            (self.tags,),
+        )
+
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        self.tags, = state
 
     def initialize(self, state: ScheduleState) -> None:
         if "release_times" in self.tags:

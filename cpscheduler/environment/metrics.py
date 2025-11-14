@@ -75,12 +75,6 @@ class ReferenceScheduleMetrics:
                 for task_id, time in reference_schedule.items()
             }
 
-    def __reduce__(self) -> tuple[Any, ...]:
-        return (
-            self.__class__,
-            (self.tag if self.tag else self.reference_schedule, self.permutation_based),
-        )
-
     def __call__(
         self, time: int, state: ScheduleState, objective: float
     ) -> dict[str, float]:
@@ -264,11 +258,6 @@ class OptimalReferenceMetrics(ReferenceScheduleMetrics):
         super().__init__(optimal_schedule, permutation_based)
 
         self.optimal_value = optimal_value
-
-    def __reduce__(self) -> tuple[Any, ...]:
-        _, (schedule, perm) = super().__reduce__()
-
-        return (self.__class__, (schedule, self.optimal_value, perm))
 
     def regret(self, time: int, state: ScheduleState, objective: float) -> float:
         """
