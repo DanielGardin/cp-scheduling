@@ -47,14 +47,12 @@ ObsType: TypeAlias = tuple[dict[str, list[Any]], dict[str, list[Any]]]
 
 InfoType: TypeAlias = dict[str, Any]
 
+class InstanceConfig(TypedDict, total=False):
+    "Configuration for loading an instance."
 
-class EnvSerialization(TypedDict):
-    "Serialization format for the environment."
+    instance: InstanceTypes
 
-    setup: dict[str, Any]
-    constraints: dict[str, dict[str, Any]]
-    objective: dict[str, Any]
-
+Options: TypeAlias = dict[str, Any] | InstanceConfig | None
 
 class Status:
     "Possible statuses of a task at a given time."

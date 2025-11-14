@@ -53,6 +53,11 @@ class Bounds:
     def __setstate__(self, state: tuple[TIME, TIME]) -> None:
         self.lb, self.ub = state
 
+    def reset(self) -> None:
+        "Resets the bounds to their initial state."
+        self.lb = 0
+        self.ub = MAX_INT
+
     def set(self, lb: TIME = 0, ub: TIME = MAX_INT) -> None:
         self.lb = lb
         self.ub = ub
@@ -194,9 +199,9 @@ class Task:
 
         for machine in self.machines:
             self.remaining_times[machine] = self.processing_times[machine]
-            self.start_bounds[machine].set()
+            self.start_bounds[machine].reset()
 
-        self.global_bound.set()
+        self.global_bound.reset()
         self.fixed = False
 
     def is_fixed(self) -> bool:
@@ -369,9 +374,7 @@ class Task:
             else:
                 return False
 
-        elif machine not in self.processing_times or not self.is_available(
-            time, machine
-        ):
+        elif machine not in self.processing_times or not self.is_available(time, machine):
             return False
 
         self.n_parts += 1
@@ -381,6 +384,7 @@ class Task:
         self.assignments.append(machine)
 
         self.fixed = True
+        self.global_bound.fix(time)
         for other_machine in self.machines:
             if other_machine == machine:
                 self.start_bounds[other_machine].fix(time)
@@ -404,12 +408,13 @@ class Task:
             return False
 
         self.durations[-1] = remaining_time
+        self.global_bound.set(time, MAX_INT)
         for machine in self.machines:
             self.remaining_times[machine] = ceil_div(
                 self.remaining_times[machine] * remaining_time, prev_duration
             )
 
-            self.start_bounds[machine].set(time)
+            self.start_bounds[machine].set(time, MAX_INT)
 
         self.fixed = False
 
@@ -442,12 +447,14 @@ class Task:
 
     def is_available(self, time: TIME, machine: MACHINE_ID = -1) -> bool:
         "Check if the task is available for execution at a given time."
+        if self.fixed: return False
+
         if machine != -1:
             return (
-                self.start_bounds[machine].lb <= time <= self.start_bounds[machine].ub
+                self.start_bounds[machine].lb <= time < self.start_bounds[machine].ub
             )
 
-        return self.global_bound.lb <= time <= self.global_bound.ub
+        return self.global_bound.lb <= time < self.global_bound.ub
 
     def is_awaiting(self) -> bool:
         "Check if the task is currently awaiting execution."

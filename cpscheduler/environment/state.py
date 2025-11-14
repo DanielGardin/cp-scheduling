@@ -104,6 +104,7 @@ class ScheduleState:
 
             self.tasks.append(task)
             self.jobs[job_id].append(task)
+            self.awaiting_tasks.add(task)
 
         self.instance["task_id"] = list(range(n_tasks))
         self.instance["job_id"] = job_ids
@@ -157,44 +158,39 @@ class ScheduleState:
         job_id: TASK_ID,
         current_time: TIME,
         machine_id: MACHINE_ID = -1,
-    ) -> bool:
+    ) -> TASK_ID:
         for task in self.jobs[job_id]:
-            executed = task.execute(current_time, machine_id)
-
-            if executed:
+            if task.execute(current_time, machine_id):
                 self.awaiting_tasks.remove(task)
                 self.transition_tasks.add(task)
                 self.fixed_tasks.add(task)
-                return True
+                return task.task_id
 
-        return False
+        return -1
 
     def pause_job(
         self,
         job_id: TASK_ID,
         current_time: TIME,
-    ) -> bool:
-        if not self.preemptive:
-            raise RuntimeError(
-                "Cannot pause tasks in a non-preemptive scheduling environment."
-            )
-
+    ) -> TASK_ID:
         for task in self.jobs[job_id]:
-            paused = task.pause(current_time)
-
-            if paused:
+            if task.pause(current_time):
                 self.awaiting_tasks.add(task)
                 self.transition_tasks.add(task)
                 self.fixed_tasks.remove(task)
-                return True
+                return task.task_id
 
-        return False
+        return -1
 
     def get_observation(self, time: TIME) -> ObsType:
         task_obs = self.instance.copy()
         job_obs = self.job_instance.copy()
 
-        task_obs["status"] = [task.get_status(time) for task in self.tasks]
-        task_obs["available"] = [task.is_available(time) for task in self.tasks]
+        task_obs["status"] = []
+        task_obs["available"] = []
+
+        for task in self.tasks:
+            task_obs["status"].append(task.get_status(time))
+            task_obs["available"].append(task.is_available(time))
 
         return task_obs, job_obs

@@ -209,7 +209,7 @@ class PriorityDispatchingRule(ABC):
 
         if self.status is not None:
             if self.available:
-                mask = array_obs[self.status] != Status.AVAILABLE
+                mask = array_obs["available"] == False # TODO: Add negation (~) operator to ArrayLike
 
             else:
                 mask = array_obs[self.status] >= Status.EXECUTING

@@ -39,9 +39,7 @@ class Constraint:
     interacts with the tasks by limiting when they can be executed, how they are assigned to
     machines, etc.
     """
-
     tags: dict[str, str]
-    setup_constraint: bool
 
     def __init_subclass__(cls) -> None:
         super().__init_subclass__()
@@ -57,7 +55,6 @@ class Constraint:
 
         self.name = name if name else self.__class__.__name__
         self.tags = {}
-        self.setup_constraint = False
 
     def __repr__(self) -> str:
         return f"{self.name.capitalize()}()"

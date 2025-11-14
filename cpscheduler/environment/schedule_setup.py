@@ -90,7 +90,7 @@ class SingleMachineSetup(ScheduleSetup):
         if not self.disjunctive:
             return ()
 
-        return (MachineConstraint(name="setup_machine_disjunctive"),)
+        return (MachineConstraint(name="__setup_machine_disjunctive"),)
 
     def get_entry(self) -> str:
         return "1"
@@ -123,7 +123,7 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
 
     def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
         return (
-            (MachineConstraint(name="setup_machine_disjunctive"),)
+            (MachineConstraint(name="__setup_machine_disjunctive"),)
             if self.disjunctive
             else ()
         )
@@ -163,7 +163,7 @@ class UniformParallelMachineSetup(ScheduleSetup):
 
     def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
         return (
-            (MachineConstraint(name="setup_machine_disjunctive"),)
+            (MachineConstraint(name="__setup_machine_disjunctive"),)
             if self.disjunctive
             else ()
         )
@@ -209,7 +209,7 @@ class UnrelatedParallelMachineSetup(ScheduleSetup):
 
     def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
         return (
-            (MachineConstraint(name="setup_machine_disjunctive"),)
+            (MachineConstraint(name="__setup_machine_disjunctive"),)
             if self.disjunctive
             else ()
         )
@@ -254,7 +254,7 @@ class JobShopSetup(ScheduleSetup):
         self.n_machines = n_machines
 
     def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
-        disjunctive_constraint = MachineConstraint(name="setup_machine_disjunctive")
+        disjunctive_constraint = MachineConstraint(name="__setup_machine_disjunctive")
 
         operations: list[int] = state.instance[self.operation_order]
         precedence_mapping: dict[Int, list[Int]] = {}
@@ -277,7 +277,7 @@ class JobShopSetup(ScheduleSetup):
                 prec = task_id
 
         precedence_constraint = PrecedenceConstraint(
-            precedence_mapping, name="setup_precedence"
+            precedence_mapping, name="__setup_precedence"
         )
 
         return (disjunctive_constraint, precedence_constraint)
@@ -342,13 +342,13 @@ class OpenShopSetup(ScheduleSetup):
 
     def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
         task_disjunction = DisjunctiveConstraint(
-            [task.job_id for task in state.tasks], name="setup_task_disjunctive"
+            [task.job_id for task in state.tasks], name="__setup_task_disjunctive"
         )
 
         if not self.disjunctive:
             return (task_disjunction,)
 
-        machine_disjunction = MachineConstraint(name="setup_machine_disjunctive")
+        machine_disjunction = MachineConstraint(name="__setup_machine_disjunctive")
 
         return (task_disjunction, machine_disjunction)
 

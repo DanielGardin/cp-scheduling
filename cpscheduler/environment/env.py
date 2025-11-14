@@ -28,7 +28,7 @@ from cpscheduler.environment._common import (
     TIME,
     InfoType,
     ObsType,
-    EnvSerialization,
+    Options,
 )
 from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.instructions import (
@@ -216,7 +216,6 @@ class SchedulingEnv:
         self.state.set_n_machines(self.setup.n_machines)
 
         for constraint in self.setup.setup_constraints(self.state):
-            constraint.setup_constraint = True
             self.add_constraint(constraint, replace=True)
 
         self.objective.initialize(self.state)
@@ -233,7 +232,7 @@ class SchedulingEnv:
             [
                 constraint.get_entry()
                 for constraint in self.constraints.values()
-                if not constraint.setup_constraint and constraint.get_entry()
+                if not constraint.name.startswith("__") and constraint.get_entry()
             ]
         )
 
@@ -284,9 +283,7 @@ class SchedulingEnv:
         self.state.transition_tasks.clear()
 
     # Environment API methods
-    def reset(
-        self, *, options: dict[str, Any] | None = None
-    ) -> tuple[ObsType, InfoType]:
+    def reset(self, *, options: Options = None) -> tuple[ObsType, InfoType]:
         if isinstance(options, dict) and "instance" in options:
             self.set_instance(options["instance"])
 
@@ -520,9 +517,10 @@ class SchedulingEnv:
 
         if self._is_schedule_empty():
             if not self.state.awaiting_tasks:
-                self.current_time = max(
-                    task.get_end_ub() for task in self.state.fixed_tasks
-                )
+                for task in self.state.fixed_tasks:
+                    end_time = task.get_end_ub()
+                    if end_time > self.current_time:
+                        self.current_time = end_time
 
             return True
 
