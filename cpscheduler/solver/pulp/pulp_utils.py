@@ -426,3 +426,47 @@ def implication_pulp(
             lhs >= rhs - (n_vars - premise) * big_m,
             name if name is not None else f"{premise}_{lhs}_ge_{rhs}",
         )
+
+
+global_abs_id = 0
+def abs_pulp(
+    model: LpProblem,
+    expr: PULP_PARAM,
+    abs_var: LpVariable | None = None,
+    name: str | None = None,
+) -> LpVariable:
+    """
+    Adds constraints to the model to define abs_var as the absolute value of expr.
+    Equivalent to: abs_var == |expr|
+
+    Parameters:
+        model (LpProblem): The PuLP problem instance.
+        expr (LpVariable | LpAffineExpression | int | float): The expression to take the absolute value of.
+        abs_var (LpVariable, optional): The variable to represent the absolute value.
+        name (str, optional): A prefix for constraint names.
+
+    Returns:
+        LpVariable: The variable representing the absolute value.
+    """
+    global global_abs_id
+
+    if name is None:
+        global_abs_id += 1
+        name = f"abs_var_{global_abs_id}"
+
+    if abs_var is None:
+        abs_var = LpVariable(name, lowBound=0, cat=LpContinuous)
+
+    pulp_add_constraint(
+        model,
+        abs_var >= expr,
+        f"{name}_ge_expr",
+    )
+
+    pulp_add_constraint(
+        model,
+        abs_var >= -expr,
+        f"{name}_ge_neg_expr",
+    )
+
+    return abs_var

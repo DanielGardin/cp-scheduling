@@ -12,8 +12,7 @@ from pulp import (
     lpSum,
 )
 
-from cpscheduler.environment.tasks import Tasks
-from cpscheduler.environment.data import SchedulingData
+from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.env import SchedulingEnv
 
 from .pulp_utils import (
@@ -40,14 +39,14 @@ def count_variables(variables: Iterable[Any] | PULP_EXPRESSION | int) -> int:
 
 class PulpVariables(ABC):
     def __init__(
-        self, model: LpProblem, tasks: Tasks, data: SchedulingData, integral: bool
+        self, model: LpProblem, state: ScheduleState, integral: bool
     ):
         object.__setattr__(self, "_initializing_base", True)
         self._variables: dict[str, Any] = {}
 
         self.model = model
-        self.n_tasks = tasks.n_tasks
-        self.n_machines = data.n_machines
+        self.n_tasks = state.n_tasks
+        self.n_machines = state.n_machines
 
         self.integral = integral
 
@@ -115,12 +114,11 @@ class PulpSchedulingVariables(PulpVariables):
     def __init__(
         self,
         model: LpProblem,
-        tasks: Tasks,
-        data: SchedulingData,
+        state: ScheduleState,
         integral: bool,
         integral_var: bool,
     ):
-        super().__init__(model, tasks, data, integral)
+        super().__init__(model, state, integral)
 
         # By considering the start and end times as continuous variables,
         # we can get a speedup in the branch-and-bound algorithm.
@@ -131,7 +129,7 @@ class PulpSchedulingVariables(PulpVariables):
                 upBound=task.get_start_ub(),
                 cat=LpInteger if integral_var else LpContinuous,
             )
-            for task in tasks
+            for task in state.tasks
         ]
 
         self._end_times = [
@@ -141,22 +139,22 @@ class PulpSchedulingVariables(PulpVariables):
                 upBound=task.get_end_ub(),
                 cat=LpInteger if integral_var else LpContinuous,
             )
-            for task in tasks
+            for task in state.tasks
         ]
 
         self.assignments = []
         assignments: list[PULP_EXPRESSION | int] = []
-        for task in tasks:
+        for task in state.tasks:
             machines = task.machines
 
             if len(machines) == 1:
                 assignments = [
                     1 if machine_id == machines[0] else 0
-                    for machine_id in range(data.n_machines)
+                    for machine_id in range(self.n_machines)
                 ]
 
             else:
-                assignments = [0] * data.n_machines
+                assignments = [0] * self.n_machines
 
                 for machine_id in machines:
                     assignments[machine_id] = LpVariable(
@@ -176,9 +174,18 @@ class PulpSchedulingVariables(PulpVariables):
         Warm start the variables based on the current environment state.
         This method sets the start times and assignments based on the current schedule.
         """
-        super().warm_start(env)
+        makespan = max(task.get_end() for task in env.state.fixed_tasks)
+        objective = env._get_objective()
+        
+        pulp_add_constraint(
+            self.model,
+            self.objective <= objective,
+            "initial_objective_bound"
+        )
+        if isinstance(self.objective, LpVariable):
+            self.objective.setInitialValue(objective, check=False)
 
-        for task in env.tasks.fixed_tasks:
+        for task in env.state.fixed_tasks:
             task_id = task.task_id
 
             start_var = self.start_times[task_id]
@@ -188,11 +195,13 @@ class PulpSchedulingVariables(PulpVariables):
                 start_time = task.get_start()
 
                 start_var.setInitialValue(start_time, check=False)
+                start_var.upBound = makespan
 
             if isinstance(end_var, LpVariable):
                 end_time = task.get_end()
 
-                end_var.setInitialValue(end_time)
+                end_var.setInitialValue(end_time, check=False)
+                end_var.upBound = makespan
 
             machine_assignment = task.get_assignment()
             for machine_id in range(self.n_machines):
@@ -261,20 +270,18 @@ class PulpTimetable(PulpVariables):
     start_times: list[dict[int, list[PULP_EXPRESSION | int]]]
 
     def __init__(
-        self, model: LpProblem, tasks: Tasks, data: SchedulingData, integral: bool
+        self, model: LpProblem, state: ScheduleState, integral: bool
     ):
-        super().__init__(model, tasks, data, integral)
+        super().__init__(model, state, integral)
 
-        self.T = tasks.get_time_ub() + 1
+        self.T = max(task.get_end_ub() for task in state.tasks)
 
         self.start_times = []
-        self.processing_times = data.processing_times.copy()
 
-        for task_id, task in enumerate(tasks):
-            machines = task.machines
-
+        for task_id, task in enumerate(state.tasks):
             task_start_times: dict[int, list[PULP_EXPRESSION | int]] = {}
-            for machine in machines:
+
+            for machine in task.machines:
                 start_lb = task.get_start_lb(machine)
                 start_ub = task.get_start_ub(machine)
 
@@ -308,15 +315,18 @@ class PulpTimetable(PulpVariables):
     @property
     def end_times(self) -> list[LpVariable | LpAffineExpression]:
         "Expression for the end time of a task."
-        return [
-            lpSum(
-                self.start_times[task_id][machine_id][time]
-                * (time + self.processing_times[task_id][machine_id])
-                for machine_id, machine_xs in self.start_times[task_id].items()
-                for time in range(self.T)
-            )
-            for task_id in range(self.n_tasks)
-        ]
+        raise NotImplementedError(
+            "End times are not directly represented in the timetable formulation."
+        )
+        # return [
+        #     lpSum(
+        #         self.start_times[task_id][machine_id][time]
+        #         * (time + self.processing_times[task_id][machine_id])
+        #         for machine_id, machine_xs in self.start_times[task_id].items()
+        #         for time in range(self.T)
+        #     )
+        #     for task_id in range(self.n_tasks)
+        # ]
 
     def get_assigment(self, task_id: int) -> tuple[int, int]:
         start_time = -1

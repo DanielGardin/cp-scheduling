@@ -7,8 +7,7 @@ from pulp import LpProblem, lpSum
 
 from multimethod import multidispatch
 
-from cpscheduler.environment.tasks import Tasks
-from cpscheduler.environment.data import SchedulingData
+from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.constraints import (
     Constraint,
     PrecedenceConstraint,
@@ -24,7 +23,7 @@ from cpscheduler.environment.constraints import (
 from .tasks import PulpVariables, PulpSchedulingVariables, PulpTimetable
 from .pulp_utils import implication_pulp, pulp_add_constraint, PULP_EXPRESSION
 
-ModelExport: TypeAlias = Callable[[LpProblem, Tasks, SchedulingData], None]
+ModelExport: TypeAlias = Callable[[LpProblem, ScheduleState], None]
 
 
 @multidispatch
@@ -40,7 +39,7 @@ def export_constraint_pulp(
 def _(
     constraint: PrecedenceConstraint, variables: PulpSchedulingVariables
 ) -> ModelExport:
-    def export_model(model: LpProblem, tasks: Tasks, data: SchedulingData) -> None:
+    def export_model(model: LpProblem, state: ScheduleState) -> None:
         for task_id, children in constraint.precedence.items():
             for child_id in children:
                 pulp_add_constraint(
@@ -67,7 +66,7 @@ def _(
 def _(
     constraint: DisjunctiveConstraint, variables: PulpSchedulingVariables
 ) -> ModelExport:
-    def export_model(model: LpProblem, tasks: Tasks, data: SchedulingData) -> None:
+    def export_model(model: LpProblem, state: ScheduleState) -> None:
         group_constraint: dict[int, list[int]] = {}
 
         for task_id, groups in enumerate(constraint.task_groups):
@@ -87,7 +86,7 @@ def _(
                         "<=",
                         variables.start_times[j],
                     ),
-                    big_m=int(tasks[i].get_end_ub() - tasks[j].get_start_lb()),
+                    big_m=int(state.tasks[i].get_end_ub() - state.tasks[j].get_start_lb()),
                     name=f"disjunctive_{i}_{j}_order",
                 )
 
@@ -99,7 +98,7 @@ def _(
                         "<=",
                         variables.start_times[i],
                     ),
-                    big_m=int(tasks[j].get_end_ub() - tasks[i].get_start_lb()),
+                    big_m=int(state.tasks[j].get_end_ub() - state.tasks[i].get_start_lb()),
                     name=f"disjunctive_{j}_{i}_order",
                 )
 
@@ -112,7 +111,7 @@ def _(
     variables: PulpSchedulingVariables,
 ) -> ModelExport:
     return (
-        lambda model, tasks, data: None
+        lambda model, state: None
     )  # No specific export needed for these constraints
 
 
@@ -127,10 +126,10 @@ def _(
 
 @export_constraint_pulp.register
 def _(constraint: MachineConstraint, variables: PulpSchedulingVariables) -> ModelExport:
-    def export_model(model: LpProblem, tasks: Tasks, data: SchedulingData) -> None:
-        machine_constraint: list[list[int]] = [[] for _ in range(data.n_machines)]
+    def export_model(model: LpProblem, state: ScheduleState) -> None:
+        machine_constraint: list[list[int]] = [[] for _ in range(state.n_machines)]
 
-        for task in tasks:
+        for task in state.tasks:
             for machine_id in task.machines:
                 machine_constraint[machine_id].append(task.task_id)
 
@@ -148,7 +147,7 @@ def _(constraint: MachineConstraint, variables: PulpSchedulingVariables) -> Mode
                         "<=",
                         variables.start_times[j],
                     ),
-                    big_m=int(tasks[i].get_end_ub() - tasks[j].get_start_lb()),
+                    big_m=int(state.tasks[i].get_end_ub() - state.tasks[j].get_start_lb()),
                     name=f"machine_{machine_id}_disjunctive_{i}_{j}_order",
                 )
 
@@ -164,7 +163,7 @@ def _(constraint: MachineConstraint, variables: PulpSchedulingVariables) -> Mode
                         "<=",
                         variables.start_times[i],
                     ),
-                    big_m=int(tasks[j].get_end_ub() - tasks[i].get_start_lb()),
+                    big_m=int(state.tasks[j].get_end_ub() - state.tasks[i].get_start_lb()),
                     name=f"machine_{machine_id}_disjunctive_{j}_{i}_order",
                 )
 
@@ -173,7 +172,7 @@ def _(constraint: MachineConstraint, variables: PulpSchedulingVariables) -> Mode
 
 @export_constraint_pulp.register
 def _(constraint: SetupConstraint, variables: PulpSchedulingVariables) -> ModelExport:
-    def export_model(model: LpProblem, tasks: Tasks, data: SchedulingData) -> None:
+    def export_model(model: LpProblem, state: ScheduleState) -> None:
         for task_id, setup_times in constraint.setup_times.items():
             for child_id, setup_time in setup_times.items():
 
@@ -186,9 +185,9 @@ def _(constraint: SetupConstraint, variables: PulpSchedulingVariables) -> ModelE
                         variables.start_times[child_id],
                     ),
                     big_m=int(
-                        tasks[task_id].get_end_ub()
+                        state.tasks[task_id].get_end_ub()
                         + setup_time
-                        - tasks[child_id].get_start_lb()
+                        - state.tasks[child_id].get_start_lb()
                     ),
                     name=f"setup_{task_id}_{child_id}_order",
                 )

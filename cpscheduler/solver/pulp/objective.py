@@ -5,8 +5,7 @@ from pulp import LpProblem, lpSum, LpVariable, LpInteger, lpDot, LpAffineExpress
 
 from multimethod import multidispatch
 
-from cpscheduler.environment.tasks import Tasks
-from cpscheduler.environment.data import SchedulingData
+from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.objectives import (
     Objective,
     ComposedObjective,
@@ -28,7 +27,7 @@ from .pulp_utils import max_pulp
 from ..utils import scale_to_int
 
 ObjectiveVar: TypeAlias = LpVariable | LpAffineExpression
-ModelExport: TypeAlias = Callable[[LpProblem, Tasks, SchedulingData], ObjectiveVar]
+ModelExport: TypeAlias = Callable[[LpProblem, ScheduleState], ObjectiveVar]
 
 
 @multidispatch
@@ -42,13 +41,11 @@ def export_objective_pulp(
 
 @export_objective_pulp.register
 def _(objective: ComposedObjective, variables: PulpVariables) -> ModelExport:
-    def export_model(
-        model: LpProblem, tasks: Tasks, data: SchedulingData
-    ) -> ObjectiveVar:
+    def export_model(model: LpProblem, state: ScheduleState) -> ObjectiveVar:
         composed_objective = LpVariable("composed_objective")
 
         sub_objectives = [
-            export_objective_pulp(sub_objective, variables)(model, tasks, data)
+            export_objective_pulp(sub_objective, variables)(model, state)
             for sub_objective in objective.objectives
         ]
 
@@ -70,9 +67,7 @@ def _(objective: ComposedObjective, variables: PulpVariables) -> ModelExport:
 
 @export_objective_pulp.register
 def _(objective: Makespan, variables: PulpVariables) -> ModelExport:
-    def export_model(
-        model: LpProblem, tasks: Tasks, data: SchedulingData
-    ) -> ObjectiveVar:
+    def export_model(model: LpProblem, state: ScheduleState) -> ObjectiveVar:
         makespan = max_pulp(model, variables.end_times, cat=LpInteger, name="makespan")
 
         return makespan
@@ -82,9 +77,7 @@ def _(objective: Makespan, variables: PulpVariables) -> ModelExport:
 
 @export_objective_pulp.register
 def _(objective: TotalCompletionTime, variables: PulpVariables) -> ModelExport:
-    def export_model(
-        model: LpProblem, tasks: Tasks, data: SchedulingData
-    ) -> ObjectiveVar:
+    def export_model(model: LpProblem, state: ScheduleState) -> ObjectiveVar:
         jobs_makespan = [
             max_pulp(
                 model,
@@ -92,7 +85,7 @@ def _(objective: TotalCompletionTime, variables: PulpVariables) -> ModelExport:
                 cat=LpInteger,
                 name=f"job_{job_id}_makespan",
             )
-            for job_id, tasks in enumerate(tasks.jobs)
+            for job_id, tasks in enumerate(state.jobs)
         ]
 
         return lpSum(jobs_makespan)
@@ -102,9 +95,7 @@ def _(objective: TotalCompletionTime, variables: PulpVariables) -> ModelExport:
 
 @export_objective_pulp.register
 def _(objective: WeightedCompletionTime, variables: PulpVariables) -> ModelExport:
-    def export_model(
-        model: LpProblem, tasks: Tasks, data: SchedulingData
-    ) -> ObjectiveVar:
+    def export_model(model: LpProblem, state: ScheduleState) -> ObjectiveVar:
         jobs_makespan = [
             max_pulp(
                 model,
@@ -112,7 +103,7 @@ def _(objective: WeightedCompletionTime, variables: PulpVariables) -> ModelExpor
                 cat=LpInteger,
                 name=f"job_{job_id}_makespan",
             )
-            for job_id, tasks in enumerate(tasks.jobs)
+            for job_id, tasks in enumerate(state.jobs)
         ]
 
         weights = (
@@ -128,9 +119,7 @@ def _(objective: WeightedCompletionTime, variables: PulpVariables) -> ModelExpor
 
 @export_objective_pulp.register
 def _(objective: MaximumLateness, variables: PulpVariables) -> ModelExport:
-    def export_model(
-        model: LpProblem, tasks: Tasks, data: SchedulingData
-    ) -> ObjectiveVar:
+    def export_model(model: LpProblem, state: ScheduleState) -> ObjectiveVar:
         lateness = [
             end_time - due_date
             for end_time, due_date in zip(variables.end_times, objective.due_dates)
@@ -147,11 +136,9 @@ def _(objective: MaximumLateness, variables: PulpVariables) -> ModelExport:
 
 @export_objective_pulp.register
 def _(objective: TotalTardiness, variables: PulpVariables) -> ModelExport:
-    def export_model(
-        model: LpProblem, tasks: Tasks, data: SchedulingData
-    ) -> ObjectiveVar:
+    def export_model(model: LpProblem, state: ScheduleState) -> ObjectiveVar:
         total_tardiness = 0
-        for job_id, job_tasks in enumerate(tasks.jobs):
+        for job_id, job_tasks in enumerate(state.jobs):
             tardiness = [
                 variables.end_times[task.task_id] - objective.due_dates[job_id]
                 for task in job_tasks
@@ -173,9 +160,7 @@ def _(objective: TotalTardiness, variables: PulpVariables) -> ModelExport:
 
 @export_objective_pulp.register
 def _(objective: WeightedTardiness, variables: PulpVariables) -> ModelExport:
-    def export_model(
-        model: LpProblem, tasks: Tasks, data: SchedulingData
-    ) -> ObjectiveVar:
+    def export_model(model: LpProblem, state: ScheduleState) -> ObjectiveVar:
         weights = (
             scale_to_int(objective.job_weights)[0]
             if variables.integral
@@ -183,7 +168,7 @@ def _(objective: WeightedTardiness, variables: PulpVariables) -> ModelExport:
         )
 
         weighted_tardiness = LpAffineExpression()
-        for job_id, job_tasks in enumerate(tasks.jobs):
+        for job_id, job_tasks in enumerate(state.jobs):
             tardiness = [
                 variables.end_times[task.task_id] - objective.due_dates[job_id]
                 for task in job_tasks
@@ -204,11 +189,9 @@ def _(objective: WeightedTardiness, variables: PulpVariables) -> ModelExport:
 
 @export_objective_pulp.register
 def _(objective: TotalEarliness, variables: PulpVariables) -> ModelExport:
-    def export_model(
-        model: LpProblem, tasks: Tasks, data: SchedulingData
-    ) -> ObjectiveVar:
+    def export_model(model: LpProblem, state: ScheduleState) -> ObjectiveVar:
         total_earliness = LpAffineExpression()
-        for job_id, job_tasks in enumerate(tasks.jobs):
+        for job_id, job_tasks in enumerate(state.jobs):
             earliness = [
                 objective.due_dates[job_id] - variables.end_times[task.task_id]
                 for task in job_tasks
@@ -229,9 +212,7 @@ def _(objective: TotalEarliness, variables: PulpVariables) -> ModelExport:
 
 @export_objective_pulp.register
 def _(objective: WeightedEarliness, variables: PulpVariables) -> ModelExport:
-    def export_model(
-        model: LpProblem, tasks: Tasks, data: SchedulingData
-    ) -> ObjectiveVar:
+    def export_model(model: LpProblem, state: ScheduleState) -> ObjectiveVar:
         weights = (
             scale_to_int(objective.job_weights)[0]
             if variables.integral
@@ -239,7 +220,7 @@ def _(objective: WeightedEarliness, variables: PulpVariables) -> ModelExport:
         )
 
         weighted_earliness = LpAffineExpression()
-        for job_id, job_tasks in enumerate(tasks.jobs):
+        for job_id, job_tasks in enumerate(state.jobs):
             earliness = [
                 objective.due_dates[job_id] - variables.end_times[task.task_id]
                 for task in job_tasks

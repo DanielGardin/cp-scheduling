@@ -7,16 +7,17 @@ from copy import deepcopy
 from pulp import LpProblem, LpSolver, LpMinimize, LpMaximize, LpSolution
 import pulp as pl
 
-from cpscheduler.environment import SchedulingEnv, Objective
+from cpscheduler.environment import SchedulingEnv
+from cpscheduler.environment.objectives import Objective, Makespan
 from cpscheduler.environment.instructions import SingleAction, ActionType
 from cpscheduler.common import unwrap_env
 
-from .tasks import PulpVariables, PulpSchedulingVariables, PulpTimetable
-from .setup import export_setup_pulp
-from .constraint import export_constraint_pulp
-from .objective import export_objective_pulp
-from .symmetry_breaking import employ_symmetry_breaking_pulp
-from .pulp_utils import SolverConfig, parse_solver_config
+from cpscheduler.solver.pulp.tasks import PulpVariables, PulpSchedulingVariables, PulpTimetable
+from cpscheduler.solver.pulp.setup import export_setup_pulp
+from cpscheduler.solver.pulp.constraint import export_constraint_pulp
+from cpscheduler.solver.pulp.objective import export_objective_pulp
+from cpscheduler.solver.pulp.symmetry_breaking import employ_symmetry_breaking_pulp
+from cpscheduler.solver.pulp.pulp_utils import SolverConfig, parse_solver_config
 
 Formulations = Literal["scheduling", "timetable"]
 
@@ -49,7 +50,7 @@ class PulpSolver:
         """
         self.env = unwrap_env(env)
 
-        if not self.env.loaded:
+        if not self.env.state.loaded:
             raise ValueError(
                 "Environment must be loaded before initializing the solver."
             )
@@ -57,15 +58,17 @@ class PulpSolver:
         if self.env.preemptive:
             raise ValueError("This version of the solver does not support preemption.")
 
-        if tighten:
-            self.env.tasks.tighten_bounds(self.env.current_time)
 
         self._solver: LpSolver | None = None
+        self._config: SolverConfig = {}
+
         self.model, self.variables = self.build_model(
             self.env, formulation, symmetry_breaking, integral, integral_var
         )
 
-        self._config: SolverConfig = {}
+        if tighten:
+            # Dynamic tightening of task bounds, it would be better if it was statically obtainable
+            self.warm_start([("submit", task.task_id) for task in self.env.state.awaiting_tasks])
 
     @classmethod
     def available_solvers(cls) -> list[str]:
@@ -96,27 +99,23 @@ class PulpSolver:
         model = LpProblem(
             env.get_entry(), LpMinimize if env.objective.minimize else LpMaximize
         )
-
-        tasks = env.tasks
-        data = env.data
+        state = env.state
 
         variables: PulpVariables
         if formulation == "timetable":
-            variables = PulpTimetable(model, tasks, data, integral)
+            variables = PulpTimetable(model, state, integral)
 
         elif formulation == "scheduling":
-            variables = PulpSchedulingVariables(
-                model, tasks, data, integral, integral_var
-            )
+            variables = PulpSchedulingVariables(model, state, integral, integral_var)
 
-        export_setup_pulp(env.setup, variables)(model, tasks, data)
+        export_setup_pulp(env.setup, variables)(model, state)
 
         for constraint in env.constraints.values():
-            export_constraint_pulp(constraint, variables)(model, tasks, data)
+            export_constraint_pulp(constraint, variables)(model, state)
 
         if type(env.objective) is not Objective:
             objective_var = export_objective_pulp(env.objective, variables)(
-                model, tasks, data
+                model, state
             )
             variables.set_objective(objective_var)
 
@@ -162,7 +161,7 @@ class PulpSolver:
 
         actions: list[tuple[str, int, int, int]] = []
 
-        for task in self.env.tasks.awaiting_tasks:
+        for task in self.env.state.awaiting_tasks:
             task_id = task.task_id
             assignment = self.variables.get_assigment(task_id)
 
@@ -173,3 +172,6 @@ class PulpSolver:
         objective_value = self.variables.get_objective_value()
 
         return actions, objective_value, self.model.status
+
+if __name__ == "__main__":
+    print("Available MiniZinc solvers:", PulpSolver.available_solvers())
