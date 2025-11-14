@@ -8,13 +8,13 @@ import random
 from gymnasium import Env, Wrapper, Space
 
 from cpscheduler.environment._common import (
+    Options,
     InstanceTypes,
-    ProcessTimeAllowedTypes,
     InstanceConfig,
 )
 from cpscheduler.common import unwrap_env
 
-from cpscheduler.gym.common import Options, get_instance_config
+from cpscheduler.gym.common import get_instance_config
 
 _Obs = TypeVar("_Obs")
 _Act = TypeVar("_Act")
@@ -53,26 +53,19 @@ class InstanceWrapper(Wrapper[_Obs, _Act, _Obs, _Act], ABC):
     def _parse_options(
         self, seed: int | None, options: Options
     ) -> InstanceConfig | None:
-        instance_config: InstanceConfig | None = None
         if not options:
-            instance_config = self.generate_instance(seed)
+            options = self.generate_instance()
 
-        else:
-            instance_config = get_instance_config(options)
+        instance_config = get_instance_config(options)
 
         if instance_config is not None:
             instance_config = self.manipulate_instance(instance_config)
 
         return instance_config
 
-    def generate_instance(self, seed: int | None) -> InstanceConfig:
+    def generate_instance(self) -> InstanceConfig:
         """
         Generate a new instance configuration for the environment.
-
-        Parameters
-        ----------
-        seed : int | None
-            An optional seed for random number generation.
 
         Returns
         -------
@@ -134,31 +127,14 @@ class InstancePoolWrapper(InstanceWrapper[_Obs, _Act]):
         self,
         env: Env[_Obs, _Act],
         instance_pool: Iterable[InstanceTypes],
-        processing_times: ProcessTimeAllowedTypes | None = None,
-        job_instance_pool: Iterable[InstanceTypes] | None = None,
-        job_feature: str = "",
     ):
         self.instances = list(instance_pool)
-        self.processing_times = processing_times
-        self.job_instance_pool = list(job_instance_pool) if job_instance_pool else None
-        self.job_feature = job_feature
-
-        self.n_instances = len(self.instances)
 
         super().__init__(env)
 
-    def generate_instance(self, seed: int | None) -> InstanceConfig:
-        rng = random.Random(seed)
+    def generate_instance(self) -> InstanceConfig:
+        idx = self.np_random.choice(len(self.instances))
 
-        instance_idx = rng.randint(0, self.n_instances - 1)
+        instance = self.instances[idx]
 
-        return {
-            "instance": self.instances[instance_idx],
-            "processing_times": self.processing_times,
-            "job_instance": (
-                self.job_instance_pool[instance_idx]
-                if self.job_instance_pool is not None
-                else {}
-            ),
-            "job_feature": self.job_feature,
-        }
+        return {"instance": instance}

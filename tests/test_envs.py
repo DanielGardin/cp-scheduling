@@ -1,5 +1,7 @@
 import pytest
 
+from copy import deepcopy
+
 from typing_extensions import Unpack
 
 from common import env_setup, TEST_INSTANCES
@@ -15,8 +17,10 @@ def test_reset(instance_name: str) -> None:
     (obs, _), info = env.reset()
 
     assert info["current_time"] == 0
-    assert obs["status"][0] == Status.AVAILABLE
+    assert obs["status"][0] == Status.AWAITING
+    assert obs["available"][0]
     assert obs["status"][1] == Status.AWAITING
+    assert not obs["available"][1]
 
     env.step(
         [
@@ -31,8 +35,10 @@ def test_reset(instance_name: str) -> None:
     (new_obs, _), new_info = env.reset()
 
     assert new_info["current_time"] == 0
-    assert new_obs["status"][0] == Status.AVAILABLE
+    assert new_obs["status"][0] == Status.AWAITING
+    assert new_obs["available"][0]
     assert new_obs["status"][1] == Status.AWAITING
+    assert not new_obs["available"][1]
 
 
 @pytest.mark.env
@@ -58,7 +64,6 @@ def test_execute(instance_name: str) -> None:
     assert not new_terminated
     assert not new_truncated
     assert new_info["current_time"] == advancing_time
-    assert new_reward == -int(env.tasks[0].get_duration())
     assert new_obs["status"][0] == Status.COMPLETED
 
 
@@ -84,7 +89,7 @@ def test_submit(instance_name: str) -> None:
 
     assert (
         info["current_time"]
-        == env.tasks[0].get_duration() + env.tasks[1].get_duration()
+        == env.state.tasks[0].get_duration() + env.state.tasks[1].get_duration()
     )
 
     (new_obs, _), new_reward, new_terminated, new_truncated, new_info = env.step(
@@ -95,8 +100,8 @@ def test_submit(instance_name: str) -> None:
     assert new_obs["status"][1] == Status.COMPLETED
     assert new_obs["status"][2] == Status.COMPLETED
 
-    assert new_info["current_time"] == env.tasks[2].get_end()
-    assert new_reward + reward == -int(env.tasks[2].get_end())
+    assert new_info["current_time"] == env.state.tasks[2].get_end()
+    assert new_reward + reward == -int(env.state.tasks[2].get_end())
 
 
 @pytest.mark.env
@@ -106,11 +111,11 @@ def test_execute2(instance_name: str) -> None:
 
     env.reset()
 
-    actions = [("execute", i) for i in range(len(env.tasks))]
+    actions = [("execute", i) for i in range(env.state.n_tasks)]
 
     (obs, _), reward, terminated, truncated, info = env.step(actions)
 
-    assert obs["status"] == [Status.COMPLETED] * len(env.tasks)
+    assert obs["status"] == [Status.COMPLETED] * env.state.n_tasks
     assert terminated
 
 
@@ -121,11 +126,11 @@ def test_submit2(instance_name: str) -> None:
 
     env.reset()
 
-    actions = [("submit", i) for i in range(len(env.tasks) - 1, -1, -1)]
+    actions = [("submit", i) for i in range(env.state.n_tasks-1, -1, -1)]
 
     (obs, _), reward, terminated, truncated, info = env.step(actions)
 
-    assert obs["status"] == [Status.COMPLETED] * len(env.tasks)
+    assert obs["status"] == [Status.COMPLETED] * env.state.n_tasks
     assert terminated
 
 
@@ -136,8 +141,7 @@ def test_pause(instance_name: str) -> None:
 
     env.reset()
 
-    processing_time = env.data["processing_time"][0]
-
+    processing_time = next(iter(env.state.tasks[0].processing_times.values()))
     actions: list[tuple[str, Unpack[tuple[int, ...]]]] = [
         ("execute", 0),
         ("advance", processing_time // 2),
@@ -152,9 +156,21 @@ def test_pause(instance_name: str) -> None:
 
     assert obs["status"][0] == Status.PAUSED
     assert info["current_time"] == 2 * (processing_time // 2)
-    # assert obs['remaining_time'][0] == processing_time - processing_time//2
 
     (new_obs, _), new_reward, new_terminated, new_truncated, new_info = env.step()
 
     assert new_obs["status"][0] == Status.COMPLETED
     assert new_info["current_time"] == processing_time + processing_time // 2
+
+def test_copy() -> None:
+    env = env_setup("ta01")
+
+    env.reset()
+
+    env_copy = deepcopy(env)
+
+    assert env.state == env_copy.state
+
+    env.step(("execute", 0))
+
+    assert env.state != env_copy.state

@@ -70,7 +70,7 @@ def test_dynamic(instance_name: str) -> None:
     obs, info = env.reset()
 
     done = False
-    dynamic_actor = ShortestProcessingTime(available=True)
+    dynamic_actor = ShortestProcessingTime(available=True, strict=True)
     while not done:
         single_action = dynamic_actor(obs)[0]
         obs, _, done, _, info = env.step(single_action)

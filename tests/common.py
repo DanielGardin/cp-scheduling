@@ -19,7 +19,7 @@ def env_setup(instance_name: str, allow_preemption: bool = False) -> SchedulingE
     path = PROJECT_ROOT / f"instances/jobshop/{instance_name}.txt"
 
     try:
-        instance, _ = read_jsp_instance(path)
+        instance, metadata = read_jsp_instance(path)
 
     except FileNotFoundError as e:
         if not (path / "instances").exists():
@@ -32,7 +32,7 @@ def env_setup(instance_name: str, allow_preemption: bool = False) -> SchedulingE
     env = SchedulingEnv(
         machine_setup=JobShopSetup(),
         objective=Makespan(),
-        instance_config={'instance': instance},
+        instance=instance,
         allow_preemption=allow_preemption,
     )
 

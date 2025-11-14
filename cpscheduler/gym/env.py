@@ -13,12 +13,12 @@ from gymnasium import Env, Space
 from cpscheduler.utils._protocols import Metric
 
 from cpscheduler.environment import SchedulingEnv, ScheduleSetup, Constraint, Objective
-from cpscheduler.environment._common import InstanceConfig, ObsType
+from cpscheduler.environment._common import InstanceTypes, ObsType, Options
 from cpscheduler.environment.instructions import ActionType
 from cpscheduler.environment._render import Renderer
 
 from .gym_utils import infer_collection_space
-from .common import ActionSpace, Options
+from .common import ActionSpace
 
 
 class SchedulingEnvGym(Env[ObsType, ActionType]):
@@ -32,7 +32,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         machine_setup: ScheduleSetup,
         constraints: Iterable[Constraint] | None = None,
         objective: Objective | None = None,
-        instance_config: InstanceConfig | None = None,
+        instance: InstanceTypes | None = None,
         metrics: Mapping[str, Metric[Any]] | None = None,
         *,
         render_mode: Renderer | str | None = None,
@@ -44,7 +44,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
             machine_setup=machine_setup,
             constraints=constraints,
             objective=objective,
-            instance_config=instance_config,
+            instance=instance,
             metrics=metrics,
             render_mode=render_mode,
             allow_preemption=allow_preemption,
@@ -75,7 +75,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
     ) -> tuple[ObsType, dict[str, Any]]:
         super().reset(seed=seed)
 
-        previously_loaded = self._env.loaded
+        previously_loaded = self._env.state.loaded
 
         obs, info = self._env.reset(options=options)
 

@@ -11,18 +11,18 @@ It is meant to be imported using the `make` function provided by gymnasium
 
 from typing_extensions import Unpack
 
-from cpscheduler.environment._common import InstanceConfig
+from cpscheduler.environment._common import InstanceTypes
 from cpscheduler.environment.schedule_setup import JobShopSetup
 from cpscheduler.environment.objectives import Makespan
 
 from .env import SchedulingEnvGym
 
 
-def make_jobshop(**instance_config: Unpack[InstanceConfig]) -> SchedulingEnvGym:
+def make_jobshop(instance: InstanceTypes) -> SchedulingEnvGym:
     env = SchedulingEnvGym(
         JobShopSetup(),
         objective=Makespan(),
-        instance_config=instance_config,
+        instance=instance,
     )
 
     return env

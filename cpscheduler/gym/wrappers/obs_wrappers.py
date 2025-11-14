@@ -10,13 +10,9 @@ from gymnasium.spaces import Dict, Tuple, Box
 
 from gymnasium import ObservationWrapper, Env, Space
 
-from cpscheduler.environment._common import ObsType, MAX_INT as MAX_INT_TIME
-from cpscheduler.environment.tasks import Tasks
+from cpscheduler.environment._common import ObsType, Options, MAX_INT
+from cpscheduler.environment.state import ScheduleState
 from cpscheduler.utils.typing_utils import is_iterable_type
-
-from cpscheduler.gym.common import Options
-
-MAX_INT = int(MAX_INT_TIME)
 
 S = TypeVar("S", Space[Any], Box, Dict, Tuple)
 
@@ -203,8 +199,8 @@ class CPStateWrapper(SchedulingObservationWrapper[ObsType, _Act]):
                 Dict(
                     {
                         **task_feature_space,
-                        "lower_bound": Box(low=0, high=MAX_INT, shape=(n_tasks,)),
-                        "upper_bound": Box(low=0, high=MAX_INT, shape=(n_tasks,)),
+                        "lower_bound": Box(low=0, high=int(MAX_INT), shape=(n_tasks,)),
+                        "upper_bound": Box(low=0, high=int(MAX_INT), shape=(n_tasks,)),
                     }
                 ),
                 job_feature_space,
@@ -214,10 +210,9 @@ class CPStateWrapper(SchedulingObservationWrapper[ObsType, _Act]):
     def observation(self, observation: ObsType) -> ObsType:
         task_data, job_data = observation
 
-        tasks: Tasks = self.env.get_wrapper_attr("tasks")
+        state: ScheduleState = self.env.get_wrapper_attr("state")
 
-        task_data["lower_bound"] = [task.get_start_lb() for task in tasks]
-
-        task_data["upper_bound"] = [task.get_start_ub() for task in tasks]
+        task_data["lower_bound"] = [task.get_start_lb() for task in state.tasks]
+        task_data["upper_bound"] = [task.get_start_ub() for task in state.tasks]
 
         return task_data, job_data
