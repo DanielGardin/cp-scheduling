@@ -10,9 +10,9 @@ if USE_MYPYC:
     from mypyc.build import mypycify
     compiling_dirs = [
         "cpscheduler/environment",
-        "cpscheduler/instances",
-        "cpscheduler/heuristics",
-        "cpscheduler/utils",
+        # "cpscheduler/instances",
+        # "cpscheduler/heuristics",
+        # "cpscheduler/utils",
     ]
 
     compiling_files = [

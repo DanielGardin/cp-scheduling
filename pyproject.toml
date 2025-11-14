@@ -72,3 +72,51 @@ dev = [
 
 [tool.setuptools]
 packages = ["cpscheduler"]
+
+[tool.mypy]
+strict = true
+pretty = true
+show_error_codes = true
+show_column_numbers = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unused_configs = true
+disallow_subclassing_any = false
+
+[[tool.mypy.overrides]]
+module = "torch"
+follow_imports = "skip"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "torch.*"
+follow_imports = "skip"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pulp"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "minizinc"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "plotly"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "colorcet"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "nest_asyncio"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "tensordict"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "tensorboard.*"
+ignore_missing_imports = true

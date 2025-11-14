@@ -4,6 +4,7 @@ __pycache__/
 *$py.class
 
 logs/
+*.log
 *.logs
 /__*.py
 data/
