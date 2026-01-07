@@ -15,6 +15,7 @@ from warnings import warn
 
 from typing import Any
 from collections.abc import Iterable, Mapping
+from typing_extensions import TypeIs
 
 from mypy_extensions import u8, i64
 
@@ -39,9 +40,9 @@ from cpscheduler.environment.instructions import (
     ActionType,
     is_single_action,
 )
-from cpscheduler.environment.schedule_setup import ScheduleSetup, setups
-from cpscheduler.environment.constraints import Constraint, constraints
-from cpscheduler.environment.objectives import Objective, objectives
+from cpscheduler.environment.schedule_setup import ScheduleSetup
+from cpscheduler.environment.constraints import Constraint
+from cpscheduler.environment.objectives import Objective
 
 from cpscheduler.environment._render import Renderer
 
@@ -51,6 +52,14 @@ def prepare_instance(instance: InstanceTypes) -> dict[str, list[Any]]:
     return {str(feature): convert_to_list(instance[feature]) for feature in instance}
 
 
+def is_info_dict(value: Any) -> TypeIs[Mapping[str, Any]]:
+    "Type guard to check if a value is an info dictionary."
+    return isinstance(value, Mapping) and all(
+        isinstance(k, str)
+        for k in value.keys()  # pyright: ignore[reportUnknownVariableType]
+    )
+
+
 class SchedulingEnv:
     """
     SchedulingEnv is a custom environment for generic scheduling problems. It is designed to be
@@ -58,49 +67,7 @@ class SchedulingEnv:
     the machine setup, constraints, objectives, and instances.
 
     The environment is based on the OpenAI Gym interface, making it compatible with various
-    reinforcement learning libraries. It provides methods for resetting the environment, taking
-    steps, rendering the environment, and exporting the scheduling model.
-
-    Attributes:
-        machine_setup: ScheduleSetup
-            The machine setup for the scheduling problem.
-
-        constraints: Iterable of Constraint
-            A list of constraints to be applied to the scheduling problem.
-
-        objective: Objective
-            The objective function to be optimized during scheduling.
-
-        render_mode: str
-            The rendering mode for visualizing the scheduling process.
-
-        minimize: bool, optional
-            Whether to minimize or maximize the objective function. Default depends on the chosen
-            objective.
-
-        allow_preemption: bool, optional, default=False
-            Whether to allow preemption in the scheduling process. If True, tasks can be
-            interrupted and resumed later.
-
-        instance: InstanceTypes, optional
-            The instance data for the scheduling problem. It can be a DataFrame or a dictionary
-            containing task features and their values.
-
-        processing_times: ProcessTimeAllowedTypes, optional
-            The processing times for the tasks, it is dependent on the machine setup.
-            If not provided, the environment will attempt to infer processing times from the
-            instance data.
-
-        job_instance: InstanceTypes, optional
-            The job instance data for the scheduling problem. It can be a DataFrame or a dictionary
-            containing job features and their values. If None, no job instance is set.
-
-        job_ids: Iterable[int] | str, optional
-            The job IDs for the tasks. If None, job IDs are as the default index of job_instance.
-
-        n_parts: int, optional
-            The number of parts to split the tasks into. If None, it defaults to 16 if preemption is
-            allowed, otherwise 1.
+    reinforcement learning libraries.
     """
 
     # Environment static variables
@@ -108,7 +75,7 @@ class SchedulingEnv:
     constraints: dict[str, Constraint]
     objective: Objective
 
-    metrics: dict[str, Metric[Any]]
+    metrics: dict[str, Metric[object | Mapping[str, Any]]]
 
     renderer: Renderer
 
@@ -244,24 +211,30 @@ class SchedulingEnv:
         return f"{alpha}|{beta}|{gamma}"
 
     # Environment state retrieval methods
-    def _get_state(self) -> ObsType:
+    def get_state(self) -> ObsType:
         "Retrieve the current state of the environment from tasks."
         return self.state.get_observation(self.current_time)
 
-    def _get_info(self) -> InfoType:
+    def get_info(self) -> InfoType:
         "Retrieve additional information about the environment."
         objective_value = self._get_objective()
 
-        info = {
+        info: dict[str, Any] = {
             "n_queries": len(self.query_times),
             "current_time": int(self.current_time),
+            "objective_value": objective_value,
         }
 
         for metric_name, metric in self.metrics.items():
             metric_value = metric(self.current_time, self.state, objective_value)
 
-            if isinstance(metric_value, Mapping):
-                info.update(metric_value)
+            if is_info_dict(metric_value):
+                info.update(
+                    {
+                        f"{metric_name}_{key}": value
+                        for key, value in metric_value.items()
+                    }
+                )
 
             else:
                 info[metric_name] = metric_value
@@ -308,7 +281,7 @@ class SchedulingEnv:
 
         self.force_reset = False
 
-        return self._get_state(), self._get_info()
+        return self.get_state(), self.get_info()
 
     def step(
         self,
@@ -332,16 +305,11 @@ class SchedulingEnv:
         self.query_times.append(self.current_time)
         previous_objective = self._get_objective()
 
-        while True:
-            # In dynamic usage, this runs twice as necessary (checking for an empty schedule)
-            # Ideally, we want to break this loop whenever the schedule is empty or an instruction halts.
-            if self._dispatch_instruction():
-                break
-
+        while not self._step_forward():
             self.render()
 
         # Heavy: 30% of step time in dynamic usage.
-        obs = self._get_state()
+        obs = self.get_state()
 
         reward = self._get_objective() - previous_objective
         if self.objective.minimize:
@@ -349,7 +317,7 @@ class SchedulingEnv:
 
         truncated = False
         terminal = self._is_terminal()
-        info = self._get_info()
+        info = self.get_info()
 
         return obs, reward, terminal, truncated, info
 
@@ -465,13 +433,11 @@ class SchedulingEnv:
             return True
 
         if action & Action.SKIPPED:
-            if any(
+            wait_cond = any(
                 task.is_executing(self.current_time) for task in self.state.fixed_tasks
-            ):
-                action = Action.WAIT
+            )
 
-            else:
-                action = Action.HALT
+            action = Action.WAIT if wait_cond else Action.HALT
 
         if not (action & Action.SKIPPED) and i != -1:
             schedule.pop(i)
@@ -482,14 +448,17 @@ class SchedulingEnv:
 
         if action & Action.PROPAGATE:
             self._propagate()
+            self._advance_to_decision_point(strict=False)
 
-        if action & Action.ADVANCE:
-            if signal.time > 0:
-                self.advancing_to = signal.time
-                self._advance_to_next_instruction()
+        if action & Action.ADVANCE_TO:
+            if signal.time < self.current_time:
+                warn(
+                    f"Cannot advance to past time {signal.time} from current time {self.current_time}."
+                )
 
             else:
-                self._advance_to_decision_point(strict=False)
+                self.advancing_to = signal.time
+                self._advance_to_next_instruction()
 
         if action & Action.ADVANCE_NEXT:
             self._advance_to_decision_point(strict=True)
@@ -501,8 +470,8 @@ class SchedulingEnv:
 
         return bool(action & Action.HALT)
 
-    def _dispatch_instruction(self) -> bool:
-        "Dispatch the next instruction in the schedule depending on the current state."
+    def _step_forward(self) -> bool:
+        "Dispatch the next instruction in the schedule depending on the current state. Returns whether to halt."
         if self.current_time in self.schedule:
             halt = self._process_next_instruction(self.current_time, False)
 

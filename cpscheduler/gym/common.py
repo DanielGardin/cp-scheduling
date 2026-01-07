@@ -1,4 +1,3 @@
-from typing import Any, overload
 from numpy import int64
 
 from gymnasium.spaces import Tuple, Text, Box, OneOf, Sequence
@@ -19,11 +18,12 @@ SingleActionSpace = OneOf(
 
 ActionSpace = Sequence(SingleActionSpace, stack=True)
 
+
 def get_instance_config(options: Options) -> InstanceConfig | None:
     "Construct an instance configuration from the options."
     if not options:
         return None
-    
+
     instance_config: InstanceConfig = {}
 
     if "instance" in options:

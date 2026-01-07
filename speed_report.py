@@ -4,7 +4,7 @@ from typing import Annotated
 from collections.abc import Sequence
 
 from time import perf_counter
-from prettytable import PrettyTable
+from prettytable import PrettyTable, TableStyle
 
 import numpy as np
 
@@ -201,6 +201,7 @@ def test_speed(
         columns = ["Instance", "Benchmark", "Simulation time", "Time per task"]
 
     table = PrettyTable(columns)
+    table.set_style(TableStyle.MARKDOWN)
 
     values: list[float] = []
     speedup_strs: list[str] = []
@@ -250,7 +251,7 @@ def test_speed(
             global_tick = perf_counter()
 
             tick = perf_counter()
-            instance, metadata = read_jsp_instance(instance_path)
+            instance, _ = read_jsp_instance(instance_path)
             tock = perf_counter()
             time_dict["instance"].append(tock - tick)
 
@@ -261,7 +262,7 @@ def test_speed(
             time_dict["setup"].append(tock - tick)
 
             tick = perf_counter()
-            obs, info = env.reset()
+            obs, _ = env.reset()
             tock = perf_counter()
             time_dict["reset"].append(tock - tick)
 
@@ -280,16 +281,15 @@ def test_speed(
                 pdr_time = 0.
                 step_time = 0.
 
-
                 done = False
                 while not done:
                     tick = perf_counter()
-                    action = spt_agent(obs)[0]
+                    single_action = spt_agent(obs)[0]
                     tock = perf_counter()
                     pdr_time += tock - tick
 
                     tick = perf_counter()
-                    obs, _, done, _, _ = env.step(action)
+                    obs, _, done, _, _ = env.step(single_action)
                     tock = perf_counter()
                     step_time += tock - tick
 
@@ -405,7 +405,7 @@ def test_speed(
 
     table.add_column("Speedup", speedup_strs)
 
-    table._set_markdown_style()
+    
 
     print("\n")
     print(table, flush=True)
@@ -487,12 +487,12 @@ def test_speed(
         )
 
         ax[1].legend()
-        plt.tight_layout()
+        fig.tight_layout()
 
-        plt.suptitle("Speed Benchmark Report", fontsize=16, fontweight="bold")
-        plt.subplots_adjust(top=0.9)  # Adjust the top to make space for the title
+        fig.suptitle("Speed Benchmark Report", fontsize=16, fontweight="bold")
+        fig.subplots_adjust(top=0.9)  # Adjust the top to make space for the title
 
-        plt.savefig(root / "report.pdf", dpi=300, bbox_inches="tight")
+        fig.savefig(root / "report.pdf", dpi=300, bbox_inches="tight")
         plt.show()
 
 

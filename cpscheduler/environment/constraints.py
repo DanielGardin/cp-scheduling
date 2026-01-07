@@ -11,8 +11,8 @@ implementing the required methods.
 
 """
 
-from typing import Any, Callable, TypeAlias
-from collections.abc import Iterable, Mapping, Sequence
+from typing import Any, TypeAlias
+from collections.abc import Iterable, Mapping, Sequence, Callable
 from typing_extensions import Self
 
 import re
@@ -20,7 +20,6 @@ import re
 from mypy_extensions import mypyc_attr
 
 from cpscheduler.utils.list_utils import convert_to_list
-from cpscheduler.utils.typing_utils import is_iterable_type
 from cpscheduler.utils.general_algo import topological_sort, binary_search
 
 from cpscheduler.environment._common import TASK_ID, TIME, MACHINE_ID, Int, Float
@@ -39,7 +38,6 @@ class Constraint:
     interacts with the tasks by limiting when they can be executed, how they are assigned to
     machines, etc.
     """
-    tags: dict[str, str]
 
     def __init_subclass__(cls) -> None:
         super().__init_subclass__()
@@ -54,7 +52,6 @@ class Constraint:
             )
 
         self.name = name if name else self.__class__.__name__
-        self.tags = {}
 
     def __repr__(self) -> str:
         return f"{self.name.capitalize()}()"
@@ -85,15 +82,19 @@ class MachineConstraint(Constraint):
 
     machine_free: list[TIME]
 
+    def __init__(self, name: str | None = None) -> None:
+        super().__init__(name)
+        self.machine_free = []
+
     def __reduce__(self) -> Any:
         return (
             self.__class__,
             (self.name,),
-            (self.tags, self.machine_free),
+            (self.machine_free,),
         )
 
     def __setstate__(self, state: tuple[Any, ...]) -> None:
-        self.tags, self.machine_free = state
+        (self.machine_free,) = state
 
     def initialize(self, state: ScheduleState) -> None:
         self.machine_free = [0 for _ in range(state.n_machines)]
@@ -137,6 +138,7 @@ class MachineConstraint(Constraint):
     def get_entry(self) -> str:
         return "M_j"
 
+
 class PrecedenceConstraint(Constraint):
     """
     Precedence constraint for the scheduling environment.
@@ -161,8 +163,8 @@ class PrecedenceConstraint(Constraint):
 
     # original_precedence: dict[int, list[int]]
     precedence: dict[TASK_ID, list[TASK_ID]]
-    original_order: list[TASK_ID]
 
+    original_order: list[TASK_ID]
     tasks_order: list[Task]
 
     def __init__(
@@ -180,15 +182,18 @@ class PrecedenceConstraint(Constraint):
 
         self.no_wait = no_wait
 
+        self.original_order = []
+        self.tasks_order = []
+
     def __reduce__(self) -> Any:
         return (
             self.__class__,
             (self.precedence, self.no_wait, self.name),
-            (self.tags, self.original_order, self.tasks_order),
+            (self.original_order, self.tasks_order),
         )
 
     def __setstate__(self, state: tuple[Any, ...]) -> None:
-        self.tags, self.original_order, self.tasks_order = state
+        self.original_order, self.tasks_order = state
 
     @classmethod
     def from_edges(
@@ -320,11 +325,8 @@ class NoWait(PrecedenceConstraint):
         return (
             self.__class__,
             (self.precedence, self.name),
-            (self.tags, self.original_order, self.tasks_order),
+            (self.original_order, self.tasks_order),
         )
-
-    def __setstate__(self, state: tuple[Any, ...]) -> None:
-        self.tags, self.original_order, self.tasks_order = state
 
 
 class ConstantProcessingTime(Constraint):
@@ -358,46 +360,36 @@ class ConstantProcessingTime(Constraint):
             (),
         )
 
+    def get_entry(self) -> str:
+        return f"p_j={self.processing_time}"
+
+
 class DisjunctiveConstraint(Constraint):
-    """
-    Disjunctive constraint for the scheduling environment.
+    groups_map: dict[TASK_ID, list[int]]
 
-    This constraint defines disjunctive groups of tasks, where tasks in the same group
-    cannot be executed at the same time. The disjunctive groups can be defined as a mapping
-    of group names to a list of task IDs, or as a string that refers to a column in the tasks data.
-
-    Arguments:
-        disjunctive_groups: Iterable[Iterable[Int]] | str
-            ...
-
-        name: Optional[str] = None
-            An optional name for the constraint.
-    """
-
-    task_groups: list[list[int]]
-
-    group_free: dict[int, TIME]
+    group_free: list[TIME]
 
     def __init__(
         self,
-        task_groups: Iterable[Iterable[Int]] | Iterable[Int] | str,
+        task_groups: Iterable[Iterable[Int]],
         name: str | None = None,
     ):
         super().__init__(name)
 
-        if isinstance(task_groups, str):
-            self.tags["task_groups"] = task_groups
+        self.group_free = [0 for _ in task_groups]
+        self.groups_map = {}
 
-        elif is_iterable_type(task_groups, int):
-            self.task_groups = [[int(group)] for group in task_groups]
+        for group_id, group in enumerate(task_groups):
+            for task in group:
+                task_id = TASK_ID(task)
 
-        else:
-            self.task_groups = [convert_to_list(group, int) for group in task_groups]
+                self.groups_map.setdefault(task_id, [])
+                self.groups_map[task_id].append(group_id)
 
     def __reduce__(self) -> Any:
         return (
             self.__class__,
-            (self.task_groups, self.name),
+            (self.groups_map, self.name),
             (self.tags, self.group_free),
         )
 
@@ -405,20 +397,16 @@ class DisjunctiveConstraint(Constraint):
         self.tags, self.group_free = state
 
     def reset(self, state: ScheduleState) -> None:
-        self.group_free = {}
-
-        for groups in self.task_groups:
-            for group in groups:
-                if group not in self.group_free:
-                    self.group_free[group] = 0
+        for i in range(len(self.group_free)):
+            self.group_free[i] = 0
 
     def propagate(self, time: TIME, state: ScheduleState) -> None:
         for task in state.transition_tasks:
-            for group in self.task_groups[task.task_id]:
+            for group in self.groups_map[task.task_id]:
                 self.group_free[group] = task.get_end()
 
         for task in state.awaiting_tasks:
-            for group in self.task_groups[task.task_id]:
+            for group in self.groups_map[task.task_id]:
                 if task.get_start_lb(group) < self.group_free[group]:
                     task.set_start_lb(self.group_free[group], group)
 
@@ -428,7 +416,7 @@ class DisjunctiveConstraint(Constraint):
 
         for task in state.fixed_tasks:
             for part in range(task.n_parts):
-                for group in self.task_groups[task.task_id]:
+                for group in self.groups_map[task.task_id]:
                     if task.get_end(part) > self.group_free[group]:
                         self.group_free[group] = task.get_end(part)
 
@@ -450,27 +438,16 @@ class ReleaseDateConstraint(Constraint):
             An optional name for the constraint.
     """
 
+    release_tag: str
     release_dates: dict[TASK_ID, TIME]
 
     def __init__(
         self,
-        release_dates: Mapping[Int, Int] | Iterable[Int] | str = "release_time",
+        release_dates: str = "release_time",
         name: str | None = None,
     ):
         super().__init__(name)
-
-        if isinstance(release_dates, str):
-            self.tags["release_time"] = release_dates
-
-        elif isinstance(release_dates, Mapping):
-            self.release_dates = {
-                TASK_ID(task): TIME(date) for task, date in release_dates.items()
-            }
-
-        else:
-            self.release_dates = {
-                TASK_ID(task): TIME(date) for task, date in enumerate(release_dates)
-            }
+        self.release_tag = release_dates
 
     def __reduce__(self) -> Any:
         return (
@@ -480,16 +457,15 @@ class ReleaseDateConstraint(Constraint):
         )
 
     def __setstate__(self, state: tuple[Any, ...]) -> None:
-        self.tags, = state
+        (self.tags,) = state
 
     def initialize(self, state: ScheduleState) -> None:
-        if "release_time" in self.tags:
-            release_times = state.instance[self.tags["release_time"]]
+        release_times = state.instance[self.release_tag]
 
-            self.release_dates = {
-                TASK_ID(task_id): TIME(release_time)
-                for task_id, release_time in enumerate(release_times)
-            }
+        self.release_dates = {
+            TASK_ID(task_id): TIME(release_time)
+            for task_id, release_time in enumerate(release_times)
+        }
 
     def reset(self, state: ScheduleState) -> None:
         for task_id, release_time in self.release_dates.items():
@@ -516,49 +492,27 @@ class DeadlineConstraint(Constraint):
             An optional name for the constraint.
     """
 
-    deadlines: dict[TASK_ID, TIME]
+    due_tag: str
+    due_dates: dict[TASK_ID, TIME]
 
     def __init__(
         self,
-        deadlines: Mapping[Int, Int] | Iterable[Int] | str = "due_dates",
+        due_dates: str = "due_dates",
         name: str | None = None,
     ):
         super().__init__(name)
-
-        if isinstance(deadlines, str):
-            self.tags["due_date"] = deadlines
-
-        elif isinstance(deadlines, Mapping):
-            self.deadlines = {
-                TASK_ID(task): TIME(date) for task, date in deadlines.items()
-            }
-
-        else:
-            self.deadlines = {
-                TASK_ID(task): TIME(date) for task, date in enumerate(deadlines)
-            }
-
-    def __reduce__(self) -> Any:
-        return (
-            self.__class__,
-            (self.deadlines, self.name),
-            (self.tags,),
-        )
-
-    def __setstate__(self, state: tuple[Any, ...]) -> None:
-        self.tags, = state
+        self.due_tag = due_dates
 
     def initialize(self, state: ScheduleState) -> None:
-        if "release_time" in self.tags:
-            due_times = state.instance[self.tags["due_dates"]]
+        due_times = state.instance[self.due_tag]
 
-            self.deadlines = {
-                TASK_ID(task_id): TIME(due_time)
-                for task_id, due_time in enumerate(due_times)
-            }
+        self.due_dates = {
+            TASK_ID(task_id): TIME(due_time)
+            for task_id, due_time in enumerate(due_times)
+        }
 
     def reset(self, state: ScheduleState) -> None:
-        for task_id, due_time in self.deadlines.items():
+        for task_id, due_time in self.due_dates.items():
             state.tasks[task_id].set_end_ub(due_time)
 
     def get_entry(self) -> str:
@@ -586,6 +540,7 @@ class ResourceConstraint(Constraint):
             An optional name for the constraint.
     """
 
+    resource_tags: list[str]
     capacities: list[float]
     original_resources: list[dict[TASK_ID, float]]
 
@@ -594,44 +549,22 @@ class ResourceConstraint(Constraint):
     def __init__(
         self,
         capacities: Iterable[Float],
-        resource_usage: Iterable[Mapping[Int, Float]] | Iterable[str],
+        resource_usage: Iterable[str],
         name: str | None = None,
     ) -> None:
         super().__init__(name)
 
         self.capacities = convert_to_list(capacities, float)
-
-        if is_iterable_type(resource_usage, str):
-            for resource_id, resouce_name in enumerate(resource_usage):
-                self.tags[f"resource_{resource_id}"] = resouce_name
-
-        else:
-            self.original_resources = [
-                {TASK_ID(task_id): float(usage) for task_id, usage in resources.items()}
-                for resources in resource_usage
-            ]
-
-    def __reduce__(self) -> Any:
-        return (
-            self.__class__,
-            (self.capacities, self.original_resources, self.name),
-            (self.tags, self.resources),
-        )
-
-    def __setstate__(self, state: tuple[Any, ...]) -> None:
-        self.tags, self.resources= state
+        self.resource_tags = list(resource_usage)
 
     def initialize(self, state: ScheduleState) -> None:
-        if self.tags:
-            self.original_resources = [
-                {
-                    TASK_ID(task_id): float(usage)
-                    for task_id, usage in enumerate(
-                        state.instance[self.tags[f"resource_{resource_id}"]]
-                    )
-                }
-                for resource_id in self.tags
-            ]
+        self.original_resources = [
+            {
+                TASK_ID(task_id): float(usage)
+                for task_id, usage in enumerate(state.instance[resource_tag])
+            }
+            for resource_tag in self.resource_tags
+        ]
 
     def reset(self, state: ScheduleState) -> None:
         self.resources = [resources.copy() for resources in self.original_resources]
@@ -732,16 +665,6 @@ class SetupConstraint(Constraint):
                 }
                 for task, children in setup_times.items()
             }
-
-    def __reduce__(self) -> Any:
-        return (
-            self.__class__,
-            (),
-            (self.original_setup_times, self.setup_fn, self.setup_times),
-        )
-
-    def __setstate__(self, state: tuple[Any, ...]) -> None:
-        self.task_groups, self.group_free = state
 
     def initialize(self, state: ScheduleState) -> None:
         if self.setup_fn is not None:

@@ -48,11 +48,12 @@ class SchedulingActionWrapper(ActionWrapper[_Obs, _Act, ActionType], ABC):
         """
 
 
-# TODO: Make it job-oriented to allow job-shop and flow-shop scheduling
 class PermutationActionWrapper(SchedulingActionWrapper[_Obs, Iterable[Int]]):
     """
     A wrapper that converts the action space to a permutation of the job IDs.
     """
+
+    instruction: str
 
     def __init__(
         self,

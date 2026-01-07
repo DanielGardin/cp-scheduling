@@ -10,7 +10,6 @@ from typing import Any, ClassVar
 
 from cpscheduler.environment.state import ScheduleState
 
-
 renderers: dict[str, "Renderer"] = {}
 
 
@@ -40,7 +39,6 @@ class Renderer:
         "Render the built Gantt chart."
 
 
-PLOTLY_AVAILABLE = True
 try:
     from plotly import graph_objects as go
     from colorcet import glasbey_dark
@@ -138,3 +136,6 @@ try:
 
 except ImportError:
     PLOTLY_AVAILABLE = False
+
+else:
+    PLOTLY_AVAILABLE = True

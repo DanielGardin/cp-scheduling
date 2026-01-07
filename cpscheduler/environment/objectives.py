@@ -6,13 +6,14 @@ Objective functions are used to evaluate the performance of a scheduling algorit
 and can be used to guide the search for an optimal schedule by providing a numerical value
 that represents the quality of the schedule.
 """
+
 from typing import Any
 from collections.abc import Iterable
 
 from mypy_extensions import mypyc_attr
 
 from cpscheduler.utils.list_utils import convert_to_list
-from cpscheduler.environment._common import TIME, Int, Float
+from cpscheduler.environment._common import TIME, Float
 from cpscheduler.environment.state import ScheduleState
 
 objectives: dict[str, type["Objective"]] = {}
@@ -29,7 +30,6 @@ class Objective:
     """
 
     minimize: bool
-    tags: dict[str, str]
 
     def __init_subclass__(cls) -> None:
         super().__init_subclass__()
@@ -38,12 +38,21 @@ class Objective:
 
     def __init__(self, minimize: bool = True) -> None:
         self.minimize = minimize
-        self.tags = {}
 
     def __repr__(self) -> str:
         sense = "minimize" if self.minimize else "maximize"
 
         return f"{self.__class__.__name__}(sense={sense})"
+
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (self.minimize,),
+            (),
+        )
+
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        pass
 
     def initialize(self, state: ScheduleState) -> None:
         "Initialize the objective with the given schedule state."
@@ -191,34 +200,26 @@ class WeightedCompletionTime(Objective):
     function is the sum of the completion times multiplied by their respective weights.
     """
 
+    weights_tag: str
     job_weights: list[float]
 
     def __init__(
         self,
-        job_weights: Iterable[Float] | str = "weight",
+        job_weights: str = "weight",
         minimize: bool = True,
     ):
         super().__init__(minimize)
-        if isinstance(job_weights, str):
-            self.tags["job_weights"] = job_weights
-
-        else:
-            self.job_weights = convert_to_list(job_weights, float)
+        self.weights_tag = job_weights
+        self.job_weights = []
 
     def __reduce__(self) -> Any:
-        return (
-            self.__class__,
-            (self.job_weights, self.minimize),
-            (self.tags,),
-        )
+        return (self.__class__, (self.weights_tag, self.minimize), (self.job_weights,))
 
     def __setstate__(self, state: tuple[Any, ...]) -> None:
-        self.tags, = state
-
+        (self.job_weights,) = state
 
     def initialize(self, state: ScheduleState) -> None:
-        if "job_weights" in self.tags:
-            self.job_weights = state.instance[self.tags["job_weights"]]
+        self.job_weights = convert_to_list(state.instance[self.weights_tag], float)
 
     def get_current(self, time: TIME, state: ScheduleState) -> float:
         weighted_completion_time = 0.0
@@ -240,33 +241,26 @@ class MaximumLateness(Objective):
     tasks. Lateness is defined as the difference between the completion time and the due date.
     """
 
+    due_tag: str
     due_dates: list[TIME]
 
     def __init__(
         self,
-        due_dates: Iterable[Int] | str = "due_date",
+        due_dates: str = "due_date",
         minimize: bool = True,
     ):
         super().__init__(minimize)
-        if isinstance(due_dates, str):
-            self.tags["due_dates"] = due_dates
-
-        else:
-            self.due_dates = convert_to_list(due_dates, TIME)
+        self.due_tag = due_dates
+        self.due_dates = []
 
     def __reduce__(self) -> Any:
-        return (
-            self.__class__,
-            (self.due_dates, self.minimize),
-            (self.tags,),
-        )
+        return (self.__class__, (self.due_tag, self.minimize), (self.due_dates,))
 
     def __setstate__(self, state: tuple[Any, ...]) -> None:
-        self.tags, = state
+        (self.due_dates,) = state
 
     def initialize(self, state: ScheduleState) -> None:
-        if "due_dates" in self.tags:
-            self.due_dates = state.instance[self.tags["due_dates"]]
+        self.due_dates = convert_to_list(state.instance[self.due_tag], TIME)
 
     def get_current(self, time: TIME, state: ScheduleState) -> int:
         max_lateness = 0
@@ -291,34 +285,26 @@ class TotalTardiness(Objective):
     if the task is completed late.
     """
 
+    due_tag: str
     due_dates: list[TIME]
 
     def __init__(
         self,
-        due_dates: Iterable[Int] | str = "due_date",
+        due_dates: str = "due_date",
         minimize: bool = True,
     ):
         super().__init__(minimize)
-        if isinstance(due_dates, str):
-            self.tags["due_dates"] = due_dates
-
-        else:
-            self.due_dates = convert_to_list(due_dates, TIME)
+        self.due_tag = due_dates
+        self.due_dates = []
 
     def __reduce__(self) -> Any:
-        return (
-            self.__class__,
-            (self.due_dates, self.minimize),
-            (self.tags,),
-        )
+        return (self.__class__, (self.due_tag, self.minimize), (self.due_dates,))
 
     def __setstate__(self, state: tuple[Any, ...]) -> None:
-        self.tags, = state
-
+        (self.due_dates,) = state
 
     def initialize(self, state: ScheduleState) -> None:
-        if "due_dates" in self.tags:
-            self.due_dates = state.instance[self.tags["due_dates"]]
+        self.due_dates = state.instance[self.due_tag]
 
     def get_current(self, time: TIME, state: ScheduleState) -> int:
         total_tardiness = 0
@@ -345,45 +331,38 @@ class WeightedTardiness(Objective):
     date, if the task is completed late.
     """
 
+    due_tag: str
+    weight_tag: str
     due_dates: list[TIME]
     job_weights: list[float]
 
     def __init__(
         self,
-        due_dates: Iterable[Int] | str = "due_date",
-        job_weights: Iterable[Float] | str = "weight",
+        due_dates: str = "due_date",
+        job_weights: str = "weight",
         minimize: bool = True,
     ):
         super().__init__(minimize)
-        if isinstance(due_dates, str):
-            self.tags["due_dates"] = due_dates
 
-        else:
-            self.due_dates = convert_to_list(due_dates, TIME)
+        self.due_tag = due_dates
+        self.weight_tag = job_weights
 
-        if isinstance(job_weights, str):
-            self.tags["job_weights"] = job_weights
-
-        else:
-            self.job_weights = convert_to_list(job_weights, float)
+        self.due_dates = []
+        self.job_weights = []
 
     def __reduce__(self) -> Any:
         return (
             self.__class__,
-            (self.due_dates, self.job_weights, self.minimize),
-            (self.tags,),
+            (self.due_tag, self.weight_tag, self.minimize),
+            (self.due_dates, self.job_weights),
         )
 
     def __setstate__(self, state: tuple[Any, ...]) -> None:
-        self.tags, = state
-
+        self.due_dates, self.job_weights = state
 
     def initialize(self, state: ScheduleState) -> None:
-        if "due_dates" in self.tags:
-            self.due_dates = state.instance[self.tags["due_dates"]]
-
-        if "job_weights" in self.tags:
-            self.job_weights = state.instance[self.tags["job_weights"]]
+        self.due_dates = convert_to_list(state.instance[self.due_tag], TIME)
+        self.job_weights = convert_to_list(state.instance[self.weight_tag], float)
 
     def get_current(self, time: TIME, state: ScheduleState) -> float:
         weighted_tardiness = 0.0
@@ -411,33 +390,26 @@ class TotalEarliness(Objective):
     if the task is completed early.
     """
 
+    due_tag: str
     due_dates: list[TIME]
 
     def __init__(
         self,
-        due_dates: Iterable[Int] | str = "due_date",
+        due_dates: str = "due_date",
         minimize: bool = True,
     ):
         super().__init__(minimize)
-        if isinstance(due_dates, str):
-            self.tags["due_dates"] = due_dates
-
-        else:
-            self.due_dates = convert_to_list(due_dates, TIME)
+        self.due_tag = due_dates
+        self.due_dates = []
 
     def __reduce__(self) -> Any:
-        return (
-            self.__class__,
-            (self.due_dates, self.minimize),
-            (self.tags,),
-        )
+        return (self.__class__, (self.due_tag, self.minimize), (self.due_dates,))
 
     def __setstate__(self, state: tuple[Any, ...]) -> None:
-        self.tags, = state
+        (self.due_dates,) = state
 
     def initialize(self, state: ScheduleState) -> None:
-        if "due_dates" in self.tags:
-            self.due_dates = state.instance[self.tags["due_dates"]]
+        self.due_dates = convert_to_list(state.instance[self.due_tag], TIME)
 
     def get_current(self, time: TIME, state: ScheduleState) -> int:
         total_earliness = 0
@@ -463,44 +435,37 @@ class WeightedEarliness(Objective):
     Earliness is defined as the difference between the due date and the completion time, if the task is completed early.
     """
 
+    due_tag: str
+    weight_tag: str
     due_dates: list[TIME]
     job_weights: list[float]
 
     def __init__(
         self,
-        due_dates: Iterable[Int] | str = "due_date",
-        job_weights: Iterable[Float] | str = "weight",
+        due_dates: str = "due_date",
+        job_weights: str = "weight",
         minimize: bool = True,
     ):
         super().__init__(minimize)
-        if isinstance(due_dates, str):
-            self.tags["due_dates"] = due_dates
+        self.due_tag = due_dates
+        self.weight_tag = job_weights
 
-        else:
-            self.due_dates = convert_to_list(due_dates, TIME)
-
-        if isinstance(job_weights, str):
-            self.tags["job_weights"] = job_weights
-
-        else:
-            self.job_weights = convert_to_list(job_weights, float)
+        self.due_dates = []
+        self.job_weights = []
 
     def __reduce__(self) -> Any:
         return (
             self.__class__,
-            (self.due_dates, self.job_weights, self.minimize),
-            (self.tags,),
+            (self.due_tag, self.weight_tag, self.minimize),
+            (self.due_dates, self.job_weights),
         )
 
     def __setstate__(self, state: tuple[Any, ...]) -> None:
-        self.tags, = state
+        self.due_dates, self.job_weights = state
 
     def initialize(self, state: ScheduleState) -> None:
-        if "due_dates" in self.tags:
-            self.due_dates = state.instance[self.tags["due_dates"]]
-
-        if "job_weights" in self.tags:
-            self.job_weights = state.instance[self.tags["job_weights"]]
+        self.due_dates = convert_to_list(state.instance[self.due_tag], TIME)
+        self.job_weights = convert_to_list(state.instance[self.weight_tag], float)
 
     def get_current(self, time: TIME, state: ScheduleState) -> float:
         weighted_earliness = 0.0
@@ -527,33 +492,26 @@ class TotalTardyJobs(Objective):
     A job is considered tardy if its completion time is greater than its due date.
     """
 
+    due_tag: str
     due_dates: list[TIME]
 
     def __init__(
         self,
-        due_dates: Iterable[Int] | str = "due_date",
+        due_dates: str = "due_date",
         minimize: bool = True,
     ):
         super().__init__(minimize)
-        if isinstance(due_dates, str):
-            self.tags["due_dates"] = due_dates
-
-        else:
-            self.due_dates = convert_to_list(due_dates, TIME)
+        self.due_tag = due_dates
+        self.due_dates = []
 
     def __reduce__(self) -> Any:
-        return (
-            self.__class__,
-            (self.due_dates, self.minimize),
-            (self.tags,),
-        )
+        return (self.__class__, (self.due_tag, self.minimize), (self.due_dates,))
 
     def __setstate__(self, state: tuple[Any, ...]) -> None:
-        self.tags, = state
+        (self.due_dates,) = state
 
     def initialize(self, state: ScheduleState) -> None:
-        if "due_dates" in self.tags:
-            self.due_dates = state.instance[self.tags["due_dates"]]
+        self.due_dates = convert_to_list(state.instance[self.due_tag], TIME)
 
     def get_current(self, time: TIME, state: ScheduleState) -> int:
         tardy_jobs = 0
@@ -576,44 +534,37 @@ class WeightedTardyJobs(Objective):
     jobs. A job is considered tardy if its completion time is greater than its due date.
     """
 
+    due_tag: str
+    weight_tag: str
     due_dates: list[TIME]
     job_weights: list[float]
 
     def __init__(
         self,
-        due_dates: Iterable[Int] | str = "due_date",
-        job_weights: Iterable[Float] | str = "weight",
+        due_dates: str = "due_date",
+        job_weights: str = "weight",
         minimize: bool = True,
     ):
         super().__init__(minimize)
-        if isinstance(due_dates, str):
-            self.tags["due_dates"] = due_dates
+        self.due_tag = due_dates
+        self.weight_tag = job_weights
 
-        else:
-            self.due_dates = convert_to_list(due_dates, TIME)
-
-        if isinstance(job_weights, str):
-            self.tags["job_weights"] = job_weights
-
-        else:
-            self.job_weights = convert_to_list(job_weights, float)
+        self.due_dates = []
+        self.job_weights = []
 
     def __reduce__(self) -> Any:
         return (
             self.__class__,
-            (self.due_dates, self.job_weights, self.minimize),
-            (self.tags,),
+            (self.due_tag, self.weight_tag, self.minimize),
+            (self.due_dates, self.job_weights),
         )
 
     def __setstate__(self, state: tuple[Any, ...]) -> None:
-        self.tags, = state
+        self.due_dates, self.job_weights = state
 
     def initialize(self, state: ScheduleState) -> None:
-        if "due_dates" in self.tags:
-            self.due_dates = state.instance[self.tags["due_dates"]]
-
-        if "job_weights" in self.tags:
-            self.job_weights = state.instance[self.tags["job_weights"]]
+        self.due_dates = convert_to_list(state.instance[self.due_tag], TIME)
+        self.job_weights = convert_to_list(state.instance[self.weight_tag], float)
 
     def get_current(self, time: TIME, state: ScheduleState) -> float:
         weighted_tardy_jobs = 0.0
@@ -637,33 +588,30 @@ class TotalFlowTime(Objective):
     tasks. Flow time is defined as the difference between the completion time and the release time.
     """
 
+    release_tag: str
     release_times: list[TIME]
 
     def __init__(
         self,
-        release_times: Iterable[Int] | str = "release_time",
+        release_times: str = "release_time",
         minimize: bool = True,
     ):
         super().__init__(minimize)
-        if isinstance(release_times, str):
-            self.tags["release_times"] = release_times
-
-        else:
-            self.release_times = convert_to_list(release_times, TIME)
+        self.release_tag = release_times
+        self.release_times = []
 
     def __reduce__(self) -> Any:
         return (
             self.__class__,
-            (self.release_times, self.minimize),
-            (self.tags,),
+            (self.release_tag, self.minimize),
+            (self.release_times,),
         )
 
     def __setstate__(self, state: tuple[Any, ...]) -> None:
-        self.tags, = state
+        (self.release_times,) = state
 
     def initialize(self, state: ScheduleState) -> None:
-        if "release_times" in self.tags:
-            self.release_times = state.instance[self.tags["release_times"]]
+        self.release_times = convert_to_list(state.instance[self.release_tag], TIME)
 
     def get_current(self, time: TIME, state: ScheduleState) -> int:
         total_flowtime = 0

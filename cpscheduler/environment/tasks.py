@@ -374,7 +374,9 @@ class Task:
             else:
                 return False
 
-        elif machine not in self.processing_times or not self.is_available(time, machine):
+        elif machine not in self.processing_times or not self.is_available(
+            time, machine
+        ):
             return False
 
         self.n_parts += 1
@@ -447,12 +449,11 @@ class Task:
 
     def is_available(self, time: TIME, machine: MACHINE_ID = -1) -> bool:
         "Check if the task is available for execution at a given time."
-        if self.fixed: return False
+        if self.fixed:
+            return False
 
         if machine != -1:
-            return (
-                self.start_bounds[machine].lb <= time < self.start_bounds[machine].ub
-            )
+            return self.start_bounds[machine].lb <= time < self.start_bounds[machine].ub
 
         return self.global_bound.lb <= time < self.global_bound.ub
 

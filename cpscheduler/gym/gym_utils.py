@@ -1,5 +1,6 @@
 from typing import Any
-from collections.abc import Mapping, Iterable
+from collections.abc import Mapping, Iterable, Sequence
+from typing_extensions import TypeIs
 
 from functools import singledispatch
 
@@ -8,6 +9,11 @@ import numpy as np
 from gymnasium.spaces import Space, Dict, Tuple, Box, MultiBinary, Text
 
 from cpscheduler.environment._common import MAX_INT, MIN_INT
+
+
+def is_original_space(space: Any) -> TypeIs[Iterable[Dict]]:
+    "Check if the space is the original space type (Dict of Dicts)."
+    return isinstance(space, Tuple) and all(isinstance(s, Dict) for s in space.spaces)
 
 
 @singledispatch
@@ -44,7 +50,7 @@ def _(elem: bool, size: int) -> Space[Iterable[bool]]:
 
 
 def infer_collection_space(
-    obs: Mapping[Any, Any] | tuple[Any, ...] | Iterable[Any],
+    obs: Mapping[Any, Any] | tuple[Any, ...] | Sequence[Any],
 ) -> Space[Any]:
     "Infer the Gymnasium space of a collection based on its elements."
 
@@ -55,7 +61,6 @@ def infer_collection_space(
         return Tuple(infer_collection_space(elem) for elem in obs)
 
     n = sum(1 for _ in obs)
-
     if n == 0:
         return Tuple([])
 

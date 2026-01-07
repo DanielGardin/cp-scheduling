@@ -6,7 +6,8 @@ Instructions are used to control the execution of tasks, manage their states, an
 with the scheduler.
 """
 
-from typing import Final, TypeAlias, Iterable
+from typing import Final, TypeAlias
+from collections.abc import Iterable
 from typing_extensions import Unpack, TypeIs
 
 from dataclasses import dataclass
@@ -47,7 +48,7 @@ class Action:
     PROPAGATE: Final[u8] = 4
 
     # The scheduler should advance the time
-    ADVANCE: Final[u8] = 8
+    ADVANCE_TO: Final[u8] = 8
 
     # The scheduler should advance to the next decision point
     ADVANCE_NEXT: Final[u8] = 16
@@ -58,7 +59,7 @@ class Action:
     # The scheduler should stop processing instructions
     HALT: Final[u8] = 64
 
-    DONE: Final[u8] = PROPAGATE | ADVANCE
+    DONE: Final[u8] = PROPAGATE
     ERROR: Final[u8] = RAISE | HALT
     WAIT: Final[u8] = SKIPPED | ADVANCE_NEXT
 
@@ -249,7 +250,7 @@ class Complete(Instruction):
     ) -> Signal:
         task = state.tasks[self.task_id]
         if task.is_executing(current_time):
-            return Signal(Action.ADVANCE, task.get_end())
+            return Signal(Action.ADVANCE_TO, task.get_end())
 
         if task.is_completed(current_time):
             return Signal(Action.ERROR, info=f"Task {self.task_id} already terminated")
@@ -260,14 +261,14 @@ class Complete(Instruction):
 class Advance(Instruction):
     "Advances the current time by a specified amount or to the next decision point if not specified."
 
-    def __init__(self, time: TIME = -1):
-        self.time = time
+    def __init__(self, dt: TIME = -1) -> None:
+        self.dt = dt
 
     def __repr__(self) -> str:
-        if self.time == -1:
+        if self.dt < 0:
             return "Advance()"
 
-        return f"Advance(time={self.time})"
+        return f"Advance(dt={self.dt})"
 
     def process(
         self,
@@ -275,10 +276,10 @@ class Advance(Instruction):
         state: ScheduleState,
         scheduled_instructions: dict[TIME, list[Instruction]],
     ) -> Signal:
-        if self.time == -1:
+        if self.dt < 0:
             return Signal(Action.ADVANCE_NEXT)
 
-        return Signal(Action.ADVANCE, current_time + self.time)
+        return Signal(Action.ADVANCE_TO, current_time + self.dt)
 
 
 class Query(Instruction):

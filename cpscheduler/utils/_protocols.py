@@ -1,23 +1,19 @@
 from typing import Any, Protocol, TypeVar, runtime_checkable
 from collections.abc import Iterator
 
-
 from cpscheduler.environment.state import ScheduleState
-
 
 _T_co = TypeVar("_T_co", covariant=True)
 
 
-# By definition, every Objective is a Metric
 class Metric(Protocol[_T_co]):
     """
     A protocol for metrics that can be used to track and report metrics
     during the scheduling process.
     """
 
-    def __call__(
-        self, time: int, state: ScheduleState, objective: float
-    ) -> _T_co: ...
+    def __call__(self, time: int, state: ScheduleState, objective: float) -> _T_co: ...
+
 
 @runtime_checkable
 class ArrayLike(Protocol):

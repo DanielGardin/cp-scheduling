@@ -5,11 +5,10 @@ from typing import (
     Final,
     SupportsInt,
     SupportsFloat,
-    Iterator,
     Protocol,
     runtime_checkable,
 )
-from collections.abc import Iterable, Mapping, Hashable
+from collections.abc import Iterable, Mapping, Hashable, Iterator
 from typing_extensions import TypedDict, TypeAlias
 
 from mypy_extensions import i64, i32, i16, u8
@@ -47,12 +46,15 @@ ObsType: TypeAlias = tuple[dict[str, list[Any]], dict[str, list[Any]]]
 
 InfoType: TypeAlias = dict[str, Any]
 
+
 class InstanceConfig(TypedDict, total=False):
     "Configuration for loading an instance."
 
     instance: InstanceTypes
 
+
 Options: TypeAlias = dict[str, Any] | InstanceConfig | None
+
 
 class Status:
     "Possible statuses of a task at a given time."

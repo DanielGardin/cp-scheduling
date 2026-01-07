@@ -1,5 +1,11 @@
+from typing import TYPE_CHECKING, Any, TypeVar
+
+
 from collections.abc import Sequence
 from collections import deque
+
+if TYPE_CHECKING:
+    from _typeshed import SupportsDunderLT
 
 
 def topological_sort(precedence_map: dict[int, list[int]], n_tasks: int) -> list[int]:
@@ -45,9 +51,12 @@ def topological_sort(precedence_map: dict[int, list[int]], n_tasks: int) -> list
     return topological_order
 
 
+_T = TypeVar("_T", bound="SupportsDunderLT[Any]")
+
+
 def binary_search(
-    array: Sequence[float],
-    target: float,
+    array: Sequence[_T],
+    target: _T,
     left: int = 0,
     right: int = -1,
 ) -> int:

@@ -58,7 +58,7 @@ class ScheduleState:
                 f"fixed={len(self.fixed_tasks)}"
                 f")"
             )
-    
+
         return f"{cls_name}(loaded={self.loaded})"
 
     def __eq__(self, other: Any) -> bool:

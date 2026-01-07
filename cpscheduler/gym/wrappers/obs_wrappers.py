@@ -12,7 +12,7 @@ from gymnasium import ObservationWrapper, Env, Space
 
 from cpscheduler.environment._common import ObsType, Options, MAX_INT
 from cpscheduler.environment.state import ScheduleState
-from cpscheduler.utils.typing_utils import is_iterable_type
+from cpscheduler.gym.gym_utils import is_original_space
 
 S = TypeVar("S", Space[Any], Box, Dict, Tuple)
 
@@ -64,7 +64,7 @@ class SchedulingObservationWrapper(ObservationWrapper[_Obs, _Act, ObsType], ABC)
     def _core_observation_space(self) -> Iterable[Dict]:
         space = self.env.get_wrapper_attr("get_observation_space")()
 
-        if is_iterable_type(space, Dict):
+        if is_original_space(space):
             return space
 
         raise ValueError(
