@@ -1,9 +1,8 @@
-from typing import Any
-from collections.abc import Mapping, Iterable
+from copy import deepcopy
 
-from cpscheduler.utils.typing_utils import is_iterable_type
-
-from cpscheduler.environment._common import Int, TASK_ID, TIME
+from cpscheduler.environment._common import TASK_ID, TIME, MACHINE_ID
+from cpscheduler.environment.env import SchedulingEnv
+from cpscheduler.environment.instructions import ActionType
 from cpscheduler.environment.state import ScheduleState
 
 
@@ -49,31 +48,23 @@ class ReferenceScheduleMetrics:
     - kendall_tau: The Kendall Tau distance between the reference schedule and the actual schedule.
     """
 
-    reference_schedule: dict[TASK_ID, TIME]
+    start_times: dict[TASK_ID, TIME]
+    assignments: dict[TASK_ID, MACHINE_ID]
 
-    def __init__(
-        self,
-        reference_schedule: Mapping[Int, Int] | Iterable[tuple[Int, Int]] | str,
-        permutation_based: bool = False,
-    ):
-        self.tag = ""
-        self.permutation_based = permutation_based
-        self.force_import = True
+    objective_value: float
 
-        if isinstance(reference_schedule, str):
-            self.tag = reference_schedule
-            self.reference_schedule = {}
+    def __init__(self, reference_schedule: ActionType, env: SchedulingEnv):
+        self.start_times = {}
+        self.assignments = {}
 
-        elif is_iterable_type(reference_schedule, tuple):
-            self.reference_schedule = {
-                TASK_ID(task_id): TIME(time) for task_id, time in reference_schedule
-            }
+        cpy_env = deepcopy(env)
+        *_, info = cpy_env.step(reference_schedule)
 
-        else:
-            self.reference_schedule = {
-                TASK_ID(task_id): TIME(time)
-                for task_id, time in reference_schedule.items()
-            }
+        for task in cpy_env.state.fixed_tasks:
+            self.start_times[task.task_id] = task.get_start()
+            self.assignments[task.task_id] = task.get_assignment()
+
+        self.objective_value = info["objective_value"]
 
     def __call__(
         self, time: int, state: ScheduleState, objective: float
@@ -85,17 +76,9 @@ class ReferenceScheduleMetrics:
                 time, state, objective
             ),
             "order_preservation": self.order_preservation(time, state, objective),
+            "hamming_accuracy": self.hamming_accuracy(time, state, objective),
+            "kendall_tau": self.kendall_tau(time, state, objective),
         }
-
-        if self.permutation_based:
-            metrics.update(
-                {
-                    "hamming_accuracy": self.hamming_accuracy(time, state, objective),
-                    "kendall_tau": self.kendall_tau(time, state, objective),
-                }
-            )
-
-        self.force_import = True
 
         return metrics
 
@@ -110,7 +93,7 @@ class ReferenceScheduleMetrics:
         distance = 0
         count = 0
 
-        for task_id, reference_time in self.reference_schedule.items():
+        for task_id, reference_time in self.start_times.items():
             task = state.tasks[task_id]
 
             if task.is_fixed():
@@ -134,50 +117,53 @@ class ReferenceScheduleMetrics:
         This metric is the ratio of the number of tasks that maintain their order
         in the reference schedule to the total number of tasks.
         """
-        reference_count = 0
+
+        start_times = [
+            (start_time, state.tasks[task_id].get_start())
+            for task_id, start_time in self.start_times.items()
+            if state.tasks[task_id].is_fixed()
+        ]
+
+        n = len(start_times)
+        if n < 2:
+            return 1.0
+
+        start_times.sort()
+
+        actual_times = [actual_start for _, actual_start in start_times]
+
         preserved_count = 0
+        total_count = n * (n - 1) // 2
 
-        for task_i in self.reference_schedule:
-            if not state.tasks[task_i].is_fixed():
-                continue
+        for i in range(n - 1):
+            ai = actual_times[i]
 
-            ref_start_i = self.reference_schedule[task_i]
-            actual_start_i = state.tasks[task_i].get_start()
-
-            for task_j in self.reference_schedule:
-                if not state.tasks[task_j].is_fixed():
-                    continue
-
-                ref_start_j = self.reference_schedule[task_j]
-                if ref_start_j >= ref_start_i:
-                    continue
-
-                reference_count += 1
-
-                actual_start_j = state.tasks[task_j].get_start()
-                if actual_start_j < actual_start_i:
+            for j in range(i + 1, n):
+                if ai <= actual_times[j]:
                     preserved_count += 1
 
-        return preserved_count / reference_count if reference_count > 0 else 1.0
+        return preserved_count / total_count
 
     # The following are useful when the schedule is a permutation of the tasks
     def _get_permutations(
         self, state: ScheduleState
     ) -> tuple[list[TASK_ID], list[TASK_ID]]:
-        reference_perm = sorted(
+        actual = sorted(
             [
-                task_id
-                for task_id in self.reference_schedule
-                if state.tasks[task_id].is_fixed()
-            ],
-            key=lambda task_id: self.reference_schedule[task_id],
+                (task.get_start(), task.task_id)
+                for task in state.fixed_tasks
+                if task.task_id in self.start_times
+            ]
         )
 
-        actual_perm = sorted(
-            reference_perm, key=lambda task_id: state.tasks[task_id].get_start()
+        reference = sorted(
+            [(self.start_times[task_id], task_id) for _, task_id in actual]
         )
 
-        return reference_perm, actual_perm
+        return (
+            [task_id for _, task_id in reference],
+            [task_id for _, task_id in actual],
+        )
 
     def hamming_accuracy(
         self, time: int, state: ScheduleState, objective: float
@@ -235,42 +221,19 @@ class ReferenceScheduleMetrics:
 
         return (concordant - discordant) / denominator if denominator > 0 else 1.0
 
-
-class OptimalReferenceMetrics(ReferenceScheduleMetrics):
-    """
-    This class is a specialized version of ReferenceScheduleMetrics that uses the optimal schedule
-    as the reference schedule. It is used to calculate any reference metrics and additionally
-    provides metrics that are based on the optimal schedule.
-
-    The additional metrics are:
-    """
-
-    def __init__(
-        self,
-        optimal_schedule: (
-            Mapping[Int, Int] | Iterable[tuple[Int, Int]] | str | None
-        ) = None,
-        optimal_value: float = 0.0,
-        permutation_based: bool = False,
-    ):
-        optimal_schedule = optimal_schedule if optimal_schedule else {}
-
-        super().__init__(optimal_schedule, permutation_based)
-
-        self.optimal_value = optimal_value
-
     def regret(self, time: int, state: ScheduleState, objective: float) -> float:
         """
-        Calculate the regret of the current schedule compared to the optimal schedule.
-        Regret is defined as the difference between the optimal value and the current objective value.
+        Calculate the regret of the current schedule compared to the reference schedule.
+        Regret is defined as the difference between the reference objective value
+        and the current objective value.
         """
-        return self.optimal_value - objective
+        return self.objective_value - objective
 
-    def optimality_gap(
+    def performance_gap(
         self, time: int, state: ScheduleState, objective: float
     ) -> float:
         """
-        Calculate the optimality gap of the current schedule compared to the optimal schedule.
-        The optimality gap is defined as the ratio of the regret to the optimal value.
+        Calculate the performance gap of the current schedule compared to the reference schedule.
+        The performance gap is defined as the ratio of the regret to the reference objective value.
         """
-        return objective / (self.optimal_value + 1e-9) - 1.0
+        return objective / (self.objective_value + 1e-9) - 1.0
