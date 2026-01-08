@@ -55,10 +55,6 @@ class PulpSolver:
                 "Environment must be loaded before initializing the solver."
             )
 
-        if self.env.preemptive:
-            raise ValueError("This version of the solver does not support preemption.")
-
-
         self._solver: LpSolver | None = None
         self._config: SolverConfig = {}
 

@@ -95,11 +95,8 @@ class SchedulingEnv:
         instance: InstanceTypes | None = None,
         metrics: Mapping[str, Metric[Any]] | None = None,
         render_mode: Renderer | str | None = None,
-        allow_preemption: bool = False,
     ):
         self.state = ScheduleState()
-        self.state.set_preemptive(allow_preemption)
-        self.preemptive = allow_preemption
         self.setup = machine_setup
 
         self.constraints = {}
@@ -203,9 +200,6 @@ class SchedulingEnv:
             ]
         )
 
-        if self.preemptive:
-            beta += f"{',' if beta else ''}prmp"
-
         gamma = self.objective.get_entry()
 
         return f"{alpha}|{beta}|{gamma}"
@@ -243,13 +237,6 @@ class SchedulingEnv:
 
     def _propagate(self) -> None:
         "Propagate the new bounds through the constraints"
-        # Currently not sure if this is needed, but keeping it for future reference.
-
-        # for task_id in self.state.awaiting_tasks:
-        #     task = self.state[task_id]
-        #     if task.get_start_lb() < self.current_time:
-        #         task.set_start_lb(self.current_time)
-
         for constraint in self.constraints.values():
             constraint.propagate(self.current_time, self.state)
 
@@ -448,6 +435,7 @@ class SchedulingEnv:
 
         if action & Action.PROPAGATE:
             self._propagate()
+
             self._advance_to_decision_point(strict=False)
 
         if action & Action.ADVANCE_TO:
@@ -511,7 +499,6 @@ class SchedulingEnv:
                 None,  # instance_config will be set later
                 self.metrics,
                 self.renderer,
-                self.preemptive,
             ),
             (
                 self.constraints,

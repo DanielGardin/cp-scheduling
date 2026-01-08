@@ -73,6 +73,56 @@ class Constraint:
         return ""
 
 
+class PreemptionConstraint(Constraint):
+    """
+    Preemption constraint for the scheduling environment.
+    This constraint allows tasks to be preempted, meaning they can be interrupted
+    and resumed later.
+
+    Arguments:
+        name: Optional[str] = None
+            An optional name for the constraint.
+
+    Note:
+        This constraint is a placeholder and does not implement any specific logic
+        for preemption. It serves as a marker to indicate that preemption is allowed
+        in the scheduling environment, following the convention used in scheduling literature.
+
+        Another way to provide to the environment that preemption is allowed is to set
+        the `allow_preemption` flag in the `SchedulingEnv` initialization.
+    """
+
+    task_ids: list[TASK_ID]
+    all_tasks: bool
+
+    def __init__(
+        self,
+        task_ids: Iterable[Int] | None = None,
+        name: str | None = None
+    ) -> None:
+        super().__init__(name)
+
+        if task_ids is None:
+            self.all_tasks = True
+            self.task_ids = []
+
+        else:
+            self.all_tasks = False
+            self.task_ids = convert_to_list(task_ids, TASK_ID)
+
+    def initialize(self, state: ScheduleState) -> None:
+        if self.all_tasks:
+            for task in state.tasks:
+                task.set_preemption(True)
+
+        else:
+            for task_id in self.task_ids:
+                state.tasks[task_id].set_preemption(True)
+
+    def get_entry(self) -> str:
+        return "prmp"
+
+
 class MachineConstraint(Constraint):
     """
     General Parallel machine constraint, differs from DisjunctiveConstraint as the disjunctive

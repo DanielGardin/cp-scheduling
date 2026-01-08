@@ -200,19 +200,15 @@ class Pause(Instruction):
         state: ScheduleState,
         scheduled_instructions: dict[TIME, list[Instruction]],
     ) -> Signal:
-        if not state.preemptive:
-            return Signal(
-                Action.RAISE,
-                info="Cannot pause tasks in a non-preemptive scheduling environment.",
-            )
-
         if self.job_oriented:
             paused_job = state.pause_job(self.id, current_time)
 
             if paused_job >= 0:
                 return Signal(Action.DONE | Action.REEVALUATE)
 
-            elif all(task.is_completed(current_time) for task in state.jobs[self.id]):
+            job = state.jobs[self.id]
+
+            if all(task.is_completed(current_time) for task in job):
                 return Signal(
                     Action.RAISE,
                     info=f"Job {self.id} cannot be paused. It has been already completed.",
@@ -223,6 +219,14 @@ class Pause(Instruction):
 
             if can_pause:
                 return Signal(Action.DONE | Action.REEVALUATE)
+
+            task = state.tasks[self.id]
+
+            if not task.preemptive:
+                return Signal(
+                    Action.RAISE,
+                    info=f"Task {self.id} cannot be paused. Preemption is not allowed.",
+                )
 
             elif state.tasks[self.id].is_completed(current_time):
                 return Signal(

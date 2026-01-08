@@ -29,7 +29,6 @@ class ScheduleState:
     instance: dict[str, list[Any]]
     job_instance: dict[str, list[Any]]
     n_machines: int
-    preemptive: bool
 
     def __init__(self) -> None:
         self.tasks = []
@@ -41,7 +40,6 @@ class ScheduleState:
 
         self.instance = {}
         self.n_machines = 0
-        self.preemptive = False
 
     def __repr__(self) -> str:
         cls_name = self.__class__.__name__
@@ -52,7 +50,6 @@ class ScheduleState:
                 f"n_machines={self.n_machines}, "
                 f"n_jobs={self.n_jobs}, "
                 f"n_tasks={self.n_tasks}, "
-                f"preemptive={self.preemptive}, "
                 f"awaiting={len(self.awaiting_tasks)}, "
                 f"transition={len(self.transition_tasks)}, "
                 f"fixed={len(self.fixed_tasks)}"
@@ -74,7 +71,6 @@ class ScheduleState:
             and self.instance == other.instance
             and self.job_instance == other.job_instance
             and self.n_machines == other.n_machines
-            and self.preemptive == other.preemptive
         )
 
     def __reduce__(self) -> Any:
@@ -90,7 +86,6 @@ class ScheduleState:
                 self.instance,
                 self.job_instance,
                 self.n_machines,
-                self.preemptive,
             ),
         )
 
@@ -104,14 +99,10 @@ class ScheduleState:
             self.instance,
             self.job_instance,
             self.n_machines,
-            self.preemptive,
         ) = state
 
     def set_n_machines(self, n: int) -> None:
         self.n_machines = n
-
-    def set_preemptive(self, preemptive: bool) -> None:
-        self.preemptive = preemptive
 
     @property
     def n_tasks(self) -> int:
@@ -201,11 +192,6 @@ class ScheduleState:
         task_id: TASK_ID,
         current_time: TIME,
     ) -> bool:
-        if not self.preemptive:
-            raise RuntimeError(
-                "Cannot pause tasks in a non-preemptive scheduling environment."
-            )
-
         task = self.tasks[task_id]
 
         paused = task.pause(current_time)

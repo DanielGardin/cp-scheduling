@@ -99,6 +99,8 @@ class Task:
     job_id: TASK_ID
     n_parts: PART_ID
 
+    preemptive: bool
+
     starts: list[TIME]
     durations: list[TIME]
     assignments: list[MACHINE_ID]
@@ -116,6 +118,8 @@ class Task:
         self.task_id = task_id
         self.job_id = job_id
         self.n_parts = 0
+
+        self.preemptive = False
 
         self.starts = []
         self.durations = []
@@ -360,6 +364,10 @@ class Task:
         self.machines.append(machine)
         self.start_bounds[machine] = Bounds()
 
+    def set_preemption(self, allow_preemption: bool) -> None:
+        "Set whether the task allows preemption."
+        self.preemptive = allow_preemption
+
     def execute(
         self,
         time: TIME,
@@ -398,7 +406,7 @@ class Task:
 
     def pause(self, time: TIME) -> bool:
         "Pauses the task's execution at a given time, splitting it into a new part."
-        if not self.fixed:
+        if not self.fixed or not self.preemptive:
             return False
 
         prev_duration = self.durations[-1]
@@ -409,7 +417,8 @@ class Task:
         if remaining_time <= 0:
             return False
 
-        self.durations[-1] = remaining_time
+        self.durations[-1] = actual_duration
+
         self.global_bound.set(time, MAX_INT)
         for machine in self.machines:
             self.remaining_times[machine] = ceil_div(

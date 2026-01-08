@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from cpscheduler.environment import SchedulingEnv, JobShopSetup, Makespan
+from cpscheduler.environment.constraints import PreemptionConstraint
 from cpscheduler.instances import read_jsp_instance
 
 TEST_INSTANCES = [
@@ -19,7 +20,7 @@ def env_setup(instance_name: str, allow_preemption: bool = False) -> SchedulingE
     path = PROJECT_ROOT / f"instances/jobshop/{instance_name}.txt"
 
     try:
-        instance, metadata = read_jsp_instance(path)
+        instance, _ = read_jsp_instance(path)
 
     except FileNotFoundError as e:
         if not (path / "instances").exists():
@@ -31,9 +32,9 @@ def env_setup(instance_name: str, allow_preemption: bool = False) -> SchedulingE
 
     env = SchedulingEnv(
         machine_setup=JobShopSetup(),
+        constraints=(PreemptionConstraint(),) if allow_preemption else (),
         objective=Makespan(),
-        instance=instance,
-        allow_preemption=allow_preemption,
+        instance=instance
     )
 
     return env
