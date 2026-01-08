@@ -71,6 +71,9 @@ class Status:
     # completed: time >= start_lb[-1] + duration[-1]
     COMPLETED: Final[u8] = 3
 
+    # unfeasible: task cannot be completed given the current state
+    UNFEASIBLE: Final[u8] = 255
+
 
 def ceil_div(a: TIME, b: TIME) -> TIME:
     "a divided by b, rounded up to the nearest integer."

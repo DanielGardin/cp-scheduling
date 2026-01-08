@@ -76,6 +76,10 @@ class Bounds:
         "Create a null bounds object."
         return cls(lb=MAX_INT, ub=MIN_INT)
 
+    def is_feasible(self) -> bool:
+        "Check if the bounds are feasible."
+        return self.lb <= self.ub
+
     def __repr__(self) -> str:
         return f"Bounds(lb={self.lb}, ub={self.ub})"
 
@@ -212,6 +216,10 @@ class Task:
         "Checks if the task has its decision variables fixed."
         return self.fixed
 
+    def is_feasible(self, time: TIME) -> bool:
+        "Check if the task is feasible given its current bounds."
+        return self.global_bound.is_feasible() and time <= self.global_bound.ub
+
     def get_start(self, part: PART_ID = 0) -> TIME:
         "Get the starting time of a given part of the task."
         return self.starts[part]
@@ -299,13 +307,12 @@ class Task:
         if time < 0:
             time = 0
 
-        if self.global_bound.lb < time:
-            self.global_bound.lb = time
-
         if machine != -1:
             self.start_bounds[machine].lb = time
+            self.global_bound.lb = min(bound.lb for bound in self.start_bounds.values())
 
         else:
+            self.global_bound.lb = time
             for start_bound in self.start_bounds.values():
                 start_bound.lb = time
 
@@ -314,13 +321,12 @@ class Task:
         if time > MAX_INT:
             time = MAX_INT
 
-        if self.global_bound.ub > time:
-            self.global_bound.ub = time
-
         if machine != -1:
             self.start_bounds[machine].ub = time
+            self.global_bound.ub = max(bound.ub for bound in self.start_bounds.values())
 
         else:
+            self.global_bound.ub = time
             for start_bound in self.start_bounds.values():
                 start_bound.ub = time
 
@@ -329,30 +335,28 @@ class Task:
         if time < 0:
             time = 0
 
-        if self.global_bound.lb < time:
-            self.global_bound.lb = time
-
         if machine != -1:
             self.start_bounds[machine].lb = time - self.remaining_times[machine]
-            return
 
-        for machine in self.machines:
-            self.start_bounds[machine].lb = time - self.remaining_times[machine]
+        else:
+            for machine in self.machines:
+                self.start_bounds[machine].lb = time - self.remaining_times[machine]
+
+        self.global_bound.lb = min(bound.lb for bound in self.start_bounds.values())
 
     def set_end_ub(self, time: TIME, machine: MACHINE_ID = -1) -> None:
         "Set the upper bound for the ending time in a machine."
         if time > MAX_INT:
             time = MAX_INT
 
-        if self.global_bound.ub > time:
-            self.global_bound.ub = time
-
         if machine != -1:
             self.start_bounds[machine].ub = time - self.remaining_times[machine]
-            return
 
-        for machine in self.machines:
-            self.start_bounds[machine].ub = time - self.remaining_times[machine]
+        else:
+            for machine in self.machines:
+                self.start_bounds[machine].ub = time - self.remaining_times[machine]
+
+        self.global_bound.ub = max(bound.ub for bound in self.start_bounds.values())
 
     def set_processing_time(self, machine: MACHINE_ID, time: TIME) -> None:
         "Set the processing time for a given machine."
@@ -413,7 +417,6 @@ class Task:
         actual_duration = time - self.starts[-1]
 
         remaining_time = prev_duration - actual_duration
-
         if remaining_time <= 0:
             return False
 
@@ -436,6 +439,9 @@ class Task:
         # Reverse order because status checkings often occurs in the latest parts
 
         if not self.fixed:
+            if not self.is_feasible(time):
+                return Status.UNFEASIBLE
+
             if len(self.starts) == 0 or time < self.get_start(0):
                 return Status.AWAITING
 
@@ -462,9 +468,11 @@ class Task:
             return False
 
         if machine != -1:
-            return self.start_bounds[machine].lb <= time < self.start_bounds[machine].ub
+            return (
+                self.start_bounds[machine].lb <= time <= self.start_bounds[machine].ub
+            )
 
-        return self.global_bound.lb <= time < self.global_bound.ub
+        return self.global_bound.lb <= time <= self.global_bound.ub
 
     def is_awaiting(self) -> bool:
         "Check if the task is currently awaiting execution."
@@ -473,7 +481,10 @@ class Task:
     def is_executing(self, time: TIME, machine: MACHINE_ID = -1) -> bool:
         "Check if the task is being executed at a given time."
         for part in range(self.n_parts - 1, -1, -1):
-            if self.get_start(part) <= time < self.get_end(part):
+            if self.get_end(part) <= time:
+                break
+
+            if self.get_start(part) <= time:
                 return machine == -1 or self.get_assignment(part) == machine
 
         return False

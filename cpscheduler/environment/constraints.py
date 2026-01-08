@@ -193,8 +193,7 @@ class PrecedenceConstraint(Constraint):
     """
     Precedence constraint for the scheduling environment.
     This constraint defines the precedence relationships between tasks, where some tasks
-    must be completed before others can start. It can also handle no-wait precedence,
-    where tasks must be executed back-to-back without any waiting time in between.
+    must be completed before others can start.
 
     Arguments:
         precedence: Mapping[int, Iterable[int]]
@@ -202,16 +201,10 @@ class PrecedenceConstraint(Constraint):
             the task can start. For example, if task 1 must be completed before task 2 can start,
             the precedence mapping would be {2: [1]}.
 
-        no_wait: bool, default=False
-            If True, the precedence constraint will enforce that tasks must be executed
-            back-to-back without any waiting time in between. If False, tasks can have a waiting
-            time between them.
-
         name: Optional[str] = None
             An optional name for the constraint.
     """
 
-    # original_precedence: dict[int, list[int]]
     precedence: dict[TASK_ID, list[TASK_ID]]
 
     original_order: list[TASK_ID]
@@ -220,7 +213,6 @@ class PrecedenceConstraint(Constraint):
     def __init__(
         self,
         precedence: Mapping[Int, Sequence[Int]],
-        no_wait: bool = False,
         name: str | None = None,
     ):
         super().__init__(name)
@@ -230,15 +222,13 @@ class PrecedenceConstraint(Constraint):
             for task, children in precedence.items()
         }
 
-        self.no_wait = no_wait
-
         self.original_order = []
         self.tasks_order = []
 
     def __reduce__(self) -> Any:
         return (
             self.__class__,
-            (self.precedence, self.no_wait, self.name),
+            (self.precedence, self.name),
             (self.original_order, self.tasks_order),
         )
 
@@ -249,7 +239,6 @@ class PrecedenceConstraint(Constraint):
     def from_edges(
         cls,
         edges: Iterable[tuple[Int, Int]],
-        no_wait: bool = False,
         name: str | None = None,
     ) -> Self:
         """
@@ -260,11 +249,6 @@ class PrecedenceConstraint(Constraint):
                 A list of tuples representing the edges of the precedence graph.
                 Each tuple (parent, child) indicates that the parent task must be completed
                 before the child task can start.
-
-            no_wait: bool, default=False
-                If True, the precedence constraint will enforce that tasks must be executed
-                back-to-back without any waiting time in between. If False, tasks can have a waiting
-                time between them.
 
             name: Optional[str] = None
                 An optional name for the constraint.
@@ -277,7 +261,7 @@ class PrecedenceConstraint(Constraint):
 
             precedence[parent].append(child)
 
-        return cls(precedence, no_wait, name)
+        return cls(precedence, name)
 
     def is_intree(self) -> bool:
         "Check if the precedence graph is an in-tree."
@@ -305,15 +289,19 @@ class PrecedenceConstraint(Constraint):
         self.tasks_order = [state.tasks[task_id] for task_id in self.original_order]
 
     def propagate(self, time: TIME, state: ScheduleState) -> None:
-        for task in list(self.tasks_order):
+        completion_mask = [task.is_completed(time) for task in self.tasks_order]
 
-            if task.is_completed(time):
-                self.tasks_order.remove(task)
-                continue
+        if any(completion_mask):
+            self.tasks_order = [
+                task
+                for i, task in enumerate(self.tasks_order)
+                if not completion_mask[i]
+            ]
 
+        for task in self.tasks_order:
             end_time = task.get_end_lb()
 
-            for child_id in self.precedence[task.task_id]:
+            for child_id in self.precedence.get(task.task_id, []):
                 child = state.tasks[child_id]
 
                 if child.get_start_lb() < end_time:
@@ -340,13 +328,10 @@ class PrecedenceConstraint(Constraint):
         elif outtree:
             graph = "outtree"
 
-        if self.no_wait:
-            graph += ", nwt"
-
         return graph
 
 
-class NoWait(PrecedenceConstraint):
+class NoWaitConstraint(PrecedenceConstraint):
     """
 
     No-wait precedence constraint for the scheduling environment.
@@ -369,14 +354,35 @@ class NoWait(PrecedenceConstraint):
         precedence: Mapping[Int, Sequence[Int]],
         name: str | None = None,
     ):
-        super().__init__(precedence, no_wait=True, name=name)
+        super().__init__(precedence, name=name)
 
-    def __reduce__(self) -> Any:
-        return (
-            self.__class__,
-            (self.precedence, self.name),
-            (self.original_order, self.tasks_order),
-        )
+        if not self.is_intree():
+            raise ValueError("No-wait constraint must be an in-tree.")
+
+    def propagate(self, time: TIME, state: ScheduleState) -> None:
+        super().propagate(time, state)
+
+        for task in reversed(self.tasks_order):
+            if task.is_fixed():
+                end_time = task.get_end_lb()
+
+                for child_id in self.precedence.get(task.task_id, []):
+                    state.tasks[child_id].set_start_ub(end_time)
+
+            else:
+                max_children_start = task.get_end_lb()
+                for child_id in self.precedence.get(task.task_id, []):
+                    child = state.tasks[child_id]
+
+                    child_lb = child.get_start_lb()
+
+                    if max_children_start < child_lb:
+                        max_children_start = child_lb
+
+                task.set_end_lb(max_children_start)
+
+    def get_entry(self) -> str:
+        return "nwt"
 
 
 class ConstantProcessingTime(Constraint):
