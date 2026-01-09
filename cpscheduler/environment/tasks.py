@@ -218,7 +218,9 @@ class Task:
 
     def is_feasible(self, time: TIME) -> bool:
         "Check if the task is feasible given its current bounds."
-        return self.global_bound.is_feasible() and time <= self.global_bound.ub
+        return self.global_bound.is_feasible() and \
+            time <= self.global_bound.ub and \
+            all(bound.is_feasible() for bound in self.start_bounds.values())
 
     def get_start(self, part: PART_ID = 0) -> TIME:
         "Get the starting time of a given part of the task."
@@ -371,6 +373,22 @@ class Task:
     def set_preemption(self, allow_preemption: bool) -> None:
         "Set whether the task allows preemption."
         self.preemptive = allow_preemption
+
+    def set_machines(self, machines: list[MACHINE_ID]) -> None:
+        "Set the list of machines that can process this task."
+        for machine in machines:
+            if machine not in self.processing_times:
+                raise ValueError(
+                    f"Processing time for machine {machine} not set in task {self.task_id}."
+                )
+
+        self.machines = machines
+        # Delete any processing times that are not in the machines list
+        for machine in list(self.processing_times.keys()):
+            if machine not in machines:
+                del self.processing_times[machine]
+                del self.remaining_times[machine]
+                del self.start_bounds[machine]
 
     def execute(
         self,

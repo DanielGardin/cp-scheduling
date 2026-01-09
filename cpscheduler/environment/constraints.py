@@ -53,9 +53,6 @@ class Constraint:
 
         self.name = name if name else self.__class__.__name__
 
-    def __repr__(self) -> str:
-        return f"{self.name.capitalize()}()"
-
     def initialize(self, state: ScheduleState) -> None:
         "Initialize the constraint with the scheduling state."
 
@@ -128,6 +125,9 @@ class MachineConstraint(Constraint):
     General Parallel machine constraint, differs from DisjunctiveConstraint as the disjunctive
     constraint have groups with predefined tasks, while the machine constraint defines its groups
     based on the machine assignment of the tasks.
+
+    This is mainly a setup constraint, if the expected behavior is to constrain tasks on which
+    machines they can be assigned to, use the MachineEligibilityConstraint instead.
     """
 
     machine_free: list[TIME]
@@ -182,8 +182,48 @@ class MachineConstraint(Constraint):
 
     def is_complete(self, state: ScheduleState) -> bool:
         "Check if the machine constraint is complete."
-        n_machines = len(self.machine_free)
-        return all(len(task.machines) == n_machines for task in state.tasks)
+        return all(len(task.machines) == state.n_machines for task in state.tasks)
+
+class MachineEligibilityConstraint(Constraint):
+    """
+    Machine eligibility constraint for the scheduling environment.
+    This constraint defines the machines on which each task can be executed.
+
+    Arguments:
+        eligibility: Mapping[int, Iterable[int]]
+            A mapping of task IDs to a list of machine IDs on which the task can be executed.
+
+        name: Optional[str] = None
+            An optional name for the constraint.
+
+    Note:
+        This constraint is limited by the setup of the scheduling environment, 
+        meaning that you cannot:
+        - add machines that do not exist in the environment.
+        - include/exclude machines that would make the task incompatible with the scheduling setup.
+        - exclude all machines for a task.
+
+        By default, if eligibility is not defined for a task, it is assumed that the task
+        can be executed on the original set of machines defined by the scheduling setup.
+    """
+
+    eligibility: dict[TASK_ID, Iterable[MACHINE_ID]]
+
+    def __init__(
+        self,
+        eligibility: Mapping[Int, Iterable[Int]],
+        name: str | None = None,
+    ):
+        super().__init__(name)
+
+        self.eligibility = {
+            TASK_ID(task): [MACHINE_ID(machine) for machine in machines]
+            for task, machines in eligibility.items()
+        }
+
+    def initialize(self, state: ScheduleState) -> None:
+        for task_id, machines in self.eligibility.items():
+            state.tasks[task_id].set_machines(convert_to_list(machines, MACHINE_ID))
 
     def get_entry(self) -> str:
         return "M_j"
@@ -495,7 +535,7 @@ class ReleaseDateConstraint(Constraint):
     """
 
     release_tag: str
-    release_dates: dict[TASK_ID, TIME]
+    release_dates: list[TIME]
 
     def __init__(
         self,
@@ -518,16 +558,22 @@ class ReleaseDateConstraint(Constraint):
     def initialize(self, state: ScheduleState) -> None:
         release_times = state.instance[self.release_tag]
 
-        self.release_dates = {
-            TASK_ID(task_id): TIME(release_time)
-            for task_id, release_time in enumerate(release_times)
-        }
+        self.release_dates = [TIME(release_time) for release_time in release_times]
 
     def reset(self, state: ScheduleState) -> None:
-        for task_id, release_time in self.release_dates.items():
+        for task_id, release_time in enumerate(self.release_dates):
             state.tasks[task_id].set_start_lb(release_time)
 
     def get_entry(self) -> str:
+        if self.release_dates:
+            release_time = self.release_dates[TASK_ID(0)]
+
+            for rt in self.release_dates:
+                if rt != release_time:
+                    return "r_j"
+
+            return f"r_j={release_time}"
+
         return "r_j"
 
 
@@ -549,29 +595,46 @@ class DeadlineConstraint(Constraint):
     """
 
     due_tag: str
-    due_dates: dict[TASK_ID, TIME]
+    due_dates: list[TIME]
 
     def __init__(
         self,
         due_dates: str = "due_dates",
+        const_due: Int | None = None,
         name: str | None = None,
     ):
         super().__init__(name)
         self.due_tag = due_dates
+        self.const_due = TIME(const_due) if const_due is not None else None
 
     def initialize(self, state: ScheduleState) -> None:
-        due_times = state.instance[self.due_tag]
+        if self.const_due is None:
+            due_times = state.instance[self.due_tag]
 
-        self.due_dates = {
-            TASK_ID(task_id): TIME(due_time)
-            for task_id, due_time in enumerate(due_times)
-        }
+            self.due_dates = [TIME(due_time) for due_time in due_times]
 
     def reset(self, state: ScheduleState) -> None:
-        for task_id, due_time in self.due_dates.items():
-            state.tasks[task_id].set_end_ub(due_time)
+        if self.const_due is not None:
+            for task in state.tasks:
+                task.set_end_ub(self.const_due)
+
+        else:
+            for task_id, due_time in enumerate(self.due_dates):
+                state.tasks[task_id].set_end_ub(due_time)
 
     def get_entry(self) -> str:
+        if self.const_due is not None:
+            return f"d_j={self.const_due}"
+
+        if self.due_dates:
+            due_time = self.due_dates[0]
+
+            for dt in self.due_dates[1:]:
+                if dt != due_time:
+                    return "d_j"
+            
+            return f"d_j={due_time}"
+
         return "d_j"
 
 

@@ -106,6 +106,9 @@ class PulpSolver:
 
         export_setup_pulp(env.setup, variables)(model, state)
 
+        for constraint in env.setup_constraints:
+            export_constraint_pulp(constraint, variables)(model, state)
+
         for constraint in env.constraints.values():
             export_constraint_pulp(constraint, variables)(model, state)
 
@@ -168,6 +171,7 @@ class PulpSolver:
         objective_value = self.variables.get_objective_value()
 
         return actions, objective_value, self.model.status
+
 
 if __name__ == "__main__":
     print("Available MiniZinc solvers:", PulpSolver.available_solvers())

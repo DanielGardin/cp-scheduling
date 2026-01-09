@@ -35,8 +35,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         instance: InstanceTypes | None = None,
         metrics: Mapping[str, Metric[Any]] | None = None,
         *,
-        render_mode: Renderer | str | None = None,
-        allow_preemption: bool = False,
+        render_mode: Renderer | str | None = None
     ):
         self.action_space = ActionSpace
 
@@ -46,8 +45,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
             objective=objective,
             instance=instance,
             metrics=metrics,
-            render_mode=render_mode,
-            allow_preemption=allow_preemption,
+            render_mode=render_mode
         )
 
         self.observation_space = self.get_observation_space()
@@ -96,3 +94,10 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
 
     def __repr__(self) -> str:
         return self._env.__repr__()
+
+    # Expose SchedulingEnv public methods
+    set_instance = SchedulingEnv.set_instance
+    add_constraint = SchedulingEnv.add_constraint
+    set_objective = SchedulingEnv.set_objective
+    add_metric = SchedulingEnv.add_metric
+    get_entry = SchedulingEnv.get_entry

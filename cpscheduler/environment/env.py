@@ -72,6 +72,7 @@ class SchedulingEnv:
 
     # Environment static variables
     setup: ScheduleSetup
+    setup_constraints: list[Constraint]
     constraints: dict[str, Constraint]
     objective: Objective
 
@@ -96,9 +97,17 @@ class SchedulingEnv:
         metrics: Mapping[str, Metric[Any]] | None = None,
         render_mode: Renderer | str | None = None,
     ):
+        self.schedule = {-1: []}
+
+        self.current_time = 0
+        self.advancing_to = 0
+        self.query_times: list[TIME] = []
+
         self.state = ScheduleState()
         self.setup = machine_setup
 
+
+        self.setup_constraints = []
         self.constraints = {}
         if constraints is not None:
             for constraint in constraints:
@@ -114,20 +123,14 @@ class SchedulingEnv:
 
         self.set_objective(objective)
 
-        self.schedule = {-1: []}
-
-        self.current_time = 0
-        self.advancing_to = 0
-        self.query_times: list[TIME] = []
+        if instance is not None:
+            self.set_instance(instance)
 
         self.renderer = (
             render_mode
             if isinstance(render_mode, Renderer)
             else Renderer.get_renderer(render_mode)
         )
-
-        if instance is not None:
-            self.set_instance(instance)
 
     def __repr__(self) -> str:
         if self.state.loaded:
@@ -180,7 +183,8 @@ class SchedulingEnv:
         self.state.set_n_machines(self.setup.n_machines)
 
         for constraint in self.setup.setup_constraints(self.state):
-            self.add_constraint(constraint, replace=True)
+            self.setup_constraints.append(constraint)
+            constraint.initialize(self.state)
 
         self.objective.initialize(self.state)
         for constraint in self.constraints.values():
@@ -193,11 +197,7 @@ class SchedulingEnv:
         alpha = self.setup.get_entry()
 
         beta = ",".join(
-            [
-                constraint.get_entry()
-                for constraint in self.constraints.values()
-                if not constraint.name.startswith("__") and constraint.get_entry()
-            ]
+            [constraint.get_entry() for constraint in self.constraints.values()]
         )
 
         gamma = self.objective.get_entry()
@@ -237,6 +237,9 @@ class SchedulingEnv:
 
     def _propagate(self) -> None:
         "Propagate the new bounds through the constraints"
+        for constraint in self.setup_constraints:
+            constraint.propagate(self.current_time, self.state)
+
         for constraint in self.constraints.values():
             constraint.propagate(self.current_time, self.state)
 
@@ -261,6 +264,9 @@ class SchedulingEnv:
         self.query_times.clear()
 
         self.state.reset()
+        for constraint in self.setup_constraints:
+            constraint.reset(self.state)
+
         for constraint in self.constraints.values():
             constraint.reset(self.state)
 
@@ -333,7 +339,17 @@ class SchedulingEnv:
             MAX_INT if self.current_time >= self.advancing_to else self.advancing_to
         )
 
+        for instruction_time in self.schedule:
+            if self.current_time <= instruction_time < next_time:
+                next_time = instruction_time
+
         if strict:
+            if next_time == self.current_time:
+                raise ValueError(
+                    f"Expected to advance to a future decision point, but {len(self.schedule[self.current_time])} "
+                    f"instructions would be ignored: {self.schedule[self.current_time]} at time {self.current_time}."
+                )
+
             for task in self.state.awaiting_tasks:
                 start_lb = task.get_start_lb()
 
@@ -502,6 +518,7 @@ class SchedulingEnv:
             ),
             (
                 self.constraints,
+                self.setup_constraints,
                 self.objective,
                 self.metrics,
                 self.renderer,
@@ -521,6 +538,7 @@ class SchedulingEnv:
         """
         (
             self.constraints,
+            self.setup_constraints,
             self.objective,
             self.metrics,
             self.renderer,

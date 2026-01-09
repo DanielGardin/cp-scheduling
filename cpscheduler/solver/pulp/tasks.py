@@ -38,9 +38,7 @@ def count_variables(variables: Iterable[Any] | PULP_EXPRESSION | int) -> int:
 
 
 class PulpVariables(ABC):
-    def __init__(
-        self, model: LpProblem, state: ScheduleState, integral: bool
-    ):
+    def __init__(self, model: LpProblem, state: ScheduleState, integral: bool):
         object.__setattr__(self, "_initializing_base", True)
         self._variables: dict[str, Any] = {}
 
