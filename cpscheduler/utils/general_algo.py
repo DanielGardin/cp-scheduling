@@ -59,6 +59,7 @@ def binary_search(
     target: _T,
     left: int = 0,
     right: int = -1,
+    decreasing: bool = False,
 ) -> int:
     """
     Perform a binary search on a sorted array.
@@ -82,7 +83,6 @@ def binary_search(
     int
         The index of the inclusion of the value in the array.
     """
-
     if right < 0:
         right = len(array) + right
 
@@ -93,8 +93,17 @@ def binary_search(
             return mid
 
         if array[mid] < target:
-            left = mid + 1
+            if decreasing:
+                right = mid - 1
+
+            else:
+                left = mid + 1
+        
         else:
-            right = mid - 1
+            if decreasing:
+                left = mid + 1
+
+            else:
+                right = mid - 1
 
     return left

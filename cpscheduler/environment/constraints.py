@@ -22,7 +22,7 @@ from mypy_extensions import mypyc_attr
 from cpscheduler.utils.list_utils import convert_to_list
 from cpscheduler.utils.general_algo import topological_sort, binary_search
 
-from cpscheduler.environment._common import TASK_ID, TIME, MACHINE_ID, Int, Float
+from cpscheduler.environment._common import TASK_ID, TIME, MACHINE_ID, Int, Float, MAX_INT
 from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.tasks import Task
 
@@ -63,7 +63,7 @@ class Constraint:
         "Given a bound change, propagate the constraint to other tasks."
 
     def refresh(self, time: TIME, state: ScheduleState) -> None:
-        "Updates constraint internal state when propagate cannot handle."
+        "Ensures the constraint when tasks' bounds are reset."
 
     def get_entry(self) -> str:
         "Produce the β entry for the constraint."
@@ -118,6 +118,49 @@ class PreemptionConstraint(Constraint):
 
     def get_entry(self) -> str:
         return "prmp"
+
+class OptionalityConstraint(Constraint):
+    """
+    Makes tasks optional in the scheduling environment.
+    Tasks marked as optional are treated equally to regular tasks, but they can be
+    left unscheduled without affecting the feasibility of the overall schedule.
+
+    Arguments:
+        task_ids: Iterable[int] | None
+            A list of task IDs to be marked as optional. If None, all tasks are marked as optional.
+
+        name: Optional[str] = None
+            An optional name for the constraint.
+    """
+    task_ids: list[TASK_ID]
+    all_tasks: bool
+
+    def __init__(
+        self,
+        task_ids: Iterable[Int] | None = None,
+        name: str | None = None
+    ) -> None:
+        super().__init__(name)
+
+        if task_ids is None:
+            self.all_tasks = True
+            self.task_ids = []
+
+        else:
+            self.all_tasks = False
+            self.task_ids = convert_to_list(task_ids, TASK_ID)
+
+    def initialize(self, state: ScheduleState) -> None:
+        if self.all_tasks:
+            for task in state.tasks:
+                task.set_optionality(True)
+
+        else:
+            for task_id in self.task_ids:
+                state.tasks[task_id].set_optionality(True)
+
+    def get_entry(self) -> str:
+        return "opt"
 
 
 class MachineConstraint(Constraint):
@@ -223,7 +266,9 @@ class MachineEligibilityConstraint(Constraint):
 
     def initialize(self, state: ScheduleState) -> None:
         for task_id, machines in self.eligibility.items():
-            state.tasks[task_id].set_machines(convert_to_list(machines, MACHINE_ID))
+            state.tasks[task_id].set_machines(
+                convert_to_list(machines, MACHINE_ID)
+            )
 
     def get_entry(self) -> str:
         return "M_j"
@@ -346,13 +391,6 @@ class PrecedenceConstraint(Constraint):
 
                 if child.get_start_lb() < end_time:
                     child.set_start_lb(end_time)
-
-    def refresh(self, time: TIME, state: ScheduleState) -> None:
-        self.reset(state)
-
-        for task in list(self.tasks_order):
-            if task.is_completed(time):
-                self.tasks_order.remove(task)
 
     def get_entry(self) -> str:
         intree = self.is_intree()
@@ -642,17 +680,17 @@ class ResourceConstraint(Constraint):
     """
     Resource constraint for the scheduling environment.
 
-    This constraint defines the resources available for tasks and their usage.
+    This constraint defines the renewable resources available for tasks and their usage.
     The resources can be defined as a list of capacities and a list of resource usage for each task.
 
     Arguments:
         capacities: Iterable[float]
-            A list of capacities for each resource. The length of the list should be equal to the
+            A list of capacities for each renewable resource. The length of the list should be equal to the
             number of resources.
 
-        resource_usage: Iterable[Mapping[int, float]] | Iterable[str]
-            A list of dictionaries or strings that define the resource usage for each task.
-            If a string is provided, it refers to a column in the tasks data that contains the
+        resource_usage: Iterable[str]
+            A list of strings that define the resource usage for each task.
+            Each string refers to a column in the tasks data that contains the
             resource usage for each task.
 
         name: Optional[str] = None
@@ -661,9 +699,10 @@ class ResourceConstraint(Constraint):
 
     resource_tags: list[str]
     capacities: list[float]
-    original_resources: list[dict[TASK_ID, float]]
+    resources: list[list[float]]
 
-    resources: list[dict[TASK_ID, float]]
+    next_available_time: list[list[TIME]]
+    available_resources: list[list[float]]
 
     def __init__(
         self,
@@ -676,70 +715,160 @@ class ResourceConstraint(Constraint):
         self.capacities = convert_to_list(capacities, float)
         self.resource_tags = list(resource_usage)
 
+        self.next_available_time = [[] for _ in self.resource_tags]
+        self.available_resources = [[] for _ in self.resource_tags]
+
     def initialize(self, state: ScheduleState) -> None:
-        self.original_resources = [
-            {
-                TASK_ID(task_id): float(usage)
-                for task_id, usage in enumerate(state.instance[resource_tag])
-            }
-            for resource_tag in self.resource_tags
+        self.resources = [
+            convert_to_list(state.instance[resource], float)
+            for resource in self.resource_tags
+        ]
+    
+    def reset(self, state: ScheduleState) -> None:
+        for i in range(len(self.resource_tags)):
+            self.next_available_time[i] = [MAX_INT]
+            self.available_resources[i] = [self.capacities[i]]
+
+    def propagate(self, time: TIME, state: ScheduleState) -> None:
+        for i, available_time in enumerate(self.next_available_time):
+            while available_time and available_time[-1] <= time:
+                available_time.pop()
+                self.available_resources[i].pop()
+
+        for task in state.transition_tasks:
+            for i, task_resources in enumerate(self.resources):
+                resource_usage = task_resources[task.task_id]
+
+                if resource_usage <= 0:
+                    continue
+
+                idx = binary_search(
+                    self.next_available_time[i],
+                    task.get_end(),
+                    decreasing=True
+                )
+
+                self.next_available_time[i].insert(idx, task.get_end())
+                self.available_resources[i].insert(
+                    idx,
+                    self.available_resources[i][idx - 1] - resource_usage
+                )
+
+        for task in state.awaiting_tasks:
+            for i, task_resources in enumerate(self.resources):
+                resource_usage = task_resources[task.task_id]
+
+                if resource_usage <= 0:
+                    continue
+
+                idx = binary_search(
+                    self.available_resources[i],
+                    resource_usage,
+                    decreasing=True
+                )
+
+                earliest_start = (
+                    self.next_available_time[i][idx - 1]
+                    if idx > 0
+                    else time
+                )
+
+                if task.get_start_lb() < earliest_start:
+                    task.set_start_lb(earliest_start)
+
+    def refresh(self, time: TIME, state: ScheduleState) -> None:
+        self.reset(state)
+
+        for task in state.fixed_tasks:
+            if not task.is_executing(time):
+                continue
+
+            for i, task_resources in enumerate(self.resources):
+                resource_usage = task_resources[task.task_id]
+
+                if resource_usage <= 0:
+                    continue
+
+                idx = binary_search(
+                    self.next_available_time[i],
+                    task.get_end(),
+                    decreasing=True
+                )
+
+                self.next_available_time[i].insert(idx, task.get_end())
+                self.available_resources[i].insert(
+                    idx,
+                    self.available_resources[i][idx - 1] - resource_usage
+                )
+
+
+class NonRenewableResourceConstraint(Constraint):
+    """
+    Resource constraint for the scheduling environment.
+    This constraint defines the non-renewable resources available for tasks and their usage.
+    The resources can be defined as a list of capacities and a list of resource usage for each task.
+
+    Arguments:
+        capacities: Iterable[float]
+            A list of capacities for each non-renewable resource. The length of the list should
+            be equal to the number of resources.
+
+        resource_usage: Iterable[str]
+            A list of strings that define the resource usage for each task.
+            Each string refers to a column in the tasks data that contains the
+            resource usage for each task.
+
+        name: Optional[str] = None
+            An optional name for the constraint.
+    """
+
+    resource_tags: list[str]
+    capacities: list[float]
+    resources: list[list[float]]
+
+    current_capacities: list[float]
+
+    def __init__(
+        self,
+        capacities: Iterable[Float],
+        resource_usage: Iterable[str],
+        name: str | None = None,
+    ) -> None:
+        super().__init__(name)
+
+        self.capacities = convert_to_list(capacities, float)
+        self.resource_tags = list(resource_usage)
+
+        self.current_capacities = self.capacities.copy()
+    
+    def initialize(self, state: ScheduleState) -> None:
+        self.resources = [
+            convert_to_list(state.instance[resource], float)
+            for resource in self.resource_tags
         ]
 
     def reset(self, state: ScheduleState) -> None:
-        self.resources = [resources.copy() for resources in self.original_resources]
+        self.current_capacities = self.capacities.copy()
 
     def propagate(self, time: TIME, state: ScheduleState) -> None:
-        for i, task_resources in enumerate(self.resources):
-            minimum_end_time: list[TIME] = []
-            resource_taken: list[float] = []
-            for task_id in list(task_resources.keys()):
-                task = state.tasks[task_id]
+        for task in state.transition_tasks:
+            for i, task_resources in enumerate(self.resources):
+                resource_usage = task_resources[task.task_id]
 
-                if task.is_executing(time):
-                    resource = task_resources[task_id]
-
-                    minimum_end_time.append(task.get_end_lb())
-                    resource_taken.append(resource)
-
-                if task.is_completed(time):
-                    task_resources.pop(task_id)
-
-            if not resource_taken:
-                continue
-
-            argsort = sorted([(end, i) for i, end in enumerate(minimum_end_time)])
-            minimum_end_time = [minimum_end_time[i] for _, i in argsort]
-            available_resources = resource_taken.copy()
-
-            available_resources[-1] = (
-                self.capacities[i] - resource_taken[argsort[-1][1]]
-            )
-
-            for i in range(len(minimum_end_time) - 2, -1, -1):
-                last_task = argsort[i + 1][1]
-
-                available_resources[i] = (
-                    available_resources[i + 1] - resource_taken[last_task]
-                )
-
-            for task_id in self.resources[i]:
-                task = state.tasks[task_id]
-                resource = task_resources[task_id]
-
-                if task.is_fixed():
+                if resource_usage <= 0:
                     continue
 
-                index = binary_search(available_resources, resource)
+                self.current_capacities[i] -= resource_usage
 
-                minimum_start_time = minimum_end_time[index - 1] if index > 0 else time
+        for task in state.awaiting_tasks:
+            for i, task_resources in enumerate(self.resources):
+                resource_usage = task_resources[task.task_id]
 
-                if task.get_start_lb() < minimum_start_time:
-                    task.set_start_lb(minimum_start_time)
+                if resource_usage <= 0:
+                    continue
 
-    def refresh(self, time: TIME, state: ScheduleState) -> None:
-        raise NotImplementedError(
-            "Refresh method is not implemented for ResourceConstraint yet."
-        )
+                if self.current_capacities[i] < resource_usage:
+                    task.set_unfeasible()
 
 
 SetupTimes: TypeAlias = Mapping[Int, Mapping[Int, Int]] | Callable[[int, int, Any], Int]

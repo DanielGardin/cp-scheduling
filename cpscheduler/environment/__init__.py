@@ -10,14 +10,19 @@ __all__ = [
     "OpenShopSetup",
     # Beta constraints
     "Constraint",
+    "PreemptionConstraint",
+    "OptionalityConstraint",
+    "MachineEligibilityConstraint",
     "PrecedenceConstraint",
+    "NoWaitConstraint",
     "ConstantProcessingTime",
     "DisjunctiveConstraint",
     "ReleaseDateConstraint",
     "DeadlineConstraint",
     "ResourceConstraint",
-    "MachineConstraint",
+    "NonRenewableResourceConstraint",
     "SetupConstraint",
+    "MachineBreakdownConstraint",
     # Gamma objectives
     "Objective",
     "ComposedObjective",
@@ -48,14 +53,19 @@ from .schedule_setup import (
 
 from .constraints import (
     Constraint,
+    PreemptionConstraint,
+    OptionalityConstraint,
+    MachineEligibilityConstraint,
     PrecedenceConstraint,
+    NoWaitConstraint,
     ConstantProcessingTime,
     DisjunctiveConstraint,
     ReleaseDateConstraint,
     DeadlineConstraint,
     ResourceConstraint,
-    MachineConstraint,
+    NonRenewableResourceConstraint,
     SetupConstraint,
+    MachineBreakdownConstraint,
 )
 
 from .objectives import (

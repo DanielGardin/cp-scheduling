@@ -2,7 +2,7 @@
 env.py
 
 This module defines the SchedulingEnv class, which is a custom environment for generic
-cheduling problems.
+scheduling problems.
 It is designed to be modular and extensible, allowing users to define their own scheduling
 problems by specifying the machine setup, constraints, objectives, and instances.
 
@@ -46,6 +46,7 @@ from cpscheduler.environment.objectives import Objective
 
 from cpscheduler.environment._render import Renderer
 
+DEFAULT_QUEUE = -1
 
 def prepare_instance(instance: InstanceTypes) -> dict[str, list[Any]]:
     "Prepare the instance data to a standard dictionary format."
@@ -97,7 +98,7 @@ class SchedulingEnv:
         metrics: Mapping[str, Metric[Any]] | None = None,
         render_mode: Renderer | str | None = None,
     ):
-        self.schedule = {-1: []}
+        self.schedule = {DEFAULT_QUEUE: []}
 
         self.current_time = 0
         self.advancing_to = 0
@@ -257,7 +258,7 @@ class SchedulingEnv:
             )
 
         self.schedule.clear()
-        self.schedule[-1] = []
+        self.schedule[DEFAULT_QUEUE] = []
 
         self.current_time = 0
         self.advancing_to = 0
@@ -301,7 +302,6 @@ class SchedulingEnv:
         while not self._step_forward():
             self.render()
 
-        # Heavy: 30% of step time in dynamic usage.
         obs = self.get_state()
 
         reward = self._get_objective() - previous_objective
@@ -324,14 +324,18 @@ class SchedulingEnv:
     def _is_terminal(self) -> bool:
         "Check if the environment is in a terminal state."
         if self.state.awaiting_tasks:
-            return False
+            return all(
+                task.optional and not task.is_feasible(self.current_time)
+                for task in self.state.awaiting_tasks
+            )
 
         return all(
-            task.is_completed(self.current_time) for task in self.state.fixed_tasks
+            task.is_completed(self.current_time)
+            for task in self.state.fixed_tasks
         )
 
     def _is_schedule_empty(self) -> bool:
-        return not self.schedule[-1] and len(self.schedule) == 1
+        return not self.schedule[DEFAULT_QUEUE] and len(self.schedule) == 1
 
     def _advance_to_decision_point(self, strict: bool = False) -> None:
         "Obtain the next decision time to advance. If strict, only consider future tasks."
@@ -410,18 +414,18 @@ class SchedulingEnv:
         self.schedule[time].append(instruction)
 
     def _process_next_instruction(
-        self, scheduled_time: TIME = -1, allow_wait: bool = True
+        self, queue: TIME = DEFAULT_QUEUE, allow_wait: bool = True
     ) -> bool:
         """
         Process the next instruction in the schedule at the given time.
-        If time is -1, use the current time and if allow_wait is False,
+        If queue is DEFAULT_QUEUE, use the current time and if allow_wait is False,
         it halts the environment when an instruction is requested to be waited.
         """
         instruction = Instruction()
         signal = Signal(Action.SKIPPED)
 
         i: i64 = -1
-        schedule = self.schedule[scheduled_time]
+        schedule = self.schedule[queue]
 
         while signal.action & Action.SKIPPED and i + 1 < len(schedule):
             i += 1
@@ -475,7 +479,20 @@ class SchedulingEnv:
         return bool(action & Action.HALT)
 
     def _step_forward(self) -> bool:
-        "Dispatch the next instruction in the schedule depending on the current state. Returns whether to halt."
+        """
+        Dispatch the next instruction in the schedule depending on the current state. Returns whether to halt.
+
+        Every step, the environment follows the following logic:
+        1. If there are instructions scheduled at the current time, process them first.
+        2. If the environment is currently advancing to a future time, continue advancing.
+        3. If the schedule is empty, check if there are any awaiting tasks. If not, fast-forward to the end of the last task.
+        4. If there are instructions in the default queue, process them.
+
+        This ordering ensures that scheduled instructions are prioritized, and the environment can dispatch
+        tasks as soon as they are ready, while also allowing for efficient time advancement when there are
+        no pending instructions.
+        """
+
         if self.current_time in self.schedule:
             halt = self._process_next_instruction(self.current_time, False)
 

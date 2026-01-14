@@ -84,7 +84,6 @@ class Bounds:
         return f"Bounds(lb={self.lb}, ub={self.ub})"
 
 
-# There are several bugs hidden in the implementation of `global_bound`
 class Task:
     """
     Minimal unit of work that can be scheduled. The task does not know anything about the
@@ -104,6 +103,7 @@ class Task:
     n_parts: PART_ID
 
     preemptive: bool
+    optional: bool
 
     starts: list[TIME]
     durations: list[TIME]
@@ -124,6 +124,7 @@ class Task:
         self.n_parts = 0
 
         self.preemptive = False
+        self.optional = False
 
         self.starts = []
         self.durations = []
@@ -360,6 +361,12 @@ class Task:
 
         self.global_bound.ub = max(bound.ub for bound in self.start_bounds.values())
 
+    def set_unfeasible(self) -> None:
+        "Set the task to an unfeasible state."
+        self.global_bound.nullify()
+        for bound in self.start_bounds.values():
+            bound.nullify()
+
     def set_processing_time(self, machine: MACHINE_ID, time: TIME) -> None:
         "Set the processing time for a given machine."
         if time < 0:
@@ -373,6 +380,10 @@ class Task:
     def set_preemption(self, allow_preemption: bool) -> None:
         "Set whether the task allows preemption."
         self.preemptive = allow_preemption
+
+    def set_optionality(self, optional: bool) -> None:
+        "Set whether the task is optional."
+        self.optional = optional
 
     def set_machines(self, machines: list[MACHINE_ID]) -> None:
         "Set the list of machines that can process this task."
