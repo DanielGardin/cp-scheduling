@@ -116,14 +116,13 @@ class Execute(Instruction):
         self.wait = wait
 
     def __repr__(self) -> str:
-        representation = "Submit(" if self.wait else "Execute("
-        representation += "job" if self.job_oriented else "task"
-        representation += f"={self.id}"
-
+        instruction_name = "Submit" if self.wait else "Execute"
+        orientation = "job" if self.job_oriented else "task"
+        
         if self.machine != -1:
-            representation += f", machine={self.machine}"
+            return f"{instruction_name}({orientation}={self.id}, machine={self.machine})"
 
-        return representation + ")"
+        return f"{instruction_name}({orientation}={self.id})"
 
     def process(
         self,
@@ -237,6 +236,70 @@ class Pause(Instruction):
         return Signal(Action.WAIT)
 
 
+class Resume(Instruction):
+    "Resumes a paused task in the same machine it was executing before being paused."
+
+    def __init__(
+        self,
+        id: TASK_ID,
+        job_oriented: bool = False
+    ):
+        self.id = id
+        self.job_oriented = job_oriented
+
+    def __repr__(self) -> str:
+        orientation = "job" if self.job_oriented else "task"
+
+        return f"Resume({orientation}={self.id})"
+
+    def process(
+        self,
+        current_time: TIME,
+        state: ScheduleState,
+        scheduled_instructions: dict[TIME, list[Instruction]],
+    ) -> Signal:
+        if self.job_oriented:
+            job_tasks = state.jobs[self.id]
+
+            for task in job_tasks:
+                if task.is_paused(current_time):
+                    last_machine = task.get_assignment()
+                    execute = state.execute_task(task.task_id, current_time, last_machine)
+
+                    if execute:
+                        return Signal(Action.DONE)
+
+
+            if all(task.fixed for task in job_tasks):
+                return Signal(
+                    Action.RAISE,
+                    info=f"Every task in Job {self.id} has been executed.",
+                )
+
+        else:
+            task = state.tasks[self.id]
+
+            if not task.is_paused(current_time):
+                return Signal(
+                    Action.RAISE,
+                    info=f"Task {self.id} is not paused and cannot be resumed.",
+                )
+            
+            last_machine = task.get_assignment()
+            execute = state.execute_task(self.id, current_time, last_machine)
+
+            if execute:
+                return Signal(Action.DONE)
+
+            if state.tasks[self.id].fixed:
+                return Signal(
+                    Action.RAISE,
+                    info=f"Task {self.id} was/is already executed.",
+                )
+
+        return Signal(Action.WAIT)
+
+
 class Complete(Instruction):
     "Advances the current time to the end of an executing task."
 
@@ -334,13 +397,20 @@ def parse_instruction(
         is_submit = action.startswith("submit")
 
         if is_execute or is_submit:
-            job_oriented = action.endswith("job")
+            job_oriented: bool = action.endswith("job")
 
             if 0 < len(args) <= 2:
-                id, time = parse_args(args, 2)
+                id, time_or_machine = parse_args(args, 2)
 
                 machines = state.tasks[id].machines
-                machine = -1 if len(machines) > 1 else machines[0]
+
+                if len(machines) == 1:
+                    machine = machines[0]
+                    time = time_or_machine
+
+                else:
+                    machine = time_or_machine
+                    time = -1
 
             else:
                 id, machine, time = parse_args(args, 3)
@@ -352,6 +422,13 @@ def parse_instruction(
 
             instruction = Pause(task_id)
 
+        elif action.startswith("resume"):
+            job_oriented = action.endswith("job")
+
+            task_id, time = parse_args(args, 2)
+
+            instruction = Resume(task_id, job_oriented)
+
         elif action == "complete":
             task_id, time = parse_args(args, 2)
 
@@ -361,6 +438,11 @@ def parse_instruction(
             to_time, time = parse_args(args, 2)
 
             instruction = Advance(to_time)
+
+        elif action == "noop":
+            (time,) = parse_args(args, 1)
+
+            instruction = Advance()
 
         elif action == "query":
             (time,) = parse_args(args, 1)
