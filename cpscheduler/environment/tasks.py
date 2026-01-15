@@ -154,6 +154,8 @@ class Task:
             (self.task_id, self.job_id),
             (
                 self.n_parts,
+                self.preemptive,
+                self.optional,
                 self.starts,
                 self.durations,
                 self.assignments,
@@ -169,6 +171,8 @@ class Task:
     def __setstate__(self, state: tuple[Any, ...]) -> None:
         (
             self.n_parts,
+            self.preemptive,
+            self.optional,
             self.starts,
             self.durations,
             self.assignments,
@@ -213,16 +217,104 @@ class Task:
         self.global_bound.reset()
         self.fixed = False
 
-    def is_fixed(self) -> bool:
-        "Checks if the task has its decision variables fixed."
-        return self.fixed
+    # Setter methods
+    def set_processing_time(self, machine: MACHINE_ID, time: TIME) -> None:
+        "Set the processing time for a given machine."
+        if time < 0:
+            return
 
-    def is_feasible(self, time: TIME) -> bool:
-        "Check if the task is feasible given its current bounds."
-        return self.global_bound.is_feasible() and \
-            time <= self.global_bound.ub and \
-            all(bound.is_feasible() for bound in self.start_bounds.values())
+        self.processing_times[machine] = time
+        self.remaining_times[machine] = time
+        self.machines.append(machine)
+        self.start_bounds[machine] = Bounds()
 
+    def set_preemption(self, allow_preemption: bool) -> None:
+        "Set whether the task allows preemption."
+        self.preemptive = allow_preemption
+
+    def set_optionality(self, optional: bool) -> None:
+        "Set whether the task is optional."
+        self.optional = optional
+
+    def set_machines(self, machines: list[MACHINE_ID]) -> None:
+        "Set the list of machines that can process this task."
+        for machine in machines:
+            if machine not in self.processing_times:
+                raise ValueError(
+                    f"Processing time for machine {machine} not set in task {self.task_id}."
+                )
+
+        self.machines = machines
+        # Delete any processing times that are not in the machines list
+        for machine in list(self.processing_times.keys()):
+            if machine not in machines:
+                del self.processing_times[machine]
+                del self.remaining_times[machine]
+                del self.start_bounds[machine]
+
+    def set_start_lb(self, time: TIME, machine: MACHINE_ID = -1) -> None:
+        "Set the lower bound for the starting time in a machine."
+        if time < 0:
+            time = 0
+
+        if machine != -1:
+            self.start_bounds[machine].lb = time
+            self.global_bound.lb = min(bound.lb for bound in self.start_bounds.values())
+
+        else:
+            self.global_bound.lb = time
+            for start_bound in self.start_bounds.values():
+                start_bound.lb = time
+
+    def set_start_ub(self, time: TIME, machine: MACHINE_ID = -1) -> None:
+        "Set the upper bound for the starting time in a machine."
+        if time > MAX_INT:
+            time = MAX_INT
+
+        if machine != -1:
+            self.start_bounds[machine].ub = time
+            self.global_bound.ub = max(bound.ub for bound in self.start_bounds.values())
+
+        else:
+            self.global_bound.ub = time
+            for start_bound in self.start_bounds.values():
+                start_bound.ub = time
+
+    def set_end_lb(self, time: TIME, machine: MACHINE_ID = -1) -> None:
+        "Set the lower bound for the ending time in a machine."
+        if time < 0:
+            time = 0
+
+        if machine != -1:
+            self.start_bounds[machine].lb = time - self.remaining_times[machine]
+
+        else:
+            for machine in self.machines:
+                self.start_bounds[machine].lb = time - self.remaining_times[machine]
+
+        self.global_bound.lb = min(bound.lb for bound in self.start_bounds.values())
+
+    def set_end_ub(self, time: TIME, machine: MACHINE_ID = -1) -> None:
+        "Set the upper bound for the ending time in a machine."
+        if time > MAX_INT:
+            time = MAX_INT
+
+        if machine != -1:
+            self.start_bounds[machine].ub = time - self.remaining_times[machine]
+
+        else:
+            for machine in self.machines:
+                self.start_bounds[machine].ub = time - self.remaining_times[machine]
+
+        self.global_bound.ub = max(bound.ub for bound in self.start_bounds.values())
+
+    def set_unfeasible(self) -> None:
+        "Set the task to an unfeasible state."
+        self.global_bound.nullify()
+        for bound in self.start_bounds.values():
+            bound.nullify()
+
+    # Getter methods
     def get_start(self, part: PART_ID = 0) -> TIME:
         "Get the starting time of a given part of the task."
         return self.starts[part]
@@ -304,102 +396,6 @@ class Task:
                 end_ub = machine_end_ub
 
         return end_ub
-
-    def set_start_lb(self, time: TIME, machine: MACHINE_ID = -1) -> None:
-        "Set the lower bound for the starting time in a machine."
-        if time < 0:
-            time = 0
-
-        if machine != -1:
-            self.start_bounds[machine].lb = time
-            self.global_bound.lb = min(bound.lb for bound in self.start_bounds.values())
-
-        else:
-            self.global_bound.lb = time
-            for start_bound in self.start_bounds.values():
-                start_bound.lb = time
-
-    def set_start_ub(self, time: TIME, machine: MACHINE_ID = -1) -> None:
-        "Set the upper bound for the starting time in a machine."
-        if time > MAX_INT:
-            time = MAX_INT
-
-        if machine != -1:
-            self.start_bounds[machine].ub = time
-            self.global_bound.ub = max(bound.ub for bound in self.start_bounds.values())
-
-        else:
-            self.global_bound.ub = time
-            for start_bound in self.start_bounds.values():
-                start_bound.ub = time
-
-    def set_end_lb(self, time: TIME, machine: MACHINE_ID = -1) -> None:
-        "Set the lower bound for the ending time in a machine."
-        if time < 0:
-            time = 0
-
-        if machine != -1:
-            self.start_bounds[machine].lb = time - self.remaining_times[machine]
-
-        else:
-            for machine in self.machines:
-                self.start_bounds[machine].lb = time - self.remaining_times[machine]
-
-        self.global_bound.lb = min(bound.lb for bound in self.start_bounds.values())
-
-    def set_end_ub(self, time: TIME, machine: MACHINE_ID = -1) -> None:
-        "Set the upper bound for the ending time in a machine."
-        if time > MAX_INT:
-            time = MAX_INT
-
-        if machine != -1:
-            self.start_bounds[machine].ub = time - self.remaining_times[machine]
-
-        else:
-            for machine in self.machines:
-                self.start_bounds[machine].ub = time - self.remaining_times[machine]
-
-        self.global_bound.ub = max(bound.ub for bound in self.start_bounds.values())
-
-    def set_unfeasible(self) -> None:
-        "Set the task to an unfeasible state."
-        self.global_bound.nullify()
-        for bound in self.start_bounds.values():
-            bound.nullify()
-
-    def set_processing_time(self, machine: MACHINE_ID, time: TIME) -> None:
-        "Set the processing time for a given machine."
-        if time < 0:
-            return
-
-        self.processing_times[machine] = time
-        self.remaining_times[machine] = time
-        self.machines.append(machine)
-        self.start_bounds[machine] = Bounds()
-
-    def set_preemption(self, allow_preemption: bool) -> None:
-        "Set whether the task allows preemption."
-        self.preemptive = allow_preemption
-
-    def set_optionality(self, optional: bool) -> None:
-        "Set whether the task is optional."
-        self.optional = optional
-
-    def set_machines(self, machines: list[MACHINE_ID]) -> None:
-        "Set the list of machines that can process this task."
-        for machine in machines:
-            if machine not in self.processing_times:
-                raise ValueError(
-                    f"Processing time for machine {machine} not set in task {self.task_id}."
-                )
-
-        self.machines = machines
-        # Delete any processing times that are not in the machines list
-        for machine in list(self.processing_times.keys()):
-            if machine not in machines:
-                del self.processing_times[machine]
-                del self.remaining_times[machine]
-                del self.start_bounds[machine]
 
     def execute(
         self,
@@ -491,6 +487,10 @@ class Task:
 
         raise RuntimeError(f"Inconsistent task state detected for task {self.task_id}.")
 
+    def is_fixed(self) -> bool:
+        "Checks if the task has its decision variables fixed."
+        return self.fixed
+
     def is_available(self, time: TIME, machine: MACHINE_ID = -1) -> bool:
         "Check if the task is available for execution at a given time."
         if self.fixed:
@@ -529,3 +529,10 @@ class Task:
     def is_completed(self, time: TIME) -> bool:
         "Check if the task is completed at a given time."
         return self.fixed and time >= self.get_end()
+
+
+    def is_feasible(self, time: TIME) -> bool:
+        "Check if the task is feasible given its current bounds."
+        return self.global_bound.is_feasible() and \
+            time <= self.global_bound.ub and \
+            all(bound.is_feasible() for bound in self.start_bounds.values())

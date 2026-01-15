@@ -41,7 +41,7 @@ from cpscheduler.environment.instructions import (
     is_single_action,
 )
 from cpscheduler.environment.schedule_setup import ScheduleSetup
-from cpscheduler.environment.constraints import Constraint
+from cpscheduler.environment.constraints import Constraint, PassiveConstraint
 from cpscheduler.environment.objectives import Objective
 
 from cpscheduler.environment._render import Renderer
@@ -73,8 +73,8 @@ class SchedulingEnv:
 
     # Environment static variables
     setup: ScheduleSetup
-    setup_constraints: list[Constraint]
     constraints: dict[str, Constraint]
+    passive_constraints: list[PassiveConstraint]
     objective: Objective
 
     metrics: dict[str, Metric[object | Mapping[str, Any]]]
@@ -107,9 +107,8 @@ class SchedulingEnv:
         self.state = ScheduleState()
         self.setup = machine_setup
 
-
-        self.setup_constraints = []
         self.constraints = {}
+        self.passive_constraints = []
         if constraints is not None:
             for constraint in constraints:
                 self.add_constraint(constraint)
@@ -155,7 +154,11 @@ class SchedulingEnv:
         if self.state.loaded:
             constraint.initialize(self.state)
 
-        self.constraints[name] = constraint
+        if isinstance(constraint, PassiveConstraint):
+            self.passive_constraints.append(constraint)
+
+        else:
+            self.constraints[name] = constraint
 
     def set_objective(self, objective: Objective) -> None:
         "Set the objective function for the environment."
@@ -184,12 +187,15 @@ class SchedulingEnv:
         self.state.set_n_machines(self.setup.n_machines)
 
         for constraint in self.setup.setup_constraints(self.state):
-            self.setup_constraints.append(constraint)
+            self.add_constraint(constraint)
+
+        for p_constraint in self.passive_constraints:
+            p_constraint.initialize(self.state)
+
+        for constraint in self.constraints.values():
             constraint.initialize(self.state)
 
         self.objective.initialize(self.state)
-        for constraint in self.constraints.values():
-            constraint.initialize(self.state)
 
         self.force_reset = True
 
@@ -238,13 +244,10 @@ class SchedulingEnv:
 
     def _propagate(self) -> None:
         "Propagate the new bounds through the constraints"
-        for constraint in self.setup_constraints:
-            constraint.propagate(self.current_time, self.state)
-
         for constraint in self.constraints.values():
             constraint.propagate(self.current_time, self.state)
 
-        self.state.transition_tasks.clear()
+        self.state.tasks_to_propagate.clear()
 
     # Environment API methods
     def reset(self, *, options: Options = None) -> tuple[ObsType, InfoType]:
@@ -265,9 +268,6 @@ class SchedulingEnv:
         self.query_times.clear()
 
         self.state.reset()
-        for constraint in self.setup_constraints:
-            constraint.reset(self.state)
-
         for constraint in self.constraints.values():
             constraint.reset(self.state)
 
@@ -535,7 +535,7 @@ class SchedulingEnv:
             ),
             (
                 self.constraints,
-                self.setup_constraints,
+                self.passive_constraints,
                 self.objective,
                 self.metrics,
                 self.renderer,
@@ -555,7 +555,7 @@ class SchedulingEnv:
         """
         (
             self.constraints,
-            self.setup_constraints,
+            self.passive_constraints,
             self.objective,
             self.metrics,
             self.renderer,

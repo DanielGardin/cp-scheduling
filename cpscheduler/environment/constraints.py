@@ -11,7 +11,7 @@ implementing the required methods.
 
 """
 
-from typing import Any, TypeAlias
+from typing import Any, TypeAlias, NoReturn
 from collections.abc import Iterable, Mapping, Sequence, Callable
 from typing_extensions import Self
 
@@ -25,7 +25,6 @@ from cpscheduler.utils.general_algo import topological_sort, binary_search
 from cpscheduler.environment._common import TASK_ID, TIME, MACHINE_ID, Int, Float, MAX_INT
 from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.tasks import Task
-
 
 constraints: dict[str, type["Constraint"]] = {}
 
@@ -62,15 +61,30 @@ class Constraint:
     def propagate(self, time: TIME, state: ScheduleState) -> None:
         "Given a bound change, propagate the constraint to other tasks."
 
-    def refresh(self, time: TIME, state: ScheduleState) -> None:
-        "Ensures the constraint when tasks' bounds are reset."
-
     def get_entry(self) -> str:
         "Produce the β entry for the constraint."
         return ""
 
 
-class PreemptionConstraint(Constraint):
+class PassiveConstraint(Constraint):
+    """
+    Passive constraints do not actively propagate changes in the scheduling environment, not being
+    directly translatable into mathematical programming constraints, but rather serve as markers or
+    flags to indicate certain properties of tasks.
+
+    Examples of passive constraints include preemption and optionality constraints.   
+    """
+
+    def propagate(self, time: TIME, state: ScheduleState) -> NoReturn:
+        "Passive constraint does not propagate any changes."
+        raise NotImplementedError("Passive constraint does not propagate any changes.")
+
+    def reset(self, state: ScheduleState) -> NoReturn:
+        "Passive constraint does not reset any state."
+        raise NotImplementedError("Passive constraint does not reset any state.")
+
+
+class PreemptionConstraint(PassiveConstraint):
     """
     Preemption constraint for the scheduling environment.
     This constraint allows tasks to be preempted, meaning they can be interrupted
@@ -119,7 +133,7 @@ class PreemptionConstraint(Constraint):
     def get_entry(self) -> str:
         return "prmp"
 
-class OptionalityConstraint(Constraint):
+class OptionalityConstraint(PassiveConstraint):
     """
     Makes tasks optional in the scheduling environment.
     Tasks marked as optional are treated equally to regular tasks, but they can be
@@ -172,62 +186,28 @@ class MachineConstraint(Constraint):
     This is mainly a setup constraint, if the expected behavior is to constrain tasks on which
     machines they can be assigned to, use the MachineEligibilityConstraint instead.
     """
-
-    machine_free: list[TIME]
-
-    def __init__(self, name: str | None = None) -> None:
-        super().__init__(name)
-        self.machine_free = []
-
-    def __reduce__(self) -> Any:
-        return (
-            self.__class__,
-            (self.name,),
-            (self.machine_free,),
-        )
-
-    def __setstate__(self, state: tuple[Any, ...]) -> None:
-        (self.machine_free,) = state
-
-    def initialize(self, state: ScheduleState) -> None:
-        self.machine_free = [0 for _ in range(state.n_machines)]
-
-    def reset(self, state: ScheduleState) -> None:
-        for machine, _ in enumerate(self.machine_free):
-            self.machine_free[machine] = 0
-
     def propagate(self, time: TIME, state: ScheduleState) -> None:
-        changed_machines: set[MACHINE_ID] = set()
-        for task in state.transition_tasks:
-            machine = task.get_assignment()
+        machine_ends: dict[MACHINE_ID, TIME] = {}
+        for task in state.tasks_to_propagate:
+            if task.is_fixed():
+                machine = task.get_assignment()
 
-            self.machine_free[machine] = task.get_end()
-            changed_machines.add(machine)
+                machine_ends[machine] = task.get_end()
 
         for task in state.awaiting_tasks:
-            for machine in changed_machines:
+            for machine in machine_ends:
                 if machine not in task.machines:
                     continue
 
-                if task.get_start_lb(machine) < self.machine_free[machine]:
-                    task.set_start_lb(self.machine_free[machine], machine)
-
-    def refresh(self, time: TIME, state: ScheduleState) -> None:
-        for machine in range(len(self.machine_free)):
-            self.machine_free[machine] = time
-
-        for task in state.fixed_tasks:
-            for part in range(task.n_parts):
-                machine = task.get_assignment(part)
-
-                if task.get_end(part) > self.machine_free[machine]:
-                    self.machine_free[machine] = task.get_end(part)
+                if task.get_start_lb(machine) < machine_ends[machine]:
+                    task.set_start_lb(machine_ends[machine], machine)
+                    state.mark_modified(task.task_id)
 
     def is_complete(self, state: ScheduleState) -> bool:
         "Check if the machine constraint is complete."
         return all(len(task.machines) == state.n_machines for task in state.tasks)
 
-class MachineEligibilityConstraint(Constraint):
+class MachineEligibilityConstraint(PassiveConstraint):
     """
     Machine eligibility constraint for the scheduling environment.
     This constraint defines the machines on which each task can be executed.
@@ -374,16 +354,11 @@ class PrecedenceConstraint(Constraint):
         self.tasks_order = [state.tasks[task_id] for task_id in self.original_order]
 
     def propagate(self, time: TIME, state: ScheduleState) -> None:
-        completion_mask = [task.is_completed(time) for task in self.tasks_order]
+        to_propagate = set(task for task in state.tasks_to_propagate)
 
-        if any(completion_mask):
-            self.tasks_order = [
-                task
-                for i, task in enumerate(self.tasks_order)
-                if not completion_mask[i]
-            ]
+        while to_propagate:
+            task = to_propagate.pop()
 
-        for task in self.tasks_order:
             end_time = task.get_end_lb()
 
             for child_id in self.precedence.get(task.task_id, []):
@@ -391,6 +366,8 @@ class PrecedenceConstraint(Constraint):
 
                 if child.get_start_lb() < end_time:
                     child.set_start_lb(end_time)
+                    state.mark_modified(child.task_id)
+                    to_propagate.add(child)
 
     def get_entry(self) -> str:
         intree = self.is_intree()
@@ -463,7 +440,7 @@ class NoWaitConstraint(PrecedenceConstraint):
         return "nwt"
 
 
-class ConstantProcessingTime(Constraint):
+class ConstantProcessingTime(PassiveConstraint):
     """
     Constant processing time constraint for the scheduling environment.
 
@@ -535,7 +512,7 @@ class DisjunctiveConstraint(Constraint):
             self.group_free[i] = 0
 
     def propagate(self, time: TIME, state: ScheduleState) -> None:
-        for task in state.transition_tasks:
+        for task in state.tasks_to_propagate:
             for group in self.groups_map[task.task_id]:
                 self.group_free[group] = task.get_end()
 
@@ -735,7 +712,7 @@ class ResourceConstraint(Constraint):
                 available_time.pop()
                 self.available_resources[i].pop()
 
-        for task in state.transition_tasks:
+        for task in state.tasks_to_propagate:
             for i, task_resources in enumerate(self.resources):
                 resource_usage = task_resources[task.task_id]
 
@@ -851,7 +828,7 @@ class NonRenewableResourceConstraint(Constraint):
         self.current_capacities = self.capacities.copy()
 
     def propagate(self, time: TIME, state: ScheduleState) -> None:
-        for task in state.transition_tasks:
+        for task in state.tasks_to_propagate:
             for i, task_resources in enumerate(self.resources):
                 resource_usage = task_resources[task.task_id]
 
@@ -964,3 +941,143 @@ class SetupConstraint(Constraint):
         raise NotImplementedError(
             "Refresh method is not implemented for SetupConstraint yet."
         )
+
+class MachineBreakdownConstraint(Constraint):
+    """
+    Machine breakdown constraint for the scheduling environment.
+
+    This constraint defines the breakdowns for machines, which are the times
+    when the machines are unavailable for task execution. The breakdowns can be defined
+    as a mapping of machine IDs to a list of (start_time, end_time) tuples representing
+    the breakdown intervals.
+
+    Arguments:
+        breakdowns: Mapping[int, Iterable[tuple[int, int]]]
+            A mapping of machine IDs to a list of (start_time, end_time) tuples
+            representing the breakdown intervals for each machine.
+
+        name: Optional[str] = None
+            An optional name for the constraint.
+    """
+
+    breakdowns: dict[MACHINE_ID, list[tuple[TIME, TIME]]]
+    current_breakdowns: dict[MACHINE_ID, int]
+
+    def __post_init__(self) -> None:
+        raise NotImplementedError("BatchConstraint is not implemented yet.")
+
+    def __init__(
+        self,
+        breakdowns: Mapping[Int, Iterable[tuple[Int, Int]]],
+        name: str | None = None,
+    ):
+        super().__init__(name)
+
+        self.breakdowns = {
+            MACHINE_ID(machine): [
+                (TIME(start), TIME(end)) for start, end in intervals
+            ]
+            for machine, intervals in breakdowns.items()
+        }
+    
+    @classmethod
+    def from_machine_step_function(cls, step_function: Mapping[Int, Int], name: str | None = None) -> Self:
+        """
+        Create a MachineBreakdownConstraint from a machine step function.
+        This function is only useful in Parallel Machine Environments, where machines are
+        indistinguishable and if suffices to define the number of available machines at each
+        time step.
+
+        Arguments:
+            step_function: Mapping[int, int]
+                A mapping of time steps to the number of available machines from that time onward.
+            
+            name: Optional[str] = None
+                An optional name for the constraint.
+        """
+        breakdowns: dict[Int, list[tuple[Int, Int]]] = {}
+
+        sorted_times = sorted([int(time) for time in step_function.keys()])
+        n_machines = max(int(count) for count in step_function.values())
+
+        for time in sorted_times:
+            available_machines = int(step_function[TIME(time)])
+
+            for machine in range(available_machines):
+                if machine not in breakdowns:
+                    continue
+                
+                start, end = breakdowns[machine][-1]
+                if end == MAX_INT:
+                    breakdowns[machine][-1] = (start, time)
+
+            for machine in range(available_machines, n_machines):
+                breakdowns.setdefault(machine, [])
+
+                if breakdowns[machine] and breakdowns[machine][-1][1] == time:
+                    continue
+
+                breakdowns[machine].append((time, MAX_INT))
+
+        return cls(breakdowns, name)
+
+    def initialize(self, state: ScheduleState) -> None:
+        self.current_breakdowns = {
+            machine: 0 for machine in self.breakdowns.keys()
+        }
+
+    def reset(self, state: ScheduleState) -> None:
+        for machine in self.breakdowns:
+            self.current_breakdowns[machine] = 0
+
+    def propagate(self, time: TIME, state: ScheduleState) -> None:
+        for machine in self.breakdowns:
+            current_index = self.current_breakdowns[machine]
+            breakdown_intervals = self.breakdowns[machine]
+
+            while current_index < len(breakdown_intervals):
+                start, end = breakdown_intervals[current_index]
+
+                if time < end:
+                    break
+
+                current_index += 1
+
+            self.current_breakdowns[machine] = current_index
+
+        for task in state.awaiting_tasks:
+            for machine in task.machines:
+                if machine not in self.breakdowns:
+                    continue
+
+                current_index = self.current_breakdowns[machine]
+                breakdown_intervals = self.breakdowns[machine]
+
+                end_lb = task.get_end_lb(machine)
+                start_lb = task.get_start_lb(machine)
+
+                while current_index < len(breakdown_intervals):
+                    start, end = breakdown_intervals[current_index]
+
+                    if end_lb <= start or start_lb >= end:
+                        break
+
+                    task.set_start_lb(end, machine)
+                    end_lb = task.get_end_lb(machine)
+                    start_lb = end
+                    current_index += 1
+
+    def get_entry(self) -> str:
+        return "brkdwn"
+
+# ------------------------------------------------------------------------------------------------
+#                                   Future implementations
+# ------------------------------------------------------------------------------------------------
+
+
+
+
+
+class BatchConstraint(Constraint):
+    def __post_init__(self) -> None:
+        raise NotImplementedError("BatchConstraint is not implemented yet.")

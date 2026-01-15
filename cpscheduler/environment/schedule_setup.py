@@ -41,7 +41,7 @@ class ScheduleSetup:
         setups[cls.__name__] = cls
 
     def initialize(self, state: ScheduleState) -> None:
-        "Initialize the setup with the given schedule state."
+        "Initialize the state with the given schedule setup."
         raise NotImplementedError()
 
     def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:

@@ -23,7 +23,7 @@ class ScheduleState:
     jobs: list[list[Task]]
 
     awaiting_tasks: set[Task]
-    transition_tasks: set[Task]
+    tasks_to_propagate: set[Task]
     fixed_tasks: set[Task]
 
     instance: dict[str, list[Any]]
@@ -35,7 +35,7 @@ class ScheduleState:
         self.jobs = []
 
         self.awaiting_tasks = set()
-        self.transition_tasks = set()
+        self.tasks_to_propagate = set()
         self.fixed_tasks = set()
 
         self.instance = {}
@@ -51,7 +51,7 @@ class ScheduleState:
                 f"n_jobs={self.n_jobs}, "
                 f"n_tasks={self.n_tasks}, "
                 f"awaiting={len(self.awaiting_tasks)}, "
-                f"transition={len(self.transition_tasks)}, "
+                f"transition={len(self.tasks_to_propagate)}, "
                 f"fixed={len(self.fixed_tasks)}"
                 f")"
             )
@@ -66,7 +66,7 @@ class ScheduleState:
             self.tasks == other.tasks
             and self.jobs == other.jobs
             and self.awaiting_tasks == other.awaiting_tasks
-            and self.transition_tasks == other.transition_tasks
+            and self.tasks_to_propagate == other.tasks_to_propagate
             and self.fixed_tasks == other.fixed_tasks
             and self.instance == other.instance
             and self.job_instance == other.job_instance
@@ -81,7 +81,7 @@ class ScheduleState:
                 self.tasks,
                 self.jobs,
                 self.awaiting_tasks,
-                self.transition_tasks,
+                self.tasks_to_propagate,
                 self.fixed_tasks,
                 self.instance,
                 self.job_instance,
@@ -94,7 +94,7 @@ class ScheduleState:
             self.tasks,
             self.jobs,
             self.awaiting_tasks,
-            self.transition_tasks,
+            self.tasks_to_propagate,
             self.fixed_tasks,
             self.instance,
             self.job_instance,
@@ -121,7 +121,7 @@ class ScheduleState:
         self.jobs.clear()
 
         self.awaiting_tasks.clear()
-        self.transition_tasks.clear()
+        self.tasks_to_propagate.clear()
         self.fixed_tasks.clear()
 
         self.instance.clear()
@@ -131,7 +131,7 @@ class ScheduleState:
             task.reset()
             self.awaiting_tasks.add(task)
 
-        self.transition_tasks.clear()
+        self.tasks_to_propagate = set(self.tasks)
         self.fixed_tasks.clear()
 
     def read_instance(
@@ -170,6 +170,10 @@ class ScheduleState:
             task.get_end() for task in self.jobs[job_id] if task.is_completed(time)
         )
 
+    def mark_modified(self, task_id: TASK_ID) -> None:
+        task = self.tasks[task_id]
+        self.tasks_to_propagate.add(task)
+
     def execute_task(
         self,
         task_id: TASK_ID,
@@ -182,7 +186,7 @@ class ScheduleState:
 
         if executed:
             self.awaiting_tasks.remove(task)
-            self.transition_tasks.add(task)
+            self.tasks_to_propagate.add(task)
             self.fixed_tasks.add(task)
 
         return executed
@@ -198,7 +202,7 @@ class ScheduleState:
 
         if paused:
             self.awaiting_tasks.add(task)
-            self.transition_tasks.add(task)
+            self.tasks_to_propagate.add(task)
             self.fixed_tasks.remove(task)
 
         return paused
@@ -212,7 +216,7 @@ class ScheduleState:
         for task in self.jobs[job_id]:
             if task.execute(current_time, machine_id):
                 self.awaiting_tasks.remove(task)
-                self.transition_tasks.add(task)
+                self.tasks_to_propagate.add(task)
                 self.fixed_tasks.add(task)
                 return task.task_id
 
@@ -226,7 +230,7 @@ class ScheduleState:
         for task in self.jobs[job_id]:
             if task.pause(current_time):
                 self.awaiting_tasks.add(task)
-                self.transition_tasks.add(task)
+                self.tasks_to_propagate.add(task)
                 self.fixed_tasks.remove(task)
                 return task.task_id
 
