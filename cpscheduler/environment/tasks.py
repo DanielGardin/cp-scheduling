@@ -1,143 +1,48 @@
-"""
-    tasks.py
-
-This module contains the structs for manipulating the tasks in the scheduling environment.
-In this current implementation, tasks are minimal units of work that can be scheduled and
-it's defined by:
-    - task_id: unique identifier for the task, usually its position in the list of tasks
-    - processing_time: time required to complete the task
-    - start_lbs: lower bounds for the starting time of the task
-    - start_ubs: upper bounds for the starting time of the task
-    - durations: time required to complete the task
-    - assignments: machine assigned to the task
-
-Tasks also accept preemption by default thought the pause method. This allows the task to
-be split into multiple parts, each with its own starting time and duration.
-
-The Tasks class is a container for the tasks and it's responsible for managing the tasks
-and their states. This class is passed around the environment and heavily interacts with
-every other classes in this library. It also stores additional data about the tasks that
-can be used in constraints and objectives (i.e. due-dates, customer, type of task).
-
-We do not reccomend customizing this module, as it's tightly coupled with the other modules
-in the environment, change with caution.
-"""
-
 from typing import Any
-from typing_extensions import Self
+from collections.abc import KeysView, Iterator
 
-from mypy_extensions import u8
+from cpscheduler.environment._common import MIN_TIME, MAX_TIME, MACHINE_ID, TASK_ID, TIME
 
-from cpscheduler.environment._common import (
-    MIN_INT,
-    MAX_INT,
-    MACHINE_ID,
-    TASK_ID,
-    PART_ID,
-    TIME,
-    Status,
-    ceil_div,
-)
-
-
-class Bounds:
-    "Store the lower and upper bounds for decision variables."
-
-    def __init__(self, lb: TIME = 0, ub: TIME = MAX_INT) -> None:
-        self.lb = lb
-        self.ub = ub
-
-    def __reduce__(self) -> tuple[type, tuple[TIME, TIME]]:
-        return (self.__class__, (self.lb, self.ub))
-
-    def __setstate__(self, state: tuple[TIME, TIME]) -> None:
-        self.lb, self.ub = state
-
-    def reset(self) -> None:
-        "Resets the bounds to their initial state."
-        self.lb = 0
-        self.ub = MAX_INT
-
-    def set(self, lb: TIME = 0, ub: TIME = MAX_INT) -> None:
-        self.lb = lb
-        self.ub = ub
-
-    def fix(self, time: TIME) -> None:
-        self.lb = time
-        self.ub = time
-
-    def nullify(self) -> None:
-        "Set the bounds to null values."
-        self.lb = MAX_INT
-        self.ub = MIN_INT
-
-    @classmethod
-    def null(cls) -> Self:
-        "Create a null bounds object."
-        return cls(lb=MAX_INT, ub=MIN_INT)
-
-    def is_feasible(self) -> bool:
-        "Check if the bounds are feasible."
-        return self.lb <= self.ub
-
-    def __repr__(self) -> str:
-        return f"Bounds(lb={self.lb}, ub={self.ub})"
-
+GLOBAL_MACHINE_ID: MACHINE_ID = -1
 
 class Task:
-    """
-    Minimal unit of work that can be scheduled. The task does not know anything about the
-    environment, it only knows about its own state and the processing times for each machine.
-
-    The task is defined by:
-        - task_id: unique identifier for the task, usually its position in the list of tasks
-        - processing_times: time required to complete the task
-
-    The environment has complete information about every task and orchestrates the scheduling
-    process by modifying the task state.
-    The task can be split into multiple parts, each with its own starting time and duration.
-    """
-
     task_id: TASK_ID
     job_id: TASK_ID
-    n_parts: PART_ID
 
+    # Static attributes
+    # These attributes should only be modified during problem initialization.
     preemptive: bool
     optional: bool
-
-    starts: list[TIME]
-    durations: list[TIME]
-    assignments: list[MACHINE_ID]
-
     processing_times: dict[MACHINE_ID, TIME]
-    machines: list[MACHINE_ID]
+    data: dict[str, Any]
 
-    remaining_times: dict[MACHINE_ID, TIME]
-    start_bounds: dict[MACHINE_ID, Bounds]
-    global_bound: Bounds
-
-    fixed: bool
+    # Constraint Programming variables
+    # Do not use these attributes directly anywhere, use the ScheduleState API instead.
+    remaining_times_: dict[MACHINE_ID, TIME]
+    start_lbs_: dict[MACHINE_ID, TIME]
+    start_ubs_: dict[MACHINE_ID, TIME]
+    assignment_: MACHINE_ID
+    fixed_: bool
 
     def __init__(self, task_id: TASK_ID, job_id: TASK_ID) -> None:
         self.task_id = task_id
         self.job_id = job_id
-        self.n_parts = 0
 
         self.preemptive = False
         self.optional = False
-
-        self.starts = []
-        self.durations = []
-        self.assignments = []
-
         self.processing_times = {}
-        self.machines = []
+        self.data = {}
 
-        self.remaining_times = {}
-        self.global_bound = Bounds()
-        self.start_bounds = {}
+        self.remaining_times_ = {}
+        self.start_lbs_ = {GLOBAL_MACHINE_ID: MAX_TIME}
+        self.start_ubs_ = {GLOBAL_MACHINE_ID: MIN_TIME}
+        self.assignment_ = GLOBAL_MACHINE_ID
+        self.fixed_ = False
 
-        self.fixed = False
+    @property
+    def machines(self) -> KeysView[MACHINE_ID]:
+        "Get the list of machines that can process this task."
+        return self.processing_times.keys()
 
     def __hash__(self) -> int:
         return hash((self.task_id, self.job_id))
@@ -148,85 +53,41 @@ class Task:
 
         return (self.task_id == value.task_id) and (self.job_id == value.job_id)
 
-    def __reduce__(self) -> Any:
-        return (
-            self.__class__,
-            (self.task_id, self.job_id),
-            (
-                self.n_parts,
-                self.preemptive,
-                self.optional,
-                self.starts,
-                self.durations,
-                self.assignments,
-                self.processing_times,
-                self.machines,
-                self.remaining_times,
-                self.start_bounds,
-                self.global_bound,
-                self.fixed,
-            ),
-        )
-
-    def __setstate__(self, state: tuple[Any, ...]) -> None:
-        (
-            self.n_parts,
-            self.preemptive,
-            self.optional,
-            self.starts,
-            self.durations,
-            self.assignments,
-            self.processing_times,
-            self.machines,
-            self.remaining_times,
-            self.start_bounds,
-            self.global_bound,
-            self.fixed,
-        ) = state
-
     def __repr__(self) -> str:
-        representation = f"Task(id={self.task_id}"
-
-        allocation_times = [
-            f"[{self.starts[i]}, {self.starts[i] + self.durations[i]}] @ {self.assignments[i]}"
-            for i in range(self.n_parts)
-        ]
-
-        if allocation_times:
-            representation += f", {', '.join(allocation_times)}"
-
-        else:
-            representation += ", []"
-
-        representation += ")"
-
-        return representation
+        return f"Task(task_id={self.task_id}, job_id={self.job_id})"
 
     def reset(self) -> None:
         "Resets the task to its initial state."
-        self.n_parts = 0
+        self.fixed_ = False
 
-        self.starts.clear()
-        self.durations.clear()
-        self.assignments.clear()
+        self.start_lbs_.clear()
+        self.start_ubs_.clear()
+        self.remaining_times_.clear()
+        if self.machines:
+            self.start_lbs_[GLOBAL_MACHINE_ID] = 0
+            self.start_ubs_[GLOBAL_MACHINE_ID] = MAX_TIME
 
-        for machine in self.machines:
-            self.remaining_times[machine] = self.processing_times[machine]
-            self.start_bounds[machine].reset()
+            for machine in self.machines:
+                self.start_lbs_[machine] = 0
+                self.start_ubs_[machine] = MAX_TIME
+                self.remaining_times_[machine] = self.processing_times[machine]
 
-        self.global_bound.reset()
-        self.fixed = False
+        else:
+            self.start_lbs_[GLOBAL_MACHINE_ID] = MAX_TIME
+            self.start_ubs_[GLOBAL_MACHINE_ID] = MIN_TIME
+
+        self.assignment_ = GLOBAL_MACHINE_ID
 
     # Setter methods
+    # These methods are public and only changes static attributes of the task,
+    # ONLY during initialization. After a reset call, these methods should not
+    # be used anymore.
     def set_processing_time(self, machine: MACHINE_ID, time: TIME) -> None:
         "Set the processing time for a given machine."
         if time < 0:
             return
 
         self.processing_times[machine] = time
-        self.remaining_times[machine] = time
-        self.machines.append(machine)
-        self.start_bounds[machine] = Bounds()
 
     def set_preemption(self, allow_preemption: bool) -> None:
         "Set whether the task allows preemption."
@@ -244,295 +105,184 @@ class Task:
                     f"Processing time for machine {machine} not set in task {self.task_id}."
                 )
 
-        self.machines = machines
-        # Delete any processing times that are not in the machines list
         for machine in list(self.processing_times.keys()):
             if machine not in machines:
                 del self.processing_times[machine]
-                del self.remaining_times[machine]
-                del self.start_bounds[machine]
+                del self.remaining_times_[machine]
 
-    def set_start_lb(self, time: TIME, machine: MACHINE_ID = -1) -> None:
-        "Set the lower bound for the starting time in a machine."
-        if time < 0:
-            time = 0
-
-        if machine != -1:
-            self.start_bounds[machine].lb = time
-            self.global_bound.lb = min(bound.lb for bound in self.start_bounds.values())
-
-        else:
-            self.global_bound.lb = time
-            for start_bound in self.start_bounds.values():
-                start_bound.lb = time
-
-    def set_start_ub(self, time: TIME, machine: MACHINE_ID = -1) -> None:
-        "Set the upper bound for the starting time in a machine."
-        if time > MAX_INT:
-            time = MAX_INT
-
-        if machine != -1:
-            self.start_bounds[machine].ub = time
-            self.global_bound.ub = max(bound.ub for bound in self.start_bounds.values())
-
-        else:
-            self.global_bound.ub = time
-            for start_bound in self.start_bounds.values():
-                start_bound.ub = time
-
-    def set_end_lb(self, time: TIME, machine: MACHINE_ID = -1) -> None:
-        "Set the lower bound for the ending time in a machine."
-        if time < 0:
-            time = 0
-
-        if machine != -1:
-            self.start_bounds[machine].lb = time - self.remaining_times[machine]
-
-        else:
-            for machine in self.machines:
-                self.start_bounds[machine].lb = time - self.remaining_times[machine]
-
-        self.global_bound.lb = min(bound.lb for bound in self.start_bounds.values())
-
-    def set_end_ub(self, time: TIME, machine: MACHINE_ID = -1) -> None:
-        "Set the upper bound for the ending time in a machine."
-        if time > MAX_INT:
-            time = MAX_INT
-
-        if machine != -1:
-            self.start_bounds[machine].ub = time - self.remaining_times[machine]
-
-        else:
-            for machine in self.machines:
-                self.start_bounds[machine].ub = time - self.remaining_times[machine]
-
-        self.global_bound.ub = max(bound.ub for bound in self.start_bounds.values())
-
-    def set_unfeasible(self) -> None:
-        "Set the task to an unfeasible state."
-        self.global_bound.nullify()
-        for bound in self.start_bounds.values():
-            bound.nullify()
+    def set_data(self, key: str, value: Any) -> None:
+        "Set custom data for the task."
+        self.data[key] = value
 
     # Getter methods
-    def get_start(self, part: PART_ID = 0) -> TIME:
-        "Get the starting time of a given part of the task."
-        return self.starts[part]
-
-    def get_end(self, part: PART_ID = -1) -> TIME:
-        "Get the ending time of of a given part of the task."
-        return self.starts[part] + self.durations[part]
-
-    def get_duration(self, part: PART_ID = -1) -> TIME:
-        "Get the duration of a given part of the task."
-        return self.durations[part]
-
-    def get_assignment(self, part: PART_ID = -1) -> MACHINE_ID:
-        "Get the machine assigned to a given part of the task."
-        return self.assignments[part]
-
-    def get_processed_time(self, time: TIME, machine: MACHINE_ID = -1) -> TIME:
-        """
-        Get the time processed by the task at a given time.
-        If machine is specified, return the time processed by that machine.
-        """
-        processed_time = 0
-        if machine != -1:
-            if machine not in self.remaining_times:
-                return processed_time
-
-            for part in range(self.n_parts):
-                if self.get_assignment(part) == machine:
-                    if self.get_start(part) <= time < self.get_end(part):
-                        processed_time += time - self.get_start(part)
-
-                    if time >= self.get_end(part):
-                        processed_time += self.get_duration(part)
-
-            return processed_time
-
-        for part in range(self.n_parts):
-            if self.get_start(part) <= time < self.get_end(part):
-                processed_time += time - self.get_start(part)
-
-            if time >= self.get_end(part):
-                processed_time += self.get_duration(part)
-
-        return processed_time
-
-    def get_start_lb(self, machine: MACHINE_ID = -1) -> TIME:
+    def get_start_lb(self, machine: MACHINE_ID = GLOBAL_MACHINE_ID) -> TIME:
         "Get the current lower bound for the starting time in a machine."
-        return self.global_bound.lb if machine == -1 else self.start_bounds[machine].lb
+        return self.start_lbs_[machine]
 
-    def get_start_ub(self, machine: MACHINE_ID = -1) -> TIME:
-        return self.global_bound.ub if machine == -1 else self.start_bounds[machine].ub
+    def get_start_ub(self, machine: MACHINE_ID = GLOBAL_MACHINE_ID) -> TIME:
+        return self.start_ubs_[machine]
 
-    def get_end_lb(self, machine: MACHINE_ID = -1) -> TIME:
+    def get_end_lb(self, machine: MACHINE_ID = GLOBAL_MACHINE_ID) -> TIME:
         "Get the current lower bound for the ending time in a machine."
         if machine != -1:
-            return self.start_bounds[machine].lb + self.remaining_times[machine]
+            return self.start_lbs_[machine] + self.remaining_times_[machine]
 
-        end_lb = MAX_INT
+        end_lb = MAX_TIME
         for machine in self.machines:
-            machine_end_lb = (
-                self.start_bounds[machine].lb + self.remaining_times[machine]
-            )
+            machine_end_lb = self.start_lbs_[machine] + self.remaining_times_[machine]
             if machine_end_lb < end_lb:
                 end_lb = machine_end_lb
 
         return end_lb
 
-    def get_end_ub(self, machine: MACHINE_ID = -1) -> TIME:
+    def get_end_ub(self, machine: MACHINE_ID = GLOBAL_MACHINE_ID) -> TIME:
         "Get the current upper bound for the ending time in a machine."
         if machine != -1:
-            return self.start_bounds[machine].ub + self.remaining_times[machine]
+            return self.start_ubs_[machine] + self.remaining_times_[machine]
 
-        end_ub = 0
+        end_ub = MIN_TIME
         for machine in self.machines:
-            machine_end_ub = (
-                self.start_bounds[machine].ub + self.remaining_times[machine]
-            )
+            machine_end_ub = self.start_ubs_[machine] + self.remaining_times_[machine]
             if machine_end_ub > end_ub:
                 end_ub = machine_end_ub
 
         return end_ub
 
-    def execute(
-        self,
-        time: TIME,
-        machine: MACHINE_ID = -1,
-    ) -> bool:
-        "Assign the execution of the task to a machine at a given start time. Returns True if successful."
-        if machine == -1:
-            for machine in self.machines:
-                if self.is_available(time, machine):
-                    break
+    def get_assignment(self) -> MACHINE_ID:
+        "Get the machine to which the task is assigned. Returns -1 if unassigned."
+        return self.assignment_
 
-            else:
-                return False
+    # def execute(
+    #     self,
+    #     time: TIME,
+    #     machine: MACHINE_ID = GLOBAL_MACHINE_ID,
+    # ) -> bool:
+    #     "Assign the execution of the task to a machine at a given start time. Returns True if successful."
+    #     if machine == -1:
+    #         for machine in self.machines:
+    #             if self.is_available(time, machine):
+    #                 break
 
-        elif machine not in self.processing_times or not self.is_available(
-            time, machine
-        ):
-            return False
+    #         else:
+    #             return False
 
-        self.n_parts += 1
+    #     elif machine not in self.processing_times or not self.is_available(
+    #         time, machine
+    #     ):
+    #         return False
 
-        self.starts.append(time)
-        self.durations.append(self.remaining_times[machine])
-        self.assignments.append(machine)
+    #     self.n_parts += 1
 
-        self.fixed = True
-        self.global_bound.fix(time)
-        for other_machine in self.machines:
-            if other_machine == machine:
-                self.start_bounds[other_machine].fix(time)
+    #     self.starts.append(time)
+    #     self.durations.append(self.remaining_times_[machine])
+    #     self.assignments.append(machine)
 
-            else:
-                self.start_bounds[other_machine].nullify()
+    #     self.fixed_ = True
+    #     self.global_bound.fix(time)
+    #     for other_machine in self.machines:
+    #         if other_machine == machine:
+    #             self.start_bounds[other_machine].fix(time)
 
-        return True
+    #         else:
+    #             self.start_bounds[other_machine].nullify()
 
-    def pause(self, time: TIME) -> bool:
-        "Pauses the task's execution at a given time, splitting it into a new part."
-        if not self.fixed or not self.preemptive:
-            return False
+    #     return True
 
-        prev_duration = self.durations[-1]
-        actual_duration = time - self.starts[-1]
+    # def pause(self, time: TIME) -> bool:
+    #     "Pauses the task's execution at a given time, splitting it into a new part."
+    #     if not self.fixed_ or not self.preemptive:
+    #         return False
 
-        remaining_time = prev_duration - actual_duration
-        if remaining_time <= 0:
-            return False
+    #     prev_duration = self.durations[-1]
+    #     actual_duration = time - self.starts[-1]
 
-        self.durations[-1] = actual_duration
+    #     remaining_time = prev_duration - actual_duration
+    #     if remaining_time <= 0:
+    #         return False
 
-        self.global_bound.set(time, MAX_INT)
-        for machine in self.machines:
-            self.remaining_times[machine] = ceil_div(
-                self.remaining_times[machine] * remaining_time, prev_duration
-            )
+    #     self.durations[-1] = actual_duration
 
-            self.start_bounds[machine].set(time, MAX_INT)
+    #     self.global_bound.set(time, MAX_TIME)
+    #     for machine in self.machines:
+    #         self.remaining_times_[machine] = ceil_div(
+    #             self.remaining_times_[machine] * remaining_time, prev_duration
+    #         )
 
-        self.fixed = False
+    #         self.start_bounds[machine].set(time, MAX_TIME)
 
-        return True
+    #     self.fixed_ = False
 
-    def get_status(self, time: TIME) -> u8:
-        "Get the status of the task at a given time."
-        # Reverse order because status checkings often occurs in the latest parts
-
-        if not self.fixed:
-            if not self.is_feasible(time):
-                return Status.UNFEASIBLE
-
-            if len(self.starts) == 0 or time < self.get_start(0):
-                return Status.AWAITING
-
-            return Status.PAUSED
-
-        if time >= self.get_end():
-            return Status.COMPLETED
-
-        for part in range(self.n_parts - 1, -1, -1):
-            if part > 0 and self.get_end(part - 1) <= time < self.get_start(part):
-                return Status.PAUSED
-
-            if self.get_start(part) <= time < self.get_end(part):
-                return Status.EXECUTING
-
-        if time < self.get_start():
-            return Status.AWAITING
-
-        raise RuntimeError(f"Inconsistent task state detected for task {self.task_id}.")
+    #     return True
 
     def is_fixed(self) -> bool:
-        "Checks if the task has its decision variables fixed."
-        return self.fixed
-
-    def is_available(self, time: TIME, machine: MACHINE_ID = -1) -> bool:
-        "Check if the task is available for execution at a given time."
-        if self.fixed:
-            return False
-
-        if machine != -1:
-            return (
-                self.start_bounds[machine].lb <= time <= self.start_bounds[machine].ub
-            )
-
-        return self.global_bound.lb <= time <= self.global_bound.ub
+        "Checks if the task has its decision variables fixed_."
+        return self.fixed_
 
     def is_awaiting(self) -> bool:
         "Check if the task is currently awaiting execution."
-        return not self.fixed
+        return not self.fixed_
 
-    def is_executing(self, time: TIME, machine: MACHINE_ID = -1) -> bool:
-        "Check if the task is being executed at a given time."
-        for part in range(self.n_parts - 1, -1, -1):
-            if self.get_end(part) <= time:
-                break
+    def is_available(self, time: TIME, machine: MACHINE_ID = GLOBAL_MACHINE_ID) -> bool:
+        "Check if the task is available for execution at a given time."
+        if self.fixed_:
+            return False
 
-            if self.get_start(part) <= time:
-                return machine == -1 or self.get_assignment(part) == machine
-
-        return False
-
-    def is_paused(self, time: TIME) -> bool:
-        "Check if the task is paused at a given time."
-        for part in range(self.n_parts - 1, 0, -1):
-            if self.get_end(part - 1) <= time < self.get_start(part):
-                return True
-
-        return False
-
-    def is_completed(self, time: TIME) -> bool:
-        "Check if the task is completed at a given time."
-        return self.fixed and time >= self.get_end()
-
+        return self.start_lbs_[machine] <= time <= self.start_ubs_[machine]
 
     def is_feasible(self, time: TIME) -> bool:
         "Check if the task is feasible given its current bounds."
-        return self.global_bound.is_feasible() and \
-            time <= self.global_bound.ub and \
-            all(bound.is_feasible() for bound in self.start_bounds.values())
+        if self.start_lbs_[GLOBAL_MACHINE_ID] > self.start_ubs_[GLOBAL_MACHINE_ID]:
+            return False
+    
+        if not self.fixed_ and self.start_ubs_[GLOBAL_MACHINE_ID] < time:
+            return False
+
+        for machine in self.machines:
+            if self.start_lbs_[machine] > self.start_ubs_[machine]:
+                return False
+
+        return True
+
+class Job:
+    """
+    A job is a collection of tasks that are related to each other.
+    It serves as a higher-level abstraction for grouping tasks together.
+    """
+
+    job_id: TASK_ID
+    tasks: list[Task]
+
+    data: dict[str, Any]
+
+    def __init__(self, job_id: TASK_ID) -> None:
+        self.job_id = job_id
+        self.tasks = []
+
+        self.data = {}
+
+    @property
+    def n_tasks(self) -> int:
+        "Get the number of tasks in the job."
+        return len(self.tasks)
+
+    def __repr__(self) -> str:
+        return f"Job(job_id={self.job_id}, n_tasks={self.n_tasks})"
+
+    def __iter__(self) -> Iterator[Task]:
+        return iter(self.tasks)
+
+    def add_task(self, task: Task) -> None:
+        "Add a task to the job."
+        self.tasks.append(task)
+
+    def set_data(self, key: str, value: Any) -> None:
+        "Set custom data for the job."
+        self.data[key] = value
+
+    def is_available(self, time: TIME) -> bool:
+        "Check if any task in the job is available for execution at a given time."
+        for task in self.tasks:
+            if task.is_available(time):
+                return True
+
+        return False

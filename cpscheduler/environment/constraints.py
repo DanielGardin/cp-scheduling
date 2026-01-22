@@ -22,7 +22,7 @@ from mypy_extensions import mypyc_attr
 from cpscheduler.utils.list_utils import convert_to_list
 from cpscheduler.utils.general_algo import topological_sort, binary_search
 
-from cpscheduler.environment._common import TASK_ID, TIME, MACHINE_ID, Int, Float, MAX_INT
+from cpscheduler.environment._common import TASK_ID, TIME, MACHINE_ID, Int, Float, MAX_TIME
 from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.tasks import Task
 
@@ -176,37 +176,6 @@ class OptionalityConstraint(PassiveConstraint):
     def get_entry(self) -> str:
         return "opt"
 
-
-class MachineConstraint(Constraint):
-    """
-    General Parallel machine constraint, differs from DisjunctiveConstraint as the disjunctive
-    constraint have groups with predefined tasks, while the machine constraint defines its groups
-    based on the machine assignment of the tasks.
-
-    This is mainly a setup constraint, if the expected behavior is to constrain tasks on which
-    machines they can be assigned to, use the MachineEligibilityConstraint instead.
-    """
-    def propagate(self, time: TIME, state: ScheduleState) -> None:
-        machine_ends: dict[MACHINE_ID, TIME] = {}
-        for task in state.tasks_to_propagate:
-            if task.is_fixed():
-                machine = task.get_assignment()
-
-                machine_ends[machine] = task.get_end()
-
-        for task in state.awaiting_tasks:
-            for machine in machine_ends:
-                if machine not in task.machines:
-                    continue
-
-                if task.get_start_lb(machine) < machine_ends[machine]:
-                    task.set_start_lb(machine_ends[machine], machine)
-                    state.mark_modified(task.task_id)
-
-    def is_complete(self, state: ScheduleState) -> bool:
-        "Check if the machine constraint is complete."
-        return all(len(task.machines) == state.n_machines for task in state.tasks)
-
 class MachineEligibilityConstraint(PassiveConstraint):
     """
     Machine eligibility constraint for the scheduling environment.
@@ -253,6 +222,35 @@ class MachineEligibilityConstraint(PassiveConstraint):
     def get_entry(self) -> str:
         return "M_j"
 
+class MachineConstraint(Constraint):
+    """
+    General Parallel machine constraint, differs from DisjunctiveConstraint as the disjunctive
+    constraint have groups with predefined tasks, while the machine constraint defines its groups
+    based on the machine assignment of the tasks.
+
+    This is mainly a setup constraint, if the expected behavior is to constrain tasks on which
+    machines they can be assigned to, use the MachineEligibilityConstraint instead.
+    """
+    def propagate(self, time: TIME, state: ScheduleState) -> None:
+        machine_ends: dict[MACHINE_ID, TIME] = {}
+        for task in state.tasks_to_propagate:
+            if task.is_fixed():
+                machine = task.get_assignment()
+
+                machine_ends[machine] = task.get_end_lb()
+
+        for machine in machine_ends:
+            end_time = machine_ends[machine]
+
+            for task in state.awaiting_tasks:
+                if machine not in task.machines:
+                    continue
+
+                state.tight_start_lb(task.task_id, end_time, machine)
+
+    def is_complete(self, state: ScheduleState) -> bool:
+        "Check if the machine constraint is complete."
+        return all(len(task.machines) == state.n_machines for task in state.tasks)
 
 class PrecedenceConstraint(Constraint):
     """
@@ -365,8 +363,7 @@ class PrecedenceConstraint(Constraint):
                 child = state.tasks[child_id]
 
                 if child.get_start_lb() < end_time:
-                    child.set_start_lb(end_time)
-                    state.mark_modified(child.task_id)
+                    state.tight_start_lb(child_id, end_time)
                     to_propagate.add(child)
 
     def get_entry(self) -> str:
@@ -422,7 +419,7 @@ class NoWaitConstraint(PrecedenceConstraint):
                 end_time = task.get_end_lb()
 
                 for child_id in self.precedence.get(task.task_id, []):
-                    state.tasks[child_id].set_start_ub(end_time)
+                    state.tight_start_lb(child_id, end_time)
 
             else:
                 max_children_start = task.get_end_lb()
@@ -434,7 +431,7 @@ class NoWaitConstraint(PrecedenceConstraint):
                     if max_children_start < child_lb:
                         max_children_start = child_lb
 
-                task.set_end_lb(max_children_start)
+                state.tight_end_lb(task.task_id, max_children_start)
 
     def get_entry(self) -> str:
         return "nwt"
@@ -514,22 +511,11 @@ class DisjunctiveConstraint(Constraint):
     def propagate(self, time: TIME, state: ScheduleState) -> None:
         for task in state.tasks_to_propagate:
             for group in self.groups_map[task.task_id]:
-                self.group_free[group] = task.get_end()
+                self.group_free[group] = task.get_end_lb()
 
         for task in state.awaiting_tasks:
             for group in self.groups_map[task.task_id]:
-                if task.get_start_lb(group) < self.group_free[group]:
-                    task.set_start_lb(self.group_free[group], group)
-
-    def refresh(self, time: TIME, state: ScheduleState) -> None:
-        for group in self.group_free:
-            self.group_free[group] = time
-
-        for task in state.fixed_tasks:
-            for part in range(task.n_parts):
-                for group in self.groups_map[task.task_id]:
-                    if task.get_end(part) > self.group_free[group]:
-                        self.group_free[group] = task.get_end(part)
+                state.tight_start_lb(task.task_id, self.group_free[group])
 
 
 class ReleaseDateConstraint(Constraint):
@@ -577,7 +563,7 @@ class ReleaseDateConstraint(Constraint):
 
     def reset(self, state: ScheduleState) -> None:
         for task_id, release_time in enumerate(self.release_dates):
-            state.tasks[task_id].set_start_lb(release_time)
+            state.tight_start_lb(task_id, release_time)
 
     def get_entry(self) -> str:
         if self.release_dates:
@@ -631,11 +617,11 @@ class DeadlineConstraint(Constraint):
     def reset(self, state: ScheduleState) -> None:
         if self.const_due is not None:
             for task in state.tasks:
-                task.set_end_ub(self.const_due)
+                state.tight_end_ub(task.task_id, self.const_due)
 
         else:
             for task_id, due_time in enumerate(self.due_dates):
-                state.tasks[task_id].set_end_ub(due_time)
+                state.tight_end_ub(task_id, due_time)
 
     def get_entry(self) -> str:
         if self.const_due is not None:
@@ -703,7 +689,7 @@ class ResourceConstraint(Constraint):
     
     def reset(self, state: ScheduleState) -> None:
         for i in range(len(self.resource_tags)):
-            self.next_available_time[i] = [MAX_INT]
+            self.next_available_time[i] = [MAX_TIME]
             self.available_resources[i] = [self.capacities[i]]
 
     def propagate(self, time: TIME, state: ScheduleState) -> None:
@@ -718,14 +704,15 @@ class ResourceConstraint(Constraint):
 
                 if resource_usage <= 0:
                     continue
-
+                
+                task_end = task.get_end_lb()
                 idx = binary_search(
                     self.next_available_time[i],
-                    task.get_end(),
+                    task_end,
                     decreasing=True
                 )
 
-                self.next_available_time[i].insert(idx, task.get_end())
+                self.next_available_time[i].insert(idx, task_end)
                 self.available_resources[i].insert(
                     idx,
                     self.available_resources[i][idx - 1] - resource_usage
@@ -750,33 +737,7 @@ class ResourceConstraint(Constraint):
                     else time
                 )
 
-                if task.get_start_lb() < earliest_start:
-                    task.set_start_lb(earliest_start)
-
-    def refresh(self, time: TIME, state: ScheduleState) -> None:
-        self.reset(state)
-
-        for task in state.fixed_tasks:
-            if not task.is_executing(time):
-                continue
-
-            for i, task_resources in enumerate(self.resources):
-                resource_usage = task_resources[task.task_id]
-
-                if resource_usage <= 0:
-                    continue
-
-                idx = binary_search(
-                    self.next_available_time[i],
-                    task.get_end(),
-                    decreasing=True
-                )
-
-                self.next_available_time[i].insert(idx, task.get_end())
-                self.available_resources[i].insert(
-                    idx,
-                    self.available_resources[i][idx - 1] - resource_usage
-                )
+                state.tight_start_lb(task.task_id, earliest_start)
 
 
 class NonRenewableResourceConstraint(Constraint):
@@ -845,7 +806,7 @@ class NonRenewableResourceConstraint(Constraint):
                     continue
 
                 if self.current_capacities[i] < resource_usage:
-                    task.set_unfeasible()
+                    state.set_infeasible(task.task_id)
 
 
 SetupTimes: TypeAlias = Mapping[Int, Mapping[Int, Int]] | Callable[[int, int, Any], Int]
@@ -919,7 +880,7 @@ class SetupConstraint(Constraint):
         for task_id in list(self.setup_times.keys()):
             task = state.tasks[task_id]
 
-            if task.is_completed(time):
+            if task.is_fixed():
                 self.setup_times.pop(task_id)
                 continue
 
@@ -934,13 +895,9 @@ class SetupConstraint(Constraint):
                 if child.is_fixed():
                     continue
 
-                if task.get_end_lb() + setup_time > child.get_start_lb():
-                    child.set_start_lb(task.get_end_lb() + setup_time)
+                block_end = task.get_end_lb() + setup_time
 
-    def refresh(self, time: TIME, state: ScheduleState) -> None:
-        raise NotImplementedError(
-            "Refresh method is not implemented for SetupConstraint yet."
-        )
+                state.tight_start_lb(child_id, block_end)
 
 class MachineBreakdownConstraint(Constraint):
     """
@@ -1008,7 +965,7 @@ class MachineBreakdownConstraint(Constraint):
                     continue
                 
                 start, end = breakdowns[machine][-1]
-                if end == MAX_INT:
+                if end == MAX_TIME:
                     breakdowns[machine][-1] = (start, time)
 
             for machine in range(available_machines, n_machines):
@@ -1017,7 +974,7 @@ class MachineBreakdownConstraint(Constraint):
                 if breakdowns[machine] and breakdowns[machine][-1][1] == time:
                     continue
 
-                breakdowns[machine].append((time, MAX_INT))
+                breakdowns[machine].append((time, MAX_TIME))
 
         return cls(breakdowns, name)
 
@@ -1062,7 +1019,8 @@ class MachineBreakdownConstraint(Constraint):
                     if end_lb <= start or start_lb >= end:
                         break
 
-                    task.set_start_lb(end, machine)
+                    state.tight_start_lb(task.task_id, end, machine)
+
                     end_lb = task.get_end_lb(machine)
                     start_lb = end
                     current_index += 1

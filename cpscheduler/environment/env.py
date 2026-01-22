@@ -23,7 +23,7 @@ from cpscheduler.utils.list_utils import convert_to_list
 from cpscheduler.utils._protocols import Metric
 
 from cpscheduler.environment._common import (
-    MAX_INT,
+    MAX_TIME,
     InstanceTypes,
     TASK_ID,
     TIME,
@@ -73,7 +73,8 @@ class SchedulingEnv:
 
     # Environment static variables
     setup: ScheduleSetup
-    constraints: dict[str, Constraint]
+    constraints: list[Constraint]
+    setup_constraints: list[Constraint]
     passive_constraints: list[PassiveConstraint]
     objective: Objective
 
@@ -107,7 +108,10 @@ class SchedulingEnv:
         self.state = ScheduleState()
         self.setup = machine_setup
 
-        self.constraints = {}
+        self.force_reset = True
+
+        self.constraints = []
+        self.setup_constraints = []
         self.passive_constraints = []
         if constraints is not None:
             for constraint in constraints:
@@ -142,15 +146,8 @@ class SchedulingEnv:
         return f"SchedulingEnv({self.get_entry()}, n_tasks=0)"
 
     # Environment configuration public methods
-    def add_constraint(self, constraint: Constraint, replace: bool = False) -> None:
+    def add_constraint(self, constraint: Constraint) -> None:
         "Add a constraint to the environment."
-        name = constraint.name
-
-        if name in self.constraints and not replace:
-            raise ValueError(
-                f"Constraint with name {name} already exists. Please use a different name."
-            )
-
         if self.state.loaded:
             constraint.initialize(self.state)
 
@@ -158,7 +155,9 @@ class SchedulingEnv:
             self.passive_constraints.append(constraint)
 
         else:
-            self.constraints[name] = constraint
+            self.constraints.append(constraint)
+
+        self.force_reset = True
 
     def set_objective(self, objective: Objective) -> None:
         "Set the objective function for the environment."
@@ -166,10 +165,6 @@ class SchedulingEnv:
             objective.initialize(self.state)
 
         self.objective = objective
-
-    def add_metric(self, name: str, metric: Metric[Any]) -> None:
-        "Add a metric to the environment."
-        self.metrics[name] = metric
 
     def set_instance(self, instance: InstanceTypes) -> None:
         """
@@ -184,27 +179,31 @@ class SchedulingEnv:
         self.state.read_instance(instance)
         self.setup.initialize(self.state)
 
-        self.state.set_n_machines(self.setup.n_machines)
-
+        self.setup_constraints.clear()
         for constraint in self.setup.setup_constraints(self.state):
-            self.add_constraint(constraint)
+            constraint.initialize(self.state)
+            self.setup_constraints.append(constraint)
 
         for p_constraint in self.passive_constraints:
             p_constraint.initialize(self.state)
 
-        for constraint in self.constraints.values():
+        for constraint in self.constraints:
             constraint.initialize(self.state)
 
         self.objective.initialize(self.state)
 
         self.force_reset = True
 
+    def add_metric(self, name: str, metric: Metric[Any]) -> None:
+        "Add a metric to the environment."
+        self.metrics[name] = metric
+
     def get_entry(self) -> str:
         "Get a string representation of the environment's configuration."
         alpha = self.setup.get_entry()
 
         beta = ",".join(
-            [constraint.get_entry() for constraint in self.constraints.values()]
+            [constraint.get_entry() for constraint in self.constraints]
         )
 
         gamma = self.objective.get_entry()
@@ -244,7 +243,10 @@ class SchedulingEnv:
 
     def _propagate(self) -> None:
         "Propagate the new bounds through the constraints"
-        for constraint in self.constraints.values():
+        for constraint in self.setup_constraints:
+            constraint.propagate(self.current_time, self.state)
+
+        for constraint in self.constraints:
             constraint.propagate(self.current_time, self.state)
 
         self.state.tasks_to_propagate.clear()
@@ -268,7 +270,10 @@ class SchedulingEnv:
         self.query_times.clear()
 
         self.state.reset()
-        for constraint in self.constraints.values():
+        for constraint in self.constraints:
+            constraint.reset(self.state)
+        
+        for constraint in self.setup_constraints:
             constraint.reset(self.state)
 
         self._propagate()
@@ -340,7 +345,7 @@ class SchedulingEnv:
     def _advance_to_decision_point(self, strict: bool = False) -> None:
         "Obtain the next decision time to advance. If strict, only consider future tasks."
         next_time = (
-            MAX_INT if self.current_time >= self.advancing_to else self.advancing_to
+            MAX_TIME if self.current_time >= self.advancing_to else self.advancing_to
         )
 
         for instruction_time in self.schedule:
@@ -378,7 +383,7 @@ class SchedulingEnv:
                 if self.current_time <= instruction_time < next_time:
                     next_time = instruction_time
 
-        if next_time == MAX_INT:
+        if next_time == MAX_TIME:
             self.current_time = max(
                 task.get_end_ub() for task in self.state.fixed_tasks
             )

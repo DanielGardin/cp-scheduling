@@ -405,7 +405,7 @@ def parse_instruction(
                 machines = state.tasks[id].machines
 
                 if len(machines) == 1:
-                    machine = machines[0]
+                    machine = next(iter(machines))
                     time = time_or_machine
 
                 else:

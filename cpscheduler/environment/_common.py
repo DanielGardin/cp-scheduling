@@ -23,8 +23,8 @@ Int: TypeAlias = SupportsInt | int | i64 | i32 | i16 | u8
 Float: TypeAlias = SupportsFloat | float | i64 | i32 | i16 | u8
 
 # Reducing upper bounds to avoid numerical issues
-MIN_INT: Final[TIME] = -(2**24 + 1)
-MAX_INT: Final[TIME] = 2**24 - 1
+MIN_TIME: Final[TIME] = 0
+MAX_TIME: Final[TIME] = 2**24 - 1
 
 
 @runtime_checkable
