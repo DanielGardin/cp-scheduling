@@ -1,13 +1,24 @@
 from typing import Any
 from collections.abc import KeysView, Iterator
 
+from dataclasses import dataclass
+
 from cpscheduler.environment._common import MIN_TIME, MAX_TIME, MACHINE_ID, TASK_ID, TIME
 
 GLOBAL_MACHINE_ID: MACHINE_ID = -1
 
+@dataclass(frozen=True)
+class TaskHistory:
+    assignment: MACHINE_ID
+    start_time: TIME
+    duration: TIME
+    end_time: TIME
+
 class Task:
     task_id: TASK_ID
     job_id: TASK_ID
+
+    history: list[TaskHistory]
 
     # Static attributes
     # These attributes should only be modified during problem initialization.
@@ -27,6 +38,8 @@ class Task:
     def __init__(self, task_id: TASK_ID, job_id: TASK_ID) -> None:
         self.task_id = task_id
         self.job_id = job_id
+
+        self.history = []
 
         self.preemptive = False
         self.optional = False
@@ -151,68 +164,6 @@ class Task:
     def get_assignment(self) -> MACHINE_ID:
         "Get the machine to which the task is assigned. Returns -1 if unassigned."
         return self.assignment_
-
-    # def execute(
-    #     self,
-    #     time: TIME,
-    #     machine: MACHINE_ID = GLOBAL_MACHINE_ID,
-    # ) -> bool:
-    #     "Assign the execution of the task to a machine at a given start time. Returns True if successful."
-    #     if machine == -1:
-    #         for machine in self.machines:
-    #             if self.is_available(time, machine):
-    #                 break
-
-    #         else:
-    #             return False
-
-    #     elif machine not in self.processing_times or not self.is_available(
-    #         time, machine
-    #     ):
-    #         return False
-
-    #     self.n_parts += 1
-
-    #     self.starts.append(time)
-    #     self.durations.append(self.remaining_times_[machine])
-    #     self.assignments.append(machine)
-
-    #     self.fixed_ = True
-    #     self.global_bound.fix(time)
-    #     for other_machine in self.machines:
-    #         if other_machine == machine:
-    #             self.start_bounds[other_machine].fix(time)
-
-    #         else:
-    #             self.start_bounds[other_machine].nullify()
-
-    #     return True
-
-    # def pause(self, time: TIME) -> bool:
-    #     "Pauses the task's execution at a given time, splitting it into a new part."
-    #     if not self.fixed_ or not self.preemptive:
-    #         return False
-
-    #     prev_duration = self.durations[-1]
-    #     actual_duration = time - self.starts[-1]
-
-    #     remaining_time = prev_duration - actual_duration
-    #     if remaining_time <= 0:
-    #         return False
-
-    #     self.durations[-1] = actual_duration
-
-    #     self.global_bound.set(time, MAX_TIME)
-    #     for machine in self.machines:
-    #         self.remaining_times_[machine] = ceil_div(
-    #             self.remaining_times_[machine] * remaining_time, prev_duration
-    #         )
-
-    #         self.start_bounds[machine].set(time, MAX_TIME)
-
-    #     self.fixed_ = False
-
-    #     return True
 
     def is_fixed(self) -> bool:
         "Checks if the task has its decision variables fixed_."

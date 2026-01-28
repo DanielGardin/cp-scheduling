@@ -1,7 +1,7 @@
 from typing import Any
 
-from cpscheduler.environment._common import MAX_TIME, MIN_TIME, MACHINE_ID, TASK_ID, TIME, ObsType
-from cpscheduler.environment.tasks import Task, Job, GLOBAL_MACHINE_ID
+from cpscheduler.environment._common import MAX_TIME, MIN_TIME, MACHINE_ID, TASK_ID, TIME, STATUS, StatusEnum, ObsType
+from cpscheduler.environment.tasks import GLOBAL_MACHINE_ID, Task, Job, TaskHistory
 from cpscheduler.utils.list_utils import convert_to_list
 
 
@@ -15,6 +15,24 @@ def check_instance_consistency(instance: dict[str, list[Any]]) -> int:
         )
 
     return lengths.pop() if lengths else 0
+
+def min_bound(bound: dict[MACHINE_ID, TIME]) -> TIME:
+    min_value = MAX_TIME
+
+    for machine, value in bound.items():
+        if machine != GLOBAL_MACHINE_ID and value < min_value:
+            min_value = value
+
+    return min_value
+
+def max_bound(bound: dict[MACHINE_ID, TIME]) -> TIME:
+    max_value = MIN_TIME
+
+    for machine, value in bound.items():
+        if machine != GLOBAL_MACHINE_ID and value > max_value:
+            max_value = value
+
+    return max_value
 
 class ScheduleState:
     tasks: list[Task]
@@ -209,7 +227,7 @@ class ScheduleState:
                     changed = True
 
         if changed:
-            task.start_lbs_[GLOBAL_MACHINE_ID] = min(task.start_lbs_.values())
+            task.start_lbs_[GLOBAL_MACHINE_ID] = min_bound(task.start_lbs_)
 
     def tight_start_ub(
         self,
@@ -234,7 +252,7 @@ class ScheduleState:
                     changed = True
 
         if changed:
-            task.start_ubs_[GLOBAL_MACHINE_ID] = max(task.start_ubs_.values())
+            task.start_ubs_[GLOBAL_MACHINE_ID] = max_bound(task.start_ubs_)
 
 
     def tight_end_lb(
@@ -260,7 +278,7 @@ class ScheduleState:
                     changed = True
 
         if changed:
-            task.start_lbs_[GLOBAL_MACHINE_ID] = min(task.start_lbs_.values())
+            task.start_lbs_[GLOBAL_MACHINE_ID] = min_bound(task.start_lbs_)
 
     def tight_end_ub(
         self,
@@ -285,7 +303,7 @@ class ScheduleState:
                     changed = True
 
         if changed:
-            task.start_ubs_[GLOBAL_MACHINE_ID] = max(task.start_ubs_.values())
+            task.start_ubs_[GLOBAL_MACHINE_ID] = max_bound(task.start_ubs_)
 
     def set_infeasible(self, task_id: TASK_ID) -> None:
         self.tight_start_lb(task_id, MAX_TIME)
@@ -293,18 +311,6 @@ class ScheduleState:
 
         if not self.tasks[task_id].optional:
             self.infeasible = True
-
-    def fix_task(
-        self,
-        task_id: TASK_ID,
-        machine_id: MACHINE_ID,
-        time: TIME,
-    ) -> None:
-        self.tight_start_lb(task_id, time, machine_id)
-        self.tight_start_ub(task_id, time, machine_id)
-
-        self.tasks[task_id].assignment_ = machine_id
-        self.tasks[task_id].fixed_ = True
 
     def execute_task(
         self,
@@ -316,7 +322,7 @@ class ScheduleState:
 
         if not task.is_available(current_time, machine_id):
             return False
-        
+
         if machine_id == GLOBAL_MACHINE_ID:
             for machine in task.machines:
                 if task.is_available(current_time, machine):
@@ -326,9 +332,22 @@ class ScheduleState:
             else:
                 return False
 
-        self.fix_task(task_id, machine_id, current_time)
+        self.tight_start_lb(task_id, current_time, machine_id)
+        self.tight_start_ub(task_id, current_time, machine_id)
+
+        task.assignment_ = machine_id
+        task.fixed_ = True
+
         self.awaiting_tasks.remove(task)
         self.fixed_tasks.add(task)
+
+        history_entry = TaskHistory(
+            assignment=machine_id,
+            start_time=current_time,
+            duration=task.remaining_times_[machine_id],
+            end_time=current_time + task.remaining_times_[machine_id],
+        )
+        task.history.append(history_entry)
 
         return True
 
@@ -339,26 +358,53 @@ class ScheduleState:
     ) -> bool:
         task = self.tasks[task_id]
 
-        paused = task.pause(current_time)
+        if not task.fixed_ or not task.preemptive:
+            return False
+        
+        cur_processing_time = task.processing_times[task.assignment_]
+        actual_time = current_time - task.get_start_lb(task.assignment_)
 
-        if paused:
-            self.awaiting_tasks.add(task)
-            self.tasks_to_propagate.add(task)
-            self.fixed_tasks.remove(task)
+        if actual_time >= cur_processing_time:
+            return False
 
-        return paused
+        for machine, prev_time in task.remaining_times_.items():
+            work_done = (prev_time * actual_time) // cur_processing_time
+            task.remaining_times_[machine] -= work_done
+
+            task.start_lbs_[machine] = current_time
+            task.start_ubs_[machine] = MAX_TIME
+
+        task.start_lbs_[GLOBAL_MACHINE_ID] = current_time
+        task.start_ubs_[GLOBAL_MACHINE_ID] = MAX_TIME
+
+        task.fixed_ = False
+        task.assignment_ = GLOBAL_MACHINE_ID
+
+        history_entry = task.history.pop()
+
+        task.history.append(
+            TaskHistory(
+                assignment=history_entry.assignment,
+                start_time=history_entry.start_time,
+                duration=actual_time,
+                end_time=history_entry.start_time + actual_time,
+            )
+        )
+
+        self.awaiting_tasks.add(task)
+        self.tasks_to_propagate.add(task)
+        self.fixed_tasks.remove(task)
+
+        return True
 
     def execute_job(
         self,
         job_id: TASK_ID,
         current_time: TIME,
-        machine_id: MACHINE_ID = -1,
+        machine_id: MACHINE_ID = GLOBAL_MACHINE_ID,
     ) -> TASK_ID:
         for task in self.jobs[job_id]:
-            if task.execute(current_time, machine_id):
-                self.awaiting_tasks.remove(task)
-                self.tasks_to_propagate.add(task)
-                self.fixed_tasks.add(task)
+            if self.execute_task(task.task_id, current_time, machine_id):
                 return task.task_id
 
         return -1
@@ -369,23 +415,50 @@ class ScheduleState:
         current_time: TIME,
     ) -> TASK_ID:
         for task in self.jobs[job_id]:
-            if task.pause(current_time):
-                self.awaiting_tasks.add(task)
-                self.tasks_to_propagate.add(task)
-                self.fixed_tasks.remove(task)
+            if self.pause_task(task.task_id, current_time):
                 return task.task_id
 
         return -1
+
+    def get_status(self, time: TIME) -> list[STATUS]:
+        status_list: list[STATUS] = []
+
+        status: STATUS = StatusEnum.UNFEASIBLE
+        for task in self.tasks:
+            if not task.fixed_:
+                if time >= task.get_start_ub(GLOBAL_MACHINE_ID) or not task.is_feasible(time):
+                    status = StatusEnum.UNFEASIBLE
+                
+                elif task.history:
+                    status = StatusEnum.PAUSED
+                
+                else:
+                    status = StatusEnum.AWAITING
+
+            else:
+                history_entry = task.history[-1]
+                start_time = history_entry.start_time
+                end_time = history_entry.end_time
+
+                if time < start_time:
+                    status = StatusEnum.AWAITING
+                
+                elif start_time <= time < end_time:
+                    status = StatusEnum.EXECUTING
+                
+                elif time >= end_time:
+                    status = StatusEnum.COMPLETED
+        
+            status_list.append(status)
+
+        return status_list
+
 
     def get_observation(self, time: TIME) -> ObsType:
         task_obs = self.instance.copy()
         job_obs = self.job_instance.copy()
 
-        task_obs["status"] = []
-        task_obs["available"] = []
-
-        for task in self.tasks:
-            task_obs["status"].append(task.get_status(time))
-            task_obs["available"].append(task.is_available(time))
+        task_obs["status"] = self.get_status(time)
+        task_obs["available"] = [task.is_available(time) for task in self.tasks]
 
         return task_obs, job_obs

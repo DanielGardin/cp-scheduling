@@ -14,10 +14,10 @@ from mypy_extensions import mypyc_attr
 
 from cpscheduler.utils.list_utils import convert_to_list
 from cpscheduler.environment._common import TIME, Float
+from cpscheduler.environment.tasks import Task
 from cpscheduler.environment.state import ScheduleState
 
 objectives: dict[str, type["Objective"]] = {}
-
 
 @mypyc_attr(allow_interpreted_subclasses=True)
 class Objective:
@@ -153,6 +153,19 @@ class ComposedObjective(Objective):
 
         return entry
 
+def _makespan(tasks: Iterable[Task]) -> TIME:
+    "Compute the makespan of a set of tasks."
+    max_end_time = 0
+
+    for task in tasks:
+        if not task.fixed_: continue
+
+        end_time = task.get_end_ub()
+
+        if end_time > max_end_time:
+            max_end_time = end_time
+
+    return max_end_time
 
 class Makespan(Objective):
     """
@@ -160,16 +173,7 @@ class Makespan(Objective):
     """
 
     def get_current(self, time: TIME, state: ScheduleState) -> int:
-        makespan = 0
-        for task in state.fixed_tasks:
-            if not task.is_completed(time):
-                continue
-
-            end_time = task.get_end()
-            if end_time > makespan:
-                makespan = end_time
-
-        return makespan
+        return _makespan(state.fixed_tasks)
 
     def get_entry(self) -> str:
         return "C_max"
@@ -183,8 +187,9 @@ class TotalCompletionTime(Objective):
 
     def get_current(self, time: TIME, state: ScheduleState) -> int:
         total_completion_time = 0
-        for job in range(state.n_jobs):
-            job_completion = state.get_job_completion_time(job, time)
+
+        for job in state.jobs:
+            job_completion = _makespan(job.tasks)
             total_completion_time += job_completion
 
         return total_completion_time
@@ -223,9 +228,9 @@ class WeightedCompletionTime(Objective):
 
     def get_current(self, time: TIME, state: ScheduleState) -> float:
         weighted_completion_time = 0.0
-        for job in range(state.n_jobs):
-            weight = self.job_weights[job]
-            job_completion = state.get_job_completion_time(job, time)
+        for job in state.jobs:
+            weight = self.job_weights[job.job_id]
+            job_completion = _makespan(job.tasks)
 
             weighted_completion_time += weight * float(job_completion)
 
@@ -265,9 +270,9 @@ class MaximumLateness(Objective):
     def get_current(self, time: TIME, state: ScheduleState) -> int:
         max_lateness = 0
 
-        for job in range(state.n_jobs):
-            job_completion = state.get_job_completion_time(job, time)
-            job_lateness = job_completion - self.due_dates[job]
+        for job in state.jobs:
+            job_completion = _makespan(job.tasks)
+            job_lateness = job_completion - self.due_dates[job.job_id]
 
             if max_lateness < job_lateness:
                 max_lateness = job_lateness
@@ -308,9 +313,9 @@ class TotalTardiness(Objective):
 
     def get_current(self, time: TIME, state: ScheduleState) -> int:
         total_tardiness = 0
-        for job in range(state.n_jobs):
-            due_date = self.due_dates[job]
-            job_completion = state.get_job_completion_time(job, time)
+        for job in state.jobs:
+            due_date = self.due_dates[job.job_id]
+            job_completion = _makespan(job.tasks)
 
             job_tardiness = (
                 job_completion - due_date if job_completion > due_date else 0
@@ -366,10 +371,10 @@ class WeightedTardiness(Objective):
 
     def get_current(self, time: TIME, state: ScheduleState) -> float:
         weighted_tardiness = 0.0
-        for job in range(state.n_jobs):
-            weight = self.job_weights[job]
-            due_date = self.due_dates[job]
-            job_completion = state.get_job_completion_time(job, time)
+        for job in state.jobs:
+            weight = self.job_weights[job.job_id]
+            due_date = self.due_dates[job.job_id]
+            job_completion = _makespan(job.tasks)
 
             job_tardiness = (
                 float(job_completion - due_date) if job_completion > due_date else 0.0
@@ -413,9 +418,9 @@ class TotalEarliness(Objective):
 
     def get_current(self, time: TIME, state: ScheduleState) -> int:
         total_earliness = 0
-        for job in range(state.n_jobs):
-            due_date = self.due_dates[job]
-            job_completion = state.get_job_completion_time(job, time)
+        for job in state.jobs:
+            due_date = self.due_dates[job.job_id]
+            job_completion = _makespan(job.tasks)
 
             job_earliness = (
                 due_date - job_completion if job_completion < due_date else 0
@@ -469,10 +474,10 @@ class WeightedEarliness(Objective):
 
     def get_current(self, time: TIME, state: ScheduleState) -> float:
         weighted_earliness = 0.0
-        for job in range(state.n_jobs):
-            weight = self.job_weights[job]
-            due_date = self.due_dates[job]
-            job_completion = state.get_job_completion_time(job, time)
+        for job in state.jobs:
+            weight = self.job_weights[job.job_id]
+            due_date = self.due_dates[job.job_id]
+            job_completion = _makespan(job.tasks)
 
             job_earliness = (
                 float(due_date - job_completion) if job_completion < due_date else 0
@@ -515,9 +520,9 @@ class TotalTardyJobs(Objective):
 
     def get_current(self, time: TIME, state: ScheduleState) -> int:
         tardy_jobs = 0
-        for job in range(state.n_jobs):
-            due_date = self.due_dates[job]
-            job_completion = state.get_job_completion_time(job, time)
+        for job in state.jobs:
+            due_date = self.due_dates[job.job_id]
+            job_completion = _makespan(job.tasks)
 
             tardy = 1 if job_completion > due_date else 0
             tardy_jobs += tardy
@@ -568,10 +573,10 @@ class WeightedTardyJobs(Objective):
 
     def get_current(self, time: TIME, state: ScheduleState) -> float:
         weighted_tardy_jobs = 0.0
-        for job in range(state.n_jobs):
-            weight = self.job_weights[job]
-            due_date = self.due_dates[job]
-            job_completion = state.get_job_completion_time(job, time)
+        for job in state.jobs:
+            weight = self.job_weights[job.job_id]
+            due_date = self.due_dates[job.job_id]
+            job_completion = _makespan(job.tasks)
 
             tardy = weight if job_completion > due_date else 0.0
             weighted_tardy_jobs += tardy
@@ -615,9 +620,9 @@ class TotalFlowTime(Objective):
 
     def get_current(self, time: TIME, state: ScheduleState) -> int:
         total_flowtime = 0
-        for job in range(state.n_jobs):
-            release_time = self.release_times[job]
-            job_completion = state.get_job_completion_time(job, time)
+        for job in state.jobs:
+            release_time = self.release_times[job.job_id]
+            job_completion = _makespan(job.tasks)
 
             job_flowtime = (
                 job_completion - release_time if job_completion > release_time else 0

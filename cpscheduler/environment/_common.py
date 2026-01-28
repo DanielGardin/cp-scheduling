@@ -56,7 +56,7 @@ class InstanceConfig(TypedDict, total=False):
 Options: TypeAlias = dict[str, Any] | InstanceConfig | None
 
 
-class Status:
+class StatusEnum:
     "Possible statuses of a task at a given time."
 
     # awaiting:  time < start_lb[0] or waiting for a machine
@@ -74,6 +74,7 @@ class Status:
     # unfeasible: task cannot be completed given the current state
     UNFEASIBLE: Final[u8] = 255
 
+STATUS: TypeAlias = u8
 
 def ceil_div(a: TIME, b: TIME) -> TIME:
     "a divided by b, rounded up to the nearest integer."

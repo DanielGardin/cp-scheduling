@@ -136,7 +136,7 @@ class Execute(Instruction):
             if executed_task >= 0:
                 return Signal(Action.DONE)
 
-            if all(task.fixed for task in state.jobs[self.id]):
+            if all(task.is_fixed() for task in state.jobs[self.id]):
                 return Signal(
                     Action.RAISE,
                     info=f"Every task in Job {self.id} has been executed.",
@@ -148,13 +148,16 @@ class Execute(Instruction):
             if execute:
                 return Signal(Action.DONE)
 
-            if state.tasks[self.id].fixed:
+            task = state.tasks[self.id]
+
+
+            if task.is_fixed():
                 return Signal(
                     Action.RAISE,
                     info=f"Task {self.id} was/is already executed.",
                 )
 
-            if self.machine > 0 and not self.machine in state.tasks[self.id].machines:
+            if self.machine >= 0 and not self.machine in task.machines:
                 return Signal(
                     Action.RAISE,
                     info=f"Task {self.id} cannot be executed on machine {self.machine}.",
@@ -205,14 +208,6 @@ class Pause(Instruction):
             if paused_job >= 0:
                 return Signal(Action.DONE | Action.REEVALUATE)
 
-            job = state.jobs[self.id]
-
-            if all(task.is_completed(current_time) for task in job):
-                return Signal(
-                    Action.RAISE,
-                    info=f"Job {self.id} cannot be paused. It has been already completed.",
-                )
-
         else:
             can_pause = state.pause_task(self.id, current_time)
 
@@ -225,12 +220,6 @@ class Pause(Instruction):
                 return Signal(
                     Action.RAISE,
                     info=f"Task {self.id} cannot be paused. Preemption is not allowed.",
-                )
-
-            elif state.tasks[self.id].is_completed(current_time):
-                return Signal(
-                    Action.RAISE,
-                    info=f"Task {self.id} cannot be paused. It has been already completed.",
                 )
 
         return Signal(Action.WAIT)
@@ -258,44 +247,44 @@ class Resume(Instruction):
         state: ScheduleState,
         scheduled_instructions: dict[TIME, list[Instruction]],
     ) -> Signal:
-        if self.job_oriented:
-            job_tasks = state.jobs[self.id]
+        # if self.job_oriented:
+        #     job_tasks = state.jobs[self.id]
 
-            for task in job_tasks:
-                if task.is_paused(current_time):
-                    last_machine = task.get_assignment()
-                    execute = state.execute_task(task.task_id, current_time, last_machine)
+        #     for task in job_tasks:
+        #         if task.is_paused(current_time):
+        #             last_machine = task.get_assignment()
+        #             execute = state.execute_task(task.task_id, current_time, last_machine)
 
-                    if execute:
-                        return Signal(Action.DONE)
+        #             if execute:
+        #                 return Signal(Action.DONE)
 
 
-            if all(task.fixed for task in job_tasks):
-                return Signal(
-                    Action.RAISE,
-                    info=f"Every task in Job {self.id} has been executed.",
-                )
+        #     if all(task.fixed for task in job_tasks):
+        #         return Signal(
+        #             Action.RAISE,
+        #             info=f"Every task in Job {self.id} has been executed.",
+        #         )
 
-        else:
-            task = state.tasks[self.id]
+        # else:
+        #     task = state.tasks[self.id]
 
-            if not task.is_paused(current_time):
-                return Signal(
-                    Action.RAISE,
-                    info=f"Task {self.id} is not paused and cannot be resumed.",
-                )
+        #     if not task.is_paused(current_time):
+        #         return Signal(
+        #             Action.RAISE,
+        #             info=f"Task {self.id} is not paused and cannot be resumed.",
+        #         )
             
-            last_machine = task.get_assignment()
-            execute = state.execute_task(self.id, current_time, last_machine)
+        #     last_machine = task.get_assignment()
+        #     execute = state.execute_task(self.id, current_time, last_machine)
 
-            if execute:
-                return Signal(Action.DONE)
+        #     if execute:
+        #         return Signal(Action.DONE)
 
-            if state.tasks[self.id].fixed:
-                return Signal(
-                    Action.RAISE,
-                    info=f"Task {self.id} was/is already executed.",
-                )
+        #     if state.tasks[self.id].fixed:
+        #         return Signal(
+        #             Action.RAISE,
+        #             info=f"Task {self.id} was/is already executed.",
+        #         )
 
         return Signal(Action.WAIT)
 
@@ -315,12 +304,12 @@ class Complete(Instruction):
         state: ScheduleState,
         scheduled_instructions: dict[TIME, list[Instruction]],
     ) -> Signal:
-        task = state.tasks[self.task_id]
-        if task.is_executing(current_time):
-            return Signal(Action.ADVANCE_TO, task.get_end())
+        # task = state.tasks[self.task_id]
+        # if task.is_executing(current_time):
+        #     return Signal(Action.ADVANCE_TO, task.get_end())
 
-        if task.is_completed(current_time):
-            return Signal(Action.ERROR, info=f"Task {self.task_id} already terminated")
+        # if task.is_completed(current_time):
+        #     return Signal(Action.ERROR, info=f"Task {self.task_id} already terminated")
 
         return Signal(Action.WAIT)
 

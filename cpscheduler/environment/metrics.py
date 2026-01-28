@@ -1,239 +1,239 @@
-from copy import deepcopy
+# from copy import deepcopy
 
-from cpscheduler.environment._common import TASK_ID, TIME, MACHINE_ID
-from cpscheduler.environment.env import SchedulingEnv
-from cpscheduler.environment.instructions import ActionType
-from cpscheduler.environment.state import ScheduleState
-
-
-def machine_utilization(time: int, state: ScheduleState, objective: float) -> float:
-    """
-    Calculate the percentage of time that machines are utilized during the scheduling period.
-    """
-
-    total_time = time
-    busy_time = 0
-    for task in state.fixed_tasks:
-        busy_time += task.get_processed_time(time)
-
-    return state.n_machines * busy_time / total_time if total_time > 0 else 1
+# from cpscheduler.environment._common import TASK_ID, TIME, MACHINE_ID
+# from cpscheduler.environment.env import SchedulingEnv
+# from cpscheduler.environment.instructions import ActionType
+# from cpscheduler.environment.state import ScheduleState
 
 
-def max_preemptions(time: int, state: ScheduleState, objective: float) -> int:
-    "Calculate the maximum number of preemption switches that occurred during the scheduling period."
-    max_switches = 0
-    for task in state.fixed_tasks:
-        n_switches = task.n_parts - 1
+# def machine_utilization(time: int, state: ScheduleState, objective: float) -> float:
+#     """
+#     Calculate the percentage of time that machines are utilized during the scheduling period.
+#     """
 
-        if n_switches > max_switches:
-            max_switches = n_switches
+#     total_time = time
+#     busy_time = 0
+#     for task in state.fixed_tasks:
+#         busy_time += task.get_processed_time(time)
 
-    return max_switches
+#     return state.n_machines * busy_time / total_time if total_time > 0 else 1
 
 
-class ReferenceScheduleMetrics:
-    """
-    This is a metric class that calculates metrics based on a reference schedule.
-    It can be initialized with a reference schedule, which can be a mapping of task IDs to
-    their scheduled start times, an iterable of tuples (task_id, start_time), or a
-    string which is used as a tag to fetch the reference schedule from the data.
+# def max_preemptions(time: int, state: ScheduleState, objective: float) -> int:
+#     "Calculate the maximum number of preemption switches that occurred during the scheduling period."
+#     max_switches = 0
+#     for task in state.fixed_tasks:
+#         n_switches = task.n_parts - 1
 
-    The available metrics include:
-    - total_displacement_distance: The total distance between the scheduled and actual start times of tasks.
+#         if n_switches > max_switches:
+#             max_switches = n_switches
 
-    - order_preservation: The ratio of tasks that maintain their order in the reference schedule.
+#     return max_switches
 
-    - hamming_accuracy: The ratio of tasks that are in the same position as in the reference schedule.
 
-    - kendall_tau: The Kendall Tau distance between the reference schedule and the actual schedule.
-    """
+# class ReferenceScheduleMetrics:
+#     """
+#     This is a metric class that calculates metrics based on a reference schedule.
+#     It can be initialized with a reference schedule, which can be a mapping of task IDs to
+#     their scheduled start times, an iterable of tuples (task_id, start_time), or a
+#     string which is used as a tag to fetch the reference schedule from the data.
 
-    start_times: dict[TASK_ID, TIME]
-    assignments: dict[TASK_ID, MACHINE_ID]
+#     The available metrics include:
+#     - total_displacement_distance: The total distance between the scheduled and actual start times of tasks.
 
-    objective_value: float
+#     - order_preservation: The ratio of tasks that maintain their order in the reference schedule.
 
-    def __init__(self, reference_schedule: ActionType, env: SchedulingEnv):
-        self.start_times = {}
-        self.assignments = {}
+#     - hamming_accuracy: The ratio of tasks that are in the same position as in the reference schedule.
 
-        cpy_env = deepcopy(env)
-        *_, info = cpy_env.step(reference_schedule)
+#     - kendall_tau: The Kendall Tau distance between the reference schedule and the actual schedule.
+#     """
 
-        for task in cpy_env.state.fixed_tasks:
-            self.start_times[task.task_id] = task.get_start()
-            self.assignments[task.task_id] = task.get_assignment()
+#     start_times: dict[TASK_ID, TIME]
+#     assignments: dict[TASK_ID, MACHINE_ID]
 
-        self.objective_value = info["objective_value"]
+#     objective_value: float
 
-    def __call__(
-        self, time: int, state: ScheduleState, objective: float
-    ) -> dict[str, float]:
-        self.force_import = False
+#     def __init__(self, reference_schedule: ActionType, env: SchedulingEnv):
+#         self.start_times = {}
+#         self.assignments = {}
 
-        metrics = {
-            "mean_displacement_distance": self.mean_displacement_distance(
-                time, state, objective
-            ),
-            "order_preservation": self.order_preservation(time, state, objective),
-            "hamming_accuracy": self.hamming_accuracy(time, state, objective),
-            "kendall_tau": self.kendall_tau(time, state, objective),
-        }
+#         cpy_env = deepcopy(env)
+#         *_, info = cpy_env.step(reference_schedule)
 
-        return metrics
+#         for task in cpy_env.state.fixed_tasks:
+#             self.start_times[task.task_id] = task.get_start()
+#             self.assignments[task.task_id] = task.get_assignment()
 
-    def mean_displacement_distance(
-        self, time: int, state: ScheduleState, objective: float
-    ) -> float:
-        """
-        Calculate the mean displacement distance of the reference schedule.
-        The displacement distance is the sum of the absolute differences between
-        the scheduled and actual start times of each task.
-        """
-        distance = 0
-        count = 0
+#         self.objective_value = info["objective_value"]
 
-        for task_id, reference_time in self.start_times.items():
-            task = state.tasks[task_id]
+#     def __call__(
+#         self, time: int, state: ScheduleState, objective: float
+#     ) -> dict[str, float]:
+#         self.force_import = False
 
-            if task.is_fixed():
-                actual_time = task.get_start()
+#         metrics = {
+#             "mean_displacement_distance": self.mean_displacement_distance(
+#                 time, state, objective
+#             ),
+#             "order_preservation": self.order_preservation(time, state, objective),
+#             "hamming_accuracy": self.hamming_accuracy(time, state, objective),
+#             "kendall_tau": self.kendall_tau(time, state, objective),
+#         }
 
-                # abs does not seem to supported by mypyc yet
-                distance += (
-                    reference_time - actual_time
-                    if reference_time > actual_time
-                    else actual_time - reference_time
-                )
-                count += 1
+#         return metrics
 
-        return distance / count if count > 0 else 0.0
+#     def mean_displacement_distance(
+#         self, time: int, state: ScheduleState, objective: float
+#     ) -> float:
+#         """
+#         Calculate the mean displacement distance of the reference schedule.
+#         The displacement distance is the sum of the absolute differences between
+#         the scheduled and actual start times of each task.
+#         """
+#         distance = 0
+#         count = 0
 
-    def order_preservation(
-        self, time: int, state: ScheduleState, objective: float
-    ) -> float:
-        """
-        Calculate the order preservation metric based on the reference schedule.
-        This metric is the ratio of the number of tasks that maintain their order
-        in the reference schedule to the total number of tasks.
-        """
+#         for task_id, reference_time in self.start_times.items():
+#             task = state.tasks[task_id]
 
-        start_times = [
-            (start_time, state.tasks[task_id].get_start())
-            for task_id, start_time in self.start_times.items()
-            if state.tasks[task_id].is_fixed()
-        ]
+#             if task.is_fixed():
+#                 actual_time = task.get_start()
 
-        n = len(start_times)
-        if n < 2:
-            return 1.0
+#                 # abs does not seem to supported by mypyc yet
+#                 distance += (
+#                     reference_time - actual_time
+#                     if reference_time > actual_time
+#                     else actual_time - reference_time
+#                 )
+#                 count += 1
 
-        start_times.sort()
+#         return distance / count if count > 0 else 0.0
 
-        actual_times = [actual_start for _, actual_start in start_times]
+#     def order_preservation(
+#         self, time: int, state: ScheduleState, objective: float
+#     ) -> float:
+#         """
+#         Calculate the order preservation metric based on the reference schedule.
+#         This metric is the ratio of the number of tasks that maintain their order
+#         in the reference schedule to the total number of tasks.
+#         """
 
-        preserved_count = 0
-        total_count = n * (n - 1) // 2
+#         start_times = [
+#             (start_time, state.tasks[task_id].get_start())
+#             for task_id, start_time in self.start_times.items()
+#             if state.tasks[task_id].is_fixed()
+#         ]
 
-        for i in range(n - 1):
-            ai = actual_times[i]
+#         n = len(start_times)
+#         if n < 2:
+#             return 1.0
 
-            for j in range(i + 1, n):
-                if ai <= actual_times[j]:
-                    preserved_count += 1
+#         start_times.sort()
 
-        return preserved_count / total_count
+#         actual_times = [actual_start for _, actual_start in start_times]
 
-    # The following are useful when the schedule is a permutation of the tasks
-    def _get_permutations(
-        self, state: ScheduleState
-    ) -> tuple[list[TASK_ID], list[TASK_ID]]:
-        actual = sorted(
-            [
-                (task.get_start(), task.task_id)
-                for task in state.fixed_tasks
-                if task.task_id in self.start_times
-            ]
-        )
+#         preserved_count = 0
+#         total_count = n * (n - 1) // 2
 
-        reference = sorted(
-            [(self.start_times[task_id], task_id) for _, task_id in actual]
-        )
+#         for i in range(n - 1):
+#             ai = actual_times[i]
 
-        return (
-            [task_id for _, task_id in reference],
-            [task_id for _, task_id in actual],
-        )
+#             for j in range(i + 1, n):
+#                 if ai <= actual_times[j]:
+#                     preserved_count += 1
 
-    def hamming_accuracy(
-        self, time: int, state: ScheduleState, objective: float
-    ) -> float:
-        """
-        Calculate the Hamming similarity of the schedule permutation compared to the reference
-        schedule. This metric is the number of tasks that are in the same position
-        as in the reference schedule.
-        """
-        reference_perm, actual_perm = self._get_permutations(state)
+#         return preserved_count / total_count
 
-        hamming_count = 0
-        for ref_task, act_task in zip(reference_perm, actual_perm):
-            if ref_task == act_task:
-                hamming_count += 1
+#     # The following are useful when the schedule is a permutation of the tasks
+#     def _get_permutations(
+#         self, state: ScheduleState
+#     ) -> tuple[list[TASK_ID], list[TASK_ID]]:
+#         actual = sorted(
+#             [
+#                 (task.get_start(), task.task_id)
+#                 for task in state.fixed_tasks
+#                 if task.task_id in self.start_times
+#             ]
+#         )
 
-        return hamming_count / len(reference_perm) if reference_perm else 1.0
+#         reference = sorted(
+#             [(self.start_times[task_id], task_id) for _, task_id in actual]
+#         )
 
-    def kendall_tau(self, time: int, state: ScheduleState, objective: float) -> float:
-        """
-        Calculate the Kendall Tau distance between the reference schedule and the actual schedule.
-        This metric is the number of discordant pairs in the schedule.
-        """
-        reference_perm, actual_perm = self._get_permutations(state)
-        n = len(reference_perm)
+#         return (
+#             [task_id for _, task_id in reference],
+#             [task_id for _, task_id in actual],
+#         )
 
-        concordant = 0
-        discordant = 0
-        ties_ref = 0
-        ties_act = 0
+#     def hamming_accuracy(
+#         self, time: int, state: ScheduleState, objective: float
+#     ) -> float:
+#         """
+#         Calculate the Hamming similarity of the schedule permutation compared to the reference
+#         schedule. This metric is the number of tasks that are in the same position
+#         as in the reference schedule.
+#         """
+#         reference_perm, actual_perm = self._get_permutations(state)
 
-        for i in range(n):
-            for j in range(i + 1, n):
-                ref_i = reference_perm[i]
-                ref_j = reference_perm[j]
-                act_i = actual_perm[i]
-                act_j = actual_perm[j]
+#         hamming_count = 0
+#         for ref_task, act_task in zip(reference_perm, actual_perm):
+#             if ref_task == act_task:
+#                 hamming_count += 1
 
-                if ref_i == ref_j and act_i == act_j:
-                    continue
+#         return hamming_count / len(reference_perm) if reference_perm else 1.0
 
-                if ref_i == ref_j:
-                    ties_ref += 1
+#     def kendall_tau(self, time: int, state: ScheduleState, objective: float) -> float:
+#         """
+#         Calculate the Kendall Tau distance between the reference schedule and the actual schedule.
+#         This metric is the number of discordant pairs in the schedule.
+#         """
+#         reference_perm, actual_perm = self._get_permutations(state)
+#         n = len(reference_perm)
 
-                elif act_i == act_j:
-                    ties_act += 1
+#         concordant = 0
+#         discordant = 0
+#         ties_ref = 0
+#         ties_act = 0
 
-                else:
-                    concordant += (ref_i - ref_j) * (act_i - act_j) > 0
-                    discordant += (ref_i - ref_j) * (act_i - act_j) < 0
+#         for i in range(n):
+#             for j in range(i + 1, n):
+#                 ref_i = reference_perm[i]
+#                 ref_j = reference_perm[j]
+#                 act_i = actual_perm[i]
+#                 act_j = actual_perm[j]
 
-        denominator = (
-            (concordant + discordant + ties_ref) * (concordant + discordant + ties_act)
-        ) ** 0.5
+#                 if ref_i == ref_j and act_i == act_j:
+#                     continue
 
-        return (concordant - discordant) / denominator if denominator > 0 else 1.0
+#                 if ref_i == ref_j:
+#                     ties_ref += 1
 
-    def regret(self, time: int, state: ScheduleState, objective: float) -> float:
-        """
-        Calculate the regret of the current schedule compared to the reference schedule.
-        Regret is defined as the difference between the reference objective value
-        and the current objective value.
-        """
-        return self.objective_value - objective
+#                 elif act_i == act_j:
+#                     ties_act += 1
 
-    def performance_gap(
-        self, time: int, state: ScheduleState, objective: float
-    ) -> float:
-        """
-        Calculate the performance gap of the current schedule compared to the reference schedule.
-        The performance gap is defined as the ratio of the regret to the reference objective value.
-        """
-        return objective / (self.objective_value + 1e-9) - 1.0
+#                 else:
+#                     concordant += (ref_i - ref_j) * (act_i - act_j) > 0
+#                     discordant += (ref_i - ref_j) * (act_i - act_j) < 0
+
+#         denominator = (
+#             (concordant + discordant + ties_ref) * (concordant + discordant + ties_act)
+#         ) ** 0.5
+
+#         return (concordant - discordant) / denominator if denominator > 0 else 1.0
+
+#     def regret(self, time: int, state: ScheduleState, objective: float) -> float:
+#         """
+#         Calculate the regret of the current schedule compared to the reference schedule.
+#         Regret is defined as the difference between the reference objective value
+#         and the current objective value.
+#         """
+#         return self.objective_value - objective
+
+#     def performance_gap(
+#         self, time: int, state: ScheduleState, objective: float
+#     ) -> float:
+#         """
+#         Calculate the performance gap of the current schedule compared to the reference schedule.
+#         The performance gap is defined as the ratio of the regret to the reference objective value.
+#         """
+#         return objective / (self.objective_value + 1e-9) - 1.0

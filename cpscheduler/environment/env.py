@@ -334,10 +334,13 @@ class SchedulingEnv:
                 for task in self.state.awaiting_tasks
             )
 
-        return all(
-            task.is_completed(self.current_time)
-            for task in self.state.fixed_tasks
-        )
+        for task in self.state.fixed_tasks:
+            history_entry = task.history[-1]
+
+            if self.current_time < history_entry.end_time:
+                return False
+
+        return True
 
     def _is_schedule_empty(self) -> bool:
         return not self.schedule[DEFAULT_QUEUE] and len(self.schedule) == 1
@@ -445,18 +448,22 @@ class SchedulingEnv:
             return True
 
         if action & Action.SKIPPED:
-            wait_cond = any(
-                task.is_executing(self.current_time) for task in self.state.fixed_tasks
-            )
+            for task in self.state.fixed_tasks:
+                end_time = task.history[-1].end_time
 
-            action = Action.WAIT if wait_cond else Action.HALT
+                if end_time > self.current_time:
+                    action = Action.WAIT
+                    break
+
+            else:
+                action = Action.HALT
 
         if not (action & Action.SKIPPED) and i != -1:
             schedule.pop(i)
 
-        if action & Action.REEVALUATE:
-            for task in self.state.awaiting_tasks:
-                task.set_start_lb(self.current_time)
+        # if action & Action.REEVALUATE:
+        #     for task in self.state.awaiting_tasks:
+        #         task.set_start_lb(self.current_time)
 
         if action & Action.PROPAGATE:
             self._propagate()
