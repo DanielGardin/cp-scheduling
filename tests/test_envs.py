@@ -6,8 +6,7 @@ from typing_extensions import Unpack
 
 from common import env_setup, TEST_INSTANCES
 
-from cpscheduler.environment._common import Status
-
+from cpscheduler.environment._common import StatusEnum
 
 @pytest.mark.env
 @pytest.mark.parametrize("instance_name", TEST_INSTANCES)
@@ -17,9 +16,9 @@ def test_reset(instance_name: str) -> None:
     (obs, _), info = env.reset()
 
     assert info["current_time"] == 0
-    assert obs["status"][0] == Status.AWAITING
+    assert obs["status"][0] == StatusEnum.AWAITING
     assert obs["available"][0]
-    assert obs["status"][1] == Status.AWAITING
+    assert obs["status"][1] == StatusEnum.AWAITING
     assert not obs["available"][1]
 
     env.step(
@@ -35,9 +34,9 @@ def test_reset(instance_name: str) -> None:
     (new_obs, _), new_info = env.reset()
 
     assert new_info["current_time"] == 0
-    assert new_obs["status"][0] == Status.AWAITING
+    assert new_obs["status"][0] == StatusEnum.AWAITING
     assert new_obs["available"][0]
-    assert new_obs["status"][1] == Status.AWAITING
+    assert new_obs["status"][1] == StatusEnum.AWAITING
     assert not new_obs["available"][1]
 
 
@@ -49,22 +48,22 @@ def test_execute(instance_name: str) -> None:
     env.reset()
 
     first_action = ("execute", 0)
-    (obs, _), reward, terminated, truncated, info = env.step(first_action)
+    (obs, _), _, terminated, truncated, info = env.step(first_action)
 
     assert not terminated
     assert not truncated
     assert info["current_time"] == 0
-    assert obs["status"][0] == Status.EXECUTING
+    assert obs["status"][0] == StatusEnum.EXECUTING
 
     advancing_time = max(obs["processing_time"])
-    (new_obs, _), new_reward, new_terminated, new_truncated, new_info = env.step(
+    (new_obs, _), _, new_terminated, new_truncated, new_info = env.step(
         [("advance", advancing_time)]
     )
 
     assert not new_terminated
     assert not new_truncated
     assert new_info["current_time"] == advancing_time
-    assert new_obs["status"][0] == Status.COMPLETED
+    assert new_obs["status"][0] == StatusEnum.COMPLETED
 
 
 @pytest.mark.env
@@ -80,28 +79,29 @@ def test_submit(instance_name: str) -> None:
         ("submit", 0),
     ]
 
-    (obs, _), reward, terminated, truncated, info = env.step(actions)
+    (obs, _), reward, *_, info = env.step(actions)
 
-    assert obs["status"][0] == Status.COMPLETED
-    assert obs["status"][1] == Status.COMPLETED
+    assert obs["status"][0] == StatusEnum.COMPLETED
+    assert obs["status"][1] == StatusEnum.COMPLETED
 
-    assert obs["status"][2] == Status.EXECUTING
+    assert obs["status"][2] == StatusEnum.EXECUTING
 
-    assert (
-        info["current_time"]
-        == env.state.tasks[0].get_duration() + env.state.tasks[1].get_duration()
-    )
+    task0 = env.state.tasks[0].history[0]
+    task1 = env.state.tasks[1].history[0]
+    assert info["current_time"] == task0.duration + task1.duration
 
-    (new_obs, _), new_reward, new_terminated, new_truncated, new_info = env.step(
+    (new_obs, _), new_reward, *_, new_info = env.step(
         [("complete", 2)]
     )
 
-    assert new_obs["status"][0] == Status.COMPLETED
-    assert new_obs["status"][1] == Status.COMPLETED
-    assert new_obs["status"][2] == Status.COMPLETED
+    assert new_obs["status"][0] == StatusEnum.COMPLETED
+    assert new_obs["status"][1] == StatusEnum.COMPLETED
+    assert new_obs["status"][2] == StatusEnum.COMPLETED
 
-    assert new_info["current_time"] == env.state.tasks[2].get_end()
-    assert new_reward + reward == -int(env.state.tasks[2].get_end())
+    task2 = env.state.tasks[2].history[0]
+
+    assert new_info["current_time"] == task2.end_time
+    assert reward + new_reward == -new_info["current_time"]
 
 
 @pytest.mark.env
@@ -113,9 +113,9 @@ def test_execute2(instance_name: str) -> None:
 
     actions = [("execute", i) for i in range(env.state.n_tasks)]
 
-    (obs, _), reward, terminated, truncated, info = env.step(actions)
+    (obs, _), _, terminated, *_ = env.step(actions)
 
-    assert obs["status"] == [Status.COMPLETED] * env.state.n_tasks
+    assert obs["status"] == [StatusEnum.COMPLETED] * env.state.n_tasks
     assert terminated
 
 
@@ -128,9 +128,9 @@ def test_submit2(instance_name: str) -> None:
 
     actions = [("submit", i) for i in range(env.state.n_tasks-1, -1, -1)]
 
-    (obs, _), reward, terminated, truncated, info = env.step(actions)
+    (obs, _), _, terminated, *_ = env.step(actions)
 
-    assert obs["status"] == [Status.COMPLETED] * env.state.n_tasks
+    assert obs["status"] == [StatusEnum.COMPLETED] * env.state.n_tasks
     assert terminated
 
 
@@ -152,14 +152,14 @@ def test_pause(instance_name: str) -> None:
         ("complete", 0),
     ]
 
-    (obs, _), reward, terminated, truncated, info = env.step(actions)
+    (obs, _), *_, info = env.step(actions)
 
-    assert obs["status"][0] == Status.PAUSED
+    assert obs["status"][0] == StatusEnum.PAUSED
     assert info["current_time"] == 2 * (processing_time // 2)
 
-    (new_obs, _), new_reward, new_terminated, new_truncated, new_info = env.step()
+    (new_obs, _), *_, new_info = env.step()
 
-    assert new_obs["status"][0] == Status.COMPLETED
+    assert new_obs["status"][0] == StatusEnum.COMPLETED
     assert new_info["current_time"] == processing_time + processing_time // 2
 
 def test_copy() -> None:

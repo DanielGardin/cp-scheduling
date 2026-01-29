@@ -9,6 +9,10 @@ from cpscheduler.heuristics import (
     PriorityDispatchingRule,
 )
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 pdr_expected_results = {
     "ta01": {
         "SPT": 1462,
@@ -49,11 +53,13 @@ def test_pdr(instance_name: str, heuristic: str) -> None:
 
     obs, info = env.reset()
 
+    assert not all(obs[0]["available"])
+
     action = heuristics[heuristic](obs)
     obs, reward, terminated, truncated, info = env.step(action)
 
-    assert info["current_time"] == pdr_expected_results[instance_name][heuristic]
     assert terminated
+    assert info["current_time"] == pdr_expected_results[instance_name][heuristic]
 
 @pytest.mark.heuristics
 @pytest.mark.parametrize("instance_name", pdr_expected_results)
