@@ -140,7 +140,7 @@ class SchedulingEnv:
         if self.state.loaded:
             return (
                 f"SchedulingEnv({self.get_entry()}, n_tasks={self.state.n_tasks}, "
-                f"current_time={self.current_time}, objective={self._get_objective()})"
+                f"current_time={self.current_time}, objective={self.get_objective()})"
             )
 
         return f"SchedulingEnv({self.get_entry()}, n_tasks=0)"
@@ -217,7 +217,7 @@ class SchedulingEnv:
 
     def get_info(self) -> InfoType:
         "Retrieve additional information about the environment."
-        objective_value = self._get_objective()
+        objective_value = self.get_objective()
 
         info: dict[str, Any] = {
             "n_queries": len(self.query_times),
@@ -302,14 +302,14 @@ class SchedulingEnv:
                 self._schedule_instruction(instruction[0], args)
 
         self.query_times.append(self.current_time)
-        previous_objective = self._get_objective()
+        previous_objective = self.get_objective()
 
         while not self._step_forward():
             self.render()
 
         obs = self.get_state()
 
-        reward = self._get_objective() - previous_objective
+        reward = self.get_objective() - previous_objective
         if self.objective.minimize:
             reward = -reward
 
@@ -322,7 +322,7 @@ class SchedulingEnv:
     def render(self) -> None:
         self.renderer.render(self.current_time, self.state)
 
-    def _get_objective(self) -> float:
+    def get_objective(self) -> float:
         "Get the current value of the objective function."
         return float(self.objective.get_current(self.current_time, self.state))
 

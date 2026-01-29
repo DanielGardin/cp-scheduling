@@ -80,20 +80,20 @@ class ScheduleState:
 
         return f"{cls_name}(loaded={self.loaded})"
 
-    # def __eq__(self, other: Any) -> bool:
-    #     if not isinstance(other, ScheduleState):
-    #         return False
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, ScheduleState):
+            return False
 
-    #     return (
-    #         self.tasks == other.tasks
-    #         and self.jobs == other.jobs
-    #         and self.awaiting_tasks == other.awaiting_tasks
-    #         and self.tasks_to_propagate == other.tasks_to_propagate
-    #         and self.fixed_tasks == other.fixed_tasks
-    #         and self.instance == other.instance
-    #         and self.job_instance == other.job_instance
-    #         and self.n_machines == other.n_machines
-    #     )
+        return (
+            self.tasks == other.tasks
+            and self.jobs == other.jobs
+            and self.awaiting_tasks == other.awaiting_tasks
+            and self.tasks_to_propagate == other.tasks_to_propagate
+            and self.fixed_tasks == other.fixed_tasks
+            and self.instance == other.instance
+            and self.job_instance == other.job_instance
+            and self.n_machines == other.n_machines
+        )
 
     # def __reduce__(self) -> Any:
     #     return (

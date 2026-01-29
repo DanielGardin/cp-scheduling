@@ -73,6 +73,8 @@ class Task:
         "Resets the task to its initial state."
         self.fixed_ = False
 
+        self.history.clear()
+
         self.start_lbs_.clear()
         self.start_ubs_.clear()
         self.remaining_times_.clear()
@@ -218,6 +220,12 @@ class Job:
 
     def __repr__(self) -> str:
         return f"Job(job_id={self.job_id}, n_tasks={self.n_tasks})"
+
+    def __eq__(self, value: object) -> bool:
+        if not isinstance(value, Job):
+            return False
+
+        return self.job_id == value.job_id
 
     def __iter__(self) -> Iterator[Task]:
         return iter(self.tasks)
