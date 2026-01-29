@@ -31,9 +31,7 @@ ModelExport: TypeAlias = Callable[[LpProblem, ScheduleState], ObjectiveVar]
 
 
 @multidispatch
-def export_objective_pulp(
-    objective: Objective, variables: PulpVariables
-) -> ModelExport:
+def export_objective_pulp(objective: Objective, variables: PulpVariables) -> ModelExport:
     raise NotImplementedError(
         f"Objective {objective} for variable {variables} not implemented for PuLP."
     )
@@ -50,9 +48,7 @@ def _(objective: ComposedObjective, variables: PulpVariables) -> ModelExport:
         ]
 
         coefficients = (
-            scale_to_int(objective.coefficients)
-            if variables.integral
-            else objective.coefficients
+            scale_to_int(objective.coefficients) if variables.integral else objective.coefficients
         )
 
         model.addConstraint(
@@ -107,9 +103,7 @@ def _(objective: WeightedCompletionTime, variables: PulpVariables) -> ModelExpor
         ]
 
         weights = (
-            scale_to_int(objective.job_weights)[0]
-            if variables.integral
-            else objective.job_weights
+            scale_to_int(objective.job_weights)[0] if variables.integral else objective.job_weights
         )
 
         return lpDot(weights, jobs_makespan)
@@ -125,9 +119,7 @@ def _(objective: MaximumLateness, variables: PulpVariables) -> ModelExport:
             for end_time, due_date in zip(variables.end_times, objective.due_dates)
         ]
 
-        maximum_lateness = max_pulp(
-            model, lateness, cat=LpInteger, name="maximum_lateness"
-        )
+        maximum_lateness = max_pulp(model, lateness, cat=LpInteger, name="maximum_lateness")
 
         return maximum_lateness
 
@@ -144,9 +136,7 @@ def _(objective: TotalTardiness, variables: PulpVariables) -> ModelExport:
                 for task in job_tasks
             ]
 
-            max_tardiness = LpVariable(
-                f"job_{job_id}_tardiness", lowBound=0, cat=LpInteger
-            )
+            max_tardiness = LpVariable(f"job_{job_id}_tardiness", lowBound=0, cat=LpInteger)
 
             total_tardiness += max_pulp(
                 model, tardiness, max_tardiness, name=f"job_{job_id}_tardiness"
@@ -162,9 +152,7 @@ def _(objective: TotalTardiness, variables: PulpVariables) -> ModelExport:
 def _(objective: WeightedTardiness, variables: PulpVariables) -> ModelExport:
     def export_model(model: LpProblem, state: ScheduleState) -> ObjectiveVar:
         weights = (
-            scale_to_int(objective.job_weights)[0]
-            if variables.integral
-            else objective.job_weights
+            scale_to_int(objective.job_weights)[0] if variables.integral else objective.job_weights
         )
 
         weighted_tardiness = LpAffineExpression()
@@ -174,9 +162,7 @@ def _(objective: WeightedTardiness, variables: PulpVariables) -> ModelExport:
                 for task in job_tasks
             ]
 
-            max_tardiness = LpVariable(
-                f"job_{job_id}_tardiness", lowBound=0, cat=LpInteger
-            )
+            max_tardiness = LpVariable(f"job_{job_id}_tardiness", lowBound=0, cat=LpInteger)
 
             weighted_tardiness += weights[job_id] * max_pulp(
                 model, tardiness, max_tardiness, name=f"job_{job_id}_tardiness"
@@ -197,9 +183,7 @@ def _(objective: TotalEarliness, variables: PulpVariables) -> ModelExport:
                 for task in job_tasks
             ]
 
-            max_earliness = LpVariable(
-                f"job_{job_id}_earliness", lowBound=0, cat=LpInteger
-            )
+            max_earliness = LpVariable(f"job_{job_id}_earliness", lowBound=0, cat=LpInteger)
 
             total_earliness += max_pulp(
                 model, earliness, max_earliness, name=f"job_{job_id}_earliness"
@@ -214,9 +198,7 @@ def _(objective: TotalEarliness, variables: PulpVariables) -> ModelExport:
 def _(objective: WeightedEarliness, variables: PulpVariables) -> ModelExport:
     def export_model(model: LpProblem, state: ScheduleState) -> ObjectiveVar:
         weights = (
-            scale_to_int(objective.job_weights)[0]
-            if variables.integral
-            else objective.job_weights
+            scale_to_int(objective.job_weights)[0] if variables.integral else objective.job_weights
         )
 
         weighted_earliness = LpAffineExpression()
@@ -226,9 +208,7 @@ def _(objective: WeightedEarliness, variables: PulpVariables) -> ModelExport:
                 for task in job_tasks
             ]
 
-            max_earliness = LpVariable(
-                f"job_{job_id}_earliness", lowBound=0, cat=LpInteger
-            )
+            max_earliness = LpVariable(f"job_{job_id}_earliness", lowBound=0, cat=LpInteger)
 
             weighted_earliness += weights[job_id] * max_pulp(
                 model, earliness, max_earliness, name=f"job_{job_id}_earliness"
@@ -246,9 +226,7 @@ def _(objective: TotalTardyJobs, variables: PulpVariables) -> ModelExport:
 
 @export_objective_pulp.register
 def _(objective: WeightedTardyJobs, variables: PulpVariables) -> ModelExport:
-    raise NotImplementedError(
-        "WeightedTardyJobs objective is not implemented for PuLP."
-    )
+    raise NotImplementedError("WeightedTardyJobs objective is not implemented for PuLP.")
 
 
 @export_objective_pulp.register

@@ -8,11 +8,15 @@ from pulp import LpProblem, LpSolver, LpMinimize, LpMaximize, LpSolution
 import pulp as pl
 
 from cpscheduler.environment import SchedulingEnv
-from cpscheduler.environment.objectives import Objective, Makespan
+from cpscheduler.environment.objectives import Objective
 from cpscheduler.environment.instructions import SingleAction, ActionType
 from cpscheduler.common import unwrap_env
 
-from cpscheduler.solver.pulp.tasks import PulpVariables, PulpSchedulingVariables, PulpTimetable
+from cpscheduler.solver.pulp.tasks import (
+    PulpVariables,
+    PulpSchedulingVariables,
+    PulpTimetable,
+)
 from cpscheduler.solver.pulp.setup import export_setup_pulp
 from cpscheduler.solver.pulp.constraint import export_constraint_pulp
 from cpscheduler.solver.pulp.objective import export_objective_pulp
@@ -23,6 +27,15 @@ Formulations = Literal["scheduling", "timetable"]
 
 
 class PulpSolver:
+    model: LpProblem
+    variables: PulpVariables
+
+    _solver: LpSolver | None
+    _config: SolverConfig
+
+    symmetry_breaking: bool
+    _built: bool
+
     def __init__(
         self,
         env: Any | SchedulingEnv,
@@ -45,26 +58,34 @@ class PulpSolver:
 
             tighten: bool
                 Whether to tighten the bounds of the tasks based on the current time.
-                This changes the environment's tasks assuming semi-active scheduling.
+                This changes the environment's tasks assuming semi-active scheduling and
+                regular objective.
 
         """
         self.env = unwrap_env(env)
 
         if not self.env.state.loaded:
-            raise ValueError(
-                "Environment must be loaded before initializing the solver."
+            raise ValueError("Environment must be loaded before initializing the solver.")
+
+        self._solver = None
+        self._config = {}
+
+        sense = LpMinimize if self.env.objective.minimize else LpMaximize
+        self.model = LpProblem(env.get_entry(), sense)
+
+        if formulation == "timetable":
+            self.variables = PulpTimetable(self.model, self.env.state, integral)
+
+        elif formulation == "scheduling":
+            self.variables = PulpSchedulingVariables(
+                self.model, self.env.state, integral, integral_var
             )
 
-        self._solver: LpSolver | None = None
-        self._config: SolverConfig = {}
-
-        self.model, self.variables = self.build_model(
-            self.env, formulation, symmetry_breaking, integral, integral_var
-        )
-
         if tighten:
-            # Dynamic tightening of task bounds, it would be better if it was statically obtainable
             self.warm_start([("submit", task.task_id) for task in self.env.state.awaiting_tasks])
+
+        self.symmetry_breaking = symmetry_breaking
+        self._built = False
 
     @classmethod
     def available_solvers(cls) -> list[str]:
@@ -84,46 +105,38 @@ class PulpSolver:
             **config,
         )
 
-    @staticmethod
-    def build_model(
-        env: SchedulingEnv,
-        formulation: Formulations,
-        symmetry_breaking: bool = True,
-        integral: bool = False,
-        integral_var: bool = True,
-    ) -> tuple[LpProblem, PulpVariables]:
-        model = LpProblem(
-            env.get_entry(), LpMinimize if env.objective.minimize else LpMaximize
-        )
-        state = env.state
+    def build(self) -> None:
+        env = self.env
+        state = self.env.state
 
-        variables: PulpVariables
-        if formulation == "timetable":
-            variables = PulpTimetable(model, state, integral)
-
-        elif formulation == "scheduling":
-            variables = PulpSchedulingVariables(model, state, integral, integral_var)
-
-        export_setup_pulp(env.setup, variables)(model, state)
+        export_setup_pulp(env.setup, self.variables)(self.model, state)
 
         for constraint in env.setup_constraints:
-            export_constraint_pulp(constraint, variables)(model, state)
+            export_constraint_pulp(constraint, self.variables)(self.model, state)
 
-        for constraint in env.constraints.values():
-            export_constraint_pulp(constraint, variables)(model, state)
+        for constraint in env.constraints:
+            export_constraint_pulp(constraint, self.variables)(self.model, state)
 
         if type(env.objective) is not Objective:
-            objective_var = export_objective_pulp(env.objective, variables)(
-                model, state
-            )
-            variables.set_objective(objective_var)
+            objective_var = export_objective_pulp(env.objective, self.variables)(self.model, state)
+            self.variables.set_objective(objective_var)
 
-            model.setObjective(objective_var)
+            self.model.setObjective(objective_var)
 
-        if symmetry_breaking:
-            employ_symmetry_breaking_pulp(env, model, variables)
+        if self.symmetry_breaking:
+            employ_symmetry_breaking_pulp(self.env, self.model, self.variables)
 
-        return model, variables
+        self._built = True
+
+    def set_horizon(self, horizon: int) -> None:
+        """
+        Set the time horizon for the scheduling problem.
+
+        Args:
+            horizon: int
+                The time horizon to be set.
+        """
+        self.variables.set_horizon(horizon)
 
     def warm_start(self, action: ActionType) -> None:
         """
@@ -131,7 +144,7 @@ class PulpSolver:
 
         Args:
             action: ActionType
-                The action to be used for warm starting the solver.
+                The action used for warm starting the solver.
         """
         env_copy = deepcopy(self.env)
 
@@ -151,12 +164,16 @@ class PulpSolver:
         if solver_tag is not None:
             self.set_solver(solver_tag, **solver_kwargs)
 
+        if not self._built:
+            self.build()
+
         self.model.solve(self._solver)
 
-        if self.model.status <= 0:
-            raise RuntimeError(
-                f"Solver failed with status: {LpSolution[self.model.status]}"
-            )
+        assert isinstance(self.model.status, int)
+        status = self.model.status
+
+        if status <= 0:
+            raise RuntimeError(f"Solver failed with status: {LpSolution[status]}")
 
         actions: list[tuple[str, int, int, int]] = []
 
@@ -170,7 +187,7 @@ class PulpSolver:
 
         objective_value = self.variables.get_objective_value()
 
-        return actions, objective_value, self.model.status
+        return actions, objective_value, status
 
 
 if __name__ == "__main__":

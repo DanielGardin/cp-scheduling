@@ -82,6 +82,16 @@ class PulpVariables(ABC):
             A tuple (start_time, machine_id) representing the assignment.
         """
 
+    def set_horizon(self, horizon: int) -> None:
+        """
+        Set the time horizon for all fixed tasks in the environment.
+
+        Args:
+            horizon: int
+                The time horizon to be set.
+        """
+        raise NotImplementedError(f"set_horizon method not implemented for {type(self).__name__}.")
+
     def warm_start(self, env: SchedulingEnv) -> None:
         """
         Warm start the variables based on the current environment state.
@@ -120,12 +130,14 @@ class PulpSchedulingVariables(PulpVariables):
 
         # By considering the start and end times as continuous variables,
         # we can get a speedup in the branch-and-bound algorithm.
+        TimeVarCat = LpInteger if integral_var else LpContinuous
+
         self.start_times = [
             LpVariable(
                 f"start_{task.task_id}",
                 lowBound=task.get_start_lb(),
                 upBound=task.get_start_ub(),
-                cat=LpInteger if integral_var else LpContinuous,
+                cat=TimeVarCat,
             )
             for task in state.tasks
         ]
@@ -135,7 +147,7 @@ class PulpSchedulingVariables(PulpVariables):
                 f"end_{task.task_id}",
                 lowBound=task.get_end_lb(),
                 upBound=task.get_end_ub(),
-                cat=LpInteger if integral_var else LpContinuous,
+                cat=TimeVarCat,
             )
             for task in state.tasks
         ]
@@ -145,18 +157,16 @@ class PulpSchedulingVariables(PulpVariables):
         for task in state.tasks:
             machines = task.machines
 
+            assignments = [0] * self.n_machines
+
             if len(machines) == 1:
-                assignments = [
-                    1 if machine_id == machines[0] else 0
-                    for machine_id in range(self.n_machines)
-                ]
+                machine = next(iter(machines))
+                assignments[machine] = 1
 
             else:
-                assignments = [0] * self.n_machines
-
-                for machine_id in machines:
-                    assignments[machine_id] = LpVariable(
-                        f"assign_{task.task_id}_{machine_id}", cat=LpBinary
+                for machine in task.machines:
+                    assignments[machine] = LpVariable(
+                        f"assign_{task.task_id}_{machine}", cat=LpBinary
                     )
 
             self.assignments.append(assignments)
@@ -167,19 +177,33 @@ class PulpSchedulingVariables(PulpVariables):
     def end_times(self) -> list[PULP_EXPRESSION | int]:
         return self._end_times
 
+    def set_horizon(self, horizon: int) -> None:
+        """
+        Set the time horizon for the scheduling problem.
+
+        Args:
+            horizon: int
+                The time horizon to be set.
+        """
+        for start_var, end_var in zip(self.start_times, self._end_times):
+            if isinstance(start_var, LpVariable):
+                start_var.upBound = horizon
+
+            if isinstance(end_var, LpVariable):
+                end_var.upBound = horizon
+
     def warm_start(self, env: SchedulingEnv) -> None:
         """
         Warm start the variables based on the current environment state.
         This method sets the start times and assignments based on the current schedule.
         """
-        makespan = max(task.get_end() for task in env.state.fixed_tasks)
-        objective = env._get_objective()
-        
-        pulp_add_constraint(
-            self.model,
-            self.objective <= objective,
-            "initial_objective_bound"
-        )
+        objective = env.get_objective()
+
+        # Makespan here is used as an heuristic upper bound for end times.
+        # This is not a valid upper bound whenever the objective is not regular.
+        makespan = max(task.get_end_lb() for task in env.state.fixed_tasks)
+
+        pulp_add_constraint(self.model, self.objective <= objective, "initial_objective_bound")
         if isinstance(self.objective, LpVariable):
             self.objective.setInitialValue(objective, check=False)
 
@@ -190,13 +214,13 @@ class PulpSchedulingVariables(PulpVariables):
             end_var = self._end_times[task_id]
 
             if isinstance(start_var, LpVariable):
-                start_time = task.get_start()
+                start_time = task.get_start_lb()
 
                 start_var.setInitialValue(start_time, check=False)
                 start_var.upBound = makespan
 
             if isinstance(end_var, LpVariable):
-                end_time = task.get_end()
+                end_time = task.get_end_lb()
 
                 end_var.setInitialValue(end_time, check=False)
                 end_var.upBound = makespan
@@ -252,11 +276,34 @@ class PulpSchedulingVariables(PulpVariables):
             ordered = False
 
         if (i, j) not in self.orders:
-            self.orders[(i, j)] = LpVariable(
-                f"order_{i}_{j}", lowBound=0, upBound=1, cat=LpBinary
-            )
+            self.orders[(i, j)] = LpVariable(f"order_{i}_{j}", lowBound=0, upBound=1, cat=LpBinary)
 
         return self.orders[(i, j)] if ordered else 1 - self.orders[(i, j)]
+
+    def set_order(self, task_prec: int, task_succ: int) -> None:
+        "Add the constraint to enforce the order task_prec < task_succ."
+        if task_prec == task_succ:
+            return
+
+        if task_prec < task_succ:
+            i, j = task_prec, task_succ
+            order_value = 1
+
+        else:
+            i, j = task_succ, task_prec
+            order_value = 0
+
+        if (i, j) not in self.orders:
+            self.orders[(i, j)] = order_value
+
+        else:
+            order_var = self.orders[(i, j)]
+
+            pulp_add_constraint(
+                self.model,
+                order_var == order_value,
+                f"set_order_{task_prec}_{task_succ}",
+            )
 
     def __repr__(self) -> str:
         "String representation of the PulpSchedulingVariables."
@@ -267,9 +314,7 @@ class PulpTimetable(PulpVariables):
     T: int
     start_times: list[dict[int, list[PULP_EXPRESSION | int]]]
 
-    def __init__(
-        self, model: LpProblem, state: ScheduleState, integral: bool
-    ):
+    def __init__(self, model: LpProblem, state: ScheduleState, integral: bool):
         super().__init__(model, state, integral)
 
         self.T = max(task.get_end_ub() for task in state.tasks)

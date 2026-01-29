@@ -3,13 +3,14 @@ from collections.abc import Callable
 
 from itertools import combinations
 
-from pulp import LpProblem, lpSum
+from pulp import LpProblem
 
 from multimethod import multidispatch
 
 from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.constraints import (
     Constraint,
+    NoWaitConstraint,
     PrecedenceConstraint,
     ConstantProcessingTime,
     DisjunctiveConstraint,
@@ -20,36 +21,43 @@ from cpscheduler.environment.constraints import (
     SetupConstraint,
 )
 
-from .tasks import PulpVariables, PulpSchedulingVariables, PulpTimetable
-from .pulp_utils import implication_pulp, pulp_add_constraint, PULP_EXPRESSION
+from .tasks import PulpVariables, PulpSchedulingVariables
+from .pulp_utils import implication_pulp, pulp_add_constraint
 
 ModelExport: TypeAlias = Callable[[LpProblem, ScheduleState], None]
 
 
 @multidispatch
-def export_constraint_pulp(
-    constraint: Constraint, variables: PulpVariables
-) -> ModelExport:
+def export_constraint_pulp(constraint: Constraint, variables: PulpVariables) -> ModelExport:
     raise NotImplementedError(
         f"Constraint {constraint} for variable {variables} not implemented for PuLP."
     )
 
 
 @export_constraint_pulp.register
-def _(
-    constraint: PrecedenceConstraint, variables: PulpSchedulingVariables
-) -> ModelExport:
+def _(constraint: PrecedenceConstraint, variables: PulpSchedulingVariables) -> ModelExport:
     def export_model(model: LpProblem, state: ScheduleState) -> None:
         for task_id, children in constraint.precedence.items():
             for child_id in children:
                 pulp_add_constraint(
                     model,
-                    (
-                        variables.end_times[task_id] == variables.start_times[child_id]
-                        if constraint.no_wait
-                        else variables.end_times[task_id]
-                        <= variables.start_times[child_id]
-                    ),
+                    variables.end_times[task_id] <= variables.start_times[child_id],
+                    f"precedence_{task_id}_{child_id}",
+                )
+
+                variables.set_order(task_id, child_id)
+
+    return export_model
+
+
+@export_constraint_pulp.register
+def _(constraint: NoWaitConstraint, variables: PulpSchedulingVariables) -> ModelExport:
+    def export_model(model: LpProblem, state: ScheduleState) -> None:
+        for task_id, children in constraint.precedence.items():
+            for child_id in children:
+                pulp_add_constraint(
+                    model,
+                    variables.end_times[task_id] == variables.start_times[child_id],
                     f"precedence_{task_id}_{child_id}",
                 )
 
@@ -63,17 +71,13 @@ def _(
 
 
 @export_constraint_pulp.register
-def _(
-    constraint: DisjunctiveConstraint, variables: PulpSchedulingVariables
-) -> ModelExport:
+def _(constraint: DisjunctiveConstraint, variables: PulpSchedulingVariables) -> ModelExport:
     def export_model(model: LpProblem, state: ScheduleState) -> None:
         group_constraint: dict[int, list[int]] = {}
 
-        for task_id, groups in enumerate(constraint.task_groups):
+        for task_id, groups in constraint.groups_map.items():
             for group in groups:
-                if group not in group_constraint:
-                    group_constraint[group] = []
-
+                group_constraint.setdefault(group, [])
                 group_constraint[group].append(task_id)
 
         for group_tasks in group_constraint.values():
@@ -86,7 +90,6 @@ def _(
                         "<=",
                         variables.start_times[j],
                     ),
-                    big_m=int(state.tasks[i].get_end_ub() - state.tasks[j].get_start_lb()),
                     name=f"disjunctive_{i}_{j}_order",
                 )
 
@@ -98,7 +101,6 @@ def _(
                         "<=",
                         variables.start_times[i],
                     ),
-                    big_m=int(state.tasks[j].get_end_ub() - state.tasks[i].get_start_lb()),
                     name=f"disjunctive_{j}_{i}_order",
                 )
 
@@ -110,18 +112,12 @@ def _(
     constraint: ReleaseDateConstraint | DeadlineConstraint | ConstantProcessingTime,
     variables: PulpSchedulingVariables,
 ) -> ModelExport:
-    return (
-        lambda model, state: None
-    )  # No specific export needed for these constraints
+    return lambda model, state: None  # No specific export needed for these constraints
 
 
 @export_constraint_pulp.register
-def _(
-    constraint: ResourceConstraint, variables: PulpSchedulingVariables
-) -> ModelExport:
-    raise NotImplementedError(
-        "Resource constraints are not available in PuLP at the moment."
-    )
+def _(constraint: ResourceConstraint, variables: PulpSchedulingVariables) -> ModelExport:
+    raise NotImplementedError("Resource constraints are not available in PuLP at the moment.")
 
 
 @export_constraint_pulp.register
@@ -147,7 +143,6 @@ def _(constraint: MachineConstraint, variables: PulpSchedulingVariables) -> Mode
                         "<=",
                         variables.start_times[j],
                     ),
-                    big_m=int(state.tasks[i].get_end_ub() - state.tasks[j].get_start_lb()),
                     name=f"machine_{machine_id}_disjunctive_{i}_{j}_order",
                 )
 
@@ -163,7 +158,6 @@ def _(constraint: MachineConstraint, variables: PulpSchedulingVariables) -> Mode
                         "<=",
                         variables.start_times[i],
                     ),
-                    big_m=int(state.tasks[j].get_end_ub() - state.tasks[i].get_start_lb()),
                     name=f"machine_{machine_id}_disjunctive_{j}_{i}_order",
                 )
 
@@ -183,11 +177,6 @@ def _(constraint: SetupConstraint, variables: PulpSchedulingVariables) -> ModelE
                         variables.end_times[task_id] + setup_time,
                         "<=",
                         variables.start_times[child_id],
-                    ),
-                    big_m=int(
-                        state.tasks[task_id].get_end_ub()
-                        + setup_time
-                        - state.tasks[child_id].get_start_lb()
                     ),
                     name=f"setup_{task_id}_{child_id}_order",
                 )

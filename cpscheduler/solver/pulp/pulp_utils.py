@@ -57,12 +57,11 @@ def parse_solver_config(solver_config: SolverConfig) -> dict[str, Any]:
 PULP_EXPRESSION: TypeAlias = LpVariable | LpAffineExpression
 PULP_PARAM: TypeAlias = PULP_EXPRESSION | int | float
 
-GLOBAL_BIG_M = (
-    1e6  # Default value for big-M method, can be adjusted based on problem scale
-)
+# Default value for big-M method, can be adjusted based on problem scale
+GLOBAL_BIG_M = 1e6
 
 
-def get_value(param: PULP_PARAM) -> float | int:
+def get_value(param: PULP_PARAM) -> float:
     """
     Get the value of a PULP parameter or expression.
 
@@ -73,22 +72,17 @@ def get_value(param: PULP_PARAM) -> float | int:
         The float value of the parameter or expression.
     """
     if isinstance(param, (int, float)):
-        return param
+        return float(param)
 
     value = param.value()
 
     if value is None:
-        return 0
+        return 0.0
 
-    if isinstance(value, (int, float)):
-        return value
-
-    raise ValueError(f"Unexpected type: {type(param)}")
+    return float(value)
 
 
-def set_initial_value(
-    param: PULP_PARAM, value: float | int, check: bool = True
-) -> None:
+def set_initial_value(param: PULP_PARAM, value: float | int, check: bool = True) -> None:
     """
     Set the initial value of a PULP parameter or expression.
 
@@ -109,8 +103,14 @@ def set_initial_value(
             assert isinstance(var, LpVariable)
             var.setInitialValue((value - constant) / scalar, check=check)
 
+    elif isinstance(param, (int, float)):
+        if param != value:
+            raise ValueError(
+                f"Cannot set initial value of a constant parameter {param} to {value}."
+            )
 
-def get_initial_value(param: PULP_PARAM) -> float | int:
+
+def get_initial_value(param: PULP_PARAM) -> float:
     """
     Get the initial value of a PULP parameter or expression.
 
@@ -121,11 +121,11 @@ def get_initial_value(param: PULP_PARAM) -> float | int:
         The initial value of the parameter or expression.
     """
     if isinstance(param, LpVariable):
-        return param.varValue if param.varValue is not None else 0
+        return param.varValue if param.varValue is not None else 0.0
 
     if isinstance(param, LpAffineExpression):
         # If it's a single variable, get its initial value directly
-        value: float | int = param.constant
+        value: float = float(param.constant)
 
         for var, scalar in param.items():
             value += get_initial_value(var) * scalar
@@ -219,9 +219,7 @@ def is_true(constraint: LpConstraint | bool) -> bool | None:
     return None
 
 
-def pulp_add_constraint(
-    model: LpProblem, constraint: LpConstraint | bool, name: str
-) -> None:
+def pulp_add_constraint(model: LpProblem, constraint: LpConstraint | bool, name: str) -> None:
     """
     Adds a constraint to the PuLP model.
 
@@ -346,13 +344,12 @@ def implication_pulp(
     model: LpProblem,
     antecedent: Iterable[PULP_PARAM] | PULP_PARAM,
     consequent: tuple[PULP_PARAM, Literal["==", "<=", ">="], PULP_PARAM],
-    big_m: float = GLOBAL_BIG_M,
     name: str | None = None,
     and_formulation: bool = False,
 ) -> None:
     """
     Add implication constraints to the model, whenever all antecedent variables are 1,
-    the consequent comparison lhs ⋈ rhs must hold. The `big_m` strategy is used to
+    the consequent comparison lhs ⋈ rhs must hold. The BIG M strategy is used to
     model the implication.
 
     It is equivalent to:
@@ -362,11 +359,8 @@ def implication_pulp(
     Parameters:
         model (LpProblem): The PuLP problem instance.
         antecedent (Iterable[LpVariable] | LpVariable): The antecedent variables.
-        consequent (tuple[PULP_EXPRESSION, Literal["==", "<=", ">="], PULP_EXPRESSION | int | float], optional): A tuple containing the lhs, operator, and rhs for the implication. Defaults to None.
-        big_m (float, optional): A large constant for the big-M method. Defaults to 1e6.
-
-        When choosing a value for `big_m`, ensure it is large enough to not constrain the model unnecessarily,
-        the ideal value is typically upper_bound(lhs) - lower_bound(rhs) if known.
+        consequent (tuple[PULP_EXPRESSION, Literal["==", "<=", ">="], PULP_EXPRESSION | int | float], optional):
+            A tuple containing the lhs, operator, and rhs for the implication. Defaults to None.
     """
     if isinstance(antecedent, PULP_PARAM):
         antecedent = [antecedent]
@@ -375,9 +369,7 @@ def implication_pulp(
     if all(is_true(premise == 1) for premise in antecedent):
 
         full_consequent = (
-            lhs <= rhs
-            if operator == "<="
-            else lhs >= rhs if operator == ">=" else lhs == rhs
+            lhs <= rhs if operator == "<=" else lhs >= rhs if operator == ">=" else lhs == rhs
         )
 
         pulp_add_constraint(
@@ -403,32 +395,34 @@ def implication_pulp(
     if operator == "==":
         pulp_add_constraint(
             model,
-            lhs <= rhs + (n_vars - premise) * big_m,
+            lhs <= rhs + (n_vars - premise) * get_ub(lhs),
             f"{name}_le" if name is not None else f"{premise}_{lhs}_le_{rhs}",
         )
 
         pulp_add_constraint(
             model,
-            lhs >= rhs - (n_vars - premise) * big_m,
+            lhs >= rhs - (n_vars - premise) * get_lb(lhs),
             f"{name}_ge" if name is not None else f"{premise}_{lhs}_ge_{rhs}",
         )
 
     elif operator == "<=":
         pulp_add_constraint(
             model,
-            lhs <= rhs + (n_vars - premise) * big_m,
+            lhs <= rhs + (n_vars - premise) * get_ub(lhs),
             name if name is not None else f"{premise}_{lhs}_le_{rhs}",
         )
 
     elif operator == ">=":
         pulp_add_constraint(
             model,
-            lhs >= rhs - (n_vars - premise) * big_m,
+            lhs >= rhs - (n_vars - premise) * get_lb(lhs),
             name if name is not None else f"{premise}_{lhs}_ge_{rhs}",
         )
 
 
 global_abs_id = 0
+
+
 def abs_pulp(
     model: LpProblem,
     expr: PULP_PARAM,
