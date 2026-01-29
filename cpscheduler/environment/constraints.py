@@ -15,8 +15,6 @@ from typing import Any, TypeAlias, NoReturn
 from collections.abc import Iterable, Mapping, Sequence, Callable
 from typing_extensions import Self
 
-import re
-
 from mypy_extensions import mypyc_attr
 
 from cpscheduler.utils.list_utils import convert_to_list
@@ -43,15 +41,6 @@ class Constraint:
 
         constraints[cls.__name__] = cls
 
-    def __init__(self, name: str | None = None) -> None:
-        if name is not None and not re.match(r"^[a-zA-Z0-9_]+$", name):
-            raise ValueError(
-                "Constraint name must be alphanumeric and cannot contain spaces"
-                "or special characters."
-            )
-
-        self.name = name if name else self.__class__.__name__
-
     def initialize(self, state: ScheduleState) -> None:
         "Initialize the constraint with the scheduling state."
 
@@ -72,7 +61,7 @@ class PassiveConstraint(Constraint):
     directly translatable into mathematical programming constraints, but rather serve as markers or
     flags to indicate certain properties of tasks.
 
-    Examples of passive constraints include preemption and optionality constraints.   
+    Examples of passive constraints include preemption and optionality constraints.
     """
 
     def propagate(self, time: TIME, state: ScheduleState) -> NoReturn:
@@ -106,13 +95,7 @@ class PreemptionConstraint(PassiveConstraint):
     task_ids: list[TASK_ID]
     all_tasks: bool
 
-    def __init__(
-        self,
-        task_ids: Iterable[Int] | None = None,
-        name: str | None = None
-    ) -> None:
-        super().__init__(name)
-
+    def __init__(self, task_ids: Iterable[Int] | None = None) -> None:
         if task_ids is None:
             self.all_tasks = True
             self.task_ids = []
@@ -133,6 +116,7 @@ class PreemptionConstraint(PassiveConstraint):
     def get_entry(self) -> str:
         return "prmp"
 
+
 class OptionalityConstraint(PassiveConstraint):
     """
     Makes tasks optional in the scheduling environment.
@@ -142,20 +126,12 @@ class OptionalityConstraint(PassiveConstraint):
     Arguments:
         task_ids: Iterable[int] | None
             A list of task IDs to be marked as optional. If None, all tasks are marked as optional.
-
-        name: Optional[str] = None
-            An optional name for the constraint.
     """
+
     task_ids: list[TASK_ID]
     all_tasks: bool
 
-    def __init__(
-        self,
-        task_ids: Iterable[Int] | None = None,
-        name: str | None = None
-    ) -> None:
-        super().__init__(name)
-
+    def __init__(self, task_ids: Iterable[Int] | None = None) -> None:
         if task_ids is None:
             self.all_tasks = True
             self.task_ids = []
@@ -176,6 +152,7 @@ class OptionalityConstraint(PassiveConstraint):
     def get_entry(self) -> str:
         return "opt"
 
+
 class MachineEligibilityConstraint(PassiveConstraint):
     """
     Machine eligibility constraint for the scheduling environment.
@@ -185,11 +162,8 @@ class MachineEligibilityConstraint(PassiveConstraint):
         eligibility: Mapping[int, Iterable[int]]
             A mapping of task IDs to a list of machine IDs on which the task can be executed.
 
-        name: Optional[str] = None
-            An optional name for the constraint.
-
     Note:
-        This constraint is limited by the setup of the scheduling environment, 
+        This constraint is limited by the setup of the scheduling environment,
         meaning that you cannot:
         - add machines that do not exist in the environment.
         - include/exclude machines that would make the task incompatible with the scheduling setup.
@@ -201,13 +175,7 @@ class MachineEligibilityConstraint(PassiveConstraint):
 
     eligibility: dict[TASK_ID, Iterable[MACHINE_ID]]
 
-    def __init__(
-        self,
-        eligibility: Mapping[Int, Iterable[Int]],
-        name: str | None = None,
-    ):
-        super().__init__(name)
-
+    def __init__(self, eligibility: Mapping[Int, Iterable[Int]]):
         self.eligibility = {
             TASK_ID(task): [MACHINE_ID(machine) for machine in machines]
             for task, machines in eligibility.items()
@@ -215,12 +183,11 @@ class MachineEligibilityConstraint(PassiveConstraint):
 
     def initialize(self, state: ScheduleState) -> None:
         for task_id, machines in self.eligibility.items():
-            state.tasks[task_id].set_machines(
-                convert_to_list(machines, MACHINE_ID)
-            )
+            state.tasks[task_id].set_machines(convert_to_list(machines, MACHINE_ID))
 
     def get_entry(self) -> str:
         return "M_j"
+
 
 class MachineConstraint(Constraint):
     """
@@ -231,6 +198,7 @@ class MachineConstraint(Constraint):
     This is mainly a setup constraint, if the expected behavior is to constrain tasks on which
     machines they can be assigned to, use the MachineEligibilityConstraint instead.
     """
+
     def propagate(self, time: TIME, state: ScheduleState) -> None:
         machine_ends: dict[MACHINE_ID, TIME] = {}
         for task in state.tasks_to_propagate:
@@ -251,6 +219,7 @@ class MachineConstraint(Constraint):
     def is_complete(self, state: ScheduleState) -> bool:
         "Check if the machine constraint is complete."
         return all(len(task.machines) == state.n_machines for task in state.tasks)
+
 
 class PrecedenceConstraint(Constraint):
     """
@@ -273,13 +242,7 @@ class PrecedenceConstraint(Constraint):
     original_order: list[TASK_ID]
     tasks_order: list[Task]
 
-    def __init__(
-        self,
-        precedence: Mapping[Int, Sequence[Int]],
-        name: str | None = None,
-    ):
-        super().__init__(name)
-
+    def __init__(self, precedence: Mapping[Int, Sequence[Int]]):
         self.precedence = {
             TASK_ID(task): [TASK_ID(child) for child in children]
             for task, children in precedence.items()
@@ -291,7 +254,7 @@ class PrecedenceConstraint(Constraint):
     def __reduce__(self) -> Any:
         return (
             self.__class__,
-            (self.precedence, self.name),
+            (self.precedence,),
             (self.original_order, self.tasks_order),
         )
 
@@ -299,11 +262,7 @@ class PrecedenceConstraint(Constraint):
         self.original_order, self.tasks_order = state
 
     @classmethod
-    def from_edges(
-        cls,
-        edges: Iterable[tuple[Int, Int]],
-        name: str | None = None,
-    ) -> Self:
+    def from_edges(cls, edges: Iterable[tuple[Int, Int]]) -> Self:
         """
         Create a PrecedenceConstraint from a list of edges.
 
@@ -312,9 +271,6 @@ class PrecedenceConstraint(Constraint):
                 A list of tuples representing the edges of the precedence graph.
                 Each tuple (parent, child) indicates that the parent task must be completed
                 before the child task can start.
-
-            name: Optional[str] = None
-                An optional name for the constraint.
         """
         precedence: dict[Int, list[Int]] = {}
 
@@ -324,7 +280,7 @@ class PrecedenceConstraint(Constraint):
 
             precedence[parent].append(child)
 
-        return cls(precedence, name)
+        return cls(precedence)
 
     def is_intree(self) -> bool:
         "Check if the precedence graph is an in-tree."
@@ -401,12 +357,8 @@ class NoWaitConstraint(PrecedenceConstraint):
             An optional name for the constraint.
     """
 
-    def __init__(
-        self,
-        precedence: Mapping[Int, Sequence[Int]],
-        name: str | None = None,
-    ):
-        super().__init__(precedence, name=name)
+    def __init__(self, precedence: Mapping[Int, Sequence[Int]]):
+        super().__init__(precedence)
 
         if not self.is_intree():
             raise ValueError("No-wait constraint must be an in-tree.")
@@ -452,8 +404,7 @@ class ConstantProcessingTime(PassiveConstraint):
             An optional name for the constraint.
     """
 
-    def __init__(self, processing_time: Int = 1, name: str | None = None):
-        super().__init__(name)
+    def __init__(self, processing_time: Int = 1):
         self.processing_time = TIME(processing_time)
 
     def initialize(self, state: ScheduleState) -> None:
@@ -464,7 +415,7 @@ class ConstantProcessingTime(PassiveConstraint):
     def __reduce__(self) -> Any:
         return (
             self.__class__,
-            (self.processing_time, self.name),
+            (self.processing_time,),
             (),
         )
 
@@ -477,13 +428,7 @@ class DisjunctiveConstraint(Constraint):
 
     group_free: list[TIME]
 
-    def __init__(
-        self,
-        task_groups: Iterable[Iterable[Int]],
-        name: str | None = None,
-    ):
-        super().__init__(name)
-
+    def __init__(self, task_groups: Iterable[Iterable[Int]]):
         self.group_free = [0 for _ in task_groups]
         self.groups_map = {}
 
@@ -497,7 +442,7 @@ class DisjunctiveConstraint(Constraint):
     def __reduce__(self) -> Any:
         return (
             self.__class__,
-            (self.groups_map, self.name),
+            (self.groups_map,),
             (self.tags, self.group_free),
         )
 
@@ -538,18 +483,13 @@ class ReleaseDateConstraint(Constraint):
     release_tag: str
     release_dates: list[TIME]
 
-    def __init__(
-        self,
-        release_dates: str = "release_time",
-        name: str | None = None,
-    ):
-        super().__init__(name)
+    def __init__(self, release_dates: str = "release_time"):
         self.release_tag = release_dates
 
     def __reduce__(self) -> Any:
         return (
             self.__class__,
-            (self.release_dates, self.name),
+            (self.release_dates,),
             (self.tags,),
         )
 
@@ -598,13 +538,7 @@ class DeadlineConstraint(Constraint):
     due_tag: str
     due_dates: list[TIME]
 
-    def __init__(
-        self,
-        due_dates: str = "due_dates",
-        const_due: Int | None = None,
-        name: str | None = None,
-    ):
-        super().__init__(name)
+    def __init__(self, due_dates: str = "due_dates", const_due: Int | None = None):
         self.due_tag = due_dates
         self.const_due = TIME(const_due) if const_due is not None else None
 
@@ -633,7 +567,7 @@ class DeadlineConstraint(Constraint):
             for dt in self.due_dates[1:]:
                 if dt != due_time:
                     return "d_j"
-            
+
             return f"d_j={due_time}"
 
         return "d_j"
@@ -667,14 +601,7 @@ class ResourceConstraint(Constraint):
     next_available_time: list[list[TIME]]
     available_resources: list[list[float]]
 
-    def __init__(
-        self,
-        capacities: Iterable[Float],
-        resource_usage: Iterable[str],
-        name: str | None = None,
-    ) -> None:
-        super().__init__(name)
-
+    def __init__(self, capacities: Iterable[Float], resource_usage: Iterable[str]) -> None:
         self.capacities = convert_to_list(capacities, float)
         self.resource_tags = list(resource_usage)
 
@@ -683,10 +610,9 @@ class ResourceConstraint(Constraint):
 
     def initialize(self, state: ScheduleState) -> None:
         self.resources = [
-            convert_to_list(state.instance[resource], float)
-            for resource in self.resource_tags
+            convert_to_list(state.instance[resource], float) for resource in self.resource_tags
         ]
-    
+
     def reset(self, state: ScheduleState) -> None:
         for i in range(len(self.resource_tags)):
             self.next_available_time[i] = [MAX_TIME]
@@ -704,18 +630,13 @@ class ResourceConstraint(Constraint):
 
                 if resource_usage <= 0:
                     continue
-                
+
                 task_end = task.get_end_lb()
-                idx = binary_search(
-                    self.next_available_time[i],
-                    task_end,
-                    decreasing=True
-                )
+                idx = binary_search(self.next_available_time[i], task_end, decreasing=True)
 
                 self.next_available_time[i].insert(idx, task_end)
                 self.available_resources[i].insert(
-                    idx,
-                    self.available_resources[i][idx - 1] - resource_usage
+                    idx, self.available_resources[i][idx - 1] - resource_usage
                 )
 
         for task in state.awaiting_tasks:
@@ -725,17 +646,9 @@ class ResourceConstraint(Constraint):
                 if resource_usage <= 0:
                     continue
 
-                idx = binary_search(
-                    self.available_resources[i],
-                    resource_usage,
-                    decreasing=True
-                )
+                idx = binary_search(self.available_resources[i], resource_usage, decreasing=True)
 
-                earliest_start = (
-                    self.next_available_time[i][idx - 1]
-                    if idx > 0
-                    else time
-                )
+                earliest_start = self.next_available_time[i][idx - 1] if idx > 0 else time
 
                 state.tight_start_lb(task.task_id, earliest_start)
 
@@ -766,23 +679,15 @@ class NonRenewableResourceConstraint(Constraint):
 
     current_capacities: list[float]
 
-    def __init__(
-        self,
-        capacities: Iterable[Float],
-        resource_usage: Iterable[str],
-        name: str | None = None,
-    ) -> None:
-        super().__init__(name)
-
+    def __init__(self, capacities: Iterable[Float], resource_usage: Iterable[str]) -> None:
         self.capacities = convert_to_list(capacities, float)
         self.resource_tags = list(resource_usage)
 
         self.current_capacities = self.capacities.copy()
-    
+
     def initialize(self, state: ScheduleState) -> None:
         self.resources = [
-            convert_to_list(state.instance[resource], float)
-            for resource in self.resource_tags
+            convert_to_list(state.instance[resource], float) for resource in self.resource_tags
         ]
 
     def reset(self, state: ScheduleState) -> None:
@@ -834,21 +739,14 @@ class SetupConstraint(Constraint):
     original_setup_times: dict[TASK_ID, dict[TASK_ID, TIME]]
     setup_fn: Callable[[int, int, ScheduleState], Int] | None = None
 
-    def __init__(
-        self,
-        setup_times: SetupTimes,
-        name: str | None = None,
-    ) -> None:
-        super().__init__(name)
+    def __init__(self, setup_times: SetupTimes) -> None:
         if callable(setup_times):
             self.setup_fn = setup_times
             self.original_setup_times = {}
 
         else:
             self.original_setup_times = {
-                TASK_ID(task): {
-                    TASK_ID(child): TIME(time) for child, time in children.items()
-                }
+                TASK_ID(task): {TASK_ID(child): TIME(time) for child, time in children.items()}
                 for task, children in setup_times.items()
             }
 
@@ -866,14 +764,11 @@ class SetupConstraint(Constraint):
                     setup_time = TIME(self.setup_fn(task_id, child_id, state))
 
                     if setup_time > 0:
-                        self.original_setup_times[TASK_ID(task_id)][
-                            TASK_ID(child_id)
-                        ] = setup_time
+                        self.original_setup_times[TASK_ID(task_id)][TASK_ID(child_id)] = setup_time
 
     def reset(self, state: ScheduleState) -> None:
         self.setup_times = {
-            task_id: children.copy()
-            for task_id, children in self.original_setup_times.items()
+            task_id: children.copy() for task_id, children in self.original_setup_times.items()
         }
 
     def propagate(self, time: TIME, state: ScheduleState) -> None:
@@ -899,6 +794,7 @@ class SetupConstraint(Constraint):
 
                 state.tight_start_lb(child_id, block_end)
 
+
 class MachineBreakdownConstraint(Constraint):
     """
     Machine breakdown constraint for the scheduling environment.
@@ -923,22 +819,14 @@ class MachineBreakdownConstraint(Constraint):
     def __post_init__(self) -> None:
         raise NotImplementedError("BatchConstraint is not implemented yet.")
 
-    def __init__(
-        self,
-        breakdowns: Mapping[Int, Iterable[tuple[Int, Int]]],
-        name: str | None = None,
-    ):
-        super().__init__(name)
-
+    def __init__(self, breakdowns: Mapping[Int, Iterable[tuple[Int, Int]]]):
         self.breakdowns = {
-            MACHINE_ID(machine): [
-                (TIME(start), TIME(end)) for start, end in intervals
-            ]
+            MACHINE_ID(machine): [(TIME(start), TIME(end)) for start, end in intervals]
             for machine, intervals in breakdowns.items()
         }
-    
+
     @classmethod
-    def from_machine_step_function(cls, step_function: Mapping[Int, Int], name: str | None = None) -> Self:
+    def from_machine_step_function(cls, step_function: Mapping[Int, Int]) -> Self:
         """
         Create a MachineBreakdownConstraint from a machine step function.
         This function is only useful in Parallel Machine Environments, where machines are
@@ -948,7 +836,7 @@ class MachineBreakdownConstraint(Constraint):
         Arguments:
             step_function: Mapping[int, int]
                 A mapping of time steps to the number of available machines from that time onward.
-            
+
             name: Optional[str] = None
                 An optional name for the constraint.
         """
@@ -963,7 +851,7 @@ class MachineBreakdownConstraint(Constraint):
             for machine in range(available_machines):
                 if machine not in breakdowns:
                     continue
-                
+
                 start, end = breakdowns[machine][-1]
                 if end == MAX_TIME:
                     breakdowns[machine][-1] = (start, time)
@@ -976,12 +864,10 @@ class MachineBreakdownConstraint(Constraint):
 
                 breakdowns[machine].append((time, MAX_TIME))
 
-        return cls(breakdowns, name)
+        return cls(breakdowns)
 
     def initialize(self, state: ScheduleState) -> None:
-        self.current_breakdowns = {
-            machine: 0 for machine in self.breakdowns.keys()
-        }
+        self.current_breakdowns = {machine: 0 for machine in self.breakdowns.keys()}
 
     def reset(self, state: ScheduleState) -> None:
         for machine in self.breakdowns:
@@ -1028,12 +914,10 @@ class MachineBreakdownConstraint(Constraint):
     def get_entry(self) -> str:
         return "brkdwn"
 
+
 # ------------------------------------------------------------------------------------------------
 #                                   Future implementations
 # ------------------------------------------------------------------------------------------------
-
-
-
 
 
 class BatchConstraint(Constraint):
