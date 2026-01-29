@@ -7,12 +7,14 @@ from cpscheduler.environment._common import MIN_TIME, MAX_TIME, MACHINE_ID, TASK
 
 GLOBAL_MACHINE_ID: MACHINE_ID = -1
 
+
 @dataclass(frozen=True)
 class TaskHistory:
     assignment: MACHINE_ID
     start_time: TIME
     duration: TIME
     end_time: TIME
+
 
 class Task:
     task_id: TASK_ID
@@ -186,7 +188,7 @@ class Task:
         "Check if the task is feasible given its current bounds."
         if self.start_lbs_[GLOBAL_MACHINE_ID] > self.start_ubs_[GLOBAL_MACHINE_ID]:
             return False
-    
+
         if not self.fixed_ and self.start_ubs_[GLOBAL_MACHINE_ID] < time:
             return False
 
@@ -195,6 +197,7 @@ class Task:
                 return False
 
         return True
+
 
 class Job:
     """

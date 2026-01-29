@@ -71,9 +71,7 @@ class SingleMachineSetup(ScheduleSetup):
 
     n_machines: int = 1
 
-    def __init__(
-        self, processing_times: str = "processing_time", disjunctive: bool = True
-    ) -> None:
+    def __init__(self, processing_times: str = "processing_time", disjunctive: bool = True) -> None:
         self.processing_times = processing_times
         self.disjunctive = disjunctive
 
@@ -85,7 +83,7 @@ class SingleMachineSetup(ScheduleSetup):
         if not self.disjunctive:
             return ()
 
-        return (MachineConstraint(name="__setup_machine_disjunctive"),)
+        return (MachineConstraint(),)
 
     def get_entry(self) -> str:
         return "1"
@@ -117,11 +115,7 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
                 task.set_processing_time(machine, TIME(p_time))
 
     def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
-        return (
-            (MachineConstraint(name="__setup_machine_disjunctive"),)
-            if self.disjunctive
-            else ()
-        )
+        return (MachineConstraint(),) if self.disjunctive else ()
 
     def get_entry(self) -> str:
         return f"P{self.n_machines}"
@@ -157,11 +151,7 @@ class UniformParallelMachineSetup(ScheduleSetup):
                 task.set_processing_time(machine, p_time)
 
     def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
-        return (
-            (MachineConstraint(name="__setup_machine_disjunctive"),)
-            if self.disjunctive
-            else ()
-        )
+        return (MachineConstraint(),) if self.disjunctive else ()
 
     def get_entry(self) -> str:
         return f"U{self.n_machines}" if self.n_machines > 1 else "Um"
@@ -197,11 +187,7 @@ class UnrelatedParallelMachineSetup(ScheduleSetup):
                 task.set_processing_time(MACHINE_ID(machine), TIME(p_time))
 
     def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
-        return (
-            (MachineConstraint(name="__setup_machine_disjunctive"),)
-            if self.disjunctive
-            else ()
-        )
+        return (MachineConstraint(),) if self.disjunctive else ()
 
     def get_entry(self) -> str:
         return "Rm"
@@ -243,7 +229,7 @@ class JobShopSetup(ScheduleSetup):
         self.n_machines = n_machines
 
     def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
-        disjunctive_constraint = MachineConstraint(name="__setup_machine_disjunctive")
+        disjunctive_constraint = MachineConstraint()
 
         operations: list[int] = state.instance[self.operation_order]
         precedence_mapping: dict[Int, list[Int]] = {}
@@ -265,9 +251,7 @@ class JobShopSetup(ScheduleSetup):
 
                 prec = task_id
 
-        precedence_constraint = PrecedenceConstraint(
-            precedence_mapping, name="__setup_precedence"
-        )
+        precedence_constraint = PrecedenceConstraint(precedence_mapping)
 
         return (disjunctive_constraint, precedence_constraint)
 
@@ -311,12 +295,12 @@ class OpenShopSetup(ScheduleSetup):
     def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
         jobs = [[task.task_id for task in job_tasks] for job_tasks in state.jobs]
 
-        task_disjunction = DisjunctiveConstraint(jobs, name="__setup_task_disjunctive")
+        task_disjunction = DisjunctiveConstraint(jobs)
 
         if not self.disjunctive:
             return (task_disjunction,)
 
-        machine_disjunction = MachineConstraint(name="__setup_machine_disjunctive")
+        machine_disjunction = MachineConstraint()
 
         return (task_disjunction, machine_disjunction)
 

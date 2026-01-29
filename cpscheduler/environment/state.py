@@ -1,6 +1,15 @@
 from typing import Any
 
-from cpscheduler.environment._common import MAX_TIME, MIN_TIME, MACHINE_ID, TASK_ID, TIME, STATUS, StatusEnum, ObsType
+from cpscheduler.environment._common import (
+    MAX_TIME,
+    MIN_TIME,
+    MACHINE_ID,
+    TASK_ID,
+    TIME,
+    STATUS,
+    StatusEnum,
+    ObsType,
+)
 from cpscheduler.environment.tasks import GLOBAL_MACHINE_ID, Task, Job, TaskHistory
 from cpscheduler.utils.list_utils import convert_to_list
 
@@ -10,11 +19,10 @@ def check_instance_consistency(instance: dict[str, list[Any]]) -> int:
     lengths = {len(v) for v in instance.values()}
 
     if len(lengths) > 1:
-        raise ValueError(
-            "Inconsistent instance data: all lists must have the same length."
-        )
+        raise ValueError("Inconsistent instance data: all lists must have the same length.")
 
     return lengths.pop() if lengths else 0
+
 
 def min_bound(bound: dict[MACHINE_ID, TIME]) -> TIME:
     min_value = MAX_TIME
@@ -25,6 +33,7 @@ def min_bound(bound: dict[MACHINE_ID, TIME]) -> TIME:
 
     return min_value
 
+
 def max_bound(bound: dict[MACHINE_ID, TIME]) -> TIME:
     max_value = MIN_TIME
 
@@ -33,6 +42,7 @@ def max_bound(bound: dict[MACHINE_ID, TIME]) -> TIME:
             max_value = value
 
     return max_value
+
 
 class ScheduleState:
     tasks: list[Task]
@@ -133,7 +143,7 @@ class ScheduleState:
             for machine in task.machines:
                 if machine > max_machine_id:
                     max_machine_id = machine
-        
+
         self._n_machines = max_machine_id + 1
         return self._n_machines
 
@@ -254,7 +264,6 @@ class ScheduleState:
         if changed:
             task.start_ubs_[GLOBAL_MACHINE_ID] = max_bound(task.start_ubs_)
 
-
     def tight_end_lb(
         self,
         task_id: TASK_ID,
@@ -360,7 +369,7 @@ class ScheduleState:
 
         if not task.fixed_ or not task.preemptive:
             return False
-        
+
         cur_processing_time = task.processing_times[task.assignment_]
         actual_time = current_time - task.get_start_lb(task.assignment_)
 
@@ -428,10 +437,10 @@ class ScheduleState:
             if not task.fixed_:
                 if time >= task.get_start_ub(GLOBAL_MACHINE_ID) or not task.is_feasible(time):
                     status = StatusEnum.UNFEASIBLE
-                
+
                 elif task.history:
                     status = StatusEnum.PAUSED
-                
+
                 else:
                     status = StatusEnum.AWAITING
 
@@ -442,17 +451,16 @@ class ScheduleState:
 
                 if time < start_time:
                     status = StatusEnum.AWAITING
-                
+
                 elif start_time <= time < end_time:
                     status = StatusEnum.EXECUTING
-                
+
                 elif time >= end_time:
                     status = StatusEnum.COMPLETED
-        
+
             status_list.append(status)
 
         return status_list
-
 
     def get_observation(self, time: TIME) -> ObsType:
         task_obs = self.instance.copy()

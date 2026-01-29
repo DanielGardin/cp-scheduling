@@ -74,7 +74,9 @@ class StatusEnum:
     # unfeasible: task cannot be completed given the current state
     UNFEASIBLE: Final[u8] = 255
 
+
 STATUS: TypeAlias = u8
+
 
 def ceil_div(a: TIME, b: TIME) -> TIME:
     "a divided by b, rounded up to the nearest integer."

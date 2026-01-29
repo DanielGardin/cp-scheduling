@@ -19,6 +19,7 @@ from cpscheduler.environment.state import ScheduleState
 
 objectives: dict[str, type["Objective"]] = {}
 
+
 @mypyc_attr(allow_interpreted_subclasses=True)
 class Objective:
     """
@@ -143,22 +144,20 @@ class ComposedObjective(Objective):
                     entry += " - "
                     coef = -coef
 
-            coef_str = (
-                ""
-                if coef == 1
-                else str(coef) if isinstance(coef, int) else f"{coef:.2f}"
-            )
+            coef_str = "" if coef == 1 else str(coef) if isinstance(coef, int) else f"{coef:.2f}"
 
             entry += f"{coef_str} {objective.get_entry()}"
 
         return entry
+
 
 def _makespan(tasks: Iterable[Task]) -> TIME:
     "Compute the makespan of a set of tasks."
     max_end_time = 0
 
     for task in tasks:
-        if not task.fixed_: continue
+        if not task.fixed_:
+            continue
 
         end_time = task.get_end_ub()
 
@@ -166,6 +165,7 @@ def _makespan(tasks: Iterable[Task]) -> TIME:
             max_end_time = end_time
 
     return max_end_time
+
 
 class Makespan(Objective):
     """
@@ -317,9 +317,7 @@ class TotalTardiness(Objective):
             due_date = self.due_dates[job.job_id]
             job_completion = _makespan(job.tasks)
 
-            job_tardiness = (
-                job_completion - due_date if job_completion > due_date else 0
-            )
+            job_tardiness = job_completion - due_date if job_completion > due_date else 0
 
             total_tardiness += job_tardiness
 
@@ -376,9 +374,7 @@ class WeightedTardiness(Objective):
             due_date = self.due_dates[job.job_id]
             job_completion = _makespan(job.tasks)
 
-            job_tardiness = (
-                float(job_completion - due_date) if job_completion > due_date else 0.0
-            )
+            job_tardiness = float(job_completion - due_date) if job_completion > due_date else 0.0
 
             weighted_tardiness += weight * job_tardiness
 
@@ -422,9 +418,7 @@ class TotalEarliness(Objective):
             due_date = self.due_dates[job.job_id]
             job_completion = _makespan(job.tasks)
 
-            job_earliness = (
-                due_date - job_completion if job_completion < due_date else 0
-            )
+            job_earliness = due_date - job_completion if job_completion < due_date else 0
 
             total_earliness += job_earliness
 
@@ -479,9 +473,7 @@ class WeightedEarliness(Objective):
             due_date = self.due_dates[job.job_id]
             job_completion = _makespan(job.tasks)
 
-            job_earliness = (
-                float(due_date - job_completion) if job_completion < due_date else 0
-            )
+            job_earliness = float(due_date - job_completion) if job_completion < due_date else 0
 
             weighted_earliness += weight * job_earliness
 
@@ -624,9 +616,7 @@ class TotalFlowTime(Objective):
             release_time = self.release_times[job.job_id]
             job_completion = _makespan(job.tasks)
 
-            job_flowtime = (
-                job_completion - release_time if job_completion > release_time else 0
-            )
+            job_flowtime = job_completion - release_time if job_completion > release_time else 0
 
             total_flowtime += job_flowtime
 

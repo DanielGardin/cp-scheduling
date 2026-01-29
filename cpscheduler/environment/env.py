@@ -48,6 +48,7 @@ from cpscheduler.environment._render import Renderer
 
 DEFAULT_QUEUE = -1
 
+
 def prepare_instance(instance: InstanceTypes) -> dict[str, list[Any]]:
     "Prepare the instance data to a standard dictionary format."
     return {str(feature): convert_to_list(instance[feature]) for feature in instance}
@@ -56,8 +57,7 @@ def prepare_instance(instance: InstanceTypes) -> dict[str, list[Any]]:
 def is_info_dict(value: Any) -> TypeIs[Mapping[str, Any]]:
     "Type guard to check if a value is an info dictionary."
     return isinstance(value, Mapping) and all(
-        isinstance(k, str)
-        for k in value.keys()  # pyright: ignore[reportUnknownVariableType]
+        isinstance(k, str) for k in value.keys()  # pyright: ignore[reportUnknownVariableType]
     )
 
 
@@ -131,9 +131,7 @@ class SchedulingEnv:
             self.set_instance(instance)
 
         self.renderer = (
-            render_mode
-            if isinstance(render_mode, Renderer)
-            else Renderer.get_renderer(render_mode)
+            render_mode if isinstance(render_mode, Renderer) else Renderer.get_renderer(render_mode)
         )
 
     def __repr__(self) -> str:
@@ -202,9 +200,7 @@ class SchedulingEnv:
         "Get a string representation of the environment's configuration."
         alpha = self.setup.get_entry()
 
-        beta = ",".join(
-            [constraint.get_entry() for constraint in self.constraints]
-        )
+        beta = ",".join([constraint.get_entry() for constraint in self.constraints])
 
         gamma = self.objective.get_entry()
 
@@ -229,12 +225,7 @@ class SchedulingEnv:
             metric_value = metric(self.current_time, self.state, objective_value)
 
             if is_info_dict(metric_value):
-                info.update(
-                    {
-                        f"{metric_name}_{key}": value
-                        for key, value in metric_value.items()
-                    }
-                )
+                info.update({f"{metric_name}_{key}": value for key, value in metric_value.items()})
 
             else:
                 info[metric_name] = metric_value
@@ -272,7 +263,7 @@ class SchedulingEnv:
         self.state.reset()
         for constraint in self.constraints:
             constraint.reset(self.state)
-        
+
         for constraint in self.setup_constraints:
             constraint.reset(self.state)
 
@@ -347,9 +338,7 @@ class SchedulingEnv:
 
     def _advance_to_decision_point(self, strict: bool = False) -> None:
         "Obtain the next decision time to advance. If strict, only consider future tasks."
-        next_time = (
-            MAX_TIME if self.current_time >= self.advancing_to else self.advancing_to
-        )
+        next_time = MAX_TIME if self.current_time >= self.advancing_to else self.advancing_to
 
         for instruction_time in self.schedule:
             if self.current_time <= instruction_time < next_time:
@@ -387,9 +376,7 @@ class SchedulingEnv:
                     next_time = instruction_time
 
         if next_time == MAX_TIME:
-            self.current_time = max(
-                task.get_end_ub() for task in self.state.fixed_tasks
-            )
+            self.current_time = max(task.get_end_ub() for task in self.state.fixed_tasks)
 
         elif next_time > self.current_time:
             self.current_time = next_time
@@ -403,9 +390,7 @@ class SchedulingEnv:
 
         self.current_time = next_time
 
-    def _schedule_instruction(
-        self, action: str | Instruction, args: tuple[int, ...]
-    ) -> None:
+    def _schedule_instruction(self, action: str | Instruction, args: tuple[int, ...]) -> None:
         "Add a single instruction to the schedule."
         instruction, time = parse_instruction(action, args, self.state)
 
@@ -484,9 +469,7 @@ class SchedulingEnv:
             self._advance_to_decision_point(strict=True)
 
         if action & Action.RAISE:
-            warn(
-                f"Error in instruction {instruction} at time {self.current_time}: {signal.info}"
-            )
+            warn(f"Error in instruction {instruction} at time {self.current_time}: {signal.info}")
 
         return bool(action & Action.HALT)
 
@@ -529,51 +512,51 @@ class SchedulingEnv:
         return self._process_next_instruction()
 
     # Custom serialization methods for pickling and deep copying
-    def __reduce__(self) -> Any:
-        """
-        Custom reduce method to ensure the environment can be pickled and deep copied correctly.
-        This is necessary for compatibility with multiprocessing and other serialization
-        mechanisms.
-        """
-        return (
-            self.__class__,
-            (
-                self.setup,
-                None,
-                None,
-                None,  # instance_config will be set later
-                self.metrics,
-                self.renderer,
-            ),
-            (
-                self.constraints,
-                self.passive_constraints,
-                self.objective,
-                self.metrics,
-                self.renderer,
-                self.state,
-                self.schedule,
-                self.current_time,
-                self.advancing_to,
-                self.query_times,
-            ),
-        )
+    # def __reduce__(self) -> Any:
+    #     """
+    #     Custom reduce method to ensure the environment can be pickled and deep copied correctly.
+    #     This is necessary for compatibility with multiprocessing and other serialization
+    #     mechanisms.
+    #     """
+    #     return (
+    #         self.__class__,
+    #         (
+    #             self.setup,
+    #             None,
+    #             None,
+    #             None,  # instance_config will be set later
+    #             self.metrics,
+    #             self.renderer,
+    #         ),
+    #         (
+    #             self.constraints,
+    #             self.passive_constraints,
+    #             self.objective,
+    #             self.metrics,
+    #             self.renderer,
+    #             self.state,
+    #             self.schedule,
+    #             self.current_time,
+    #             self.advancing_to,
+    #             self.query_times,
+    #         ),
+    #     )
 
-    def __setstate__(self, state: tuple[Any, ...]) -> None:
-        """
-        Custom setstate method to restore the environment's state after unpickling.
-        This is necessary to ensure the environment is correctly initialized with its
-        data and tasks.
-        """
-        (
-            self.constraints,
-            self.passive_constraints,
-            self.objective,
-            self.metrics,
-            self.renderer,
-            self.state,
-            self.schedule,
-            self.current_time,
-            self.advancing_to,
-            self.query_times,
-        ) = state
+    # def __setstate__(self, state: tuple[Any, ...]) -> None:
+    #     """
+    #     Custom setstate method to restore the environment's state after unpickling.
+    #     This is necessary to ensure the environment is correctly initialized with its
+    #     data and tasks.
+    #     """
+    #     (
+    #         self.constraints,
+    #         self.passive_constraints,
+    #         self.objective,
+    #         self.metrics,
+    #         self.renderer,
+    #         self.state,
+    #         self.schedule,
+    #         self.current_time,
+    #         self.advancing_to,
+    #         self.query_times,
+    #     ) = state

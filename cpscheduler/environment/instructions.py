@@ -28,9 +28,7 @@ def is_single_action(
     if not isinstance(action, tuple):
         return False
 
-    return isinstance(action[0], str) and all(
-        isinstance(arg, Int) for arg in action[1:]
-    )
+    return isinstance(action[0], str) and all(isinstance(arg, Int) for arg in action[1:])
 
 
 # Flags are not supported by mypyc yet
@@ -118,7 +116,7 @@ class Execute(Instruction):
     def __repr__(self) -> str:
         instruction_name = "Submit" if self.wait else "Execute"
         orientation = "job" if self.job_oriented else "task"
-        
+
         if self.machine != -1:
             return f"{instruction_name}({orientation}={self.id}, machine={self.machine})"
 
@@ -149,7 +147,6 @@ class Execute(Instruction):
                 return Signal(Action.DONE)
 
             task = state.tasks[self.id]
-
 
             if task.is_fixed():
                 return Signal(
@@ -228,11 +225,7 @@ class Pause(Instruction):
 class Resume(Instruction):
     "Resumes a paused task in the same machine it was executing before being paused."
 
-    def __init__(
-        self,
-        id: TASK_ID,
-        job_oriented: bool = False
-    ):
+    def __init__(self, id: TASK_ID, job_oriented: bool = False):
         self.id = id
         self.job_oriented = job_oriented
 
@@ -258,7 +251,6 @@ class Resume(Instruction):
         #             if execute:
         #                 return Signal(Action.DONE)
 
-
         #     if all(task.fixed for task in job_tasks):
         #         return Signal(
         #             Action.RAISE,
@@ -273,7 +265,7 @@ class Resume(Instruction):
         #             Action.RAISE,
         #             info=f"Task {self.id} is not paused and cannot be resumed.",
         #         )
-            
+
         #     last_machine = task.get_assignment()
         #     execute = state.execute_task(self.id, current_time, last_machine)
 
