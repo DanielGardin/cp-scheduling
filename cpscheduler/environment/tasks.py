@@ -3,10 +3,7 @@ from collections.abc import KeysView, Iterator
 
 from dataclasses import dataclass
 
-from cpscheduler.environment._common import MIN_TIME, MAX_TIME, MACHINE_ID, TASK_ID, TIME
-
-GLOBAL_MACHINE_ID: MACHINE_ID = -1
-
+from cpscheduler.environment._common import MIN_TIME, MAX_TIME, MACHINE_ID, TASK_ID, TIME, GLOBAL_MACHINE_ID
 
 @dataclass(frozen=True)
 class TaskHistory:

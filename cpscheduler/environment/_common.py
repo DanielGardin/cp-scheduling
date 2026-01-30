@@ -19,6 +19,9 @@ TASK_ID: TypeAlias = i32
 PART_ID: TypeAlias = i16
 TIME: TypeAlias = i32
 
+# Special machine ID representing a global machine
+GLOBAL_MACHINE_ID: MACHINE_ID = -1
+
 Int: TypeAlias = SupportsInt | int | i64 | i32 | i16 | u8
 Float: TypeAlias = SupportsFloat | float | i64 | i32 | i16 | u8
 

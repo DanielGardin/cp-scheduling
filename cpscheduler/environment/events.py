@@ -1,7 +1,7 @@
 from enum import Enum, auto
 from dataclasses import dataclass
 
-from cpscheduler.environment._common import TIME, MACHINE_ID
+from cpscheduler.environment._common import MACHINE_ID, GLOBAL_MACHINE_ID
 from cpscheduler.environment.tasks import Task
 
 
@@ -11,14 +11,17 @@ class VarField(Enum):
     END_LB = auto()
     END_UB = auto()
 
+    def is_start_field(self) -> bool:
+        return self == VarField.START_LB or self == VarField.START_UB
 
-class InfeasibleDecision(Exception):
-    """
-    Exception raised when an infeasible decision is made in the scheduling environment.
-    """
-
-    pass
-
+    def is_end_field(self) -> bool:
+        return self == VarField.END_LB or self == VarField.END_UB
+    
+    def is_lower_bound(self) -> bool:
+        return self == VarField.START_LB or self == VarField.END_LB
+    
+    def is_upper_bound(self) -> bool:
+        return self == VarField.START_UB or self == VarField.END_UB
 
 @dataclass
 class Event:
@@ -28,5 +31,4 @@ class Event:
 
     task: Task
     field: VarField
-    value: TIME
-    machine_id: MACHINE_ID = -1
+    machine_id: MACHINE_ID = GLOBAL_MACHINE_ID

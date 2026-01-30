@@ -18,11 +18,12 @@ from typing_extensions import Self
 from mypy_extensions import mypyc_attr
 
 from cpscheduler.utils.list_utils import convert_to_list
-from cpscheduler.utils.general_algo import topological_sort, binary_search
+from cpscheduler.utils.general_algo import binary_search, topological_sort
 
-from cpscheduler.environment._common import TASK_ID, TIME, MACHINE_ID, Int, Float, MAX_TIME
-from cpscheduler.environment.state import ScheduleState
+from cpscheduler.environment._common import TASK_ID, TIME, MACHINE_ID, Int, Float, MAX_TIME, GLOBAL_MACHINE_ID
 from cpscheduler.environment.tasks import Task
+from cpscheduler.environment.events import VarField, Event
+from cpscheduler.environment.state import ScheduleState
 
 constraints: dict[str, type["Constraint"]] = {}
 
@@ -47,7 +48,7 @@ class Constraint:
     def reset(self, state: ScheduleState) -> None:
         "Reset the constraint to its initial state."
 
-    def propagate(self, time: TIME, state: ScheduleState) -> None:
+    def propagate(self, event: Event, time: TIME, state: ScheduleState) -> None:
         "Given a bound change, propagate the constraint to other tasks."
 
     def get_entry(self) -> str:
@@ -64,7 +65,7 @@ class PassiveConstraint(Constraint):
     Examples of passive constraints include preemption and optionality constraints.
     """
 
-    def propagate(self, time: TIME, state: ScheduleState) -> NoReturn:
+    def propagate(self, event: Event, time: TIME, state: ScheduleState) -> NoReturn:
         "Passive constraint does not propagate any changes."
         raise NotImplementedError("Passive constraint does not propagate any changes.")
 
@@ -198,23 +199,46 @@ class MachineConstraint(Constraint):
     This is mainly a setup constraint, if the expected behavior is to constrain tasks on which
     machines they can be assigned to, use the MachineEligibilityConstraint instead.
     """
+    machine_map: list[set[Task]]
 
-    def propagate(self, time: TIME, state: ScheduleState) -> None:
-        machine_ends: dict[MACHINE_ID, TIME] = {}
-        for task in state.tasks_to_propagate:
-            if task.is_fixed():
-                machine = task.get_assignment()
+    def reset(self, state: ScheduleState) -> None:
+        self.machine_map = [set() for _ in range(state.n_machines)]
 
-                machine_ends[machine] = task.get_end_lb()
+        for task in state.tasks:
+            for machine in task.machines:
+                
 
-        for machine in machine_ends:
-            end_time = machine_ends[machine]
+    def propagate(self, event: Event, time: TIME, state: ScheduleState) -> None:
+        task = event.task
 
-            for task in state.awaiting_tasks:
-                if machine not in task.machines:
-                    continue
+        if not task.is_fixed() or event.field.is_lower_bound():
+            return
 
-                state.tight_start_lb(task.task_id, end_time, machine)
+        machine = task.get_assignment()
+        if machine == GLOBAL_MACHINE_ID:
+            return
+
+        for other_task in state.awaiting_tasks:
+            if machine not in other_task.machines:
+                continue
+
+            state.tight_start_lb(other_task.task_id, task.get_end_lb(), machine)
+
+        # machine_ends: dict[MACHINE_ID, TIME] = {}
+        # for task in state.tasks_to_propagate:
+        #     if task.is_fixed():
+        #         machine = task.get_assignment()
+
+        #         machine_ends[machine] = task.get_end_lb()
+
+        # for machine in machine_ends:
+        #     end_time = machine_ends[machine]
+
+        #     for task in state.awaiting_tasks:
+        #         if machine not in task.machines:
+        #             continue
+
+        #         state.tight_start_lb(task.task_id, end_time, machine)
 
     def is_complete(self, state: ScheduleState) -> bool:
         "Check if the machine constraint is complete."
@@ -239,8 +263,8 @@ class PrecedenceConstraint(Constraint):
 
     precedence: dict[TASK_ID, list[TASK_ID]]
 
-    original_order: list[TASK_ID]
-    tasks_order: list[Task]
+    original_order: None
+    tasks_order: None
 
     def __init__(self, precedence: Mapping[Int, Sequence[Int]]):
         self.precedence = {
@@ -301,26 +325,38 @@ class PrecedenceConstraint(Constraint):
 
         return n_children == len(unique_children)
 
-    def initialize(self, state: ScheduleState) -> None:
-        self.original_order = topological_sort(self.precedence, state.n_tasks)
-
     def reset(self, state: ScheduleState) -> None:
-        self.tasks_order = [state.tasks[task_id] for task_id in self.original_order]
+        tasks = state.tasks
+        for task_id in topological_sort(self.precedence, state.n_tasks):
+            task = tasks[task_id]
 
-    def propagate(self, time: TIME, state: ScheduleState) -> None:
-        to_propagate = set(task for task in state.tasks_to_propagate)
+            end_time = task.get_start_lb()
 
-        while to_propagate:
-            task = to_propagate.pop()
+            for child_id in self.precedence[task_id]:
+                state.tight_start_lb(child_id, end_time)
 
+    def propagate(self, event: Event, time: TIME, state: ScheduleState) -> None:
+        task = event.task
+
+        if event.field.is_lower_bound() and task.task_id in self.precedence:
             end_time = task.get_end_lb()
 
-            for child_id in self.precedence.get(task.task_id, []):
-                child = state.tasks[child_id]
+            for child_id in self.precedence[task.task_id]:
+                state.tight_start_lb(child_id, end_time)
 
-                if child.get_start_lb() < end_time:
-                    state.tight_start_lb(child_id, end_time)
-                    to_propagate.add(child)
+        # to_propagate = set(task for task in state.tasks_to_propagate)
+
+        # while to_propagate:
+        #     task = to_propagate.pop()
+
+        #     end_time = task.get_end_lb()
+
+        #     for child_id in self.precedence.get(task.task_id, []):
+        #         child = state.tasks[child_id]
+
+        #         if child.get_start_lb() < end_time:
+        #             state.tight_start_lb(child_id, end_time)
+        #             to_propagate.add(child)
 
     def get_entry(self) -> str:
         intree = self.is_intree()
@@ -356,34 +392,57 @@ class NoWaitConstraint(PrecedenceConstraint):
         name: Optional[str] = None
             An optional name for the constraint.
     """
+    transposed_precedence: dict[TASK_ID, list[TASK_ID]]
+
 
     def __init__(self, precedence: Mapping[Int, Sequence[Int]]):
         super().__init__(precedence)
 
+        self.transposed_precedence = {}
+
+        for task_id, children in self.precedence.items():
+            for child_id in children:
+                self.transposed_precedence.setdefault(child_id, [])
+                self.transposed_precedence[child_id].append(task_id)
+
         if not self.is_intree():
             raise ValueError("No-wait constraint must be an in-tree.")
 
-    def propagate(self, time: TIME, state: ScheduleState) -> None:
-        super().propagate(time, state)
+    def propagate(self, event: Event, time: TIME, state: ScheduleState) -> None:
+        super().propagate(event, time, state)
 
-        for task in reversed(self.tasks_order):
-            if task.is_fixed():
+        task = event.task
+
+        if task.is_fixed():
+            if task.task_id in self.precedence:   
                 end_time = task.get_end_lb()
 
-                for child_id in self.precedence.get(task.task_id, []):
-                    state.tight_start_lb(child_id, end_time)
+                for child_id in self.precedence[task.task_id]:
+                    state.tight_start_ub(child_id, end_time)
 
-            else:
-                max_children_start = task.get_end_lb()
-                for child_id in self.precedence.get(task.task_id, []):
-                    child = state.tasks[child_id]
+        elif event.field.is_lower_bound() and task.task_id in self.transposed_precedence:
+            start_time = task.get_start_lb()
+            for parent_id in  self.transposed_precedence[task.task_id]:
+                state.tight_end_lb(parent_id, start_time)
 
-                    child_lb = child.get_start_lb()
+        # for task in reversed(self.tasks_order):
+        #     if task.is_fixed():
+        #         end_time = task.get_end_lb()
 
-                    if max_children_start < child_lb:
-                        max_children_start = child_lb
+        #         for child_id in self.precedence.get(task.task_id, []):
+        #             state.tight_start_lb(child_id, end_time)
 
-                state.tight_end_lb(task.task_id, max_children_start)
+        #     else:
+        #         max_children_start = task.get_end_lb()
+        #         for child_id in self.precedence.get(task.task_id, []):
+        #             child = state.tasks[child_id]
+
+        #             child_lb = child.get_start_lb()
+
+        #             if max_children_start < child_lb:
+        #                 max_children_start = child_lb
+
+        #         state.tight_end_lb(task.task_id, max_children_start)
 
     def get_entry(self) -> str:
         return "nwt"

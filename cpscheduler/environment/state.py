@@ -1,4 +1,5 @@
 from typing import Any
+from collections import deque
 
 from cpscheduler.environment._common import (
     MAX_TIME,
@@ -9,8 +10,10 @@ from cpscheduler.environment._common import (
     STATUS,
     StatusEnum,
     ObsType,
+    GLOBAL_MACHINE_ID
 )
-from cpscheduler.environment.tasks import GLOBAL_MACHINE_ID, Task, Job, TaskHistory
+from cpscheduler.environment.events import VarField, Event
+from cpscheduler.environment.tasks import Task, Job, TaskHistory
 from cpscheduler.utils.list_utils import convert_to_list
 
 
@@ -45,13 +48,15 @@ def max_bound(bound: dict[MACHINE_ID, TIME]) -> TIME:
 
 
 class ScheduleState:
+    tasks_to_propagate: None
+
     tasks: list[Task]
     jobs: list[Job]
 
     time: TIME
+    event_queue: deque[Event]
 
     awaiting_tasks: set[Task]
-    tasks_to_propagate: set[Task]
     fixed_tasks: set[Task]
 
     instance: dict[str, list[Any]]
@@ -67,43 +72,41 @@ class ScheduleState:
         self.time = 0
 
         self.awaiting_tasks = set()
-        self.tasks_to_propagate = set()
         self.fixed_tasks = set()
 
         self.instance = {}
         self._n_machines = 0
 
-    def __repr__(self) -> str:
-        cls_name = self.__class__.__name__
+    # def __repr__(self) -> str:
+    #     cls_name = self.__class__.__name__
 
-        if self.loaded:
-            return (
-                f"{cls_name}("
-                f"n_machines={self.n_machines}, "
-                f"n_jobs={self.n_jobs}, "
-                f"n_tasks={self.n_tasks}, "
-                f"awaiting={len(self.awaiting_tasks)}, "
-                f"transition={len(self.tasks_to_propagate)}, "
-                f"fixed={len(self.fixed_tasks)}"
-                f")"
-            )
+    #     if self.loaded:
+    #         return (
+    #             f"{cls_name}("
+    #             f"n_machines={self.n_machines}, "
+    #             f"n_jobs={self.n_jobs}, "
+    #             f"n_tasks={self.n_tasks}, "
+    #             f"awaiting={len(self.awaiting_tasks)}, "
+    #             f"fixed={len(self.fixed_tasks)}"
+    #             f")"
+    #         )
 
-        return f"{cls_name}(loaded={self.loaded})"
+    #     return f"{cls_name}(loaded={self.loaded})"
 
-    def __eq__(self, other: Any) -> bool:
-        if not isinstance(other, ScheduleState):
-            return False
+    # def __eq__(self, other: Any) -> bool:
+    #     if not isinstance(other, ScheduleState):
+    #         return False
 
-        return (
-            self.tasks == other.tasks
-            and self.jobs == other.jobs
-            and self.awaiting_tasks == other.awaiting_tasks
-            and self.tasks_to_propagate == other.tasks_to_propagate
-            and self.fixed_tasks == other.fixed_tasks
-            and self.instance == other.instance
-            and self.job_instance == other.job_instance
-            and self.n_machines == other.n_machines
-        )
+    #     return (
+    #         self.tasks == other.tasks
+    #         and self.jobs == other.jobs
+    #         and self.awaiting_tasks == other.awaiting_tasks
+    #         and self.tasks_to_propagate == other.tasks_to_propagate
+    #         and self.fixed_tasks == other.fixed_tasks
+    #         and self.instance == other.instance
+    #         and self.job_instance == other.job_instance
+    #         and self.n_machines == other.n_machines
+    #     )
 
     # def __reduce__(self) -> Any:
     #     return (
@@ -164,9 +167,9 @@ class ScheduleState:
         self.jobs.clear()
 
         self.time = 0
+        self.event_queue.clear()
 
         self.awaiting_tasks.clear()
-        self.tasks_to_propagate.clear()
         self.fixed_tasks.clear()
 
         self.instance.clear()
@@ -175,11 +178,10 @@ class ScheduleState:
     def reset(self) -> None:
         self.time = 0
 
-        for task in self.tasks:
-            task.reset()
-            self.awaiting_tasks.add(task)
+        for task in self.tasks: task.reset()
 
-        self.tasks_to_propagate = set(self.tasks)
+        self.awaiting_tasks.update(self.tasks)
+        self.event_queue.clear()
         self.fixed_tasks.clear()
 
     def read_instance(
@@ -226,15 +228,17 @@ class ScheduleState:
         if machine_id != GLOBAL_MACHINE_ID:
             if task.get_start_lb(machine_id) < value:
                 task.start_lbs_[machine_id] = value
-                self.tasks_to_propagate.add(task)
+                self.event_queue.append(Event(task, VarField.START_LB, machine_id))
                 changed = True
 
         else:
             for machine in task.machines:
                 if task.get_start_lb(machine) < value:
                     task.start_lbs_[machine] = value
-                    self.tasks_to_propagate.add(task)
                     changed = True
+
+            if changed:
+                self.event_queue.append(Event(task, VarField.START_LB))
 
         if changed:
             task.start_lbs_[GLOBAL_MACHINE_ID] = min_bound(task.start_lbs_)
@@ -251,15 +255,17 @@ class ScheduleState:
         if machine_id != GLOBAL_MACHINE_ID:
             if task.get_start_ub(machine_id) > value:
                 task.start_ubs_[machine_id] = value
-                self.tasks_to_propagate.add(task)
+                self.event_queue.append(Event(task, VarField.START_UB, machine_id))
                 changed = True
 
         else:
             for machine in task.machines:
                 if task.get_start_ub(machine) > value:
                     task.start_ubs_[machine] = value
-                    self.tasks_to_propagate.add(task)
                     changed = True
+            
+            if changed:
+                self.event_queue.append(Event(task, VarField.START_UB))
 
         if changed:
             task.start_ubs_[GLOBAL_MACHINE_ID] = max_bound(task.start_ubs_)
@@ -276,15 +282,18 @@ class ScheduleState:
         if machine_id != GLOBAL_MACHINE_ID:
             if task.get_end_lb(machine_id) < value:
                 task.start_lbs_[machine_id] = value - task.remaining_times_[machine_id]
-                self.tasks_to_propagate.add(task)
+                self.event_queue.append(Event(task, VarField.END_LB, machine_id))
                 changed = True
 
         else:
             for machine in task.machines:
                 if task.get_end_lb(machine) < value:
                     task.start_lbs_[machine] = value - task.remaining_times_[machine]
-                    self.tasks_to_propagate.add(task)
                     changed = True
+                
+                if changed:
+                    self.event_queue.append(Event(task, VarField.END_LB))
+                    
 
         if changed:
             task.start_lbs_[GLOBAL_MACHINE_ID] = min_bound(task.start_lbs_)
@@ -301,15 +310,17 @@ class ScheduleState:
         if machine_id != GLOBAL_MACHINE_ID:
             if task.get_end_ub(machine_id) > value:
                 task.start_ubs_[machine_id] = value - task.remaining_times_[machine_id]
-                self.tasks_to_propagate.add(task)
+                self.event_queue.append(Event(task, VarField.END_UB, machine_id))
                 changed = True
 
         else:
             for machine in task.machines:
                 if task.get_end_ub(machine) > value:
                     task.start_ubs_[machine] = value - task.remaining_times_[machine]
-                    self.tasks_to_propagate.add(task)
                     changed = True
+            
+            if changed:
+                self.event_queue.append(Event(task, VarField.END_UB))
 
         if changed:
             task.start_ubs_[GLOBAL_MACHINE_ID] = max_bound(task.start_ubs_)
@@ -401,7 +412,6 @@ class ScheduleState:
         )
 
         self.awaiting_tasks.add(task)
-        self.tasks_to_propagate.add(task)
         self.fixed_tasks.remove(task)
 
         return True
