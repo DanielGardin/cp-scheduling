@@ -48,8 +48,6 @@ def max_bound(bound: dict[MACHINE_ID, TIME]) -> TIME:
 
 
 class ScheduleState:
-    tasks_to_propagate: None
-
     tasks: list[Task]
     jobs: list[Job]
 
@@ -74,67 +72,57 @@ class ScheduleState:
         self.awaiting_tasks = set()
         self.fixed_tasks = set()
 
+        self.event_queue = deque()
+
         self.instance = {}
+        self.job_instance = {}
         self._n_machines = 0
 
-    # def __repr__(self) -> str:
-    #     cls_name = self.__class__.__name__
+    def __reduce__(self) -> tuple[Any, ...]:
+        return (
+            self.__class__,
+            (),
+            (
+                self.tasks,
+                self.jobs,
+                self.time,
+                self.event_queue,
+                self.awaiting_tasks,
+                self.fixed_tasks,
+                self.instance,
+                self.job_instance,
+                self._n_machines,
+            )
+        )
+        
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        (
+            self.tasks,
+            self.jobs,
+            self.time,
+            self.event_queue,
+            self.awaiting_tasks,
+            self.fixed_tasks,
+            self.instance,
+            self.job_instance,
+            self._n_machines,
+        ) = state
 
-    #     if self.loaded:
-    #         return (
-    #             f"{cls_name}("
-    #             f"n_machines={self.n_machines}, "
-    #             f"n_jobs={self.n_jobs}, "
-    #             f"n_tasks={self.n_tasks}, "
-    #             f"awaiting={len(self.awaiting_tasks)}, "
-    #             f"fixed={len(self.fixed_tasks)}"
-    #             f")"
-    #         )
-
-    #     return f"{cls_name}(loaded={self.loaded})"
-
-    # def __eq__(self, other: Any) -> bool:
-    #     if not isinstance(other, ScheduleState):
-    #         return False
-
-    #     return (
-    #         self.tasks == other.tasks
-    #         and self.jobs == other.jobs
-    #         and self.awaiting_tasks == other.awaiting_tasks
-    #         and self.tasks_to_propagate == other.tasks_to_propagate
-    #         and self.fixed_tasks == other.fixed_tasks
-    #         and self.instance == other.instance
-    #         and self.job_instance == other.job_instance
-    #         and self.n_machines == other.n_machines
-    #     )
-
-    # def __reduce__(self) -> Any:
-    #     return (
-    #         self.__class__,
-    #         (),
-    #         (
-    #             self.tasks,
-    #             self.jobs,
-    #             self.awaiting_tasks,
-    #             self.tasks_to_propagate,
-    #             self.fixed_tasks,
-    #             self.instance,
-    #             self.job_instance,
-    #             self.n_machines,
-    #         ),
-    #     )
-
-    # def __setstate__(self, state: tuple[Any, ...]) -> None:
-    #     (
-    #         self.tasks,
-    #         self.jobs,
-    #         self.awaiting_tasks,
-    #         self.tasks_to_propagate,
-    #         self.fixed_tasks,
-    #         self.instance,
-    #         self.job_instance,
-    #         self.n_machines,
-    #     ) = state
+    def __eq__(self, value: object) -> bool:
+        if not isinstance(value, ScheduleState):
+            return False
+    
+        return (
+            self.tasks == value.tasks and
+            self.jobs == value.jobs and
+            self.time == value.time and
+            self.event_queue == value.event_queue and
+            self.awaiting_tasks == value.awaiting_tasks and
+            self.fixed_tasks == value.fixed_tasks and
+            self.instance == value.instance and
+            self.job_instance == value.job_instance and
+            self._n_machines == value._n_machines
+        )
 
     @property
     def n_machines(self) -> int:
@@ -325,12 +313,9 @@ class ScheduleState:
         if changed:
             task.start_ubs_[GLOBAL_MACHINE_ID] = max_bound(task.start_ubs_)
 
-    def set_infeasible(self, task_id: TASK_ID) -> None:
-        self.tight_start_lb(task_id, MAX_TIME)
-        self.tight_start_ub(task_id, MIN_TIME)
-
-        if not self.tasks[task_id].optional:
-            self.infeasible = True
+    def set_infeasible(self, task_id: TASK_ID, machine_id: MACHINE_ID = GLOBAL_MACHINE_ID) -> None:
+        self.tight_start_lb(task_id, MAX_TIME, machine_id)
+        self.tight_start_ub(task_id, MIN_TIME, machine_id)
 
     def execute_task(
         self,

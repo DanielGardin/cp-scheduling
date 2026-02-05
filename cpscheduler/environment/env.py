@@ -234,13 +234,14 @@ class SchedulingEnv:
 
     def _propagate(self) -> None:
         "Propagate the new bounds through the constraints"
-        for constraint in self.setup_constraints:
-            constraint.propagate(self.current_time, self.state)
+        while self.state.event_queue:
+            event = self.state.event_queue.popleft()
 
-        for constraint in self.constraints:
-            constraint.propagate(self.current_time, self.state)
+            for constraint in self.setup_constraints:
+                constraint.propagate(event, self.current_time, self.state)
 
-        self.state.tasks_to_propagate.clear()
+            for constraint in self.constraints:
+                constraint.propagate(event, self.current_time, self.state)
 
     # Environment API methods
     def reset(self, *, options: Options = None) -> tuple[ObsType, InfoType]:
@@ -512,51 +513,53 @@ class SchedulingEnv:
         return self._process_next_instruction()
 
     # Custom serialization methods for pickling and deep copying
-    # def __reduce__(self) -> Any:
-    #     """
-    #     Custom reduce method to ensure the environment can be pickled and deep copied correctly.
-    #     This is necessary for compatibility with multiprocessing and other serialization
-    #     mechanisms.
-    #     """
-    #     return (
-    #         self.__class__,
-    #         (
-    #             self.setup,
-    #             None,
-    #             None,
-    #             None,  # instance_config will be set later
-    #             self.metrics,
-    #             self.renderer,
-    #         ),
-    #         (
-    #             self.constraints,
-    #             self.passive_constraints,
-    #             self.objective,
-    #             self.metrics,
-    #             self.renderer,
-    #             self.state,
-    #             self.schedule,
-    #             self.current_time,
-    #             self.advancing_to,
-    #             self.query_times,
-    #         ),
-    #     )
+    def __reduce__(self) -> Any:
+        """
+        Custom reduce method to ensure the environment can be pickled and deep copied correctly.
+        This is necessary for compatibility with multiprocessing and other serialization
+        mechanisms.
+        """
+        return (
+            self.__class__,
+            (
+                self.setup,
+                None,
+                None,
+                None,  # instance_config will be set later
+                self.metrics,
+                self.renderer,
+            ),
+            (
+                self.constraints,
+                self.setup_constraints,
+                self.passive_constraints,
+                self.objective,
+                self.metrics,
+                self.renderer,
+                self.state,
+                self.schedule,
+                self.current_time,
+                self.advancing_to,
+                self.query_times,
+            ),
+        )
 
-    # def __setstate__(self, state: tuple[Any, ...]) -> None:
-    #     """
-    #     Custom setstate method to restore the environment's state after unpickling.
-    #     This is necessary to ensure the environment is correctly initialized with its
-    #     data and tasks.
-    #     """
-    #     (
-    #         self.constraints,
-    #         self.passive_constraints,
-    #         self.objective,
-    #         self.metrics,
-    #         self.renderer,
-    #         self.state,
-    #         self.schedule,
-    #         self.current_time,
-    #         self.advancing_to,
-    #         self.query_times,
-    #     ) = state
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        """
+        Custom setstate method to restore the environment's state after unpickling.
+        This is necessary to ensure the environment is correctly initialized with its
+        data and tasks.
+        """
+        (
+            self.constraints,
+            self.setup_constraints,
+            self.passive_constraints,
+            self.objective,
+            self.metrics,
+            self.renderer,
+            self.state,
+            self.schedule,
+            self.current_time,
+            self.advancing_to,
+            self.query_times,
+        ) = state

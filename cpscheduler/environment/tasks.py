@@ -51,10 +51,37 @@ class Task:
         self.assignment_ = GLOBAL_MACHINE_ID
         self.fixed_ = False
 
-    @property
-    def machines(self) -> KeysView[MACHINE_ID]:
-        "Get the list of machines that can process this task."
-        return self.processing_times.keys()
+    def __reduce__(self) -> tuple[Any, ...]:
+        return (
+            self.__class__,
+            (self.task_id, self.job_id),
+            (
+                self.history,
+                self.preemptive,
+                self.optional,
+                self.processing_times,
+                self.data,
+                self.remaining_times_,
+                self.start_lbs_,
+                self.start_ubs_,
+                self.assignment_,
+                self.fixed_,
+            ),
+        )
+    
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        (
+            self.history,
+            self.preemptive,
+            self.optional,
+            self.processing_times,
+            self.data,
+            self.remaining_times_,
+            self.start_lbs_,
+            self.start_ubs_,
+            self.assignment_,
+            self.fixed_,
+        ) = state
 
     def __hash__(self) -> int:
         return hash((self.task_id, self.job_id))
@@ -67,6 +94,11 @@ class Task:
 
     def __repr__(self) -> str:
         return f"Task(task_id={self.task_id}, job_id={self.job_id})"
+
+    @property
+    def machines(self) -> KeysView[MACHINE_ID]:
+        "Get the list of machines that can process this task."
+        return self.processing_times.keys()
 
     def reset(self) -> None:
         "Resets the task to its initial state."
@@ -212,6 +244,19 @@ class Job:
         self.tasks = []
 
         self.data = {}
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        return (
+            self.__class__,
+            (self.job_id,),
+            (self.tasks, self.data)
+        )
+    
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        (
+            self.tasks,
+            self.data,
+        ) = state
 
     @property
     def n_tasks(self) -> int:

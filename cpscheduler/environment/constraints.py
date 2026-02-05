@@ -21,8 +21,7 @@ from cpscheduler.utils.list_utils import convert_to_list
 from cpscheduler.utils.general_algo import binary_search, topological_sort
 
 from cpscheduler.environment._common import TASK_ID, TIME, MACHINE_ID, Int, Float, MAX_TIME, GLOBAL_MACHINE_ID
-from cpscheduler.environment.tasks import Task
-from cpscheduler.environment.events import VarField, Event
+from cpscheduler.environment.events import Event
 from cpscheduler.environment.state import ScheduleState
 
 constraints: dict[str, type["Constraint"]] = {}
@@ -105,6 +104,13 @@ class PreemptionConstraint(PassiveConstraint):
             self.all_tasks = False
             self.task_ids = convert_to_list(task_ids, TASK_ID)
 
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (self.task_ids,),
+            (),
+        )
+
     def initialize(self, state: ScheduleState) -> None:
         if self.all_tasks:
             for task in state.tasks:
@@ -140,6 +146,13 @@ class OptionalityConstraint(PassiveConstraint):
         else:
             self.all_tasks = False
             self.task_ids = convert_to_list(task_ids, TASK_ID)
+
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (self.task_ids,),
+            (),
+        )
 
     def initialize(self, state: ScheduleState) -> None:
         if self.all_tasks:
@@ -182,12 +195,54 @@ class MachineEligibilityConstraint(PassiveConstraint):
             for task, machines in eligibility.items()
         }
 
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (self.eligibility,),
+            (),
+        )
+
     def initialize(self, state: ScheduleState) -> None:
         for task_id, machines in self.eligibility.items():
             state.tasks[task_id].set_machines(convert_to_list(machines, MACHINE_ID))
 
     def get_entry(self) -> str:
         return "M_j"
+
+class ConstantProcessingTime(PassiveConstraint):
+    """
+    Constant processing time constraint for the scheduling environment.
+
+    This constraint enforces that all tasks have the same processing time, which is defined
+    as a constant value.
+
+    Arguments:
+        processing_time: int
+            The constant processing time for all tasks.
+
+        name: Optional[str] = None
+            An optional name for the constraint.
+    """
+
+    processing_time: TIME
+
+    def __init__(self, processing_time: Int = 1):
+        self.processing_time = TIME(processing_time)
+
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (self.processing_time,),
+            (),
+        )
+
+    def initialize(self, state: ScheduleState) -> None:
+        for task in state.tasks:
+            for machine in task.machines:
+                task.set_processing_time(machine, self.processing_time)
+
+    def get_entry(self) -> str:
+        return f"p_j={self.processing_time}"
 
 
 class MachineConstraint(Constraint):
@@ -199,30 +254,43 @@ class MachineConstraint(Constraint):
     This is mainly a setup constraint, if the expected behavior is to constrain tasks on which
     machines they can be assigned to, use the MachineEligibilityConstraint instead.
     """
-    machine_map: list[set[Task]]
+    machine_map: list[set[TASK_ID]]
+
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (),
+            (self.machine_map,),
+        )
+
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        (self.machine_map,) = state
 
     def reset(self, state: ScheduleState) -> None:
         self.machine_map = [set() for _ in range(state.n_machines)]
 
         for task in state.tasks:
             for machine in task.machines:
-                
+                self.machine_map[machine].add(task.task_id)
 
     def propagate(self, event: Event, time: TIME, state: ScheduleState) -> None:
         task = event.task
 
-        if not task.is_fixed() or event.field.is_lower_bound():
+        if not task.is_fixed():
             return
 
         machine = task.get_assignment()
         if machine == GLOBAL_MACHINE_ID:
             return
 
-        for other_task in state.awaiting_tasks:
-            if machine not in other_task.machines:
-                continue
+        for m in task.machines:
+            self.machine_map[m].discard(task.task_id)
 
-            state.tight_start_lb(other_task.task_id, task.get_end_lb(), machine)
+        end_time = task.get_end_lb()
+
+        for other_task in self.machine_map[machine]:
+            state.tight_start_lb(other_task, end_time, machine)
+
 
         # machine_ends: dict[MACHINE_ID, TIME] = {}
         # for task in state.tasks_to_propagate:
@@ -263,27 +331,18 @@ class PrecedenceConstraint(Constraint):
 
     precedence: dict[TASK_ID, list[TASK_ID]]
 
-    original_order: None
-    tasks_order: None
-
     def __init__(self, precedence: Mapping[Int, Sequence[Int]]):
         self.precedence = {
             TASK_ID(task): [TASK_ID(child) for child in children]
             for task, children in precedence.items()
         }
 
-        self.original_order = []
-        self.tasks_order = []
-
     def __reduce__(self) -> Any:
         return (
             self.__class__,
             (self.precedence,),
-            (self.original_order, self.tasks_order),
+            (),
         )
-
-    def __setstate__(self, state: tuple[Any, ...]) -> None:
-        self.original_order, self.tasks_order = state
 
     @classmethod
     def from_edges(cls, edges: Iterable[tuple[Int, Int]]) -> Self:
@@ -330,7 +389,7 @@ class PrecedenceConstraint(Constraint):
         for task_id in topological_sort(self.precedence, state.n_tasks):
             task = tasks[task_id]
 
-            end_time = task.get_start_lb()
+            end_time = task.get_end_lb()
 
             for child_id in self.precedence[task_id]:
                 state.tight_start_lb(child_id, end_time)
@@ -394,7 +453,6 @@ class NoWaitConstraint(PrecedenceConstraint):
     """
     transposed_precedence: dict[TASK_ID, list[TASK_ID]]
 
-
     def __init__(self, precedence: Mapping[Int, Sequence[Int]]):
         super().__init__(precedence)
 
@@ -448,78 +506,43 @@ class NoWaitConstraint(PrecedenceConstraint):
         return "nwt"
 
 
-class ConstantProcessingTime(PassiveConstraint):
-    """
-    Constant processing time constraint for the scheduling environment.
-
-    This constraint enforces that all tasks have the same processing time, which is defined
-    as a constant value.
-
-    Arguments:
-        processing_time: int
-            The constant processing time for all tasks.
-
-        name: Optional[str] = None
-            An optional name for the constraint.
-    """
-
-    def __init__(self, processing_time: Int = 1):
-        self.processing_time = TIME(processing_time)
-
-    def initialize(self, state: ScheduleState) -> None:
-        for task in state.tasks:
-            for machine in task.machines:
-                task.set_processing_time(machine, self.processing_time)
-
-    def __reduce__(self) -> Any:
-        return (
-            self.__class__,
-            (self.processing_time,),
-            (),
-        )
-
-    def get_entry(self) -> str:
-        return f"p_j={self.processing_time}"
-
-
 class DisjunctiveConstraint(Constraint):
-    groups_map: dict[TASK_ID, list[int]]
-
-    group_free: list[TIME]
+    groups_map: list[set[TASK_ID]]
 
     def __init__(self, task_groups: Iterable[Iterable[Int]]):
-        self.group_free = [0 for _ in task_groups]
-        self.groups_map = {}
-
-        for group_id, group in enumerate(task_groups):
-            for task in group:
-                task_id = TASK_ID(task)
-
-                self.groups_map.setdefault(task_id, [])
-                self.groups_map[task_id].append(group_id)
+        self.groups_map = [
+            set(convert_to_list(task_group, TASK_ID)) for task_group in task_groups
+        ]
 
     def __reduce__(self) -> Any:
         return (
             self.__class__,
             (self.groups_map,),
-            (self.tags, self.group_free),
+            (),
         )
 
-    def __setstate__(self, state: tuple[Any, ...]) -> None:
-        self.tags, self.group_free = state
+    def propagate(self, event: Event, time: TIME, state: ScheduleState) -> None:
+        task = event.task
 
-    def reset(self, state: ScheduleState) -> None:
-        for i in range(len(self.group_free)):
-            self.group_free[i] = 0
+        if not task.is_fixed() or event.field.is_lower_bound():
+            return
 
-    def propagate(self, time: TIME, state: ScheduleState) -> None:
-        for task in state.tasks_to_propagate:
-            for group in self.groups_map[task.task_id]:
-                self.group_free[group] = task.get_end_lb()
+        for group_tasks in self.groups_map:
+            if task.task_id not in group_tasks:
+                continue
 
-        for task in state.awaiting_tasks:
-            for group in self.groups_map[task.task_id]:
-                state.tight_start_lb(task.task_id, self.group_free[group])
+            end_time = task.get_end_lb()
+
+            for other_task_id in group_tasks:
+                state.tight_start_lb(other_task_id, end_time)
+
+        # for task in state.tasks_to_propagate:
+        #     for group in self.groups_map[task.task_id]:
+        #         self.group_free[group] = task.get_end_lb()
+
+        # for task in state.awaiting_tasks:
+        #     for group in self.groups_map[task.task_id]:
+        #         state.tight_start_lb(task.task_id, self.group_free[group])
 
 
 class ReleaseDateConstraint(Constraint):
@@ -548,17 +571,15 @@ class ReleaseDateConstraint(Constraint):
     def __reduce__(self) -> Any:
         return (
             self.__class__,
+            (self.release_tag,),
             (self.release_dates,),
-            (self.tags,),
         )
-
+    
     def __setstate__(self, state: tuple[Any, ...]) -> None:
-        (self.tags,) = state
+        (self.release_dates,) = state
 
     def initialize(self, state: ScheduleState) -> None:
-        release_times = state.instance[self.release_tag]
-
-        self.release_dates = [TIME(release_time) for release_time in release_times]
+        self.release_dates = convert_to_list(state.instance[self.release_tag], TIME)
 
     def reset(self, state: ScheduleState) -> None:
         for task_id, release_time in enumerate(self.release_dates):
@@ -597,15 +618,27 @@ class DeadlineConstraint(Constraint):
     due_tag: str
     due_dates: list[TIME]
 
+    const_due: TIME | None
+
     def __init__(self, due_dates: str = "due_dates", const_due: Int | None = None):
         self.due_tag = due_dates
         self.const_due = TIME(const_due) if const_due is not None else None
 
+        self.due_dates = []
+
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (self.due_tag, self.const_due),
+            (self.due_dates,),
+        )
+
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        (self.due_dates,) = state
+
     def initialize(self, state: ScheduleState) -> None:
         if self.const_due is None:
-            due_times = state.instance[self.due_tag]
-
-            self.due_dates = [TIME(due_time) for due_time in due_times]
+            self.due_dates = convert_to_list(state.instance[self.due_tag], TIME)
 
     def reset(self, state: ScheduleState) -> None:
         if self.const_due is not None:
@@ -664,8 +697,20 @@ class ResourceConstraint(Constraint):
         self.capacities = convert_to_list(capacities, float)
         self.resource_tags = list(resource_usage)
 
+        self.resources = []
+
         self.next_available_time = [[] for _ in self.resource_tags]
         self.available_resources = [[] for _ in self.resource_tags]
+
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (self.capacities, self.resource_tags),
+            (self.resources, self.next_available_time, self.available_resources),
+        )
+
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        (self.resources, self.next_available_time, self.available_resources) = state
 
     def initialize(self, state: ScheduleState) -> None:
         self.resources = [
@@ -677,30 +722,28 @@ class ResourceConstraint(Constraint):
             self.next_available_time[i] = [MAX_TIME]
             self.available_resources[i] = [self.capacities[i]]
 
-    def propagate(self, time: TIME, state: ScheduleState) -> None:
-        for i, available_time in enumerate(self.next_available_time):
-            while available_time and available_time[-1] <= time:
-                available_time.pop()
-                self.available_resources[i].pop()
+    def propagate(self, event: Event, time: TIME, state: ScheduleState) -> None:
+        task = event.task
 
-        for task in state.tasks_to_propagate:
+        if not task.is_fixed():
+            return
+
+        for i, task_resources in enumerate(self.resources):
+            resource_usage = task_resources[task.task_id]
+
+            if resource_usage <= 0:
+                continue
+
+            idx = binary_search(self.available_resources[i], resource_usage, decreasing=True)
+
+            self.next_available_time[i].insert(idx, task.get_end_lb())
+            self.available_resources[i].insert(
+                idx, self.available_resources[i][idx - 1] - resource_usage
+            )
+
+        for other_task in state.awaiting_tasks:
             for i, task_resources in enumerate(self.resources):
-                resource_usage = task_resources[task.task_id]
-
-                if resource_usage <= 0:
-                    continue
-
-                task_end = task.get_end_lb()
-                idx = binary_search(self.next_available_time[i], task_end, decreasing=True)
-
-                self.next_available_time[i].insert(idx, task_end)
-                self.available_resources[i].insert(
-                    idx, self.available_resources[i][idx - 1] - resource_usage
-                )
-
-        for task in state.awaiting_tasks:
-            for i, task_resources in enumerate(self.resources):
-                resource_usage = task_resources[task.task_id]
+                resource_usage = task_resources[other_task.task_id]
 
                 if resource_usage <= 0:
                     continue
@@ -709,7 +752,29 @@ class ResourceConstraint(Constraint):
 
                 earliest_start = self.next_available_time[i][idx - 1] if idx > 0 else time
 
-                state.tight_start_lb(task.task_id, earliest_start)
+                state.tight_start_lb(other_task.task_id, earliest_start)
+
+        # for i, available_time in enumerate(self.next_available_time):
+        #     while available_time and available_time[-1] <= time:
+        #         available_time.pop()
+        #         self.available_resources[i].pop()
+
+        # for task in state.tasks_to_propagate:
+        #     for i, task_resources in enumerate(self.resources):
+        #         resource_usage = task_resources[task.task_id]
+
+        #         if resource_usage <= 0:
+        #             continue
+
+        #         task_end = task.get_end_lb()
+        #         idx = binary_search(self.next_available_time[i], task_end, decreasing=True)
+
+        #         self.next_available_time[i].insert(idx, task_end)
+        #         self.available_resources[i].insert(
+        #             idx, self.available_resources[i][idx - 1] - resource_usage
+        #         )
+
+
 
 
 class NonRenewableResourceConstraint(Constraint):
@@ -744,39 +809,56 @@ class NonRenewableResourceConstraint(Constraint):
 
         self.current_capacities = self.capacities.copy()
 
+        self.resources = []
+
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (self.capacities, self.resource_tags),
+            (self.resources, self.current_capacities),
+        )
+
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        (self.resources, self.current_capacities) = state
+
     def initialize(self, state: ScheduleState) -> None:
-        self.resources = [
-            convert_to_list(state.instance[resource], float) for resource in self.resource_tags
-        ]
+        self.resources.clear()
+
+        for resource in self.resource_tags:
+            self.resources.append(
+                convert_to_list(state.instance[resource], float)
+            )
 
     def reset(self, state: ScheduleState) -> None:
         self.current_capacities = self.capacities.copy()
 
-    def propagate(self, time: TIME, state: ScheduleState) -> None:
-        for task in state.tasks_to_propagate:
-            for i, task_resources in enumerate(self.resources):
-                resource_usage = task_resources[task.task_id]
+    def propagate(self, event: Event, time: TIME, state: ScheduleState) -> None:
+        task = event.task
 
-                if resource_usage <= 0:
+        if not task.is_fixed():
+            return
+        
+        for i, task_resources in enumerate(self.resources):
+            resource_usage = task_resources[task.task_id]
+
+            if resource_usage <= 0:
+                continue
+
+            self.current_capacities[i] -= resource_usage
+
+            for other_task in state.awaiting_tasks:
+                other_usage = task_resources[other_task.task_id]
+
+                if other_usage <= 0:
                     continue
 
-                self.current_capacities[i] -= resource_usage
-
-        for task in state.awaiting_tasks:
-            for i, task_resources in enumerate(self.resources):
-                resource_usage = task_resources[task.task_id]
-
-                if resource_usage <= 0:
-                    continue
-
-                if self.current_capacities[i] < resource_usage:
-                    state.set_infeasible(task.task_id)
+                if self.current_capacities[i] < other_usage:
+                    state.set_infeasible(other_task.task_id)
 
 
 SetupTimes: TypeAlias = Mapping[Int, Mapping[Int, Int]] | Callable[[int, int, Any], Int]
 
 
-# TODO: Check literature if the setup time only happens when in the same machine
 class SetupConstraint(Constraint):
     """
     Setup constraint for the scheduling environment.
@@ -809,9 +891,19 @@ class SetupConstraint(Constraint):
                 for task, children in setup_times.items()
             }
 
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (self.setup_fn or self.original_setup_times,),
+            (self.original_setup_times,),
+        )
+    
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        (self.original_setup_times,) = state
+
     def initialize(self, state: ScheduleState) -> None:
         if self.setup_fn is not None:
-            self.original_setup_times = {}
+            self.original_setup_times.clear()
 
             for task_id in range(state.n_tasks):
                 self.original_setup_times[TASK_ID(task_id)] = {}
@@ -830,28 +922,46 @@ class SetupConstraint(Constraint):
             task_id: children.copy() for task_id, children in self.original_setup_times.items()
         }
 
-    def propagate(self, time: TIME, state: ScheduleState) -> None:
-        for task_id in list(self.setup_times.keys()):
-            task = state.tasks[task_id]
+    def propagate(self, event: Event, time: TIME, state: ScheduleState) -> None:
+        task = event.task
 
-            if task.is_fixed():
-                self.setup_times.pop(task_id)
+        if not task.is_fixed() or task.task_id not in self.setup_times:
+            return
+        
+        end_time = task.get_end_lb()
+
+        for child_id in list(self.setup_times[task.task_id].keys()):
+            child = state.tasks[child_id]
+
+            if child.is_fixed():
+                self.setup_times[task.task_id].pop(child_id)
                 continue
 
-            if not task.is_fixed():
-                continue
+            setup_time = self.setup_times[task.task_id][child_id]
 
-            children = self.setup_times[task_id]
+            state.tight_start_lb(child_id, end_time + setup_time)
 
-            for child_id, setup_time in children.items():
-                child = state.tasks[child_id]
+        # for task_id in list(self.setup_times.keys()):
+        #     task = state.tasks[task_id]
 
-                if child.is_fixed():
-                    continue
+        #     if task.is_fixed():
+        #         self.setup_times.pop(task_id)
+        #         continue
 
-                block_end = task.get_end_lb() + setup_time
+        #     if not task.is_fixed():
+        #         continue
 
-                state.tight_start_lb(child_id, block_end)
+        #     children = self.setup_times[task_id]
+
+        #     for child_id, setup_time in children.items():
+        #         child = state.tasks[child_id]
+
+        #         if child.is_fixed():
+        #             continue
+
+        #         block_end = task.get_end_lb() + setup_time
+
+        #         state.tight_start_lb(child_id, block_end)
 
 
 class MachineBreakdownConstraint(Constraint):
@@ -873,16 +983,27 @@ class MachineBreakdownConstraint(Constraint):
     """
 
     breakdowns: dict[MACHINE_ID, list[tuple[TIME, TIME]]]
-    current_breakdowns: dict[MACHINE_ID, int]
-
-    def __post_init__(self) -> None:
-        raise NotImplementedError("BatchConstraint is not implemented yet.")
+    next_breakdown: dict[MACHINE_ID, int]
 
     def __init__(self, breakdowns: Mapping[Int, Iterable[tuple[Int, Int]]]):
         self.breakdowns = {
-            MACHINE_ID(machine): [(TIME(start), TIME(end)) for start, end in intervals]
+            MACHINE_ID(machine): sorted((TIME(start), TIME(end)) for start, end in intervals)
             for machine, intervals in breakdowns.items()
         }
+
+        self.next_breakdown = {
+            machine: 0 for machine in self.breakdowns
+        }
+
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (self.breakdowns,),
+            (self.next_breakdown,),
+        )
+    
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        (self.next_breakdown,) = state
 
     @classmethod
     def from_machine_step_function(cls, step_function: Mapping[Int, Int]) -> Self:
@@ -925,50 +1046,81 @@ class MachineBreakdownConstraint(Constraint):
 
         return cls(breakdowns)
 
-    def initialize(self, state: ScheduleState) -> None:
-        self.current_breakdowns = {machine: 0 for machine in self.breakdowns.keys()}
 
     def reset(self, state: ScheduleState) -> None:
         for machine in self.breakdowns:
-            self.current_breakdowns[machine] = 0
+            self.next_breakdown[machine] = 0
 
-    def propagate(self, time: TIME, state: ScheduleState) -> None:
-        for machine in self.breakdowns:
-            current_index = self.current_breakdowns[machine]
+    def propagate(self, event: Event, time: TIME, state: ScheduleState) -> None:
+        task = event.task
+
+        if task.is_fixed():
+            return
+        
+        for machine in task.machines:
+            if machine not in self.breakdowns:
+                continue
+
+            current_index = self.next_breakdown[machine]
             breakdown_intervals = self.breakdowns[machine]
+
+            end_lb = task.get_end_lb(machine)
+            start_lb = task.get_start_lb(machine)
+
+            while (
+                current_index < len(breakdown_intervals) and
+                breakdown_intervals[current_index][1] <= time
+            ):
+                self.next_breakdown[machine] += 1
+                current_index += 1
+
 
             while current_index < len(breakdown_intervals):
                 start, end = breakdown_intervals[current_index]
 
-                if time < end:
+                if end_lb <= start:
                     break
 
-                current_index += 1
-
-            self.current_breakdowns[machine] = current_index
-
-        for task in state.awaiting_tasks:
-            for machine in task.machines:
-                if machine not in self.breakdowns:
-                    continue
-
-                current_index = self.current_breakdowns[machine]
-                breakdown_intervals = self.breakdowns[machine]
-
-                end_lb = task.get_end_lb(machine)
-                start_lb = task.get_start_lb(machine)
-
-                while current_index < len(breakdown_intervals):
-                    start, end = breakdown_intervals[current_index]
-
-                    if end_lb <= start or start_lb >= end:
-                        break
-
+                if start_lb < end:
                     state.tight_start_lb(task.task_id, end, machine)
+                    break
 
-                    end_lb = task.get_end_lb(machine)
-                    start_lb = end
-                    current_index += 1
+        # for machine in self.breakdowns:
+        #     current_index = self.next_breakdown[machine]
+        #     breakdown_intervals = self.breakdowns[machine]
+
+        #     while current_index < len(breakdown_intervals):
+        #         start, end = breakdown_intervals[current_index]
+
+        #         if time < end:
+        #             break
+
+        #         current_index += 1
+
+        #     self.next_breakdown[machine] = current_index
+
+        # for task in state.awaiting_tasks:
+        #     for machine in task.machines:
+        #         if machine not in self.breakdowns:
+        #             continue
+
+        #         current_index = self.next_breakdown[machine]
+        #         breakdown_intervals = self.breakdowns[machine]
+
+        #         end_lb = task.get_end_lb(machine)
+        #         start_lb = task.get_start_lb(machine)
+
+        #         while current_index < len(breakdown_intervals):
+        #             start, end = breakdown_intervals[current_index]
+
+        #             if end_lb <= start or start_lb >= end:
+        #                 break
+
+        #             state.tight_start_lb(task.task_id, end, machine)
+
+        #             end_lb = task.get_end_lb(machine)
+        #             start_lb = end
+        #             current_index += 1
 
     def get_entry(self) -> str:
         return "brkdwn"
