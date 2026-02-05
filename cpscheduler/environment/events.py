@@ -16,12 +16,13 @@ class VarField(Enum):
 
     def is_end_field(self) -> bool:
         return self == VarField.END_LB or self == VarField.END_UB
-    
+
     def is_lower_bound(self) -> bool:
         return self == VarField.START_LB or self == VarField.END_LB
-    
+
     def is_upper_bound(self) -> bool:
         return self == VarField.START_UB or self == VarField.END_UB
+
 
 @dataclass
 class Event:

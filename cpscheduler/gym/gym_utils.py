@@ -8,7 +8,7 @@ import numpy as np
 
 from gymnasium.spaces import Space, Dict, Tuple, Box, MultiBinary, Text
 
-from cpscheduler.environment._common import MAX_INT, MIN_INT
+from cpscheduler.environment._common import MAX_TIME, MIN_TIME
 
 
 def is_original_space(space: Any) -> TypeIs[Iterable[Dict]]:
@@ -31,7 +31,7 @@ def _(elem: str, size: int) -> Space[tuple[str, ...]]:
 @create_list_space.register
 def _(elem: int, size: int) -> Space[Iterable[int]]:
     "Create a Gymnasium space for a list of integers."
-    return Box(low=int(MIN_INT), high=int(MAX_INT), shape=(size,), dtype=np.int64)
+    return Box(low=int(MIN_TIME), high=int(MAX_TIME), shape=(size,), dtype=np.int64)
 
 
 @create_list_space.register

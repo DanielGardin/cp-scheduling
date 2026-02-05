@@ -35,7 +35,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         instance: InstanceTypes | None = None,
         metrics: Mapping[str, Metric[Any]] | None = None,
         *,
-        render_mode: Renderer | str | None = None
+        render_mode: Renderer | str | None = None,
     ):
         self.action_space = ActionSpace
 
@@ -45,7 +45,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
             objective=objective,
             instance=instance,
             metrics=metrics,
-            render_mode=render_mode
+            render_mode=render_mode,
         )
 
         self.observation_space = self.get_observation_space()
@@ -82,9 +82,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
 
         return obs, {key: value for key, value in info.items()}
 
-    def step(
-        self, action: ActionType
-    ) -> tuple[ObsType, float, bool, bool, dict[str, Any]]:
+    def step(self, action: ActionType) -> tuple[ObsType, float, bool, bool, dict[str, Any]]:
         obs, reward, done, truncated, info = self._env.step(action)
 
         return obs, reward, done, truncated, {key: value for key, value in info.items()}

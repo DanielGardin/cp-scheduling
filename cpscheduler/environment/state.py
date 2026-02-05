@@ -10,7 +10,7 @@ from cpscheduler.environment._common import (
     STATUS,
     StatusEnum,
     ObsType,
-    GLOBAL_MACHINE_ID
+    GLOBAL_MACHINE_ID,
 )
 from cpscheduler.environment.events import VarField, Event
 from cpscheduler.environment.tasks import Task, Job, TaskHistory
@@ -92,9 +92,9 @@ class ScheduleState:
                 self.instance,
                 self.job_instance,
                 self._n_machines,
-            )
+            ),
         )
-        
+
     def __setstate__(self, state: tuple[Any, ...]) -> None:
         (
             self.tasks,
@@ -111,17 +111,17 @@ class ScheduleState:
     def __eq__(self, value: object) -> bool:
         if not isinstance(value, ScheduleState):
             return False
-    
+
         return (
-            self.tasks == value.tasks and
-            self.jobs == value.jobs and
-            self.time == value.time and
-            self.event_queue == value.event_queue and
-            self.awaiting_tasks == value.awaiting_tasks and
-            self.fixed_tasks == value.fixed_tasks and
-            self.instance == value.instance and
-            self.job_instance == value.job_instance and
-            self._n_machines == value._n_machines
+            self.tasks == value.tasks
+            and self.jobs == value.jobs
+            and self.time == value.time
+            and self.event_queue == value.event_queue
+            and self.awaiting_tasks == value.awaiting_tasks
+            and self.fixed_tasks == value.fixed_tasks
+            and self.instance == value.instance
+            and self.job_instance == value.job_instance
+            and self._n_machines == value._n_machines
         )
 
     @property
@@ -166,7 +166,8 @@ class ScheduleState:
     def reset(self) -> None:
         self.time = 0
 
-        for task in self.tasks: task.reset()
+        for task in self.tasks:
+            task.reset()
 
         self.awaiting_tasks.update(self.tasks)
         self.event_queue.clear()
@@ -251,7 +252,7 @@ class ScheduleState:
                 if task.get_start_ub(machine) > value:
                     task.start_ubs_[machine] = value
                     changed = True
-            
+
             if changed:
                 self.event_queue.append(Event(task, VarField.START_UB))
 
@@ -278,10 +279,9 @@ class ScheduleState:
                 if task.get_end_lb(machine) < value:
                     task.start_lbs_[machine] = value - task.remaining_times_[machine]
                     changed = True
-                
+
                 if changed:
                     self.event_queue.append(Event(task, VarField.END_LB))
-                    
 
         if changed:
             task.start_lbs_[GLOBAL_MACHINE_ID] = min_bound(task.start_lbs_)
@@ -306,7 +306,7 @@ class ScheduleState:
                 if task.get_end_ub(machine) > value:
                     task.start_ubs_[machine] = value - task.remaining_times_[machine]
                     changed = True
-            
+
             if changed:
                 self.event_queue.append(Event(task, VarField.END_UB))
 

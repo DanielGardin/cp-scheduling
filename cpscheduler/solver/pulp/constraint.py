@@ -73,14 +73,7 @@ def _(constraint: NoWaitConstraint, variables: PulpSchedulingVariables) -> Model
 @export_constraint_pulp.register
 def _(constraint: DisjunctiveConstraint, variables: PulpSchedulingVariables) -> ModelExport:
     def export_model(model: LpProblem, state: ScheduleState) -> None:
-        group_constraint: dict[int, list[int]] = {}
-
-        for task_id, groups in constraint.groups_map.items():
-            for group in groups:
-                group_constraint.setdefault(group, [])
-                group_constraint[group].append(task_id)
-
-        for group_tasks in group_constraint.values():
+        for group_tasks in constraint.groups_map:
             for i, j in combinations(group_tasks, 2):
                 implication_pulp(
                     model,

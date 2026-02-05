@@ -1,4 +1,4 @@
-from typing import Any, Literal, overload, TypeVar, Final
+from typing import Any, Literal, overload, TypeVar
 from collections.abc import Coroutine, Iterable
 from datetime import timedelta
 

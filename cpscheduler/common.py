@@ -38,8 +38,6 @@ def unwrap_env(env: Any | SchedulingEnv, max_depth: int = 10) -> SchedulingEnv:
         depth += 1
 
     if not isinstance(env, SchedulingEnv):
-        raise TypeError(
-            f"Expected env to be of type SchedulingEnv, got {type(env)} instead."
-        )
+        raise TypeError(f"Expected env to be of type SchedulingEnv, got {type(env)} instead.")
 
     return env

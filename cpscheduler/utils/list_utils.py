@@ -105,15 +105,11 @@ class ListWrapper(Generic[_T_co]):
 
         if isinstance(index, Iterable):
             if all(isinstance(i, bool) for i in index):
-                return ListWrapper(
-                    [self._data[i] for i, flag in enumerate(index) if flag]
-                )
+                return ListWrapper([self._data[i] for i, flag in enumerate(index) if flag])
 
             return ListWrapper([self._data[i] for i in index if isinstance(i, int)])
 
-    def __setitem__(
-        self, index: int | Iterable[int] | slice | Iterable[bool], value: Any
-    ) -> None:
+    def __setitem__(self, index: int | Iterable[int] | slice | Iterable[bool], value: Any) -> None:
         if isinstance(index, int):
             self._data[index] = value
             return
@@ -427,14 +423,10 @@ class ListWrapper(Generic[_T_co]):
     ) -> "ListWrapper[_T_co]":
         if is_pure_iterable(x1):
             if is_pure_iterable(x2):
-                return ListWrapper(
-                    [a if cond else b for cond, a, b in zip(condition, x1, x2)]
-                )
+                return ListWrapper([a if cond else b for cond, a, b in zip(condition, x1, x2)])
 
             else:
-                return ListWrapper(
-                    [a if cond else x2 for cond, a in zip(condition, x1)]
-                )
+                return ListWrapper([a if cond else x2 for cond, a in zip(condition, x1)])
 
         elif is_pure_iterable(x2):
             return ListWrapper([x1 if cond else b for cond, b in zip(condition, x2)])
@@ -442,9 +434,7 @@ class ListWrapper(Generic[_T_co]):
         return ListWrapper([x1 if cond else x2 for cond in condition])
 
     @staticmethod
-    def sort(
-        x: Iterable[_T_co], reverse: bool = False, stable: bool = False
-    ) -> "ListWrapper[int]":
+    def sort(x: Iterable[_T_co], reverse: bool = False, stable: bool = False) -> "ListWrapper[int]":
         if not stable:
             return ListWrapper(sorted(x, reverse=reverse))
 

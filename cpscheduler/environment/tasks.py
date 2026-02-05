@@ -3,7 +3,15 @@ from collections.abc import KeysView, Iterator
 
 from dataclasses import dataclass
 
-from cpscheduler.environment._common import MIN_TIME, MAX_TIME, MACHINE_ID, TASK_ID, TIME, GLOBAL_MACHINE_ID
+from cpscheduler.environment._common import (
+    MIN_TIME,
+    MAX_TIME,
+    MACHINE_ID,
+    TASK_ID,
+    TIME,
+    GLOBAL_MACHINE_ID,
+)
+
 
 @dataclass(frozen=True)
 class TaskHistory:
@@ -68,7 +76,7 @@ class Task:
                 self.fixed_,
             ),
         )
-    
+
     def __setstate__(self, state: tuple[Any, ...]) -> None:
         (
             self.history,
@@ -246,12 +254,8 @@ class Job:
         self.data = {}
 
     def __reduce__(self) -> tuple[Any, ...]:
-        return (
-            self.__class__,
-            (self.job_id,),
-            (self.tasks, self.data)
-        )
-    
+        return (self.__class__, (self.job_id,), (self.tasks, self.data))
+
     def __setstate__(self, state: tuple[Any, ...]) -> None:
         (
             self.tasks,
