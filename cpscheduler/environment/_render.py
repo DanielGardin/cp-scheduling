@@ -327,7 +327,7 @@ try:
 
             for job in state.jobs:
                 for task in job.tasks:
-                    for history_entry in task.history:
+                    for history_entry in state.task_history[task.task_id]:
                         start_times.append(history_entry.start_time)
                         durations.append(history_entry.duration)
                         machines.append(history_entry.assignment)

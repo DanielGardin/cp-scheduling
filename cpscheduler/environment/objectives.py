@@ -7,14 +7,15 @@ and can be used to guide the search for an optimal schedule by providing a numer
 that represents the quality of the schedule.
 """
 
-from typing import Any
+from typing import Any, ClassVar
 from collections.abc import Iterable
 
 from mypy_extensions import mypyc_attr
 
+from math import expm1
+
 from cpscheduler.utils.list_utils import convert_to_list
-from cpscheduler.environment._common import TIME, Float
-from cpscheduler.environment.tasks import Task
+from cpscheduler.environment._common import TASK_ID, Float
 from cpscheduler.environment.state import ScheduleState
 
 objectives: dict[str, type["Objective"]] = {}
@@ -30,6 +31,8 @@ class Objective:
     that represents the quality of the schedule.
     """
 
+    _regular: ClassVar[bool] = False
+
     minimize: bool
 
     def __init_subclass__(cls) -> None:
@@ -39,6 +42,11 @@ class Objective:
 
     def __init__(self, minimize: bool = True) -> None:
         self.minimize = minimize
+
+    @property
+    def regular(self) -> bool:
+        "Whether the objective is regular, i.e., whether it is non-decreasing with respect to task completion times."
+        return self._regular
 
     def __repr__(self) -> str:
         sense = "minimize" if self.minimize else "maximize"
@@ -58,16 +66,16 @@ class Objective:
     def initialize(self, state: ScheduleState) -> None:
         "Initialize the objective with the given schedule state."
 
-    def get_current(self, time: TIME, state: ScheduleState) -> float:
+    def get_current(self, state: ScheduleState) -> float:
         """
         Get the current value of the objective function. This is useful for checking
         the performance of the scheduling algorithm along the episode.
         """
         return 0
 
-    def __call__(self, time: int, state: ScheduleState, objective: float) -> float:
+    def __call__(self, state: ScheduleState) -> float:
         "Call the objective function to get the current value."
-        return self.get_current(time, state)
+        return self.get_current(state)
 
     def get_entry(self) -> str:
         "Produce the γ entry for the constraint."
@@ -113,6 +121,18 @@ class ComposedObjective(Objective):
             else convert_to_list(coefficients, float)
         )
 
+    @property
+    def regular(self) -> bool:
+        "A composed objective is regular if all its component objectives are regular."
+        for objective, coefficient in zip(self.objectives, self.coefficients):
+            if coefficient != 0 and not objective.regular:
+                return False
+
+            if coefficient < 0 and objective.regular:
+                return False
+
+        return True
+
     def __reduce__(self) -> Any:
         return (
             self.__class__,
@@ -124,11 +144,11 @@ class ComposedObjective(Objective):
         for objective in self.objectives:
             objective.initialize(state)
 
-    def get_current(self, time: TIME, state: ScheduleState) -> float:
+    def get_current(self, state: ScheduleState) -> float:
         current_value = 0.0
 
         for objective, coefficient in zip(self.objectives, self.coefficients):
-            current_value += coefficient * objective.get_current(time, state)
+            current_value += coefficient * objective.get_current(state)
 
         return current_value
 
@@ -151,15 +171,15 @@ class ComposedObjective(Objective):
         return entry
 
 
-def _makespan(tasks: Iterable[Task]) -> TIME:
+def _makespan(state: ScheduleState, tasks: Iterable[TASK_ID]) -> float:
     "Compute the makespan of a set of tasks."
-    max_end_time = 0
+    max_end_time = 0.0
 
     for task in tasks:
-        if not task.fixed_:
+        if not state.is_fixed(task):
             continue
 
-        end_time = task.get_end_ub()
+        end_time = float(state.get_end_ub(task))
 
         if end_time > max_end_time:
             max_end_time = end_time
@@ -172,8 +192,10 @@ class Makespan(Objective):
     Classic makespan objective function, which aims to minimize the time at which all tasks are completed.
     """
 
-    def get_current(self, time: TIME, state: ScheduleState) -> int:
-        return _makespan(state.fixed_tasks)
+    _regular = True
+
+    def get_current(self, state: ScheduleState) -> float:
+        return _makespan(state, state.fixed_tasks)
 
     def get_entry(self) -> str:
         return "C_max"
@@ -185,11 +207,13 @@ class TotalCompletionTime(Objective):
     of all tasks.
     """
 
-    def get_current(self, time: TIME, state: ScheduleState) -> int:
-        total_completion_time = 0
+    _regular = True
+
+    def get_current(self, state: ScheduleState) -> float:
+        total_completion_time = 0.0
 
         for job in state.jobs:
-            job_completion = _makespan(job.tasks)
+            job_completion = _makespan(state,job.task_ids)
             total_completion_time += job_completion
 
         return total_completion_time
@@ -204,6 +228,8 @@ class WeightedCompletionTime(Objective):
     completion times of all tasks. Each task has a weight associated with it, and the objective
     function is the sum of the completion times multiplied by their respective weights.
     """
+
+    _regular = True
 
     weights_tag: str
     job_weights: list[float]
@@ -226,11 +252,11 @@ class WeightedCompletionTime(Objective):
     def initialize(self, state: ScheduleState) -> None:
         self.job_weights = convert_to_list(state.instance[self.weights_tag], float)
 
-    def get_current(self, time: TIME, state: ScheduleState) -> float:
+    def get_current(self, state: ScheduleState) -> float:
         weighted_completion_time = 0.0
         for job in state.jobs:
             weight = self.job_weights[job.job_id]
-            job_completion = _makespan(job.tasks)
+            job_completion = _makespan(state, job.task_ids)
 
             weighted_completion_time += weight * float(job_completion)
 
@@ -240,14 +266,70 @@ class WeightedCompletionTime(Objective):
         return "Σw_jC_j"
 
 
+class DiscountedCompletionTime(Objective):
+
+    _regular = True
+
+    discount_factor: float
+
+    weights_tag: str | None
+    job_weights: list[float]
+
+    def __init__(
+        self,
+        discount_factor: float = 0.99,
+        job_weights: str | None = None,
+        minimize: bool = True,
+    ):
+        super().__init__(minimize)
+        self.discount_factor = discount_factor
+
+        self.weights_tag = job_weights
+        self.job_weights = []
+
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (self.discount_factor, self.weights_tag, self.minimize),
+            (self.job_weights,),
+        )
+
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        (self.job_weights,) = state
+
+    def initialize(self, state: ScheduleState) -> None:
+        if self.weights_tag is not None:
+            self.job_weights = convert_to_list(state.instance[self.weights_tag], float)
+
+    def get_current(self, state: ScheduleState) -> float:
+        discounted_completion_time = 0.0
+        for job in state.jobs:
+            weight = self.job_weights[job.job_id] if self.weights_tag is not None else 1.0
+            job_completion = _makespan(state, job.task_ids)
+
+            discounted_completion_time -= weight * expm1(
+                -self.discount_factor * float(job_completion)
+            )
+
+        return discounted_completion_time
+
+    def get_entry(self) -> str:
+        if self.weights_tag is not None:
+            return f"Σw_j(1 - e^(-{self.discount_factor}C_j))"
+
+        return f"Σ(1 - e^(-{self.discount_factor}C_j))"
+
+
 class MaximumLateness(Objective):
     """
     The maximum lateness objective function, which aims to minimize the maximum lateness of all
     tasks. Lateness is defined as the difference between the completion time and the due date.
     """
 
+    _regular = True
+
     due_tag: str
-    due_dates: list[TIME]
+    due_dates: list[float]
 
     def __init__(
         self,
@@ -265,13 +347,13 @@ class MaximumLateness(Objective):
         (self.due_dates,) = state
 
     def initialize(self, state: ScheduleState) -> None:
-        self.due_dates = convert_to_list(state.instance[self.due_tag], TIME)
+        self.due_dates = convert_to_list(state.instance[self.due_tag], float)
 
-    def get_current(self, time: TIME, state: ScheduleState) -> int:
-        max_lateness = 0
+    def get_current(self, state: ScheduleState) -> float:
+        max_lateness = 0.0
 
         for job in state.jobs:
-            job_completion = _makespan(job.tasks)
+            job_completion = _makespan(state, job.task_ids)
             job_lateness = job_completion - self.due_dates[job.job_id]
 
             if max_lateness < job_lateness:
@@ -290,8 +372,10 @@ class TotalTardiness(Objective):
     if the task is completed late.
     """
 
+    _regular = True
+
     due_tag: str
-    due_dates: list[TIME]
+    due_dates: list[float]
 
     def __init__(
         self,
@@ -309,13 +393,13 @@ class TotalTardiness(Objective):
         (self.due_dates,) = state
 
     def initialize(self, state: ScheduleState) -> None:
-        self.due_dates = state.instance[self.due_tag]
+        self.due_dates = convert_to_list(state.instance[self.due_tag], float)
 
-    def get_current(self, time: TIME, state: ScheduleState) -> int:
-        total_tardiness = 0
+    def get_current(self, state: ScheduleState) -> float:
+        total_tardiness = 0.0
         for job in state.jobs:
             due_date = self.due_dates[job.job_id]
-            job_completion = _makespan(job.tasks)
+            job_completion = _makespan(state, job.task_ids)
 
             job_tardiness = job_completion - due_date if job_completion > due_date else 0
 
@@ -334,9 +418,11 @@ class WeightedTardiness(Objective):
     date, if the task is completed late.
     """
 
+    _regular = True
+
     due_tag: str
     weight_tag: str
-    due_dates: list[TIME]
+    due_dates: list[float]
     job_weights: list[float]
 
     def __init__(
@@ -364,15 +450,15 @@ class WeightedTardiness(Objective):
         self.due_dates, self.job_weights = state
 
     def initialize(self, state: ScheduleState) -> None:
-        self.due_dates = convert_to_list(state.instance[self.due_tag], TIME)
+        self.due_dates = convert_to_list(state.instance[self.due_tag], float)
         self.job_weights = convert_to_list(state.instance[self.weight_tag], float)
 
-    def get_current(self, time: TIME, state: ScheduleState) -> float:
+    def get_current(self, state: ScheduleState) -> float:
         weighted_tardiness = 0.0
         for job in state.jobs:
             weight = self.job_weights[job.job_id]
             due_date = self.due_dates[job.job_id]
-            job_completion = _makespan(job.tasks)
+            job_completion = _makespan(state, job.task_ids)
 
             job_tardiness = float(job_completion - due_date) if job_completion > due_date else 0.0
 
@@ -392,7 +478,7 @@ class TotalEarliness(Objective):
     """
 
     due_tag: str
-    due_dates: list[TIME]
+    due_dates: list[float]
 
     def __init__(
         self,
@@ -410,15 +496,15 @@ class TotalEarliness(Objective):
         (self.due_dates,) = state
 
     def initialize(self, state: ScheduleState) -> None:
-        self.due_dates = convert_to_list(state.instance[self.due_tag], TIME)
+        self.due_dates = convert_to_list(state.instance[self.due_tag], float)
 
-    def get_current(self, time: TIME, state: ScheduleState) -> int:
-        total_earliness = 0
+    def get_current(self, state: ScheduleState) -> float:
+        total_earliness = 0.0
         for job in state.jobs:
             due_date = self.due_dates[job.job_id]
-            job_completion = _makespan(job.tasks)
+            job_completion = _makespan(state, job.task_ids)
 
-            job_earliness = due_date - job_completion if job_completion < due_date else 0
+            job_earliness = due_date - job_completion if job_completion < due_date else 0.0
 
             total_earliness += job_earliness
 
@@ -436,7 +522,7 @@ class WeightedEarliness(Objective):
 
     due_tag: str
     weight_tag: str
-    due_dates: list[TIME]
+    due_dates: list[float]
     job_weights: list[float]
 
     def __init__(
@@ -463,15 +549,15 @@ class WeightedEarliness(Objective):
         self.due_dates, self.job_weights = state
 
     def initialize(self, state: ScheduleState) -> None:
-        self.due_dates = convert_to_list(state.instance[self.due_tag], TIME)
+        self.due_dates = convert_to_list(state.instance[self.due_tag], float)
         self.job_weights = convert_to_list(state.instance[self.weight_tag], float)
 
-    def get_current(self, time: TIME, state: ScheduleState) -> float:
+    def get_current(self, state: ScheduleState) -> float:
         weighted_earliness = 0.0
         for job in state.jobs:
             weight = self.job_weights[job.job_id]
             due_date = self.due_dates[job.job_id]
-            job_completion = _makespan(job.tasks)
+            job_completion = _makespan(state, job.task_ids)
 
             job_earliness = float(due_date - job_completion) if job_completion < due_date else 0
 
@@ -489,8 +575,10 @@ class TotalTardyJobs(Objective):
     A job is considered tardy if its completion time is greater than its due date.
     """
 
+    _regular = True
+
     due_tag: str
-    due_dates: list[TIME]
+    due_dates: list[float]
 
     def __init__(
         self,
@@ -508,13 +596,13 @@ class TotalTardyJobs(Objective):
         (self.due_dates,) = state
 
     def initialize(self, state: ScheduleState) -> None:
-        self.due_dates = convert_to_list(state.instance[self.due_tag], TIME)
+        self.due_dates = convert_to_list(state.instance[self.due_tag], float)
 
-    def get_current(self, time: TIME, state: ScheduleState) -> int:
+    def get_current(self, state: ScheduleState) -> float:
         tardy_jobs = 0
         for job in state.jobs:
             due_date = self.due_dates[job.job_id]
-            job_completion = _makespan(job.tasks)
+            job_completion = _makespan(state, job.task_ids)
 
             tardy = 1 if job_completion > due_date else 0
             tardy_jobs += tardy
@@ -531,9 +619,11 @@ class WeightedTardyJobs(Objective):
     jobs. A job is considered tardy if its completion time is greater than its due date.
     """
 
+    _regular = True
+
     due_tag: str
     weight_tag: str
-    due_dates: list[TIME]
+    due_dates: list[float]
     job_weights: list[float]
 
     def __init__(
@@ -560,15 +650,15 @@ class WeightedTardyJobs(Objective):
         self.due_dates, self.job_weights = state
 
     def initialize(self, state: ScheduleState) -> None:
-        self.due_dates = convert_to_list(state.instance[self.due_tag], TIME)
+        self.due_dates = convert_to_list(state.instance[self.due_tag], float)
         self.job_weights = convert_to_list(state.instance[self.weight_tag], float)
 
-    def get_current(self, time: TIME, state: ScheduleState) -> float:
+    def get_current(self, state: ScheduleState) -> float:
         weighted_tardy_jobs = 0.0
         for job in state.jobs:
             weight = self.job_weights[job.job_id]
             due_date = self.due_dates[job.job_id]
-            job_completion = _makespan(job.tasks)
+            job_completion = _makespan(state, job.task_ids)
 
             tardy = weight if job_completion > due_date else 0.0
             weighted_tardy_jobs += tardy
@@ -585,8 +675,10 @@ class TotalFlowTime(Objective):
     tasks. Flow time is defined as the difference between the completion time and the release time.
     """
 
+    _regular = True
+
     release_tag: str
-    release_times: list[TIME]
+    release_times: list[float]
 
     def __init__(
         self,
@@ -608,15 +700,15 @@ class TotalFlowTime(Objective):
         (self.release_times,) = state
 
     def initialize(self, state: ScheduleState) -> None:
-        self.release_times = convert_to_list(state.instance[self.release_tag], TIME)
+        self.release_times = convert_to_list(state.instance[self.release_tag], float)
 
-    def get_current(self, time: TIME, state: ScheduleState) -> int:
-        total_flowtime = 0
+    def get_current(self, state: ScheduleState) -> float:
+        total_flowtime = 0.0
         for job in state.jobs:
             release_time = self.release_times[job.job_id]
-            job_completion = _makespan(job.tasks)
+            job_completion = _makespan(state, job.task_ids)
 
-            job_flowtime = job_completion - release_time if job_completion > release_time else 0
+            job_flowtime = job_completion - release_time if job_completion > release_time else 0.0
 
             total_flowtime += job_flowtime
 

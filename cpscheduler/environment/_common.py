@@ -3,6 +3,7 @@
 from typing import (
     Any,
     Final,
+    Literal,
     SupportsInt,
     SupportsFloat,
     Protocol,
@@ -63,22 +64,22 @@ class StatusEnum:
     "Possible statuses of a task at a given time."
 
     # awaiting:  time < start_lb[0] or waiting for a machine
-    AWAITING: Final[u8] = 0
+    AWAITING: Literal[0] = 0
 
     # paused:    start_lb[i] + duration[i] < = time < start_lb[i+1] for some i
-    PAUSED: Final[u8] = 1
+    PAUSED: Literal[1] = 1
 
     # executing: start_lb[i] <= time < start_lb[i] + duration[i] for some i
-    EXECUTING: Final[u8] = 2
+    EXECUTING: Literal[2] = 2
 
     # completed: time >= start_lb[-1] + duration[-1]
-    COMPLETED: Final[u8] = 3
+    COMPLETED: Literal[3] = 3
 
     # unfeasible: task cannot be completed given the current state
-    UNFEASIBLE: Final[u8] = 255
+    INFEASIBLE: Literal[255] = 255
 
 
-STATUS: TypeAlias = u8
+STATUS: TypeAlias = int
 
 
 def ceil_div(a: TIME, b: TIME) -> TIME:

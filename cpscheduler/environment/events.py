@@ -1,8 +1,7 @@
 from enum import Enum, auto
 from dataclasses import dataclass
 
-from cpscheduler.environment._common import MACHINE_ID, GLOBAL_MACHINE_ID
-from cpscheduler.environment.tasks import Task
+from cpscheduler.environment._common import TASK_ID, MACHINE_ID, GLOBAL_MACHINE_ID
 
 
 class VarField(Enum):
@@ -10,6 +9,7 @@ class VarField(Enum):
     START_UB = auto()
     END_LB = auto()
     END_UB = auto()
+    PRESENCE = auto()
 
     def is_start_field(self) -> bool:
         return self == VarField.START_LB or self == VarField.START_UB
@@ -30,6 +30,6 @@ class Event:
     Base class for events in the scheduling environment.
     """
 
-    task: Task
+    task_id: TASK_ID
     field: VarField
     machine_id: MACHINE_ID = GLOBAL_MACHINE_ID

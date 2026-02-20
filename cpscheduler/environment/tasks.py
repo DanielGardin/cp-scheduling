@@ -1,94 +1,75 @@
 from typing import Any
 from collections.abc import KeysView, Iterator
 
-from dataclasses import dataclass
-
 from cpscheduler.environment._common import (
-    MIN_TIME,
     MAX_TIME,
+    MIN_TIME,
     MACHINE_ID,
     TASK_ID,
     TIME,
     GLOBAL_MACHINE_ID,
 )
 
+from cpscheduler.environment.events import VarField
 
-@dataclass(frozen=True)
 class TaskHistory:
     assignment: MACHINE_ID
     start_time: TIME
     duration: TIME
     end_time: TIME
 
+    def __init__(self, assignment: MACHINE_ID, start_time: TIME, duration: TIME) -> None:
+        self.assignment = assignment
+        self.start_time = start_time
+        self.duration = duration
+        self.end_time = start_time + duration
+
+    def __repr__(self) -> str:
+        return f"TaskHistory(assignment={self.assignment}, start_time={self.start_time}, duration={self.duration}, end_time={self.end_time})"
+    
+    def __reduce__(self) -> tuple[Any, ...]:
+        return (
+            self.__class__,
+            (self.assignment, self.start_time, self.duration),
+            ()
+        )
 
 class Task:
     task_id: TASK_ID
     job_id: TASK_ID
 
-    history: list[TaskHistory]
-
-    # Static attributes
-    # These attributes should only be modified during problem initialization.
     preemptive: bool
     optional: bool
     processing_times: dict[MACHINE_ID, TIME]
     data: dict[str, Any]
 
-    # Constraint Programming variables
-    # Do not use these attributes directly anywhere, use the ScheduleState API instead.
-    remaining_times_: dict[MACHINE_ID, TIME]
-    start_lbs_: dict[MACHINE_ID, TIME]
-    start_ubs_: dict[MACHINE_ID, TIME]
-    assignment_: MACHINE_ID
-    fixed_: bool
-
     def __init__(self, task_id: TASK_ID, job_id: TASK_ID) -> None:
         self.task_id = task_id
         self.job_id = job_id
-
-        self.history = []
 
         self.preemptive = False
         self.optional = False
         self.processing_times = {}
         self.data = {}
 
-        self.remaining_times_ = {}
-        self.start_lbs_ = {GLOBAL_MACHINE_ID: MAX_TIME}
-        self.start_ubs_ = {GLOBAL_MACHINE_ID: MIN_TIME}
-        self.assignment_ = GLOBAL_MACHINE_ID
-        self.fixed_ = False
-
     def __reduce__(self) -> tuple[Any, ...]:
         return (
             self.__class__,
             (self.task_id, self.job_id),
             (
-                self.history,
                 self.preemptive,
                 self.optional,
                 self.processing_times,
                 self.data,
-                self.remaining_times_,
-                self.start_lbs_,
-                self.start_ubs_,
-                self.assignment_,
-                self.fixed_,
             ),
         )
 
     def __setstate__(self, state: tuple[Any, ...]) -> None:
         (
-            self.history,
             self.preemptive,
             self.optional,
             self.processing_times,
             self.data,
-            self.remaining_times_,
-            self.start_lbs_,
-            self.start_ubs_,
-            self.assignment_,
-            self.fixed_,
         ) = state
 
     def __hash__(self) -> int:
@@ -107,30 +88,6 @@ class Task:
     def machines(self) -> KeysView[MACHINE_ID]:
         "Get the list of machines that can process this task."
         return self.processing_times.keys()
-
-    def reset(self) -> None:
-        "Resets the task to its initial state."
-        self.fixed_ = False
-
-        self.history.clear()
-
-        self.start_lbs_.clear()
-        self.start_ubs_.clear()
-        self.remaining_times_.clear()
-        if self.machines:
-            self.start_lbs_[GLOBAL_MACHINE_ID] = 0
-            self.start_ubs_[GLOBAL_MACHINE_ID] = MAX_TIME
-
-            for machine in self.machines:
-                self.start_lbs_[machine] = 0
-                self.start_ubs_[machine] = MAX_TIME
-                self.remaining_times_[machine] = self.processing_times[machine]
-
-        else:
-            self.start_lbs_[GLOBAL_MACHINE_ID] = MAX_TIME
-            self.start_ubs_[GLOBAL_MACHINE_ID] = MIN_TIME
-
-        self.assignment_ = GLOBAL_MACHINE_ID
 
     # Setter methods
     # These methods are public and only changes static attributes of the task,
@@ -154,87 +111,18 @@ class Task:
     def set_machines(self, machines: list[MACHINE_ID]) -> None:
         "Set the list of machines that can process this task."
         for machine in machines:
-            if machine not in self.processing_times:
+            if machine not in self.machines:
                 raise ValueError(
                     f"Processing time for machine {machine} not set in task {self.task_id}."
                 )
 
-        for machine in list(self.processing_times.keys()):
+        for machine in list(self.machines):
             if machine not in machines:
-                del self.processing_times[machine]
-                del self.remaining_times_[machine]
+                self.processing_times.pop(machine)
 
     def set_data(self, key: str, value: Any) -> None:
         "Set custom data for the task."
         self.data[key] = value
-
-    # Getter methods
-    def get_start_lb(self, machine: MACHINE_ID = GLOBAL_MACHINE_ID) -> TIME:
-        "Get the current lower bound for the starting time in a machine."
-        return self.start_lbs_[machine]
-
-    def get_start_ub(self, machine: MACHINE_ID = GLOBAL_MACHINE_ID) -> TIME:
-        return self.start_ubs_[machine]
-
-    def get_end_lb(self, machine: MACHINE_ID = GLOBAL_MACHINE_ID) -> TIME:
-        "Get the current lower bound for the ending time in a machine."
-        if machine != -1:
-            return self.start_lbs_[machine] + self.remaining_times_[machine]
-
-        end_lb = MAX_TIME
-        for machine in self.machines:
-            machine_end_lb = self.start_lbs_[machine] + self.remaining_times_[machine]
-            if machine_end_lb < end_lb:
-                end_lb = machine_end_lb
-
-        return end_lb
-
-    def get_end_ub(self, machine: MACHINE_ID = GLOBAL_MACHINE_ID) -> TIME:
-        "Get the current upper bound for the ending time in a machine."
-        if machine != -1:
-            return self.start_ubs_[machine] + self.remaining_times_[machine]
-
-        end_ub = MIN_TIME
-        for machine in self.machines:
-            machine_end_ub = self.start_ubs_[machine] + self.remaining_times_[machine]
-            if machine_end_ub > end_ub:
-                end_ub = machine_end_ub
-
-        return end_ub
-
-    def get_assignment(self) -> MACHINE_ID:
-        "Get the machine to which the task is assigned. Returns -1 if unassigned."
-        return self.assignment_
-
-    def is_fixed(self) -> bool:
-        "Checks if the task has its decision variables fixed_."
-        return self.fixed_
-
-    def is_awaiting(self) -> bool:
-        "Check if the task is currently awaiting execution."
-        return not self.fixed_
-
-    def is_available(self, time: TIME, machine: MACHINE_ID = GLOBAL_MACHINE_ID) -> bool:
-        "Check if the task is available for execution at a given time."
-        if self.fixed_:
-            return False
-
-        return self.start_lbs_[machine] <= time <= self.start_ubs_[machine]
-
-    def is_feasible(self, time: TIME) -> bool:
-        "Check if the task is feasible given its current bounds."
-        if self.start_lbs_[GLOBAL_MACHINE_ID] > self.start_ubs_[GLOBAL_MACHINE_ID]:
-            return False
-
-        if not self.fixed_ and self.start_ubs_[GLOBAL_MACHINE_ID] < time:
-            return False
-
-        for machine in self.machines:
-            if self.start_lbs_[machine] > self.start_ubs_[machine]:
-                return False
-
-        return True
-
 
 class Job:
     """
@@ -257,15 +145,17 @@ class Job:
         return (self.__class__, (self.job_id,), (self.tasks, self.data))
 
     def __setstate__(self, state: tuple[Any, ...]) -> None:
-        (
-            self.tasks,
-            self.data,
-        ) = state
+        self.tasks, self.data = state
 
     @property
     def n_tasks(self) -> int:
         "Get the number of tasks in the job."
         return len(self.tasks)
+
+    @property
+    def task_ids(self) -> list[TASK_ID]:
+        "Get the list of task IDs in the job."
+        return [task.task_id for task in self.tasks]
 
     def __repr__(self) -> str:
         return f"Job(job_id={self.job_id}, n_tasks={self.n_tasks})"
@@ -287,10 +177,132 @@ class Job:
         "Set custom data for the job."
         self.data[key] = value
 
-    def is_available(self, time: TIME) -> bool:
-        "Check if any task in the job is available for execution at a given time."
-        for task in self.tasks:
-            if task.is_available(time):
-                return True
 
-        return False
+def initialize_matrix(n_rows: int, n_cols: int, value: TIME) -> list[list[TIME]]:
+    return [[value for _ in range(n_cols)] for _ in range(n_rows)]
+
+class Bounds:
+    lbs: list[list[TIME]]
+    ubs: list[list[TIME]]
+    global_lbs: list[TIME]
+    global_ubs: list[TIME]
+
+    min_lb: TIME
+    max_ub: TIME
+
+    def __init__(self, tasks: list[Task], n_machines: int) -> None:
+        self.lbs = initialize_matrix(len(tasks), n_machines, MAX_TIME)
+        self.ubs = initialize_matrix(len(tasks), n_machines, MIN_TIME)
+
+        for task_id, task in enumerate(tasks):
+            for machine in task.machines:
+                self.lbs[task_id][machine] = MIN_TIME
+                self.ubs[task_id][machine] = MAX_TIME
+
+        self.global_lbs = [min(task_lbs) for task_lbs in self.lbs]
+        self.global_ubs = [max(task_ubs) for task_ubs in self.ubs]
+
+    def recompute_global_bounds(self, task_id: TASK_ID) -> None:
+        self.global_lbs[task_id] = min(self.lbs[task_id])
+        self.global_ubs[task_id] = max(self.ubs[task_id])
+
+    def recompute_all_global_bounds(self) -> None:
+        for task_id in range(len(self.lbs)):
+            self.global_lbs[task_id] = min(self.lbs[task_id])
+            self.global_ubs[task_id] = max(self.ubs[task_id])
+
+    def __repr__(self) -> str:
+        return f"Bounds(lbs={self.lbs}, ubs={self.ubs}, global_lbs={self.global_lbs}, global_ubs={self.global_ubs})"
+    
+    def __reduce__(self) -> tuple[Any, ...]:
+        return (
+            self.__class__,
+            ([], 0),  # Dummy arguments for __init__
+            (self.lbs, self.ubs, self.global_lbs, self.global_ubs),
+        )
+    
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        self.lbs, self.ubs, self.global_lbs, self.global_ubs = state
+
+class ScheduleVariables:
+    remaining_times: list[list[TIME]]
+    assignment: list[MACHINE_ID]
+
+    fixed: list[bool]
+    locked: list[bool]
+    present: list[bool]
+
+    start: Bounds
+    end: Bounds
+
+    def __init__(self, tasks: list[Task]) -> None:
+        n_machines = max(
+            max(task.machines) if task.machines else -1
+            for task in tasks
+        ) + 1
+
+        self.remaining_times = initialize_matrix(len(tasks), n_machines, MAX_TIME)
+        self.assignment = [GLOBAL_MACHINE_ID for _ in tasks]
+
+        self.fixed = [False for _ in tasks]
+        self.locked = [False for _ in tasks]
+        self.present = [not task.optional for task in tasks]
+
+        self.start = Bounds(tasks, n_machines)
+        self.end = Bounds(tasks, n_machines)
+
+        for task_id, task in enumerate(tasks):
+            for machine, processing_time in task.processing_times.items():
+                self.remaining_times[task_id][machine] = processing_time
+                self.start.ubs[task_id][machine] = self.end.ubs[task_id][machine] - processing_time
+                self.end.lbs[task_id][machine] = self.start.lbs[task_id][machine] + processing_time
+
+            self.start.recompute_global_bounds(task_id)
+            self.end.recompute_global_bounds(task_id)
+  
+
+    def select_bound(self, task_id: TASK_ID, machine_id: MACHINE_ID, field: VarField) -> TIME:
+        if machine_id == GLOBAL_MACHINE_ID:
+            if field == VarField.START_LB:
+                return self.start.global_lbs[task_id]
+            
+            elif field == VarField.START_UB:
+                return self.start.global_ubs[task_id]
+            
+            elif field == VarField.END_LB:
+                return self.end.global_lbs[task_id]
+            
+            elif field == VarField.END_UB:
+                return self.end.global_ubs[task_id]
+        else:
+            if field == VarField.START_LB:
+                return self.start.lbs[task_id][machine_id]
+
+            elif field == VarField.START_UB:
+                return self.start.ubs[task_id][machine_id]
+            
+            elif field == VarField.END_LB:
+                return self.end.lbs[task_id][machine_id]
+            
+            elif field == VarField.END_UB:
+                return self.end.ubs[task_id][machine_id]
+
+        raise ValueError(f"Invalid field: {field}")
+
+    def __repr__(self) -> str:
+        return f"ScheduleVariables(remaining_times={self.remaining_times}, assignment={self.assignment}, fixed={self.fixed}, locked={self.locked}, present={self.present}, start={self.start}, end={self.end})"
+    
+    def __reduce__(self) -> tuple[Any, ...]:
+        return (
+            self.__class__,
+            ([],),  # Dummy argument for __init__
+            (
+                self.remaining_times,
+                self.assignment,
+                self.fixed,
+                self.locked,
+                self.present,
+                self.start,
+                self.end,
+            ),
+        )

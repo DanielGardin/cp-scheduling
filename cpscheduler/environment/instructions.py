@@ -6,16 +6,25 @@ Instructions are used to control the execution of tasks, manage their states, an
 with the scheduler.
 """
 
-from typing import Final, TypeAlias
-from collections.abc import Iterable
+from typing import TypeAlias, Final
+from typing_extensions import Self
+from collections.abc import Iterable, Iterator
 from typing_extensions import Unpack, TypeIs
 
-from dataclasses import dataclass
+from enum import Enum
 
-from mypy_extensions import mypyc_attr, u8
+from mypy_extensions import mypyc_attr
 
-from cpscheduler.environment._common import TASK_ID, TIME, MACHINE_ID, Int
+from cpscheduler.environment._common import (
+    TASK_ID,
+    TIME,
+    MACHINE_ID,
+    Int,
+    GLOBAL_MACHINE_ID,
+    MAX_TIME,
+)
 from cpscheduler.environment.state import ScheduleState
+from cpscheduler.utils.list_utils import convert_to_list
 
 SingleAction: TypeAlias = tuple["str | Instruction", Unpack[tuple[Int, ...]]]
 ActionType: TypeAlias = SingleAction | Iterable[SingleAction] | None
@@ -31,44 +40,240 @@ def is_single_action(
     return isinstance(action[0], str) and all(isinstance(arg, Int) for arg in action[1:])
 
 
-# Flags are not supported by mypyc yet
-class Action:
-    "Flags for possible actions made by the scheduler in response to an instruction."
+import logging
 
-    # Tell the scheduler the instruction was skiped, the default behavior is to remove
-    # the instruction after processing it, but this flag disables that
-    SKIPPED: Final[u8] = 1
+logger = logging.getLogger(__name__)
 
-    # The scheduler should reevaluate the current bounds (used when preempting tasks)
-    REEVALUATE: Final[u8] = 2
+class LogLevel:
+    "LogLevel represents the severity of a log message, guiding how it should be handled by the environment."
 
-    # The scheduler should propagate the constraints further
-    PROPAGATE: Final[u8] = 4
-
-    # The scheduler should advance the time
-    ADVANCE_TO: Final[u8] = 8
-
-    # The scheduler should advance to the next decision point
-    ADVANCE_NEXT: Final[u8] = 16
-
-    # The scheduler should raise an exception
-    RAISE: Final[u8] = 32
-
-    # The scheduler should stop processing instructions
-    HALT: Final[u8] = 64
-
-    DONE: Final[u8] = PROPAGATE
-    ERROR: Final[u8] = RAISE | HALT
-    WAIT: Final[u8] = SKIPPED | ADVANCE_NEXT
+    CRITICAL: Final[int] = 50
+    FATAL: Final[int] = CRITICAL
+    ERROR: Final[int] = 40
+    WARNING: Final[int] = 30
+    WARN: Final[int] = WARNING
+    INFO: Final[int] = 20
+    DEBUG: Final[int] = 10
+    NOTSET: Final[int] = 0
 
 
-@dataclass
-class Signal:
-    "Action signal with additional parameters."
+class QueueControl(Enum):
+    CONTINUE = 1
+    "Continue processing the next instruction in the queue after this one is processed."
 
-    action: u8
-    time: TIME = 0
-    info: str = ""
+    RESTART = 2
+    "Restart the queue from the beginning after this instruction is processed."
+
+    BLOCK = 3
+    "Block the processing of subsequent instructions in the same time step until this instruction is resolved."
+
+    INTERRUPT = 4
+    "Interrupt the processing of subsequent instructions in the same time step and halt."
+
+class InstructionResult:
+
+    done: bool
+    "Whether the instruction was successfully processed and should be removed from the schedule."
+
+    queue_control: QueueControl
+
+    log_message: str
+    "Optional message to be logged when the instruction is processed."
+
+    level: int
+    "The severity level of the log message."
+
+    def __init__(
+        self,
+        done: bool = False,
+        queue_control: QueueControl = QueueControl.CONTINUE,
+        log_message: str = "",
+        level: int = LogLevel.DEBUG
+    ) -> None:
+        self.done = done
+        self.queue_control = queue_control
+        self.log_message = log_message
+        self.level = level
+
+    @classmethod
+    def success(cls, message: str = "", level: int = LogLevel.DEBUG) -> Self:
+        return cls(
+            done=True,
+            queue_control=QueueControl.CONTINUE,
+            log_message=message,
+            level=level,
+        )
+
+    @classmethod
+    def deferred(cls, message: str = "", level: int = LogLevel.DEBUG) -> Self:
+        return cls(
+            done=False,
+            queue_control=QueueControl.CONTINUE,
+            log_message=message,
+            level=level,
+        )
+
+    @classmethod
+    def restart(cls, message: str = "", level: int = LogLevel.DEBUG) -> Self:
+        return cls(
+            done=True,
+            queue_control=QueueControl.RESTART,
+            log_message=message,
+            level=level,
+        )
+
+    @classmethod
+    def blocked(cls, message: str = "", level: int = LogLevel.DEBUG) -> Self:
+        return cls(
+            done=False,
+            queue_control=QueueControl.BLOCK,
+            log_message=message,
+            level=level,
+        )
+
+    @classmethod
+    def halt(cls, message: str = "", level: int = LogLevel.DEBUG) -> Self:
+        return cls(
+            done=True,
+            queue_control=QueueControl.INTERRUPT,
+            log_message=message,
+            level=level,
+        )
+
+    @classmethod
+    def invalid(cls, message: str = "", level: int = LogLevel.DEBUG) -> Self:
+        return cls(
+            done=False,
+            queue_control=QueueControl.INTERRUPT,
+            log_message=message,
+            level=level,
+        )
+    
+SUCCESS = InstructionResult.success()
+DEFERRED = InstructionResult.deferred()
+RESTART = InstructionResult.restart()
+BLOCKED = InstructionResult.blocked()
+HALT = InstructionResult.halt()
+INVALID = InstructionResult.invalid()
+
+DEFAULT_QUEUE_TIME: Final[TIME] = -1
+
+class Schedule:
+
+    def __init__(self) -> None:
+        self.schedule: dict[TIME, list["Instruction"]] = {}
+        self.default_queue: list["Instruction"] = list()
+
+    def reset(self) -> None:
+        self.schedule.clear()
+        self.default_queue.clear()
+
+    def clear_schedule(self) -> None:
+        self.schedule.clear()
+        self.default_queue.clear()
+
+    def add_instruction(self, instruction: "Instruction", time: TIME = DEFAULT_QUEUE_TIME) -> None:
+        if time == DEFAULT_QUEUE_TIME:
+            self.default_queue.append(instruction)
+
+        else:
+            self.schedule.setdefault(time, []).append(instruction)
+
+    def is_empty(self) -> bool:
+        return not (self.schedule or self.default_queue)
+
+    def get_next_instruction_time(self) -> TIME:
+        return min(self.schedule) if self.schedule else MAX_TIME
+
+    def instruction_queue(self, state: ScheduleState) -> Iterator[InstructionResult]:
+        time = state.time
+
+        if time in self.schedule:
+            instructions = self.schedule[time]
+
+            idx =  0
+            while idx < len(instructions):
+                instruction = instructions[idx]
+
+                result = instruction.apply(state, self)
+
+                if result.log_message:
+                    logger.log(result.level, result.log_message)
+
+                if result.done:
+                    instructions.pop(idx)
+
+                elif result.queue_control != QueueControl.RESTART:
+                    idx += 1
+
+                yield result
+
+                match result.queue_control:
+                    case QueueControl.CONTINUE:
+                        continue
+
+                    case QueueControl.RESTART:
+                        idx = 0
+
+                    case QueueControl.BLOCK:
+                        break
+
+                    case QueueControl.INTERRUPT:
+                        return
+
+            if instructions:
+                # This only means that the queue was blocked and the remaining instructions cannot
+                # be processed at the moment, invalidating the schedule for the current time step.
+                error_message = (
+                    f"Schedule for time {time} is blocked due to instruction {instructions[0]}"
+                    f" and cannot process the remaining instructions: {list(instructions)[1:]}"
+                )
+
+                logger.error(error_message)
+
+                yield InstructionResult.blocked(error_message, level=LogLevel.ERROR)
+                return
+            
+            self.schedule.pop(time)
+
+        idx = 0
+        while idx < len(self.default_queue):
+            instruction = self.default_queue[idx]
+
+            result = instruction.apply(state, self)
+
+            if result.log_message:
+                logger.log(result.level, result.log_message)
+
+            if result.done:
+                self.default_queue.pop(idx)
+
+            elif result.queue_control != QueueControl.RESTART:
+                idx += 1
+
+            yield result
+
+            match result.queue_control:
+                case QueueControl.CONTINUE:
+                    continue
+
+                case QueueControl.RESTART:
+                    idx = 0
+
+                case QueueControl.BLOCK:
+                    break
+
+                case QueueControl.INTERRUPT:
+                    return
+
+
+def select_machine(task_id: TASK_ID, state: ScheduleState) -> MACHINE_ID:
+    "Select a machine for the given task when machine is not specified."
+    for machine in state.tasks[task_id].machines:
+        if state.is_available(task_id, machine):
+            return machine
+
+    return GLOBAL_MACHINE_ID
 
 
 @mypyc_attr(allow_interpreted_subclasses=True)
@@ -85,200 +290,251 @@ class Instruction:
     new ones should be implemented carefully.
     """
 
-    def process(
-        self,
-        current_time: TIME,
-        state: ScheduleState,
-        scheduled_instructions: dict[TIME, list["Instruction"]],
-    ) -> Signal:
+    def is_ready(self, state: ScheduleState) -> bool:
+        "Check if the instruction is ready to be processed based on the current state."
+        return True
+
+    def apply(self, state: ScheduleState, schedule: Schedule) -> InstructionResult:
         "Process the instruction at the given current time."
         raise NotImplementedError
+
+    def lower_bound_time(self, state: ScheduleState) -> TIME:
+        "Calculate the lower bound time for the instruction to be ready based on the current state."
+        return state.time
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}()"
 
 
+class Noop(Instruction):
+    "Noop is a no-op instruction that does nothing when applied."
+
+    def apply(self, state: ScheduleState, schedule: Schedule) -> InstructionResult:
+        return InstructionResult.success()
+
+
 class Execute(Instruction):
     "Executes a task on a specific machine. If the task cannot be executed, it is waited for."
 
-    def __init__(
-        self,
-        id: TASK_ID,
-        machine: MACHINE_ID = -1,
-        job_oriented: bool = False,
-        wait: bool = False,
-    ):
-        self.id = id
-        self.machine = machine
-        self.job_oriented = job_oriented
-        self.wait = wait
+    def __init__(self, task_id: TASK_ID, machine_id: MACHINE_ID = GLOBAL_MACHINE_ID):
+        self.task_id = task_id
+        self.machine_id = machine_id
 
     def __repr__(self) -> str:
-        instruction_name = "Submit" if self.wait else "Execute"
-        orientation = "job" if self.job_oriented else "task"
+        if self.machine_id != GLOBAL_MACHINE_ID:
+            return f"Execute(task={self.task_id}, machine={self.machine_id})"
 
-        if self.machine != -1:
-            return f"{instruction_name}({orientation}={self.id}, machine={self.machine})"
+        return f"Execute(task={self.task_id})"
 
-        return f"{instruction_name}({orientation}={self.id})"
+    def apply(self, state: ScheduleState, schedule: Schedule) -> InstructionResult:
+        if state.is_available(self.task_id, self.machine_id):
+            if self.machine_id == GLOBAL_MACHINE_ID:
+                self.machine_id = select_machine(self.task_id, state)
 
-    def process(
-        self,
-        current_time: TIME,
-        state: ScheduleState,
-        scheduled_instructions: dict[TIME, list[Instruction]],
-    ) -> Signal:
-        if self.job_oriented:
-            executed_task = state.execute_job(self.id, current_time, self.machine)
+            state.execute_task(self.task_id, self.machine_id)
 
-            if executed_task >= 0:
-                return Signal(Action.DONE)
+            return SUCCESS
 
-            if all(task.is_fixed() for task in state.jobs[self.id]):
-                return Signal(
-                    Action.RAISE,
-                    info=f"Every task in Job {self.id} has been executed.",
+        if state.is_fixed(self.task_id):
+            return InstructionResult.invalid(
+                f"Task {self.task_id} is already fixed.",
+                LogLevel.ERROR,
+            )
+
+        if self.machine_id not in state.tasks[self.task_id].machines:
+            return InstructionResult.invalid(
+                f"Machine {self.machine_id} is not eligible for task {self.task_id}.",
+                LogLevel.ERROR,
+            )
+
+        return BLOCKED
+
+# @profile
+class Submit(Instruction):
+    "Submits a task to a specific machine. If the task cannot be executed, it is waited for."
+
+    def __init__(self, id: TASK_ID, machine: MACHINE_ID = GLOBAL_MACHINE_ID):
+        self.task_id = id
+        self.machine_id = machine
+
+    def __repr__(self) -> str:
+        if self.machine_id != GLOBAL_MACHINE_ID:
+            return f"Submit(task={self.task_id}, machine={self.machine_id})"
+
+        return f"Submit(task={self.task_id})"
+
+    def apply(self, state: ScheduleState, schedule: Schedule) -> InstructionResult:
+        if state.is_available(self.task_id, self.machine_id):
+            if self.machine_id == GLOBAL_MACHINE_ID:
+                self.machine_id = select_machine(self.task_id, state)
+
+            state.execute_task(self.task_id, self.machine_id)
+
+            return SUCCESS
+
+        if self.machine_id not in state.tasks[self.task_id].machines:
+            return InstructionResult.invalid(
+                f"Machine {self.machine_id} is not eligible for task {self.task_id}.",
+                LogLevel.ERROR,
+            )
+
+        if state.is_fixed(self.task_id):
+            return InstructionResult.invalid(
+                f"Task {self.task_id} is already fixed and cannot be submitted.",
+                LogLevel.ERROR,
+            )
+
+        return DEFERRED
+
+
+class ExecuteJob(Instruction):
+    "Executes all tasks in a job. Can only be used in job-oriented scheduling."
+
+    def __init__(self, job_id: TASK_ID, machine: MACHINE_ID = GLOBAL_MACHINE_ID):
+        self.job_id = job_id
+        self.machine_id = machine
+
+    def __repr__(self) -> str:
+        if self.machine_id != GLOBAL_MACHINE_ID:
+            return f"Execute(job={self.job_id}, machine={self.machine_id})"
+
+        return f"Execute(job={self.job_id})"
+
+    def apply(self, state: ScheduleState, schedule: Schedule) -> InstructionResult:
+        job_tasks = state.jobs[self.job_id]
+
+        for task in job_tasks:
+            if state.is_available(task.task_id, self.machine_id):
+                machine_id = self.machine_id
+
+                if machine_id == GLOBAL_MACHINE_ID:
+                    machine_id = select_machine(task.task_id, state)
+
+                state.execute_task(task.task_id, machine_id)
+
+                return InstructionResult.success(
+                    f"Task {task.task_id} in job {self.job_id} executed on machine {machine_id}"
+                    f" at {state.time}."
                 )
 
-        else:
-            execute = state.execute_task(self.id, current_time, self.machine)
+        if all(state.is_fixed(task.task_id) for task in job_tasks):
+            return InstructionResult.success(
+                f"All tasks in job {self.job_id} are already fixed and cannot be executed."
+            )
 
-            if execute:
-                return Signal(Action.DONE)
-
-            task = state.tasks[self.id]
-
-            if task.is_fixed():
-                return Signal(
-                    Action.RAISE,
-                    info=f"Task {self.id} was/is already executed.",
-                )
-
-            if self.machine >= 0 and not self.machine in task.machines:
-                return Signal(
-                    Action.RAISE,
-                    info=f"Task {self.id} cannot be executed on machine {self.machine}.",
-                )
-
-        return Signal(
-            Action.WAIT if self.wait else Action.SKIPPED,
+        return InstructionResult.blocked(
+            f"No tasks in job {self.job_id} can be executed on machine {self.machine_id} "
+            f"at time {state.time}. Waiting for any of them to become available."
         )
 
 
-class Submit(Execute):
-    "Submits a task to a specific machine. If the task cannot be executed, it is waited for."
+class SubmitJob(Instruction):
+    "Submits all tasks in a job. Can only be used in job-oriented scheduling."
 
-    def __init__(
-        self,
-        id: TASK_ID,
-        machine: MACHINE_ID = -1,
-        job_oriented: bool = False,
-    ):
-        super().__init__(id, machine, job_oriented, wait=True)
+    def __init__(self, job_id: TASK_ID, machine: MACHINE_ID = GLOBAL_MACHINE_ID):
+        self.job_id = job_id
+        self.machine_id = machine
+
+    def __repr__(self) -> str:
+        if self.machine_id != GLOBAL_MACHINE_ID:
+            return f"Submit(job={self.job_id}, machine={self.machine_id})"
+
+        return f"Submit(job={self.job_id})"
+
+    def apply(self, state: ScheduleState, schedule: Schedule) -> InstructionResult:
+        job_tasks = state.jobs[self.job_id]
+
+        for task in job_tasks:
+            if state.is_available(task.task_id, self.machine_id):
+                machine_id = self.machine_id
+
+                if machine_id == GLOBAL_MACHINE_ID:
+                    machine_id = select_machine(task.task_id, state)
+
+                state.execute_task(task.task_id, machine_id)
+
+                return InstructionResult.success(
+                    f"Task {task.task_id} in job {self.job_id} submitted to machine {machine_id}"
+                )
+
+        if all(state.is_fixed(task.task_id) for task in job_tasks):
+            return InstructionResult.success(
+                f"All tasks in job {self.job_id} are already fixed and cannot be submitted."
+            )
+
+        return InstructionResult.deferred(
+            f"No tasks in job {self.job_id} can be submitted to machine {self.machine_id} "
+            f"at time {state.time}. Skipping them for now until any of them become available."
+        )
 
 
 class Pause(Instruction):
     "Pauses a task if it is currently executing. Can only be used in preemptive scheduling."
 
-    def __init__(
-        self,
-        id: TASK_ID,
-        job_oriented: bool = False,
-    ):
-        self.id = id
-        self.job_oriented = job_oriented
+    def __init__(self, task_id: TASK_ID):
+        self.task_id = task_id
 
     def __repr__(self) -> str:
-        unit = "job" if self.job_oriented else "task"
+        return f"Pause(task={self.task_id})"
 
-        return f"Pause({unit}={self.id})"
+    def apply(self, state: ScheduleState, schedule: Schedule) -> InstructionResult:
+        task = state.tasks[self.task_id]
 
-    def process(
-        self,
-        current_time: TIME,
-        state: ScheduleState,
-        scheduled_instructions: dict[TIME, list[Instruction]],
-    ) -> Signal:
-        if self.job_oriented:
-            paused_job = state.pause_job(self.id, current_time)
+        if state.is_executing(self.task_id):
+            state.pause_task(self.task_id)
 
-            if paused_job >= 0:
-                return Signal(Action.DONE | Action.REEVALUATE)
+            return InstructionResult.success(f"Task {self.task_id} paused at time {state.time}.")
 
-        else:
-            can_pause = state.pause_task(self.id, current_time)
+        if not task.preemptive:
+            return InstructionResult.success(
+                f"Task {self.task_id} is not preemptive and cannot be paused.",
+            )
 
-            if can_pause:
-                return Signal(Action.DONE | Action.REEVALUATE)
-
-            task = state.tasks[self.id]
-
-            if not task.preemptive:
-                return Signal(
-                    Action.RAISE,
-                    info=f"Task {self.id} cannot be paused. Preemption is not allowed.",
-                )
-
-        return Signal(Action.WAIT)
+        return InstructionResult.blocked(
+            f"Task {self.task_id} cannot be paused at time {state.time}."
+        )
 
 
 class Resume(Instruction):
     "Resumes a paused task in the same machine it was executing before being paused."
 
-    def __init__(self, id: TASK_ID, job_oriented: bool = False):
-        self.id = id
-        self.job_oriented = job_oriented
+    def __init__(self, task_id: TASK_ID):
+        self.task_id = task_id
 
     def __repr__(self) -> str:
-        orientation = "job" if self.job_oriented else "task"
+        return f"Resume(task={self.task_id})"
 
-        return f"Resume({orientation}={self.id})"
+    def apply(self, state: ScheduleState, schedule: Schedule) -> InstructionResult:
+        task = state.tasks[self.task_id]
 
-    def process(
-        self,
-        current_time: TIME,
-        state: ScheduleState,
-        scheduled_instructions: dict[TIME, list[Instruction]],
-    ) -> Signal:
-        # if self.job_oriented:
-        #     job_tasks = state.jobs[self.id]
+        if state.is_paused(self.task_id):
+            last_machine = state.get_assignment(self.task_id)
+            state.execute_task(self.task_id, last_machine)
 
-        #     for task in job_tasks:
-        #         if task.is_paused(current_time):
-        #             last_machine = task.get_assignment()
-        #             execute = state.execute_task(task.task_id, current_time, last_machine)
+            return InstructionResult.success(
+                f"Task {self.task_id} resumed on machine {last_machine} at time {state.time}."
+            )
 
-        #             if execute:
-        #                 return Signal(Action.DONE)
+        if not task.preemptive:
+            return InstructionResult.success(
+                f"Task {self.task_id} is not preemptive and cannot be resumed."
+            )
 
-        #     if all(task.fixed for task in job_tasks):
-        #         return Signal(
-        #             Action.RAISE,
-        #             info=f"Every task in Job {self.id} has been executed.",
-        #         )
+        if state.is_completed(self.task_id):
+            return InstructionResult.success(
+                f"Task {self.task_id} is already completed and cannot be resumed."
+            )
 
-        # else:
-        #     task = state.tasks[self.id]
+        return InstructionResult.blocked(
+            f"Task {self.task_id} cannot be resumed at time {state.time}.",
+        )
 
-        #     if not task.is_paused(current_time):
-        #         return Signal(
-        #             Action.RAISE,
-        #             info=f"Task {self.id} is not paused and cannot be resumed.",
-        #         )
 
-        #     last_machine = task.get_assignment()
-        #     execute = state.execute_task(self.id, current_time, last_machine)
+class Checkpoint(Instruction):
+    "Checkpoint is an no-op instruction used to yield control the default queue, allowing timing instructions."
 
-        #     if execute:
-        #         return Signal(Action.DONE)
-
-        #     if state.tasks[self.id].fixed:
-        #         return Signal(
-        #             Action.RAISE,
-        #             info=f"Task {self.id} was/is already executed.",
-        #         )
-
-        return Signal(Action.WAIT)
+    def apply(self, state: ScheduleState, schedule: Schedule) -> InstructionResult:
+        return InstructionResult.success(f"Checkpoint at time {state.time} reached.")
 
 
 class Complete(Instruction):
@@ -290,151 +546,169 @@ class Complete(Instruction):
     def __repr__(self) -> str:
         return f"Complete(task={self.task_id})"
 
-    def process(
-        self,
-        current_time: TIME,
-        state: ScheduleState,
-        scheduled_instructions: dict[TIME, list[Instruction]],
-    ) -> Signal:
-        # task = state.tasks[self.task_id]
-        # if task.is_executing(current_time):
-        #     return Signal(Action.ADVANCE_TO, task.get_end())
+    def apply(self, state: ScheduleState, schedule: Schedule) -> InstructionResult:
+        if state.is_executing(self.task_id):
+            end_time = state.get_end_lb(self.task_id)
 
-        # if task.is_completed(current_time):
-        #     return Signal(Action.ERROR, info=f"Task {self.task_id} already terminated")
+            schedule.add_instruction(Checkpoint(), end_time)
 
-        return Signal(Action.WAIT)
+            return InstructionResult.success(f"Task {self.task_id} completed.")
+
+        if state.is_completed(self.task_id):
+            return InstructionResult.success(f"Task {self.task_id} is already completed.")
+
+        return InstructionResult.blocked(
+            f"Task {self.task_id} is not executing and cannot be completed at the moment."
+        )
 
 
 class Advance(Instruction):
     "Advances the current time by a specified amount or to the next decision point if not specified."
 
-    def __init__(self, dt: TIME = -1) -> None:
+    def __init__(self, dt: TIME) -> None:
         self.dt = dt
 
-    def __repr__(self) -> str:
-        if self.dt < 0:
-            return "Advance()"
+        if self.dt <= 0:
+            raise ValueError(f"Advance instruction requires a positive time delta, got {self.dt}.")
 
+    def __repr__(self) -> str:
         return f"Advance(dt={self.dt})"
 
-    def process(
-        self,
-        current_time: TIME,
-        state: ScheduleState,
-        scheduled_instructions: dict[TIME, list[Instruction]],
-    ) -> Signal:
-        if self.dt < 0:
-            return Signal(Action.ADVANCE_NEXT)
+    def apply(self, state: ScheduleState, schedule: Schedule) -> InstructionResult:
+        next_time = state.time + self.dt
 
-        return Signal(Action.ADVANCE_TO, current_time + self.dt)
+        schedule.add_instruction(Checkpoint(), next_time)
 
+        return InstructionResult.success(f"Advancing time by {self.dt} to {next_time}.")
 
 class Query(Instruction):
     "When processed, halts the environment and returns its current state."
 
-    def process(
-        self,
-        current_time: TIME,
-        state: ScheduleState,
-        scheduled_instructions: dict[TIME, list[Instruction]],
-    ) -> Signal:
-        return Signal(Action.HALT)
+    def apply(self, state: ScheduleState, schedule: Schedule) -> InstructionResult:
+        return InstructionResult.halt(f"Querying state at time {state.time}.")
 
 
 class Clear(Instruction):
     "Clears all upcoming instructions and resets the schedule."
 
-    def process(
-        self,
-        current_time: TIME,
-        state: ScheduleState,
-        scheduled_instructions: dict[TIME, list[Instruction]],
-    ) -> Signal:
-        scheduled_instructions.clear()
-        scheduled_instructions[-1] = []
+    def apply(self, state: ScheduleState, schedule: Schedule) -> InstructionResult:
+        schedule.clear_schedule()
 
-        return Signal(Action.DONE)
+        return InstructionResult.success(f"Clearing schedule at time {state.time}.")
 
 
 def parse_args(
-    args: tuple[int, ...],
+    args: list[Int],
     output_size: int,
-) -> tuple[int, ...]:
+    instruction_name: str = "Instruction",
+) -> list[int]:
     "Parse the raw instruction arguments into required and optional arguments."
-    return args + (-1,) * (output_size - len(args))
+    if len(args) > output_size:
+        raise ValueError(
+            f"Too many arguments provided for instruction {instruction_name}. "
+            f"Expected at most {output_size}, got {len(args)}."
+        )
+
+    return convert_to_list(args, int) + [-1] * (output_size - len(args))
 
 
 def parse_instruction(
-    action: str | Instruction, args: tuple[int, ...], state: ScheduleState
+    instruction: str | Instruction, args: list[Int], state: ScheduleState
 ) -> tuple[Instruction, TIME]:
     "Parse raw instruction arguments into an Instruction object and the scheduled time."
-    if isinstance(action, Instruction):
-        (time,) = parse_args(args, 1)
-        instruction = action
 
-    else:
-        is_execute = action.startswith("execute")
-        is_submit = action.startswith("submit")
-
-        if is_execute or is_submit:
-            job_oriented: bool = action.endswith("job")
-
+    match instruction:
+        case "execute":
             if 0 < len(args) <= 2:
-                id, time_or_machine = parse_args(args, 2)
+                task_id, time_or_machine = parse_args(args, 2, "execute")
 
-                machines = state.tasks[id].machines
+                machines = state.tasks[task_id].machines
 
                 if len(machines) == 1:
+                    # Consider the second argument as time
                     machine = next(iter(machines))
                     time = time_or_machine
 
                 else:
+                    # Consider the second argument as machine
                     machine = time_or_machine
                     time = -1
 
             else:
-                id, machine, time = parse_args(args, 3)
+                task_id, machine, time = parse_args(args, 3, "execute")
 
-            instruction = Execute(id, machine, job_oriented, wait=is_submit)
+            return Execute(task_id, machine), time
 
-        elif action == "pause":
-            task_id, time = parse_args(args, 2)
+        case "submit":
+            if 0 < len(args) <= 2:
+                task_id, time_or_machine = parse_args(args, 2, "submit")
 
-            instruction = Pause(task_id)
+                machines = state.tasks[task_id].machines
 
-        elif action.startswith("resume"):
-            job_oriented = action.endswith("job")
+                if len(machines) == 1:
+                    # Consider the second argument as time
+                    machine = next(iter(machines))
+                    time = time_or_machine
 
-            task_id, time = parse_args(args, 2)
+                else:
+                    # Consider the second argument as machine
+                    machine = time_or_machine
+                    time = -1
 
-            instruction = Resume(task_id, job_oriented)
+            else:
+                task_id, machine, time = parse_args(args, 3, "submit")
 
-        elif action == "complete":
-            task_id, time = parse_args(args, 2)
+            return Submit(task_id, machine), time
 
-            instruction = Complete(task_id)
+        case "execute job":
+            job_id, machine, time = parse_args(args, 3, "execute job")
 
-        elif action == "advance":
-            to_time, time = parse_args(args, 2)
+            return ExecuteJob(job_id, machine), time
 
-            instruction = Advance(to_time)
+        case "submit job":
+            job_id, machine, time = parse_args(args, 3, "submit job")
 
-        elif action == "noop":
-            (time,) = parse_args(args, 1)
+            return SubmitJob(job_id, machine), time
 
-            instruction = Advance()
+        case "pause":
+            task_id, time = parse_args(args, 2, "pause")
 
-        elif action == "query":
-            (time,) = parse_args(args, 1)
+            return Pause(task_id), time
 
-            instruction = Query()
+        case "resume":
+            task_id, time = parse_args(args, 2, "resume")
 
-        elif action == "clear":
-            (time,) = parse_args(args, 1)
-            instruction = Clear()
+            return Resume(task_id), time
 
-        else:
-            raise ValueError(f"Unknown instruction {action}")
+        case "complete":
+            task_id, time = parse_args(args, 2, "complete")
 
-    return instruction, time
+            return Complete(task_id), time
+
+        case "advance":
+            to_time, time = parse_args(args, 2, "advance")
+
+            return Advance(to_time), time
+
+        case "noop":
+            (time,) = parse_args(args, 1, "noop")
+
+            return Noop(), time
+
+        case "query":
+            (time,) = parse_args(args, 1, "query")
+
+            return Query(), time
+
+        case "clear":
+            (time,) = parse_args(args, 1, "clear")
+
+            return Clear(), time
+
+        case Instruction():
+            (time,) = parse_args(args, 1, "Instruction")
+
+            return instruction, time
+
+        case _:
+            raise ValueError(f"Unknown instruction {instruction}")

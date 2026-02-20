@@ -6,9 +6,7 @@ It provides a framework for creating various scheduling environments, such as si
 identical parallel machines, uniform parallel machines, job shop, and open shop setups.
 """
 
-from typing import Any
 from collections.abc import Iterable
-from typing_extensions import Self
 
 from mypy_extensions import mypyc_attr
 
@@ -18,7 +16,7 @@ from cpscheduler.environment._common import MACHINE_ID, TIME, Int, ceil_div
 from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.constraints import (
     Constraint,
-    DisjunctiveConstraint,
+    NonOverlapConstraint,
     PrecedenceConstraint,
     MachineConstraint,
 )
@@ -52,16 +50,6 @@ class ScheduleSetup:
         "Produce the α entry for the constraint."
         return ""
 
-    def to_dict(self) -> dict[str, Any]:
-        "Serialize the setup to a dictionary."
-        return {}
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Self:
-        "Deserialize the setup from a dictionary."
-        return cls(**data)
-
-
 class SingleMachineSetup(ScheduleSetup):
     """
     Single Machine Scheduling Setup.
@@ -84,12 +72,6 @@ class SingleMachineSetup(ScheduleSetup):
             return ()
 
         return (MachineConstraint(),)
-
-    def get_entry(self) -> str:
-        return "1"
-
-    def to_dict(self) -> dict[str, Any]:
-        return {"disjunctive": self.disjunctive}
 
 
 class IdenticalParallelMachineSetup(ScheduleSetup):
@@ -116,12 +98,6 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
 
     def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
         return (MachineConstraint(),) if self.disjunctive else ()
-
-    def get_entry(self) -> str:
-        return f"P{self.n_machines}"
-
-    def to_dict(self) -> dict[str, Any]:
-        return {"n_machines": self.n_machines, "disjunctive": self.disjunctive}
 
 
 class UniformParallelMachineSetup(ScheduleSetup):
@@ -153,12 +129,6 @@ class UniformParallelMachineSetup(ScheduleSetup):
     def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
         return (MachineConstraint(),) if self.disjunctive else ()
 
-    def get_entry(self) -> str:
-        return f"U{self.n_machines}" if self.n_machines > 1 else "Um"
-
-    def to_dict(self) -> dict[str, Any]:
-        return {"speed": self.speed, "disjunctive": self.disjunctive}
-
 
 class UnrelatedParallelMachineSetup(ScheduleSetup):
     processing_times: list[str]
@@ -188,13 +158,6 @@ class UnrelatedParallelMachineSetup(ScheduleSetup):
 
     def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
         return (MachineConstraint(),) if self.disjunctive else ()
-
-    def get_entry(self) -> str:
-        return "Rm"
-
-    def to_dict(self) -> dict[str, Any]:
-        return {"disjunctive": self.disjunctive}
-
 
 class JobShopSetup(ScheduleSetup):
     """
@@ -255,15 +218,6 @@ class JobShopSetup(ScheduleSetup):
 
         return (disjunctive_constraint, precedence_constraint)
 
-    def get_entry(self) -> str:
-        return f"J{self.n_machines}" if self.n_machines > 1 else "Jm"
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "operation_order": self.operation_order,
-            "machine_feature": self.machine_feature,
-        }
-
 
 class OpenShopSetup(ScheduleSetup):
     """
@@ -295,7 +249,7 @@ class OpenShopSetup(ScheduleSetup):
     def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
         jobs = [[task.task_id for task in job_tasks] for job_tasks in state.jobs]
 
-        task_disjunction = DisjunctiveConstraint(jobs)
+        task_disjunction = NonOverlapConstraint(jobs)
 
         if not self.disjunctive:
             return (task_disjunction,)
@@ -303,11 +257,3 @@ class OpenShopSetup(ScheduleSetup):
         machine_disjunction = MachineConstraint()
 
         return (task_disjunction, machine_disjunction)
-
-    def get_entry(self) -> str:
-        return f"O{self.n_machines}" if self.n_machines > 1 else "Om"
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "disjunctive": self.disjunctive,
-        }
