@@ -44,6 +44,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class LogLevel:
     "LogLevel represents the severity of a log message, guiding how it should be handled by the environment."
 
@@ -70,6 +71,7 @@ class QueueControl(Enum):
     INTERRUPT = 4
     "Interrupt the processing of subsequent instructions in the same time step and halt."
 
+
 class InstructionResult:
 
     done: bool
@@ -88,7 +90,7 @@ class InstructionResult:
         done: bool = False,
         queue_control: QueueControl = QueueControl.CONTINUE,
         log_message: str = "",
-        level: int = LogLevel.DEBUG
+        level: int = LogLevel.DEBUG,
     ) -> None:
         self.done = done
         self.queue_control = queue_control
@@ -148,7 +150,8 @@ class InstructionResult:
             log_message=message,
             level=level,
         )
-    
+
+
 SUCCESS = InstructionResult.success()
 DEFERRED = InstructionResult.deferred()
 RESTART = InstructionResult.restart()
@@ -157,6 +160,7 @@ HALT = InstructionResult.halt()
 INVALID = InstructionResult.invalid()
 
 DEFAULT_QUEUE_TIME: Final[TIME] = -1
+
 
 class Schedule:
 
@@ -191,7 +195,7 @@ class Schedule:
         if time in self.schedule:
             instructions = self.schedule[time]
 
-            idx =  0
+            idx = 0
             while idx < len(instructions):
                 instruction = instructions[idx]
 
@@ -233,7 +237,7 @@ class Schedule:
 
                 yield InstructionResult.blocked(error_message, level=LogLevel.ERROR)
                 return
-            
+
             self.schedule.pop(time)
 
         idx = 0
@@ -348,6 +352,7 @@ class Execute(Instruction):
             )
 
         return BLOCKED
+
 
 # @profile
 class Submit(Instruction):
@@ -580,6 +585,7 @@ class Advance(Instruction):
         schedule.add_instruction(Checkpoint(), next_time)
 
         return InstructionResult.success(f"Advancing time by {self.dt} to {next_time}.")
+
 
 class Query(Instruction):
     "When processed, halts the environment and returns its current state."

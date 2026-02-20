@@ -2,6 +2,8 @@ from typing import Any
 from collections.abc import Sequence, Iterable, Mapping
 from abc import ABC, abstractmethod
 
+from warnings import warn
+
 from pulp import (
     LpVariable,
     LpProblem,
@@ -134,28 +136,28 @@ class PulpSchedulingVariables(PulpVariables):
 
         self.start_times = [
             LpVariable(
-                f"start_{task.task_id}",
-                lowBound=task.get_start_lb(),
-                upBound=task.get_start_ub(),
+                f"start_{task_id}",
+                lowBound=state.get_start_lb(task_id),
+                upBound=state.get_start_ub(task_id),
                 cat=TimeVarCat,
             )
-            for task in state.tasks
+            for task_id in range(state.n_tasks)
         ]
 
         self._end_times = [
             LpVariable(
-                f"end_{task.task_id}",
-                lowBound=task.get_end_lb(),
-                upBound=task.get_end_ub(),
+                f"end_{task_id}",
+                lowBound=state.get_end_lb(task_id),
+                upBound=state.get_end_ub(task_id),
                 cat=TimeVarCat,
             )
-            for task in state.tasks
+            for task_id in range(state.n_tasks)
         ]
 
         self.assignments = []
         assignments: list[PULP_EXPRESSION | int] = []
-        for task in state.tasks:
-            machines = task.machines
+        for task_id in range(state.n_tasks):
+            machines = state.tasks[task_id].machines
 
             assignments = [0] * self.n_machines
 
@@ -164,10 +166,8 @@ class PulpSchedulingVariables(PulpVariables):
                 assignments[machine] = 1
 
             else:
-                for machine in task.machines:
-                    assignments[machine] = LpVariable(
-                        f"assign_{task.task_id}_{machine}", cat=LpBinary
-                    )
+                for machine in machines:
+                    assignments[machine] = LpVariable(f"assign_{task_id}_{machine}", cat=LpBinary)
 
             self.assignments.append(assignments)
 
@@ -197,35 +197,41 @@ class PulpSchedulingVariables(PulpVariables):
         Warm start the variables based on the current environment state.
         This method sets the start times and assignments based on the current schedule.
         """
+        makespan = max(env.state.get_end_lb(task_id) for task_id in env.state.fixed_tasks)
+
+        if not env.objective.regular:
+            warn(
+                f"The objective is not regular and the current makespan of {makespan} may not be a valid upper bound for end times."
+                " If this is the case, consider setting a valid upper bound for the end times via `set_horizon`."
+            )
+
         objective = env.get_objective()
+        if env.objective.minimize:
+            pulp_add_constraint(self.model, self.objective <= objective, "initial_objective_bound")
 
-        # Makespan here is used as an heuristic upper bound for end times.
-        # This is not a valid upper bound whenever the objective is not regular.
-        makespan = max(task.get_end_lb() for task in env.state.fixed_tasks)
+        else:
+            pulp_add_constraint(self.model, self.objective >= objective, "initial_objective_bound")
 
-        pulp_add_constraint(self.model, self.objective <= objective, "initial_objective_bound")
         if isinstance(self.objective, LpVariable):
             self.objective.setInitialValue(objective, check=False)
 
-        for task in env.state.fixed_tasks:
-            task_id = task.task_id
-
+        for task_id in env.state.fixed_tasks:
             start_var = self.start_times[task_id]
             end_var = self._end_times[task_id]
 
             if isinstance(start_var, LpVariable):
-                start_time = task.get_start_lb()
+                start_time = env.state.get_start_lb(task_id)
 
                 start_var.setInitialValue(start_time, check=False)
                 start_var.upBound = makespan
 
             if isinstance(end_var, LpVariable):
-                end_time = task.get_end_lb()
+                end_time = env.state.get_end_lb(task_id)
 
                 end_var.setInitialValue(end_time, check=False)
                 end_var.upBound = makespan
 
-            machine_assignment = task.get_assignment()
+            machine_assignment = env.state.get_assignment(task_id)
             for machine_id in range(self.n_machines):
                 assignment_var = self.assignments[task_id][machine_id]
 
@@ -247,15 +253,14 @@ class PulpSchedulingVariables(PulpVariables):
 
     def get_assigment(self, task_id: int) -> tuple[int, int]:
         "Get the machine assignment for a specific task."
-        start_value = get_value(self.start_times[task_id])
-
-        start_time = round(start_value) if start_value is not None else -1
         machine_id = -1
         for machine_id in range(self.n_machines):
             if get_value(self.assignments[task_id][machine_id]) > 1 / len(
                 self.assignments[task_id]
             ):
                 break
+
+        start_time = round(get_value(self.start_times[task_id]))
 
         return machine_id, start_time
 
@@ -317,7 +322,7 @@ class PulpTimetable(PulpVariables):
     def __init__(self, model: LpProblem, state: ScheduleState, integral: bool):
         super().__init__(model, state, integral)
 
-        self.T = max(task.get_end_ub() for task in state.tasks)
+        self.T = max(state.get_end_ub(task_id) for task_id in range(state.n_tasks))
 
         self.start_times = []
 
@@ -325,8 +330,8 @@ class PulpTimetable(PulpVariables):
             task_start_times: dict[int, list[PULP_EXPRESSION | int]] = {}
 
             for machine in task.machines:
-                start_lb = task.get_start_lb(machine)
-                start_ub = task.get_start_ub(machine)
+                start_lb = state.get_start_lb(task_id, machine)
+                start_ub = state.get_start_ub(task_id, machine)
 
                 task_start_times[machine] = [
                     (

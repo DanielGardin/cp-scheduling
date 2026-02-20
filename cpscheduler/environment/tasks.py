@@ -12,6 +12,7 @@ from cpscheduler.environment._common import (
 
 from cpscheduler.environment.events import VarField
 
+
 class TaskHistory:
     assignment: MACHINE_ID
     start_time: TIME
@@ -26,13 +27,10 @@ class TaskHistory:
 
     def __repr__(self) -> str:
         return f"TaskHistory(assignment={self.assignment}, start_time={self.start_time}, duration={self.duration}, end_time={self.end_time})"
-    
+
     def __reduce__(self) -> tuple[Any, ...]:
-        return (
-            self.__class__,
-            (self.assignment, self.start_time, self.duration),
-            ()
-        )
+        return (self.__class__, (self.assignment, self.start_time, self.duration), ())
+
 
 class Task:
     task_id: TASK_ID
@@ -124,6 +122,7 @@ class Task:
         "Set custom data for the task."
         self.data[key] = value
 
+
 class Job:
     """
     A job is a collection of tasks that are related to each other.
@@ -181,6 +180,7 @@ class Job:
 def initialize_matrix(n_rows: int, n_cols: int, value: TIME) -> list[list[TIME]]:
     return [[value for _ in range(n_cols)] for _ in range(n_rows)]
 
+
 class Bounds:
     lbs: list[list[TIME]]
     ubs: list[list[TIME]]
@@ -213,16 +213,17 @@ class Bounds:
 
     def __repr__(self) -> str:
         return f"Bounds(lbs={self.lbs}, ubs={self.ubs}, global_lbs={self.global_lbs}, global_ubs={self.global_ubs})"
-    
+
     def __reduce__(self) -> tuple[Any, ...]:
         return (
             self.__class__,
             ([], 0),  # Dummy arguments for __init__
             (self.lbs, self.ubs, self.global_lbs, self.global_ubs),
         )
-    
+
     def __setstate__(self, state: tuple[Any, ...]) -> None:
         self.lbs, self.ubs, self.global_lbs, self.global_ubs = state
+
 
 class ScheduleVariables:
     remaining_times: list[list[TIME]]
@@ -236,10 +237,7 @@ class ScheduleVariables:
     end: Bounds
 
     def __init__(self, tasks: list[Task]) -> None:
-        n_machines = max(
-            max(task.machines) if task.machines else -1
-            for task in tasks
-        ) + 1
+        n_machines = max(max(task.machines) if task.machines else -1 for task in tasks) + 1
 
         self.remaining_times = initialize_matrix(len(tasks), n_machines, MAX_TIME)
         self.assignment = [GLOBAL_MACHINE_ID for _ in tasks]
@@ -259,19 +257,18 @@ class ScheduleVariables:
 
             self.start.recompute_global_bounds(task_id)
             self.end.recompute_global_bounds(task_id)
-  
 
     def select_bound(self, task_id: TASK_ID, machine_id: MACHINE_ID, field: VarField) -> TIME:
         if machine_id == GLOBAL_MACHINE_ID:
             if field == VarField.START_LB:
                 return self.start.global_lbs[task_id]
-            
+
             elif field == VarField.START_UB:
                 return self.start.global_ubs[task_id]
-            
+
             elif field == VarField.END_LB:
                 return self.end.global_lbs[task_id]
-            
+
             elif field == VarField.END_UB:
                 return self.end.global_ubs[task_id]
         else:
@@ -280,10 +277,10 @@ class ScheduleVariables:
 
             elif field == VarField.START_UB:
                 return self.start.ubs[task_id][machine_id]
-            
+
             elif field == VarField.END_LB:
                 return self.end.lbs[task_id][machine_id]
-            
+
             elif field == VarField.END_UB:
                 return self.end.ubs[task_id][machine_id]
 
@@ -291,7 +288,7 @@ class ScheduleVariables:
 
     def __repr__(self) -> str:
         return f"ScheduleVariables(remaining_times={self.remaining_times}, assignment={self.assignment}, fixed={self.fixed}, locked={self.locked}, present={self.present}, start={self.start}, end={self.end})"
-    
+
     def __reduce__(self) -> tuple[Any, ...]:
         return (
             self.__class__,

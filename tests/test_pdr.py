@@ -78,6 +78,8 @@ def test_dynamic(instance_name: str) -> None:
     done = False
     dynamic_actor = ShortestProcessingTime(available=True, strict=True)
     while not done:
+        assert any(obs[0]["available"])
+
         single_action = dynamic_actor(obs)[0]
         obs, _, done, _, info = env.step(single_action)
 

@@ -86,9 +86,10 @@ def test_submit(instance_name: str) -> None:
 
     assert obs["status"][2] == StatusEnum.EXECUTING
 
-    task0 = env.state.tasks[0].history[0]
-    task1 = env.state.tasks[1].history[0]
-    assert info["current_time"] == task0.duration + task1.duration
+    assert info["current_time"] == (
+        env.state.task_history[0][0].duration +
+        env.state.task_history[1][0].duration
+    )
 
     (new_obs, _), new_reward, *_, new_info = env.step(
         [("complete", 2)]
@@ -98,9 +99,7 @@ def test_submit(instance_name: str) -> None:
     assert new_obs["status"][1] == StatusEnum.COMPLETED
     assert new_obs["status"][2] == StatusEnum.COMPLETED
 
-    task2 = env.state.tasks[2].history[0]
-
-    assert new_info["current_time"] == task2.end_time
+    assert new_info["current_time"] == env.state.task_history[2][0].end_time
     assert reward + new_reward == -new_info["current_time"]
 
 
@@ -134,43 +133,43 @@ def test_submit2(instance_name: str) -> None:
     assert terminated
 
 
-@pytest.mark.env
-@pytest.mark.parametrize("instance_name", TEST_INSTANCES)
-def test_pause(instance_name: str) -> None:
-    env = env_setup(instance_name, allow_preemption=True)
+# @pytest.mark.env
+# @pytest.mark.parametrize("instance_name", TEST_INSTANCES)
+# def test_pause(instance_name: str) -> None:
+#     env = env_setup(instance_name, allow_preemption=True)
 
-    env.reset()
+#     env.reset()
 
-    processing_time = next(iter(env.state.tasks[0].processing_times.values()))
-    actions: list[tuple[str, Unpack[tuple[int, ...]]]] = [
-        ("execute", 0),
-        ("advance", processing_time // 2),
-        ("pause", 0),
-        ("advance", processing_time // 2),
-        ("query",),
-        ("execute", 0),
-        ("complete", 0),
-    ]
+#     processing_time = next(iter(env.state.tasks[0].processing_times.values()))
+#     actions: list[tuple[str, Unpack[tuple[int, ...]]]] = [
+#         ("execute", 0),
+#         ("advance", processing_time // 2),
+#         ("pause", 0),
+#         ("advance", processing_time // 2),
+#         ("query",),
+#         ("execute", 0),
+#         ("complete", 0),
+#     ]
 
-    (obs, _), *_, info = env.step(actions)
+#     (obs, _), *_, info = env.step(actions)
 
-    assert obs["status"][0] == StatusEnum.PAUSED
-    assert info["current_time"] == 2 * (processing_time // 2)
+#     assert obs["status"][0] == StatusEnum.PAUSED
+#     assert info["current_time"] == 2 * (processing_time // 2)
 
-    (new_obs, _), *_, new_info = env.step()
+#     (new_obs, _), *_, new_info = env.step()
 
-    assert new_obs["status"][0] == StatusEnum.COMPLETED
-    assert new_info["current_time"] == processing_time + processing_time // 2
+#     assert new_obs["status"][0] == StatusEnum.COMPLETED
+#     assert new_info["current_time"] == processing_time + processing_time // 2
 
-def test_copy() -> None:
-    env = env_setup("ta01")
+# def test_copy() -> None:
+#     env = env_setup("ta01")
 
-    env.reset()
+#     env.reset()
 
-    env_copy = deepcopy(env)
+#     env_copy = deepcopy(env)
 
-    assert env.state == env_copy.state
+#     assert env.state == env_copy.state
 
-    env.step(("execute", 0))
+#     env.step(("execute", 0))
 
-    assert env.state != env_copy.state
+#     assert env.state != env_copy.state

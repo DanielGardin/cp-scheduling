@@ -12,7 +12,7 @@ class Metric(Protocol[_T_co]):
     during the scheduling process.
     """
 
-    def __call__(self, time: int, state: ScheduleState, objective: float) -> _T_co: ...
+    def __call__(self, state: ScheduleState) -> _T_co: ...
 
 
 @runtime_checkable

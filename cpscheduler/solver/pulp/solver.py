@@ -82,7 +82,7 @@ class PulpSolver:
             )
 
         if tighten:
-            self.warm_start([("submit", task.task_id) for task in self.env.state.awaiting_tasks])
+            self.warm_start([("submit", task_id) for task_id in self.env.state.awaiting_tasks])
 
         self.symmetry_breaking = symmetry_breaking
         self._built = False
@@ -177,8 +177,7 @@ class PulpSolver:
 
         actions: list[tuple[str, int, int, int]] = []
 
-        for task in self.env.state.awaiting_tasks:
-            task_id = task.task_id
+        for task_id in self.env.state.awaiting_tasks:
             assignment = self.variables.get_assigment(task_id)
 
             actions.append(("execute", task_id, *assignment))

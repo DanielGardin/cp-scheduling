@@ -50,6 +50,7 @@ class ScheduleSetup:
         "Produce the α entry for the constraint."
         return ""
 
+
 class SingleMachineSetup(ScheduleSetup):
     """
     Single Machine Scheduling Setup.
@@ -158,6 +159,7 @@ class UnrelatedParallelMachineSetup(ScheduleSetup):
 
     def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
         return (MachineConstraint(),) if self.disjunctive else ()
+
 
 class JobShopSetup(ScheduleSetup):
     """

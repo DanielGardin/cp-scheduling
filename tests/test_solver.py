@@ -21,8 +21,6 @@ def test_solve(instance_name: str) -> None:
     solver.build()
     time += process_time()
     logger.info(f"Initialized solver in {time:.2f} s")
-    
-    solver.model.writeLP(f"{instance_name}.lp")
 
     time = -process_time()
     try:

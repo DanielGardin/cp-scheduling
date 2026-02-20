@@ -17,6 +17,9 @@ class O1Set(Generic[T]):
         self._items = list(items)
         self._pos = {item: idx for idx, item in enumerate(self._items)}
 
+    def __repr__(self) -> str:
+        return f"O1Set({self._items})"
+
     def __len__(self) -> int:
         return len(self._items)
 
@@ -132,7 +135,7 @@ def binary_search(
     Returns
     -------
     int
-        The index of the inclusion of the value in the array.
+        The index of the inclusion (to the right) of the target value in the array.
     """
     if right < 0:
         right = len(array) + right
@@ -141,7 +144,7 @@ def binary_search(
         mid = (left + right) // 2
 
         if array[mid] == target:
-            return mid
+            return mid + 1
 
         if array[mid] < target:
             if decreasing:

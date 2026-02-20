@@ -2,6 +2,7 @@ from typing import Any
 from collections.abc import Iterable, Iterator
 
 from enum import Enum
+from warnings import warn
 
 from contextlib import contextmanager
 
@@ -35,6 +36,10 @@ def disable_numpy() -> Iterator[None]:
     """
     global NUMPY_AVAILABLE
     original_numpy_available = NUMPY_AVAILABLE
+
+    if not original_numpy_available:
+        warn("NumPy is not available, so disable_numpy has no effect.")
+
     NUMPY_AVAILABLE = False
     try:
         yield

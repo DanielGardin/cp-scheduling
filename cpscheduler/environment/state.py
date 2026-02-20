@@ -16,6 +16,7 @@ from cpscheduler.environment.events import VarField, Event
 from cpscheduler.environment.tasks import Task, Job, TaskHistory, ScheduleVariables
 from cpscheduler.utils.list_utils import convert_to_list
 
+
 def check_instance_consistency(instance: dict[str, list[Any]]) -> int:
     "Check if all lists in the instance have the same length."
     lengths = {len(v) for v in instance.values()}
@@ -24,6 +25,7 @@ def check_instance_consistency(instance: dict[str, list[Any]]) -> int:
         raise ValueError("Inconsistent instance data: all lists must have the same length.")
 
     return lengths.pop() if lengths else 0
+
 
 class ScheduleState:
     """
@@ -247,10 +249,10 @@ class ScheduleState:
 
     def get_remaining_time(self, task_id: TASK_ID, machine_id: MACHINE_ID) -> TIME:
         return self.variables_.remaining_times[task_id][machine_id]
-    
+
     def get_assignment(self, task_id: TASK_ID) -> MACHINE_ID:
         return self.variables_.assignment[task_id]
-    
+
     def is_fixed(self, task_id: TASK_ID) -> bool:
         return self.variables_.fixed[task_id]
 
@@ -261,10 +263,9 @@ class ScheduleState:
         return self.variables_.present[task_id]
 
     def is_feasible(self, task_id: TASK_ID, machine_id: MACHINE_ID = GLOBAL_MACHINE_ID) -> bool:
-        return (
-            self.get_start_lb(task_id, machine_id) <= self.get_start_ub(task_id, machine_id) and
-            (self.is_fixed(task_id) or self.time <= self.get_start_ub(task_id, machine_id))
-        )
+        return self.get_start_lb(task_id, machine_id) <= self.get_start_ub(
+            task_id, machine_id
+        ) and (self.is_fixed(task_id) or self.time <= self.get_start_ub(task_id, machine_id))
 
     def tight_start_lb(
         self,
@@ -336,7 +337,7 @@ class ScheduleState:
     ) -> None:
         if self.is_fixed(task_id) or value <= self.get_end_lb(task_id, machine_id):
             return
-        
+
         if machine_id == GLOBAL_MACHINE_ID:
             for machine in self.tasks[task_id].machines:
                 if self.variables_.end.lbs[task_id][machine] < value:
@@ -347,7 +348,7 @@ class ScheduleState:
 
             self.variables_.end.global_lbs[task_id] = value
             self.variables_.start.recompute_global_bounds(task_id)
-        
+
         else:
             self.variables_.end.lbs[task_id][machine_id] = value
             self.variables_.start.lbs[task_id][machine_id] = (
@@ -367,7 +368,7 @@ class ScheduleState:
     ) -> None:
         if self.is_fixed(task_id) or value >= self.get_end_ub(task_id, machine_id):
             return
-        
+
         if machine_id == GLOBAL_MACHINE_ID:
             for machine in self.tasks[task_id].machines:
                 if self.variables_.end.ubs[task_id][machine] > value:
@@ -378,7 +379,7 @@ class ScheduleState:
 
             self.variables_.end.global_ubs[task_id] = value
             self.variables_.start.recompute_global_bounds(task_id)
-        
+
         else:
             self.variables_.end.ubs[task_id][machine_id] = value
             self.variables_.start.ubs[task_id][machine_id] = (
@@ -452,11 +453,11 @@ class ScheduleState:
             return False
 
         return self.task_history[task_id][-1].end_time <= self.time
-    
+
     def is_available(self, task_id: TASK_ID, machine_id: MACHINE_ID = GLOBAL_MACHINE_ID) -> bool:
         if self.is_fixed(task_id) or not self.is_present(task_id) or self.is_locked(task_id):
             return False
-        
+
         start = self.get_start_lb(task_id, machine_id)
         end = self.get_start_ub(task_id, machine_id)
 
@@ -465,7 +466,7 @@ class ScheduleState:
     def get_status(self, task_id: TASK_ID) -> STATUS:
         "Get the current status of the task at a given time."
         history = self.task_history[task_id]
-        
+
         if self.is_completed(task_id):
             return StatusEnum.COMPLETED
 
@@ -477,10 +478,10 @@ class ScheduleState:
 
             if history_entry.start_time <= self.time:
                 return StatusEnum.EXECUTING
-        
+
         if self.is_feasible(task_id):
             return StatusEnum.AWAITING
-    
+
         return StatusEnum.INFEASIBLE
 
     def lock_task(self, task_id: TASK_ID) -> None:
@@ -504,11 +505,7 @@ class ScheduleState:
         start = self.get_start_lb(task_id, machine_id)
         end = self.get_end_ub(task_id, machine_id)
 
-        history_entry = TaskHistory(
-            assignment=machine_id,
-            start_time=start,
-            duration=end - start
-        )
+        history_entry = TaskHistory(assignment=machine_id, start_time=start, duration=end - start)
 
         self.task_history[task_id].append(history_entry)
 
@@ -520,7 +517,7 @@ class ScheduleState:
 
         if actual_duration >= expected_duration:
             return
-    
+
         self.task_history[task_id].pop()
 
         remaining_times = self.variables_.remaining_times[task_id]
@@ -544,7 +541,7 @@ class ScheduleState:
             TaskHistory(
                 assignment=history_entry.assignment,
                 start_time=history_entry.start_time,
-                duration=actual_duration
+                duration=actual_duration,
             )
         )
 
@@ -580,7 +577,9 @@ class ScheduleState:
         if time is None:
             time = self.time
 
-        assignments: dict[MACHINE_ID, list[TASK_ID]] = {machine_id: [] for machine_id in range(self.n_machines)}
+        assignments: dict[MACHINE_ID, list[TASK_ID]] = {
+            machine_id: [] for machine_id in range(self.n_machines)
+        }
 
         for task_id in self.fixed_tasks:
             if self.is_executing(task_id):

@@ -32,7 +32,7 @@ from cpscheduler.environment.instructions import (
     ActionType,
     is_single_action,
     Schedule,
-    QueueControl
+    QueueControl,
 )
 from cpscheduler.environment.schedule_setup import ScheduleSetup
 from cpscheduler.environment.constraints import Constraint, PassiveConstraint
@@ -51,6 +51,7 @@ def is_info_dict(value: Any) -> TypeIs[Mapping[str, Any]]:
     return isinstance(value, Mapping) and all(
         isinstance(k, str) for k in value.keys()  # pyright: ignore[reportUnknownVariableType]
     )
+
 
 class SchedulingEnv:
     """
@@ -352,7 +353,7 @@ class SchedulingEnv:
 
             if control == QueueControl.INTERRUPT:
                 # If the schedule processing was interrupted due to a instruction, do not advance
-                # the time and allow the agent to react to the new state. 
+                # the time and allow the agent to react to the new state.
                 break
 
             if self.schedule.is_empty():

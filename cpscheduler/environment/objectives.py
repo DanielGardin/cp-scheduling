@@ -213,7 +213,7 @@ class TotalCompletionTime(Objective):
         total_completion_time = 0.0
 
         for job in state.jobs:
-            job_completion = _makespan(state,job.task_ids)
+            job_completion = _makespan(state, job.task_ids)
             total_completion_time += job_completion
 
         return total_completion_time

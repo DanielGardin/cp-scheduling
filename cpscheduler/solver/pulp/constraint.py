@@ -13,7 +13,7 @@ from cpscheduler.environment.constraints import (
     NoWaitConstraint,
     PrecedenceConstraint,
     ConstantProcessingTime,
-    DisjunctiveConstraint,
+    NonOverlapConstraint,
     ReleaseDateConstraint,
     DeadlineConstraint,
     ResourceConstraint,
@@ -71,7 +71,7 @@ def _(constraint: NoWaitConstraint, variables: PulpSchedulingVariables) -> Model
 
 
 @export_constraint_pulp.register
-def _(constraint: DisjunctiveConstraint, variables: PulpSchedulingVariables) -> ModelExport:
+def _(constraint: NonOverlapConstraint, variables: PulpSchedulingVariables) -> ModelExport:
     def export_model(model: LpProblem, state: ScheduleState) -> None:
         for group_tasks in constraint.groups_map:
             for i, j in combinations(group_tasks, 2):

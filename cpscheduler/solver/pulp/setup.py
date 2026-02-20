@@ -50,8 +50,8 @@ def _(setup: ScheduleSetup, variables: PulpTimetable) -> ModelExport:
 @export_setup_pulp.register
 def _(setup: SingleMachineSetup, variables: PulpSchedulingVariables) -> ModelExport:
     def export_model(model: LpProblem, state: ScheduleState) -> None:
-        for task_id, task in enumerate(state.tasks):
-            processing_time = task.remaining_times_[0]
+        for task_id in range(state.n_tasks):
+            processing_time = state.get_remaining_time(task_id, 0)
 
             non_preemptive_constraint(
                 model,
@@ -67,14 +67,14 @@ def _(setup: SingleMachineSetup, variables: PulpSchedulingVariables) -> ModelExp
 @export_setup_pulp.register
 def _(setup: IdenticalParallelMachineSetup, variables: PulpSchedulingVariables) -> ModelExport:
     def export_model(model: LpProblem, state: ScheduleState) -> None:
-        for task_id, task in enumerate(state.tasks):
+        for task_id in range(state.n_tasks):
             pulp_add_constraint(
                 model,
                 lpSum(machine for machine in variables.assignments[task_id]) == 1,
                 f"assignment_{task_id}",
             )
 
-            processing_time = task.remaining_times_[0]
+            processing_time = state.get_remaining_time(task_id, 0)
 
             non_preemptive_constraint(
                 model,
@@ -106,8 +106,9 @@ def _(
             )
 
             processing_time = lpSum(
-                variables.assignments[task_id][machine_id] * processing_time
-                for machine_id, processing_time in task.remaining_times_.items()
+                variables.assignments[task_id][machine_id]
+                * state.get_remaining_time(task_id, machine_id)
+                for machine_id in task.machines
             )
 
             non_preemptive_constraint(
@@ -132,8 +133,9 @@ def _(setup: UnrelatedParallelMachineSetup, variables: PulpSchedulingVariables) 
             )
 
             processing_time = lpSum(
-                variables.assignments[task_id][machine_id] * processing_time
-                for machine_id, processing_time in task.remaining_times_.items()
+                variables.assignments[task_id][machine_id]
+                * state.get_remaining_time(task_id, machine_id)
+                for machine_id in task.machines
             )
 
             non_preemptive_constraint(
@@ -151,7 +153,7 @@ def _(setup: UnrelatedParallelMachineSetup, variables: PulpSchedulingVariables) 
 def _(setup: JobShopSetup, variables: PulpSchedulingVariables) -> ModelExport:
     def export_model(model: LpProblem, state: ScheduleState) -> None:
         for task_id, task in enumerate(state.tasks):
-            processing_time = next(iter(task.remaining_times_.values()))
+            processing_time = state.get_remaining_time(task_id, next(iter(task.machines)))
 
             non_preemptive_constraint(
                 model,
@@ -168,7 +170,7 @@ def _(setup: JobShopSetup, variables: PulpSchedulingVariables) -> ModelExport:
 def _(setup: OpenShopSetup, variables: PulpSchedulingVariables) -> ModelExport:
     def export_model(model: LpProblem, state: ScheduleState) -> None:
         for task_id, task in enumerate(state.tasks):
-            processing_time = next(iter(task.remaining_times_.values()))
+            processing_time = state.get_remaining_time(task_id, next(iter(task.machines)))
 
             non_preemptive_constraint(
                 model,

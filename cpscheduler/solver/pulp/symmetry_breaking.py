@@ -93,6 +93,8 @@ def partition_symmetry_breaking(
 def start_lower_bound_symmetry_breaking(
     env: SchedulingEnv, model: LpProblem, decision_vars: PulpSchedulingVariables
 ) -> None:
+    state = env.state
+
     lower_bounds = [LpAffineExpression() for _ in range(env.state.n_tasks)]
 
     for (i, j), order in decision_vars.orders.items():
@@ -112,7 +114,7 @@ def start_lower_bound_symmetry_breaking(
                 ),
             )
 
-            lower_bounds[j] += task_i.remaining_times_[machine] * allocate_forward
+            lower_bounds[j] += state.get_remaining_time(i, machine) * allocate_forward
 
             allocate_backward = and_pulp(
                 model,
@@ -123,7 +125,7 @@ def start_lower_bound_symmetry_breaking(
                 ),
             )
 
-            lower_bounds[i] += task_j.remaining_times_[machine] * allocate_backward
+            lower_bounds[i] += state.get_remaining_time(j, machine) * allocate_backward
 
     for task_id in range(env.state.n_tasks):
         pulp_add_constraint(
@@ -145,9 +147,10 @@ def machine_ordering_symmetry_breaking(
     processing_times: list[LpAffineExpression] = [
         lpSum(
             [
-                task.remaining_times_[machine_id] * decision_vars.assignments[task_id][machine_id]
+                state.get_remaining_time(task_id, machine_id)
+                * decision_vars.assignments[task_id][machine_id]
                 for task_id, task in enumerate(state.tasks)
-                if machine_id in task.remaining_times_
+                if machine_id in task.machines
             ]
         )
         for machine_id in range(n_machines)
@@ -236,9 +239,11 @@ def smiths_rules_symmetry_breaking(
         priorities: list[tuple[float, Task]] = []
         for task in machine_tasks:
             if weighted:
-                priority = -weights[task.job_id] / int(task.remaining_times_[machine_id])
+                priority = -weights[task.job_id] / int(
+                    state.get_remaining_time(task.task_id, machine_id)
+                )
             else:
-                priority = int(task.remaining_times_[machine_id])
+                priority = int(state.get_remaining_time(task.task_id, machine_id))
 
             priorities.append((priority, task))
 
@@ -246,7 +251,7 @@ def smiths_rules_symmetry_breaking(
 
         for idx, (_, task) in enumerate(priorities):
             S_j = lpSum(
-                prev_task.remaining_times_[machine_id]
+                state.get_remaining_time(prev_task.task_id, machine_id)
                 * decision_vars.assignments[prev_task.task_id][machine_id]
                 for (_, prev_task) in priorities[:idx]
             )
@@ -307,9 +312,9 @@ def tardiness_dominance_symmetry_breaking(
 
         # Necessarely d_i <= d_j
         for task_i, task_j in combinations(sorted_tasks, 2):
-            if task_i.remaining_times_[machine_id] >= task_j.remaining_times_[machine_id] or (
-                weighted and weights[task_i.job_id] <= weights[task_j.job_id]
-            ):
+            if state.get_remaining_time(task_i.task_id, machine_id) >= state.get_remaining_time(
+                task_j.task_id, machine_id
+            ) or (weighted and weights[task_i.job_id] <= weights[task_j.job_id]):
                 continue
 
             implication_pulp(
