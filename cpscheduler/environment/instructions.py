@@ -15,6 +15,7 @@ from enum import Enum
 
 from mypy_extensions import mypyc_attr
 
+
 from cpscheduler.environment._common import (
     TASK_ID,
     TIME,
@@ -70,6 +71,12 @@ class QueueControl(Enum):
 
     INTERRUPT = 4
     "Interrupt the processing of subsequent instructions in the same time step and halt."
+
+
+CONTINUE = QueueControl.CONTINUE
+RESTART = QueueControl.RESTART
+BLOCK = QueueControl.BLOCK
+INTERRUPT = QueueControl.INTERRUPT
 
 
 class InstructionResult:
@@ -154,19 +161,22 @@ class InstructionResult:
 
 SUCCESS = InstructionResult.success()
 DEFERRED = InstructionResult.deferred()
-RESTART = InstructionResult.restart()
+SUCCESS_RESTART = InstructionResult.restart()
 BLOCKED = InstructionResult.blocked()
 HALT = InstructionResult.halt()
 INVALID = InstructionResult.invalid()
+
 
 DEFAULT_QUEUE_TIME: Final[TIME] = -1
 
 
 class Schedule:
+    schedule: dict[TIME, list["Instruction"]]
+    default_queue: list["Instruction"]
 
     def __init__(self) -> None:
-        self.schedule: dict[TIME, list["Instruction"]] = {}
-        self.default_queue: list["Instruction"] = list()
+        self.schedule = {}
+        self.default_queue = []
 
     def reset(self) -> None:
         self.schedule.clear()
@@ -192,83 +202,76 @@ class Schedule:
     def instruction_queue(self, state: ScheduleState) -> Iterator[InstructionResult]:
         time = state.time
 
-        if time in self.schedule:
-            instructions = self.schedule[time]
-
-            idx = 0
-            while idx < len(instructions):
-                instruction = instructions[idx]
-
-                result = instruction.apply(state, self)
-
-                if result.log_message:
-                    logger.log(result.level, result.log_message)
-
-                if result.done:
-                    instructions.pop(idx)
-
-                elif result.queue_control != QueueControl.RESTART:
-                    idx += 1
-
-                yield result
-
-                match result.queue_control:
-                    case QueueControl.CONTINUE:
-                        continue
-
-                    case QueueControl.RESTART:
-                        idx = 0
-
-                    case QueueControl.BLOCK:
-                        break
-
-                    case QueueControl.INTERRUPT:
-                        return
-
-            if instructions:
-                # This only means that the queue was blocked and the remaining instructions cannot
-                # be processed at the moment, invalidating the schedule for the current time step.
-                error_message = (
-                    f"Schedule for time {time} is blocked due to instruction {instructions[0]}"
-                    f" and cannot process the remaining instructions: {list(instructions)[1:]}"
-                )
-
-                logger.error(error_message)
-
-                yield InstructionResult.blocked(error_message, level=LogLevel.ERROR)
-                return
-
-            self.schedule.pop(time)
+        queue = self.schedule.get(time, [])
 
         idx = 0
-        while idx < len(self.default_queue):
-            instruction = self.default_queue[idx]
+        while idx < len(queue):
+            instruction = queue[idx]
 
             result = instruction.apply(state, self)
 
-            if result.log_message:
-                logger.log(result.level, result.log_message)
+            control = result.queue_control
+            log_message = result.log_message
 
-            if result.done:
-                self.default_queue.pop(idx)
+            if log_message:
+                logger.log(result.level, log_message)
 
-            elif result.queue_control != QueueControl.RESTART:
+            if not result.done:
                 idx += 1
 
-            yield result
-
-            match result.queue_control:
-                case QueueControl.CONTINUE:
+                if control == QueueControl.CONTINUE:
                     continue
 
-                case QueueControl.RESTART:
-                    idx = 0
+            else:
+                queue.pop(idx)
+                yield result
 
-                case QueueControl.BLOCK:
-                    break
+            if control == QueueControl.RESTART or control == QueueControl.BLOCK:
+                idx = 0
 
-                case QueueControl.INTERRUPT:
-                    return
+        if queue:
+            # This only means that the queue was blocked and the remaining instructions cannot
+            # be processed at the moment, invalidating the schedule for the current time step.
+            error_message = (
+                f"Schedule for time {time} is blocked due to instruction {queue[0]}"
+                f" and cannot process the remaining instructions: {queue}"
+            )
+
+            logger.error(error_message)
+
+            yield InstructionResult.invalid(error_message, level=LogLevel.ERROR)
+            return
+
+        self.schedule.pop(time, None)
+        queue = self.default_queue
+
+        idx = 0
+        while idx < len(queue):
+            instruction = queue[idx]
+
+            result = instruction.apply(state, self)
+
+            control = result.queue_control
+            log_message = result.log_message
+
+            if log_message:
+                logger.log(result.level, log_message)
+
+            if not result.done:
+                idx += 1
+
+                if control == QueueControl.CONTINUE:
+                    continue
+
+            else:
+                queue.pop(idx)
+                yield result
+
+            if control == QueueControl.RESTART:
+                idx = 0
+
+            elif control == QueueControl.INTERRUPT or control == QueueControl.BLOCK:
+                return
 
 
 def select_machine(task_id: TASK_ID, state: ScheduleState) -> MACHINE_ID:
@@ -354,7 +357,6 @@ class Execute(Instruction):
         return BLOCKED
 
 
-# @profile
 class Submit(Instruction):
     "Submits a task to a specific machine. If the task cannot be executed, it is waited for."
 

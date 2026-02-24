@@ -1,14 +1,15 @@
-from typing import Any
+from typing import Any, TYPE_CHECKING
 from collections.abc import Iterable, Sequence
 
 from math import log, exp
 import random
 
 from abc import ABC, abstractmethod
+
 from mypy_extensions import mypyc_attr
 
 from cpscheduler.utils.list_utils import convert_to_list
-from cpscheduler.environment._common import ObsType, StatusEnum
+from cpscheduler.environment._common import ObsType, Status
 from cpscheduler.environment.instructions import SingleAction
 
 
@@ -43,7 +44,7 @@ class PriorityDispatchingRule(ABC):
             feature: [
                 value
                 for value, status in zip(values, tasks["status"])
-                if status < StatusEnum.COMPLETED
+                if status < Status.COMPLETED
             ]
             for feature, values in tasks.items()
         }

@@ -13,7 +13,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cpscheduler"
-version = "0.5.0"
+version = "0.6.0"
 authors = [
     { name="Daniel Gardin", email="gardin.dan@gmail.com" },
 ]
@@ -30,7 +30,6 @@ classifiers = [
 ]
 dependencies = [
     "mypy_extensions",
-    "colorlog==6.9.0"
 ]
 
 [project.optional-dependencies]

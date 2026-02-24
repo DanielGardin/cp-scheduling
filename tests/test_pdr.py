@@ -58,8 +58,8 @@ def test_pdr(instance_name: str, heuristic: str) -> None:
     action = heuristics[heuristic](obs)
     obs, reward, terminated, truncated, info = env.step(action)
 
-    assert terminated
     assert info["current_time"] == pdr_expected_results[instance_name][heuristic]
+    assert terminated
 
 @pytest.mark.heuristics
 @pytest.mark.parametrize("instance_name", pdr_expected_results)

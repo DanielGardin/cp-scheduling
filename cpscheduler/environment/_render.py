@@ -32,10 +32,10 @@ class Renderer:
 
         return renderers[render_mode]
 
-    def build_gantt(self, current_time: int, state: ScheduleState) -> Any:
+    def build_gantt(self, state: ScheduleState) -> Any:
         "Build a figure-like object representing the Gantt chart."
 
-    def render(self, current_time: int, state: ScheduleState) -> None:
+    def render(self, state: ScheduleState) -> None:
         "Render the built Gantt chart."
 
 
@@ -306,7 +306,7 @@ try:
 
         name = "plotly"
 
-        def build_gantt(self, current_time: int, state: ScheduleState) -> Any:
+        def build_gantt(self, state: ScheduleState) -> Any:
             if go is None:
                 raise ImportError(
                     "Plotly is required for rendering Gantt charts with PlotlyRenderer. "
@@ -357,9 +357,7 @@ try:
                     )
                 )
 
-            max_time = int(current_time / 0.95)
-            if max_time < 1:
-                max_time = 1
+            max_time = max(float(state.time) / 0.95, 1.0)
 
             fig.update_layout(
                 width=1600,
@@ -383,8 +381,8 @@ try:
 
             return fig
 
-        def render(self, current_time: int, state: ScheduleState) -> None:
-            fig = self.build_gantt(current_time, state)
+        def render(self, state: ScheduleState) -> None:
+            fig = self.build_gantt(state)
             fig.show()
 
 except ImportError:

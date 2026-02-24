@@ -1,7 +1,8 @@
 from pathlib import Path
 
-from typing import Annotated
+from typing import Annotated, Any
 from collections.abc import Sequence
+
 
 from time import perf_counter
 from prettytable import PrettyTable, TableStyle
@@ -104,6 +105,18 @@ def std(data: list[float]) -> float:
     mean_value = mean(data)
     return float((sum(((x - mean_value) ** 2 for x in data)) / len(data)) ** 0.5)
 
+def format_big_number(num: float) -> str:
+    units = ["T", "B", "M", "K", ""]
+
+    while num >= 1000 and units:
+        num /= 1000
+        units.pop()
+    
+    if int(num) == num:
+        return f"{int(num)}{units[-1]}"
+    
+    return f"{num:.2f}{units[-1]}"
+
 
 def statistics(
     data: list[float],
@@ -195,10 +208,12 @@ def test_speed(
             "All time",
             "Benchmark",
             "Time per task",
+            "Events",
+            "Events/sec"
         ]
 
     else:
-        columns = ["Instance", "Benchmark", "Simulation time", "Time per task"]
+        columns = ["Instance", "Benchmark", "Simulation time", "Time per task", "Events", "Events/sec"]
 
     table = PrettyTable(columns)
     table.set_style(TableStyle.MARKDOWN)
@@ -247,6 +262,8 @@ def test_speed(
                 dots = 0
 
         n_tasks = 0
+        info: dict[str, Any] = {}
+
         for i in range(n):
             global_tick = perf_counter()
 
@@ -266,17 +283,6 @@ def test_speed(
             tock = perf_counter()
             time_dict["reset"].append(tock - tick)
 
-            if numpy:
-                tick = perf_counter()
-                action = spt_agent(obs)
-                tock = perf_counter()
-
-            else:
-                with disable_numpy():
-                    tick = perf_counter()
-                    action = spt_agent(obs)
-                    tock = perf_counter()
-
             if dynamic:
                 pdr_time = 0.
                 step_time = 0.
@@ -289,22 +295,29 @@ def test_speed(
                     pdr_time += tock - tick
 
                     tick = perf_counter()
-                    obs, _, done, _, _ = env.step(single_action)
+                    obs, _, done, _, info = env.step(single_action)
                     tock = perf_counter()
                     step_time += tock - tick
 
                 time_dict["pdr"].append(pdr_time)
                 time_dict["step"].append(step_time)
 
-
             else:
-                tick = perf_counter()
-                action = spt_agent(obs)
-                tock = perf_counter()
+                if numpy:
+                    tick = perf_counter()
+                    action = spt_agent(obs)
+                    tock = perf_counter()
+
+                else:
+                    with disable_numpy():
+                        tick = perf_counter()
+                        action = spt_agent(obs)
+                        tock = perf_counter()
+
                 time_dict["pdr"].append(tock - tick)
 
                 tick = perf_counter()
-                env.step(action)
+                *_, info = env.step(action)
                 time_dict["step"].append(perf_counter() - tick)
 
             global_tock = perf_counter()
@@ -338,6 +351,10 @@ def test_speed(
         mean_tps = mean(tasks_per_second)
         std_tps = std(tasks_per_second)
 
+        event_count = info['event_count']
+
+        events_per_second = event_count * mean([1/t for t in time_dict["all"]])
+
         i = 0
         while mean_tps < 1:
             mean_tps *= 1000
@@ -370,6 +387,8 @@ def test_speed(
                     datas["all"],
                     f"{bench_time:.2f} s",
                     tasks_per_second_str,
+                    format_big_number(event_count),
+                    format_big_number(events_per_second)
                 ]
             )
 
@@ -393,11 +412,13 @@ def test_speed(
                         else f"{mean_time:5.2f} {UNITS[i]}"
                     ),
                     tasks_per_second_str,
+                    format_big_number(event_count),
+                    format_big_number(events_per_second)
                 ]
             )
 
     # RECORDS: 49x speedup for small instances
-    #          10x speedup for large instances
+    #          14x speedup for large instances
     speedup_strs = [
         colormap(value, min_value=0, max_value=12) + speed + RESET
         for value, speed in zip(values, speedup_strs)

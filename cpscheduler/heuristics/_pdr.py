@@ -1,4 +1,4 @@
-from typing import Any, overload
+from typing import Any, overload, TYPE_CHECKING
 from collections.abc import Iterable, Sequence
 from typing_extensions import TypedDict, Unpack, TypeAlias
 
@@ -8,7 +8,7 @@ from warnings import warn
 from abc import ABC, abstractmethod
 from mypy_extensions import mypyc_attr
 
-from cpscheduler.environment._common import StatusEnum, ObsType
+from cpscheduler.environment._common import Status, ObsType
 from cpscheduler.environment.instructions import SingleAction
 
 from cpscheduler.utils._protocols import ArrayLike, TabularRepresentation
@@ -206,7 +206,7 @@ class PriorityDispatchingRule(ABC):
                 )  # TODO: Add negation (~) operator to ArrayLike
 
             else:
-                mask = array_obs[self.status] >= StatusEnum.EXECUTING
+                mask = array_obs[self.status] >= Status.EXECUTING
 
             priorities[mask] = float("-inf")
 

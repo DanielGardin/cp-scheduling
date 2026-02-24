@@ -20,7 +20,6 @@ from cpscheduler.utils._protocols import Metric
 
 from cpscheduler.environment._common import (
     InstanceTypes,
-    TIME,
     InfoType,
     ObsType,
     Options,
@@ -33,6 +32,7 @@ from cpscheduler.environment.instructions import (
     is_single_action,
     Schedule,
     QueueControl,
+    DEFAULT_QUEUE_TIME
 )
 from cpscheduler.environment.schedule_setup import ScheduleSetup
 from cpscheduler.environment.constraints import Constraint, PassiveConstraint
@@ -46,12 +46,9 @@ def prepare_instance(instance: InstanceTypes) -> dict[str, list[Any]]:
     return {str(feature): convert_to_list(instance[feature]) for feature in instance}
 
 
-def is_info_dict(value: Any) -> TypeIs[Mapping[str, Any]]:
+def is_info_dict(value: Any) -> TypeIs[Mapping[Any, Any]]:
     "Type guard to check if a value is an info dictionary."
-    return isinstance(value, Mapping) and all(
-        isinstance(k, str) for k in value.keys()  # pyright: ignore[reportUnknownVariableType]
-    )
-
+    return isinstance(value, Mapping)
 
 class SchedulingEnv:
     """
@@ -68,6 +65,7 @@ class SchedulingEnv:
     constraints: list[Constraint]
     setup_constraints: list[Constraint]
     passive_constraints: list[PassiveConstraint]
+    combined_constraints: list[Constraint]
     objective: Objective
 
     metrics: dict[str, Metric[object | Mapping[str, Any]]]
@@ -100,6 +98,7 @@ class SchedulingEnv:
         self.constraints = []
         self.setup_constraints = []
         self.passive_constraints = []
+        self.combined_constraints = []
         if constraints is not None:
             for constraint in constraints:
                 self.add_constraint(constraint)
@@ -126,37 +125,39 @@ class SchedulingEnv:
         self.force_reset = True
 
     def __repr__(self) -> str:
-        if self.state.loaded:
+        state = self.state
+
+        if state.loaded:
             return (
-                f"SchedulingEnv({self.get_entry()}, n_tasks={self.state.n_tasks}, "
-                f"current_time={self.current_time}, objective={self.get_objective()})"
+                f"SchedulingEnv({self.get_entry()}, n_tasks={state.n_tasks}, "
+                f"current_time={state.time}, objective={self.get_objective()})"
             )
 
         return f"SchedulingEnv({self.get_entry()}, n_tasks=0)"
 
-    @property
-    def current_time(self) -> TIME:
-        "Get the current time in the environment."
-        return self.state.time
-
     # Environment configuration public methods
     def add_constraint(self, constraint: Constraint) -> None:
         "Add a constraint to the environment."
-        if self.state.loaded:
-            constraint.initialize(self.state)
+        state = self.state
+
+        if state.loaded:
+            constraint.initialize(state)
 
         if isinstance(constraint, PassiveConstraint):
             self.passive_constraints.append(constraint)
 
         else:
             self.constraints.append(constraint)
+            self._rebuild_combined_constraints()
 
         self.force_reset = True
 
     def set_objective(self, objective: Objective) -> None:
         "Set the objective function for the environment."
-        if self.state.loaded:
-            objective.initialize(self.state)
+        state = self.state
+
+        if state.loaded:
+            objective.initialize(state)
 
         self.objective = objective
 
@@ -170,21 +171,25 @@ class SchedulingEnv:
         """
         instance_dict = prepare_instance(instance)
 
-        self.state.read_instance(instance_dict)
-        self.setup.initialize(self.state)
+        state = self.state
+        setup = self.setup
+
+        state.read_instance(instance_dict)
+        setup.initialize(state)
 
         self.setup_constraints.clear()
-        for constraint in self.setup.setup_constraints(self.state):
-            constraint.initialize(self.state)
+        for constraint in setup.setup_constraints(state):
             self.setup_constraints.append(constraint)
 
+        self._rebuild_combined_constraints()
+
         for p_constraint in self.passive_constraints:
-            p_constraint.initialize(self.state)
+            p_constraint.initialize(state)
 
-        for constraint in self.constraints:
-            constraint.initialize(self.state)
+        for constraint in self.combined_constraints:
+            constraint.initialize(state)
 
-        self.objective.initialize(self.state)
+        self.objective.initialize(state)
 
         self.force_reset = True
 
@@ -197,11 +202,16 @@ class SchedulingEnv:
         self.state.clear()
         self.force_reset = True
 
+    def _rebuild_combined_constraints(self) -> None:
+        "Rebuild the combined constraint list for the propagation loop."
+        self.combined_constraints = self.setup_constraints + self.constraints
+
     def clear_constraints(self) -> None:
         "Clear all constraints from the environment."
         self.constraints.clear()
         self.setup_constraints.clear()
         self.passive_constraints.clear()
+        self.combined_constraints.clear()
         self.force_reset = True
 
     def clear_metrics(self) -> None:
@@ -220,7 +230,10 @@ class SchedulingEnv:
         "Get a string representation of the environment's configuration."
         alpha = self.setup.get_entry()
 
-        beta = ",".join([constraint.get_entry() for constraint in self.constraints])
+        beta = ",".join(
+            [constraint.get_entry() for constraint in self.constraints]
+            + [constraint.get_entry() for constraint in self.passive_constraints]
+        )
 
         gamma = self.objective.get_entry()
 
@@ -234,7 +247,7 @@ class SchedulingEnv:
     def get_info(self) -> InfoType:
         "Retrieve additional information about the environment."
         info: dict[str, Any] = {
-            "current_time": self.current_time,
+            "current_time": self.state.time,
             "objective_value": self._prev_obj_value,
             "event_count": self.event_counter,
         }
@@ -259,47 +272,68 @@ class SchedulingEnv:
         if is_single_action(action):
             action = [action]
 
-        for single_action, *args in action:
-            instruction, time = parse_instruction(single_action, args, self.state)
+        state = self.state
 
-            if 0 <= time < self.current_time:
+        current_time = state.time
+        for single_action, *args in action:
+            instruction, time = parse_instruction(single_action, args, state)
+
+            if time < current_time and time != DEFAULT_QUEUE_TIME:
                 raise ValueError(
                     f"Cannot schedule instruction {instruction} at past time {time} "
-                    f"from current time {self.current_time}."
+                    f"from current time {current_time}."
                 )
 
             self.schedule.add_instruction(instruction, time)
 
     def propagate(self) -> None:
         "Propagate the new bounds through the constraints until a fixed-point is reached."
-        while self.state.event_queue:
+        state = self.state
+        event_queue = state.event_queue
+        combined = self.combined_constraints
+
+        idx = 0
+        while idx < len(event_queue):
             self.event_counter += 1
-            event = self.state.event_queue.popleft()
+            event = event_queue[idx]
 
-            for constraint in self.setup_constraints:
-                constraint.propagate(event, self.state)
+            for constraint in combined:
+                constraint.propagate(event, state)
 
-            for constraint in self.constraints:
-                constraint.propagate(event, self.state)
+            idx += 1
+
+        event_queue.clear()
 
     def advance_clock(self) -> None:
+        state = self.state
+
         next_time = MAX_TIME
+        if state.awaiting_tasks:
+            current_time = state.time
+            global_lbs = state.variables_.start.global_lbs
+            for task_id in state.awaiting_tasks:
+                task_lb = global_lbs[task_id]
+
+                if task_lb > current_time and task_lb < next_time:
+                    next_time = task_lb
+
+        else:
+            last_end_time = state.time
+
+            for task_id in state.fixed_tasks:
+                end_time = state.task_history[task_id][-1].end_time
+
+                if last_end_time < end_time:
+                    last_end_time = end_time
+
+            next_time = last_end_time
 
         next_instruction_time = self.schedule.get_next_instruction_time()
         if next_instruction_time < next_time:
             next_time = next_instruction_time
 
-        if self.state.awaiting_tasks:
-            next_decision_time = self.state.get_next_available_time(strict=True)
-
-            if next_decision_time < next_time:
-                next_time = next_decision_time
-
-        if next_time == MAX_TIME and self.state.fixed_tasks:
-            next_time = self.state.get_next_completion_time()
-
-        if next_time > self.current_time:
-            self.state.time = next_time
+        if next_time > state.time:
+            state.time = next_time
 
     # Environment API methods
     def reset(self, *, options: Options = None) -> tuple[ObsType, InfoType]:
@@ -311,15 +345,16 @@ class SchedulingEnv:
                 "Environment has not been loaded with an instance. "
                 "Please call reset(options={'instance':<instance>}) or set_instance(<instance>) before resetting."
             )
+        state = self.state
 
         self.schedule.reset()
-        self.state.reset()
+        state.reset()
 
         for constraint in self.constraints:
-            constraint.reset(self.state)
+            constraint.reset(state)
 
         for constraint in self.setup_constraints:
-            constraint.reset(self.state)
+            constraint.reset(state)
 
         self._prev_obj_value = self.get_objective()
         self.event_counter = 0
@@ -330,7 +365,9 @@ class SchedulingEnv:
         return self.get_state(), self.get_info()
 
     def step(self, action: ActionType = None) -> tuple[ObsType, float, bool, bool, InfoType]:
-        if not self.state.loaded or self.force_reset:
+        state = self.state
+
+        if not state.loaded or self.force_reset:
             raise RuntimeError(
                 "Environment was not reset after loading an instance, or wasn't loaded. "
                 "Please call reset(options={'instance':<instance>}) or set_instance(<instance>), then reset()."
@@ -338,17 +375,18 @@ class SchedulingEnv:
 
         self.schedule_action(action)
 
-        while not self.schedule.is_empty():
+        schedule = self.schedule
+
+        while not schedule.is_empty():
             # Invariant: Each iteration has the time static during instruction processing
 
             control: QueueControl = QueueControl.CONTINUE
-            for instruction_result in self.schedule.instruction_queue(self.state):
+            for instruction_result in schedule.instruction_queue(state):
                 # After each instruction is processed, ensure domains are updated until a fixed point
                 # is reached before processing the next instruction.
                 control = instruction_result.queue_control
 
-                # if instruction_result.done:
-                if self.state.event_queue:
+                if state.event_queue:
                     self.propagate()
 
             if control == QueueControl.INTERRUPT:
@@ -356,9 +394,8 @@ class SchedulingEnv:
                 # the time and allow the agent to react to the new state.
                 break
 
-            if self.schedule.is_empty():
-                if self.state.get_next_available_time() <= self.current_time:
-                    break
+            if schedule.is_empty() and state.get_next_available_time() <= state.time:
+                break
 
             self.advance_clock()
 
@@ -379,7 +416,7 @@ class SchedulingEnv:
         return obs, reward, terminal, truncated, info
 
     def render(self) -> None:
-        self.renderer.render(self.current_time, self.state)
+        self.renderer.render(self.state)
 
     def get_objective(self) -> float:
         "Get the current value of the objective function."
@@ -406,6 +443,7 @@ class SchedulingEnv:
                 self.constraints,
                 self.setup_constraints,
                 self.passive_constraints,
+                self.combined_constraints,
                 self.objective,
                 self.metrics,
                 self.renderer,
@@ -424,6 +462,7 @@ class SchedulingEnv:
             self.constraints,
             self.setup_constraints,
             self.passive_constraints,
+            self.combined_constraints,
             self.objective,
             self.metrics,
             self.renderer,

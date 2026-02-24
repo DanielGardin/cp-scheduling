@@ -3,27 +3,35 @@
 from typing import (
     Any,
     Final,
-    Literal,
     SupportsInt,
     SupportsFloat,
     Protocol,
     runtime_checkable,
+    TYPE_CHECKING,
 )
 from collections.abc import Iterable, Mapping, Hashable, Iterator
 from typing_extensions import TypedDict, TypeAlias
 
-from mypy_extensions import i64, i32, i16, u8
+if TYPE_CHECKING:
+    from mypy_extensions import i64, i32, i16, u8
+
+else:
+    i64 = int
+    i32 = int
+    i16 = int
+    u8 = int
 
 # Type aliases for commonly used types and also for performance optimization with mypyc
-MACHINE_ID: TypeAlias = i16
+# Currently MACHINE_ID and TASK_ID must have the same underlying type due to indexing
+MACHINE_ID: TypeAlias = i32
 TASK_ID: TypeAlias = i32
-PART_ID: TypeAlias = i16
+
 TIME: TypeAlias = i32
 
 # Special machine ID representing a global machine
 GLOBAL_MACHINE_ID: MACHINE_ID = -1
 
-Int: TypeAlias = SupportsInt | int | i64 | i32 | i16 | u8
+Int = SupportsInt | int | i64 | i32 | i16 | u8
 Float: TypeAlias = SupportsFloat | float | i64 | i32 | i16 | u8
 
 # Reducing upper bounds to avoid numerical issues
@@ -60,28 +68,21 @@ class InstanceConfig(TypedDict, total=False):
 Options: TypeAlias = dict[str, Any] | InstanceConfig | None
 
 
-class StatusEnum:
+StatusType: TypeAlias = u8
+class Status:
     "Possible statuses of a task at a given time."
 
     # awaiting:  time < start_lb[0] or waiting for a machine
-    AWAITING: Literal[0] = 0
+    AWAITING: Final[StatusType] = 0
 
     # paused:    start_lb[i] + duration[i] < = time < start_lb[i+1] for some i
-    PAUSED: Literal[1] = 1
+    PAUSED: Final[StatusType] = 1
 
     # executing: start_lb[i] <= time < start_lb[i] + duration[i] for some i
-    EXECUTING: Literal[2] = 2
+    EXECUTING: Final[StatusType] = 2
 
     # completed: time >= start_lb[-1] + duration[-1]
-    COMPLETED: Literal[3] = 3
+    COMPLETED: Final[StatusType] = 3
 
     # unfeasible: task cannot be completed given the current state
-    INFEASIBLE: Literal[255] = 255
-
-
-STATUS: TypeAlias = int
-
-
-def ceil_div(a: TIME, b: TIME) -> TIME:
-    "a divided by b, rounded up to the nearest integer."
-    return -(-a // b)
+    INFEASIBLE: Final[StatusType] = 255

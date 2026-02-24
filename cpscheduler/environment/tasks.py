@@ -10,8 +10,6 @@ from cpscheduler.environment._common import (
     GLOBAL_MACHINE_ID,
 )
 
-from cpscheduler.environment.events import VarField
-
 
 class TaskHistory:
     assignment: MACHINE_ID
@@ -80,7 +78,19 @@ class Task:
         return (self.task_id == value.task_id) and (self.job_id == value.job_id)
 
     def __repr__(self) -> str:
-        return f"Task(task_id={self.task_id}, job_id={self.job_id})"
+        task_repr = f"Task(task_id={self.task_id}, job_id={self.job_id}"
+
+        if self.preemptive:
+            task_repr += ", preemptive=True"
+
+        if self.optional:
+            task_repr += ", optional=True"
+
+        if self.data:
+            for key, value in self.data.items():
+                task_repr += f", {key}={value}"
+
+        return task_repr + ")"
 
     @property
     def machines(self) -> KeysView[MACHINE_ID]:
@@ -146,16 +156,6 @@ class Job:
     def __setstate__(self, state: tuple[Any, ...]) -> None:
         self.tasks, self.data = state
 
-    @property
-    def n_tasks(self) -> int:
-        "Get the number of tasks in the job."
-        return len(self.tasks)
-
-    @property
-    def task_ids(self) -> list[TASK_ID]:
-        "Get the list of task IDs in the job."
-        return [task.task_id for task in self.tasks]
-
     def __repr__(self) -> str:
         return f"Job(job_id={self.job_id}, n_tasks={self.n_tasks})"
 
@@ -168,6 +168,16 @@ class Job:
     def __iter__(self) -> Iterator[Task]:
         return iter(self.tasks)
 
+    @property
+    def n_tasks(self) -> int:
+        "Get the number of tasks in the job."
+        return len(self.tasks)
+
+    @property
+    def task_ids(self) -> list[TASK_ID]:
+        "Get the list of task IDs in the job."
+        return [task.task_id for task in self.tasks]
+
     def add_task(self, task: Task) -> None:
         "Add a task to the job."
         self.tasks.append(task)
@@ -177,13 +187,17 @@ class Job:
         self.data[key] = value
 
 
-def initialize_matrix(n_rows: int, n_cols: int, value: TIME) -> list[list[TIME]]:
-    return [[value for _ in range(n_cols)] for _ in range(n_rows)]
+def initialize_matrix(n_rows: int, n_cols: int, value: TIME) -> list[TIME]:
+    return [value] * (n_rows * n_cols)
 
 
 class Bounds:
-    lbs: list[list[TIME]]
-    ubs: list[list[TIME]]
+    __slots__ = ["n_machines", "lbs", "ubs", "global_lbs", "global_ubs"]
+
+    n_machines: int
+
+    lbs: list[TIME]
+    ubs: list[TIME]
     global_lbs: list[TIME]
     global_ubs: list[TIME]
 
@@ -191,25 +205,47 @@ class Bounds:
     max_ub: TIME
 
     def __init__(self, tasks: list[Task], n_machines: int) -> None:
+        self.n_machines = n_machines
+
         self.lbs = initialize_matrix(len(tasks), n_machines, MAX_TIME)
         self.ubs = initialize_matrix(len(tasks), n_machines, MIN_TIME)
 
         for task_id, task in enumerate(tasks):
             for machine in task.machines:
-                self.lbs[task_id][machine] = MIN_TIME
-                self.ubs[task_id][machine] = MAX_TIME
+                self.lbs[task_id * self.n_machines + machine] = MIN_TIME
+                self.ubs[task_id * self.n_machines + machine] = MAX_TIME
 
-        self.global_lbs = [min(task_lbs) for task_lbs in self.lbs]
-        self.global_ubs = [max(task_ubs) for task_ubs in self.ubs]
+        self.global_lbs = [MIN_TIME for _ in tasks]
+        self.global_ubs = [MAX_TIME for _ in tasks]
+
+        self.recompute_all_global_bounds()
 
     def recompute_global_bounds(self, task_id: TASK_ID) -> None:
-        self.global_lbs[task_id] = min(self.lbs[task_id])
-        self.global_ubs[task_id] = max(self.ubs[task_id])
+        start = task_id * self.n_machines
+        end = start + self.n_machines
+
+        # self.global_lbs[task_id] = min(self.lbs[start:end])
+        # self.global_ubs[task_id] = max(self.ubs[start:end])
+
+        min_lb = self.lbs[start]
+        max_ub = self.ubs[start]
+
+        for i in range(start + 1, end):
+            if self.lbs[i] < min_lb:
+                min_lb = self.lbs[i]
+
+            if self.ubs[i] > max_ub:
+                max_ub = self.ubs[i]
+
+        self.global_lbs[task_id] = min_lb
+        self.global_ubs[task_id] = max_ub
 
     def recompute_all_global_bounds(self) -> None:
-        for task_id in range(len(self.lbs)):
-            self.global_lbs[task_id] = min(self.lbs[task_id])
-            self.global_ubs[task_id] = max(self.ubs[task_id])
+        for task_id in range(len(self.lbs) // self.n_machines):
+            start = task_id * self.n_machines
+            end = start + self.n_machines
+            self.global_lbs[task_id] = min(self.lbs[start:end])
+            self.global_ubs[task_id] = max(self.ubs[start:end])
 
     def __repr__(self) -> str:
         return f"Bounds(lbs={self.lbs}, ubs={self.ubs}, global_lbs={self.global_lbs}, global_ubs={self.global_ubs})"
@@ -217,89 +253,94 @@ class Bounds:
     def __reduce__(self) -> tuple[Any, ...]:
         return (
             self.__class__,
-            ([], 0),  # Dummy arguments for __init__
+            ([], self.n_machines),  # Dummy arguments for __init__
             (self.lbs, self.ubs, self.global_lbs, self.global_ubs),
         )
 
     def __setstate__(self, state: tuple[Any, ...]) -> None:
         self.lbs, self.ubs, self.global_lbs, self.global_ubs = state
 
+    def get_lb(self, task_id: TASK_ID, machine_id: MACHINE_ID) -> TIME:
+        if machine_id == GLOBAL_MACHINE_ID:
+            return self.global_lbs[task_id]
+
+        else:
+            return self.lbs[task_id * self.n_machines + machine_id]
+
+    def get_ub(self, task_id: TASK_ID, machine_id: MACHINE_ID) -> TIME:
+        if machine_id == GLOBAL_MACHINE_ID:
+            return self.global_ubs[task_id]
+        else:
+            return self.ubs[task_id * self.n_machines + machine_id]
+
 
 class ScheduleVariables:
-    remaining_times: list[list[TIME]]
+    __slots__ = [
+        "remaining_times",
+        "assignment",
+        "locked",
+        "present",
+        "start",
+        "end",
+        "n_machines_feasible"
+    ]
+
+    remaining_times: list[TIME]
     assignment: list[MACHINE_ID]
 
-    fixed: list[bool]
     locked: list[bool]
     present: list[bool]
 
     start: Bounds
     end: Bounds
+    n_machines_feasible: list[int]
 
-    def __init__(self, tasks: list[Task]) -> None:
-        n_machines = max(max(task.machines) if task.machines else -1 for task in tasks) + 1
-
+    def __init__(self, tasks: list[Task], n_machines: int) -> None:
         self.remaining_times = initialize_matrix(len(tasks), n_machines, MAX_TIME)
         self.assignment = [GLOBAL_MACHINE_ID for _ in tasks]
 
-        self.fixed = [False for _ in tasks]
         self.locked = [False for _ in tasks]
         self.present = [not task.optional for task in tasks]
 
         self.start = Bounds(tasks, n_machines)
         self.end = Bounds(tasks, n_machines)
 
+        self.n_machines_feasible = [0] * len(tasks)
+
         for task_id, task in enumerate(tasks):
             for machine, processing_time in task.processing_times.items():
-                self.remaining_times[task_id][machine] = processing_time
-                self.start.ubs[task_id][machine] = self.end.ubs[task_id][machine] - processing_time
-                self.end.lbs[task_id][machine] = self.start.lbs[task_id][machine] + processing_time
+                idx = task_id * n_machines + machine
+
+                self.remaining_times[idx] = processing_time
+                self.start.ubs[idx] = self.end.ubs[idx] - processing_time
+                self.end.lbs[idx] = self.start.lbs[idx] + processing_time
 
             self.start.recompute_global_bounds(task_id)
             self.end.recompute_global_bounds(task_id)
 
-    def select_bound(self, task_id: TASK_ID, machine_id: MACHINE_ID, field: VarField) -> TIME:
-        if machine_id == GLOBAL_MACHINE_ID:
-            if field == VarField.START_LB:
-                return self.start.global_lbs[task_id]
-
-            elif field == VarField.START_UB:
-                return self.start.global_ubs[task_id]
-
-            elif field == VarField.END_LB:
-                return self.end.global_lbs[task_id]
-
-            elif field == VarField.END_UB:
-                return self.end.global_ubs[task_id]
-        else:
-            if field == VarField.START_LB:
-                return self.start.lbs[task_id][machine_id]
-
-            elif field == VarField.START_UB:
-                return self.start.ubs[task_id][machine_id]
-
-            elif field == VarField.END_LB:
-                return self.end.lbs[task_id][machine_id]
-
-            elif field == VarField.END_UB:
-                return self.end.ubs[task_id][machine_id]
-
-        raise ValueError(f"Invalid field: {field}")
-
     def __repr__(self) -> str:
-        return f"ScheduleVariables(remaining_times={self.remaining_times}, assignment={self.assignment}, fixed={self.fixed}, locked={self.locked}, present={self.present}, start={self.start}, end={self.end})"
+        return f"ScheduleVariables(remaining_times={self.remaining_times}, assignment={self.assignment}, locked={self.locked}, present={self.present}, start={self.start}, end={self.end})"
 
     def __reduce__(self) -> tuple[Any, ...]:
         return (
             self.__class__,
-            ([],),  # Dummy argument for __init__
+            ([], self.start.n_machines),  # Dummy argument for __init__
             (
                 self.remaining_times,
                 self.assignment,
-                self.fixed,
                 self.locked,
                 self.present,
                 self.start,
                 self.end,
             ),
         )
+
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        (
+            self.remaining_times,
+            self.assignment,
+            self.locked,
+            self.present,
+            self.start,
+            self.end,
+        ) = state

@@ -1,5 +1,4 @@
 from typing import Any
-from collections import deque
 
 from cpscheduler.environment._common import (
     MAX_TIME,
@@ -9,10 +8,10 @@ from cpscheduler.environment._common import (
     TIME,
     ObsType,
     GLOBAL_MACHINE_ID,
-    STATUS,
-    StatusEnum,
+    Status,
+    StatusType
 )
-from cpscheduler.environment.events import VarField, Event
+from cpscheduler.environment.events import Event, VarField
 from cpscheduler.environment.tasks import Task, Job, TaskHistory, ScheduleVariables
 from cpscheduler.utils.list_utils import convert_to_list
 
@@ -53,12 +52,12 @@ class ScheduleState:
     "History of task executions, indexed by task_id. Each entry is a list of TaskHistory."
 
     awaiting_tasks: set[TASK_ID]
-    "Set of tasks that are awaiting execution."
+    "Set of tasks that are awaiting execution. Does not include tasks that are set to be absent."
 
     fixed_tasks: set[TASK_ID]
     "Set of tasks that have been fixed in the schedule."
 
-    event_queue: deque[Event]
+    event_queue: list[Event]
     "Queue of events to be processed for constraint propagation."
 
     instance: dict[str, list[Any]]
@@ -78,7 +77,7 @@ class ScheduleState:
 
         self.task_history = []
 
-        self.event_queue = deque()
+        self.event_queue = []
 
         self.instance = {}
         self.job_instance = {}
@@ -145,7 +144,7 @@ class ScheduleState:
 
     @property
     def loaded(self) -> bool:
-        return self.n_tasks > 0
+        return bool(self.tasks)
 
     # Instance control methods
     def clear(self) -> None:
@@ -161,6 +160,7 @@ class ScheduleState:
         self.fixed_tasks.clear()
 
         self.instance.clear()
+        self.job_instance.clear()
         self._n_machines = 0
 
     def read_instance(
@@ -196,7 +196,7 @@ class ScheduleState:
 
     # Flow control methods
     def reset(self) -> None:
-        self.variables_ = ScheduleVariables(self.tasks)
+        self.variables_ = ScheduleVariables(self.tasks, self.n_machines)
         self.task_history = [[] for _ in range(self.n_tasks)]
 
         self.time = 0
@@ -214,47 +214,30 @@ class ScheduleState:
             )
 
         return all(
-            self.task_history[task_id][-1].end_time <= self.time for task_id in range(self.n_tasks)
+            self.task_history[task_id][-1].end_time <= self.time for task_id in self.fixed_tasks
         )
 
     # Constraint propagation API methods
-    def get_bound(
-        self, task_id: TASK_ID, field: VarField, machine_id: MACHINE_ID = GLOBAL_MACHINE_ID
-    ) -> TIME:
-        return self.variables_.select_bound(task_id, machine_id, field)
-
     def get_start_lb(self, task_id: TASK_ID, machine_id: MACHINE_ID = GLOBAL_MACHINE_ID) -> TIME:
-        if machine_id == GLOBAL_MACHINE_ID:
-            return self.variables_.start.global_lbs[task_id]
-
-        return self.variables_.start.lbs[task_id][machine_id]
+        return self.variables_.start.get_lb(task_id, machine_id)
 
     def get_start_ub(self, task_id: TASK_ID, machine_id: MACHINE_ID = GLOBAL_MACHINE_ID) -> TIME:
-        if machine_id == GLOBAL_MACHINE_ID:
-            return self.variables_.start.global_ubs[task_id]
-
-        return self.variables_.start.ubs[task_id][machine_id]
+        return self.variables_.start.get_ub(task_id, machine_id)
 
     def get_end_lb(self, task_id: TASK_ID, machine_id: MACHINE_ID = GLOBAL_MACHINE_ID) -> TIME:
-        if machine_id == GLOBAL_MACHINE_ID:
-            return self.variables_.end.global_lbs[task_id]
-
-        return self.variables_.end.lbs[task_id][machine_id]
+        return self.variables_.end.get_lb(task_id, machine_id)
 
     def get_end_ub(self, task_id: TASK_ID, machine_id: MACHINE_ID = GLOBAL_MACHINE_ID) -> TIME:
-        if machine_id == GLOBAL_MACHINE_ID:
-            return self.variables_.end.global_ubs[task_id]
-
-        return self.variables_.end.ubs[task_id][machine_id]
+        return self.variables_.end.get_ub(task_id, machine_id)
 
     def get_remaining_time(self, task_id: TASK_ID, machine_id: MACHINE_ID) -> TIME:
-        return self.variables_.remaining_times[task_id][machine_id]
+        return self.variables_.remaining_times[task_id * self.n_machines + machine_id]
 
     def get_assignment(self, task_id: TASK_ID) -> MACHINE_ID:
         return self.variables_.assignment[task_id]
 
-    def is_fixed(self, task_id: TASK_ID) -> bool:
-        return self.variables_.fixed[task_id]
+    # def is_fixed(self, task_id: TASK_ID) -> bool:
+    #     return
 
     def is_locked(self, task_id: TASK_ID) -> bool:
         return self.variables_.locked[task_id]
@@ -263,9 +246,21 @@ class ScheduleState:
         return self.variables_.present[task_id]
 
     def is_feasible(self, task_id: TASK_ID, machine_id: MACHINE_ID = GLOBAL_MACHINE_ID) -> bool:
-        return self.get_start_lb(task_id, machine_id) <= self.get_start_ub(
-            task_id, machine_id
-        ) and (self.is_fixed(task_id) or self.time <= self.get_start_ub(task_id, machine_id))
+        start = self.variables_.start
+
+        lb = start.get_lb(task_id, machine_id)
+        ub = start.get_ub(task_id, machine_id)
+
+        if lb > ub or self.time > ub:
+            return False
+
+        for machine in self.tasks[task_id].machines:
+            idx = task_id * self.n_machines + machine
+
+            if self.variables_.start.lbs[idx] > self.variables_.start.ubs[idx]:
+                return False
+        
+        return True
 
     def tight_start_lb(
         self,
@@ -273,30 +268,42 @@ class ScheduleState:
         value: TIME,
         machine_id: MACHINE_ID = GLOBAL_MACHINE_ID,
     ) -> None:
-        if self.is_fixed(task_id) or value <= self.get_start_lb(task_id, machine_id):
+        start_vars = self.variables_.start
+
+        if value <= start_vars.get_lb(task_id, machine_id):
             return
 
-        if machine_id == GLOBAL_MACHINE_ID:
-            for machine in self.tasks[task_id].machines:
-                if self.variables_.start.lbs[task_id][machine] < value:
-                    self.variables_.start.lbs[task_id][machine] = value
-                    self.variables_.end.lbs[task_id][machine] = (
-                        value + self.variables_.remaining_times[task_id][machine]
-                    )
+        end_vars = self.variables_.end
 
-            self.variables_.start.global_lbs[task_id] = value
-            self.variables_.end.recompute_global_bounds(task_id)
+        if machine_id == GLOBAL_MACHINE_ID:
+            remaining_times = self.variables_.remaining_times
+
+            for machine in self.tasks[task_id].machines:
+                idx = task_id * self.n_machines + machine
+
+                if start_vars.lbs[idx] < value:
+                    start_vars.lbs[idx] = value
+                    end_vars.lbs[idx] = value + remaining_times[idx]
+
+            start_vars.global_lbs[task_id] = value
+            end_vars.recompute_global_bounds(task_id)
 
         else:
-            self.variables_.start.lbs[task_id][machine_id] = value
-            self.variables_.end.lbs[task_id][machine_id] = (
-                value + self.variables_.remaining_times[task_id][machine_id]
-            )
+            idx = task_id * self.n_machines + machine_id
 
-            self.variables_.start.recompute_global_bounds(task_id)
-            self.variables_.end.recompute_global_bounds(task_id)
+            start_vars.lbs[idx] = value
+            end_vars.lbs[idx] = value + self.variables_.remaining_times[idx]
+
+            start_vars.recompute_global_bounds(task_id)
+            end_vars.recompute_global_bounds(task_id)
+
 
         self.event_queue.append(Event(task_id, VarField.START_LB, machine_id))
+
+        if not self.is_feasible(task_id):
+            self.variables_.present[task_id] = False
+            self.awaiting_tasks.discard(task_id)
+            self.event_queue.append(Event(task_id, VarField.PRESENCE, GLOBAL_MACHINE_ID))
 
     def tight_start_ub(
         self,
@@ -304,30 +311,41 @@ class ScheduleState:
         value: TIME,
         machine_id: MACHINE_ID = GLOBAL_MACHINE_ID,
     ) -> None:
-        if self.is_fixed(task_id) or value >= self.get_start_ub(task_id, machine_id):
+        start_vars = self.variables_.start
+
+        if value >= start_vars.get_ub(task_id, machine_id):
             return
 
-        if machine_id == GLOBAL_MACHINE_ID:
-            for machine in self.tasks[task_id].machines:
-                if self.variables_.start.ubs[task_id][machine] > value:
-                    self.variables_.start.ubs[task_id][machine] = value
-                    self.variables_.end.ubs[task_id][machine] = (
-                        value + self.variables_.remaining_times[task_id][machine]
-                    )
+        end_vars = self.variables_.end
 
-            self.variables_.start.global_ubs[task_id] = value
-            self.variables_.end.recompute_global_bounds(task_id)
+        if machine_id == GLOBAL_MACHINE_ID:
+            remaining_times = self.variables_.remaining_times
+
+            for machine in self.tasks[task_id].machines:
+                idx = task_id * self.n_machines + machine
+
+                if start_vars.ubs[idx] > value:
+                    start_vars.ubs[idx] = value
+                    end_vars.ubs[idx] = value + remaining_times[idx]
+
+            start_vars.global_ubs[task_id] = value
+            end_vars.recompute_global_bounds(task_id)
 
         else:
-            self.variables_.start.ubs[task_id][machine_id] = value
-            self.variables_.end.ubs[task_id][machine_id] = (
-                value + self.variables_.remaining_times[task_id][machine_id]
-            )
+            idx = task_id * self.n_machines + machine_id
 
-            self.variables_.start.recompute_global_bounds(task_id)
-            self.variables_.end.recompute_global_bounds(task_id)
+            start_vars.ubs[idx] = value
+            end_vars.ubs[idx] = value + self.variables_.remaining_times[idx]
+
+            start_vars.recompute_global_bounds(task_id)
+            end_vars.recompute_global_bounds(task_id)
 
         self.event_queue.append(Event(task_id, VarField.START_UB, machine_id))
+
+        if not self.is_feasible(task_id):
+            self.variables_.present[task_id] = False
+            self.awaiting_tasks.discard(task_id)
+            self.event_queue.append(Event(task_id, VarField.PRESENCE, GLOBAL_MACHINE_ID))
 
     def tight_end_lb(
         self,
@@ -335,30 +353,41 @@ class ScheduleState:
         value: TIME,
         machine_id: MACHINE_ID = GLOBAL_MACHINE_ID,
     ) -> None:
-        if self.is_fixed(task_id) or value <= self.get_end_lb(task_id, machine_id):
+        end_vars = self.variables_.end
+
+        if value <= end_vars.get_lb(task_id, machine_id):
             return
 
-        if machine_id == GLOBAL_MACHINE_ID:
-            for machine in self.tasks[task_id].machines:
-                if self.variables_.end.lbs[task_id][machine] < value:
-                    self.variables_.end.lbs[task_id][machine] = value
-                    self.variables_.start.lbs[task_id][machine] = (
-                        value - self.variables_.remaining_times[task_id][machine]
-                    )
+        start_vars = self.variables_.start
 
-            self.variables_.end.global_lbs[task_id] = value
-            self.variables_.start.recompute_global_bounds(task_id)
+        if machine_id == GLOBAL_MACHINE_ID:
+            remaining_times = self.variables_.remaining_times
+
+            for machine in self.tasks[task_id].machines:
+                idx = task_id * self.n_machines + machine
+
+                if end_vars.lbs[idx] < value:
+                    end_vars.lbs[idx] = value
+                    start_vars.lbs[idx] = value - remaining_times[idx]
+
+            end_vars.global_lbs[task_id] = value
+            start_vars.recompute_global_bounds(task_id)
 
         else:
-            self.variables_.end.lbs[task_id][machine_id] = value
-            self.variables_.start.lbs[task_id][machine_id] = (
-                value - self.variables_.remaining_times[task_id][machine_id]
-            )
+            idx = task_id * self.n_machines + machine_id
 
-            self.variables_.end.recompute_global_bounds(task_id)
-            self.variables_.start.recompute_global_bounds(task_id)
+            end_vars.lbs[idx] = value
+            start_vars.lbs[idx] = value - self.variables_.remaining_times[idx]
+
+            end_vars.recompute_global_bounds(task_id)
+            start_vars.recompute_global_bounds(task_id)
 
         self.event_queue.append(Event(task_id, VarField.END_LB, machine_id))
+
+        if not self.is_feasible(task_id):
+            self.variables_.present[task_id] = False
+            self.awaiting_tasks.discard(task_id)
+            self.event_queue.append(Event(task_id, VarField.PRESENCE, GLOBAL_MACHINE_ID))
 
     def tight_end_ub(
         self,
@@ -366,30 +395,41 @@ class ScheduleState:
         value: TIME,
         machine_id: MACHINE_ID = GLOBAL_MACHINE_ID,
     ) -> None:
-        if self.is_fixed(task_id) or value >= self.get_end_ub(task_id, machine_id):
+        end_vars = self.variables_.end
+
+        if value >= end_vars.get_ub(task_id, machine_id):
             return
 
-        if machine_id == GLOBAL_MACHINE_ID:
-            for machine in self.tasks[task_id].machines:
-                if self.variables_.end.ubs[task_id][machine] > value:
-                    self.variables_.end.ubs[task_id][machine] = value
-                    self.variables_.start.ubs[task_id][machine] = (
-                        value - self.variables_.remaining_times[task_id][machine]
-                    )
+        start_vars = self.variables_.start
 
-            self.variables_.end.global_ubs[task_id] = value
-            self.variables_.start.recompute_global_bounds(task_id)
+        if machine_id == GLOBAL_MACHINE_ID:
+            remaining_times = self.variables_.remaining_times
+
+            for machine in self.tasks[task_id].machines:
+                idx = task_id * self.n_machines + machine
+
+                if end_vars.ubs[idx] > value:
+                    end_vars.ubs[idx] = value
+                    start_vars.ubs[idx] = value - remaining_times[idx]
+
+            end_vars.global_ubs[task_id] = value
+            start_vars.recompute_global_bounds(task_id)
 
         else:
-            self.variables_.end.ubs[task_id][machine_id] = value
-            self.variables_.start.ubs[task_id][machine_id] = (
-                value - self.variables_.remaining_times[task_id][machine_id]
-            )
+            idx = task_id * self.n_machines + machine_id
 
-            self.variables_.end.recompute_global_bounds(task_id)
-            self.variables_.start.recompute_global_bounds(task_id)
+            end_vars.ubs[idx] = value
+            start_vars.ubs[idx] = value - self.variables_.remaining_times[idx]
+
+            end_vars.recompute_global_bounds(task_id)
+            start_vars.recompute_global_bounds(task_id)
 
         self.event_queue.append(Event(task_id, VarField.END_UB, machine_id))
+
+        if not self.is_feasible(task_id):
+            self.variables_.present[task_id] = False
+            self.awaiting_tasks.discard(task_id)
+            self.event_queue.append(Event(task_id, VarField.PRESENCE, GLOBAL_MACHINE_ID))
 
     def set_infeasible(self, task_id: TASK_ID, machine_id: MACHINE_ID = GLOBAL_MACHINE_ID) -> None:
         self.tight_start_lb(task_id, MAX_TIME, machine_id)
@@ -400,89 +440,97 @@ class ScheduleState:
             if other_machine != machine_id:
                 self.set_infeasible(task_id, other_machine)
 
+    def forbid_machine(self, task_id: TASK_ID, machine_id: MACHINE_ID) -> None:
+        self.set_infeasible(task_id, machine_id)
+
     def require_task(self, task_id: TASK_ID) -> None:
-        if self.is_fixed(task_id) or self.is_present(task_id):
+        present = self.variables_.present[task_id]
+
+        if present:
             return
 
         self.variables_.present[task_id] = True
+        self.awaiting_tasks.add(task_id)
         self.event_queue.append(Event(task_id, VarField.PRESENCE, GLOBAL_MACHINE_ID))
 
     def forbid_task(self, task_id: TASK_ID) -> None:
-        if self.is_fixed(task_id) or not self.is_present(task_id):
+        present = self.variables_.present[task_id]
+
+        if present:
             return
 
         self.set_infeasible(task_id)
 
         self.variables_.present[task_id] = False
+        self.awaiting_tasks.discard(task_id)
         self.event_queue.append(Event(task_id, VarField.PRESENCE, GLOBAL_MACHINE_ID))
 
     # Discrete event simulation API methods
-    # TODO: Remove is_available check and let the environment handle it, since it should be part of the constraints
+    def is_fixed(self, task_id: TASK_ID) -> bool:
+        return task_id in self.fixed_tasks
+
     def is_awaiting(self, task_id: TASK_ID) -> bool:
-        return not self.is_fixed(task_id)
+        return task_id in self.awaiting_tasks
 
     def is_paused(self, task_id: TASK_ID) -> bool:
-        if not self.is_fixed(task_id):
-            return bool(self.task_history[task_id])
+        history = self.task_history[task_id]
 
-        for i in range(len(self.task_history[task_id]) - 1, -1, -1):
-            history_entry = self.task_history[task_id][i]
-
-            if history_entry.end_time <= self.time:
-                return True
-
-            if history_entry.start_time <= self.time:
-                return False
-
-        return False
-
-    def is_executing(self, task_id: TASK_ID) -> bool:
-        if not self.is_fixed(task_id):
+        if not history or task_id in self.fixed_tasks:
             return False
 
-        for i in range(len(self.task_history[task_id]) - 1, -1, -1):
-            history_entry = self.task_history[task_id][i]
+        return history[-1].end_time <= self.time
 
-            if history_entry.start_time <= self.time < history_entry.end_time:
-                return True
+    def is_executing(self, task_id: TASK_ID) -> bool:
+        history = self.task_history[task_id]
 
-        return False
+        if not history:
+            return False
+
+        return self.time < history[-1].end_time
 
     def is_completed(self, task_id: TASK_ID) -> bool:
-        if not self.is_fixed(task_id) or not self.task_history[task_id]:
+        history = self.task_history[task_id]
+
+        if not history or task_id in self.awaiting_tasks:
             return False
 
         return self.task_history[task_id][-1].end_time <= self.time
 
     def is_available(self, task_id: TASK_ID, machine_id: MACHINE_ID = GLOBAL_MACHINE_ID) -> bool:
-        if self.is_fixed(task_id) or not self.is_present(task_id) or self.is_locked(task_id):
+        vars_ = self.variables_
+
+        if not vars_.present[task_id] or vars_.locked[task_id]:
             return False
 
-        start = self.get_start_lb(task_id, machine_id)
-        end = self.get_start_ub(task_id, machine_id)
+        start_var = vars_.start
+        t = self.time
 
-        return start <= self.time <= end
+        lb = start_var.get_lb(task_id, machine_id)
+        if lb > t:
+            return False
 
-    def get_status(self, task_id: TASK_ID) -> STATUS:
+        ub = start_var.get_ub(task_id, machine_id)
+
+        return t < ub
+
+    def get_status(self, task_id: TASK_ID) -> StatusType:
         "Get the current status of the task at a given time."
-        history = self.task_history[task_id]
+        lb = self.variables_.start.global_lbs[task_id]
+        ub = self.variables_.start.global_ubs[task_id]
 
-        if self.is_completed(task_id):
-            return StatusEnum.COMPLETED
+        if ub < lb:
+            return Status.INFEASIBLE
 
-        for idx in range(len(history) - 1, -1, -1):
-            history_entry = history[idx]
+        if self.time < ub:
+            return Status.AWAITING
 
-            if history_entry.end_time <= self.time:
-                return StatusEnum.PAUSED
+        if self.is_executing(task_id):
+            return Status.EXECUTING
 
-            if history_entry.start_time <= self.time:
-                return StatusEnum.EXECUTING
+        if self.is_paused(task_id):
+            return Status.PAUSED
 
-        if self.is_feasible(task_id):
-            return StatusEnum.AWAITING
-
-        return StatusEnum.INFEASIBLE
+        return Status.COMPLETED
 
     def lock_task(self, task_id: TASK_ID) -> None:
         "Lock task from being executed, regardless of its bounds"
@@ -497,13 +545,12 @@ class ScheduleState:
         self.tight_start_ub(task_id, self.time, machine_id)
 
         self.variables_.assignment[task_id] = machine_id
-        self.variables_.fixed[task_id] = True
 
         self.awaiting_tasks.remove(task_id)
         self.fixed_tasks.add(task_id)
 
-        start = self.get_start_lb(task_id, machine_id)
-        end = self.get_end_ub(task_id, machine_id)
+        start = self.variables_.start.get_lb(task_id, machine_id)
+        end = self.variables_.end.get_ub(task_id, machine_id)
 
         history_entry = TaskHistory(assignment=machine_id, start_time=start, duration=end - start)
 
@@ -520,21 +567,23 @@ class ScheduleState:
 
         self.task_history[task_id].pop()
 
-        remaining_times = self.variables_.remaining_times[task_id]
+        remaining_times = self.variables_.remaining_times
 
         for machine in self.tasks[task_id].machines:
-            work_done = ((actual_duration) * remaining_times[machine]) // (expected_duration)
+            idx = task_id * self.n_machines + machine
 
-            self.variables_.remaining_times[task_id][machine] -= work_done
+            work_done = ((actual_duration) * remaining_times[idx]) // (expected_duration)
+            remaining_times[idx] -= work_done
 
             # TODO: Produce an event instead of directly modifying the bounds
-            self.variables_.start.lbs[task_id][machine] = self.time
-            self.variables_.start.ubs[task_id][machine] = MAX_TIME
+            idx = task_id * self.n_machines + machine
+
+            self.variables_.start.lbs[idx] = self.time
+            self.variables_.start.ubs[idx] = MAX_TIME
 
         self.variables_.start.global_lbs[task_id] = self.time
         self.variables_.start.global_ubs[task_id] = MAX_TIME
 
-        self.variables_.fixed[task_id] = False
         self.variables_.assignment[task_id] = GLOBAL_MACHINE_ID
 
         self.task_history[task_id].append(
@@ -552,7 +601,7 @@ class ScheduleState:
         next_time = MAX_TIME
 
         for task_id in self.awaiting_tasks:
-            task_lb = self.get_start_lb(task_id)
+            task_lb = self.variables_.start.global_lbs[task_id]
 
             if strict and task_lb <= self.time:
                 continue
@@ -566,17 +615,14 @@ class ScheduleState:
         next_time = MIN_TIME
 
         for task_id in self.fixed_tasks:
-            end_time = self.get_end_lb(task_id)
+            end_time = self.variables_.end.global_ubs[task_id]
 
             if end_time > next_time:
                 next_time = end_time
 
         return next_time
 
-    def get_machine_execution(self, time: TIME | None = None) -> dict[MACHINE_ID, list[TASK_ID]]:
-        if time is None:
-            time = self.time
-
+    def get_machine_execution(self) -> dict[MACHINE_ID, list[TASK_ID]]:
         assignments: dict[MACHINE_ID, list[TASK_ID]] = {
             machine_id: [] for machine_id in range(self.n_machines)
         }

@@ -65,11 +65,9 @@ class Constraint:
 
 class PassiveConstraint(Constraint):
     """
-    Passive constraints do not actively propagate changes in the scheduling environment, not being
-    directly translatable into mathematical programming constraints, but rather serve as markers or
-    flags to indicate certain properties of tasks.
-
-    Examples of passive constraints include preemption and optionality constraints.
+    Passive constraints are compile-time constraints on the instance and do not interact with
+    events during the scheduling process.
+    They are used to provide task information and to set up the initial state for the scheduler.
     """
 
     def propagate(self, event: Event, state: ScheduleState) -> NoReturn:
@@ -388,7 +386,7 @@ class PrecedenceConstraint(Constraint):
     def propagate(self, event: Event, state: ScheduleState) -> None:
         task_id = event.task_id
 
-        if event.field.is_lower_bound() and task_id in self.precedence:
+        if event.is_lower_bound() and task_id in self.precedence:
             end_time = state.get_end_lb(task_id)
 
             for child_id in self.precedence[task_id]:
@@ -455,7 +453,7 @@ class NoWaitConstraint(PrecedenceConstraint):
                 for child_id in self.precedence[task_id]:
                     state.tight_start_ub(child_id, end_time)
 
-        elif event.field.is_lower_bound() and task_id in self.transposed_precedence:
+        elif event.is_lower_bound() and task_id in self.transposed_precedence:
             start_time = state.get_start_lb(task_id)
 
             for parent_id in self.transposed_precedence[task_id]:
@@ -468,6 +466,8 @@ class NoWaitConstraint(PrecedenceConstraint):
 class NonOverlapConstraint(Constraint):
     groups_map: list[set[TASK_ID]]
 
+    current_groups: list[set[TASK_ID]]
+
     def __init__(self, task_groups: Iterable[Iterable[Int]]):
         self.groups_map = [set(convert_to_list(task_group, TASK_ID)) for task_group in task_groups]
 
@@ -478,15 +478,20 @@ class NonOverlapConstraint(Constraint):
             (),
         )
 
+    def reset(self, state: ScheduleState) -> None:
+        self.current_groups = [group.copy() for group in self.groups_map]
+
     def propagate(self, event: Event, state: ScheduleState) -> None:
         task_id = event.task_id
 
-        if not state.is_fixed(task_id) or event.field.is_lower_bound():
+        if not state.is_fixed(task_id):
             return
 
         for group_tasks in self.groups_map:
             if task_id not in group_tasks:
                 continue
+
+            group_tasks.remove(task_id)
 
             end_time = state.get_end_lb(task_id)
 
@@ -724,7 +729,7 @@ class ResourceConstraint(Constraint):
             next_available_time = self.next_available_time[i]
             available_resources = self.available_resources[i]
 
-            for other_task in state.awaiting_tasks:
+            for other_task in list(state.awaiting_tasks):
                 resource_usage = task_resources[other_task]
 
                 if resource_usage <= 0:
@@ -806,7 +811,7 @@ class NonRenewableResourceConstraint(Constraint):
 
             self.current_capacities[i] -= resource_usage
 
-            for other_task in state.awaiting_tasks:
+            for other_task in list(state.awaiting_tasks):
                 other_usage = task_resources[other_task]
 
                 if other_usage <= 0:
@@ -899,28 +904,6 @@ class SetupConstraint(Constraint):
 
             state.tight_start_lb(child_id, end_time + setup_time)
 
-        # for task_id in list(self.setup_times.keys()):
-        #     task = state.tasks[task_id]
-
-        #     if task.is_fixed():
-        #         self.setup_times.pop(task_id)
-        #         continue
-
-        #     if not task.is_fixed():
-        #         continue
-
-        #     children = self.setup_times[task_id]
-
-        #     for child_id, setup_time in children.items():
-        #         child = state.tasks[child_id]
-
-        #         if child.is_fixed():
-        #             continue
-
-        #         block_end = state.get_end_lb(task_id) + setup_time
-
-        #         state.tight_start_lb(child_id, block_end)
-
 
 class MachineBreakdownConstraint(Constraint):
     """
@@ -1004,7 +987,7 @@ class MachineBreakdownConstraint(Constraint):
         for machine in self.breakdowns:
             self.next_breakdown[machine] = 0
 
-            for task_id in state.awaiting_tasks:
+            for task_id in list(state.awaiting_tasks):
                 start_lb = state.get_start_lb(task_id, machine)
 
                 for _, end in self.breakdowns[machine]:

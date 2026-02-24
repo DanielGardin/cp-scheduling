@@ -12,7 +12,7 @@ from mypy_extensions import mypyc_attr
 
 from cpscheduler.utils.list_utils import convert_to_list
 
-from cpscheduler.environment._common import MACHINE_ID, TIME, Int, ceil_div
+from cpscheduler.environment._common import MACHINE_ID, TIME, Int
 from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.constraints import (
     Constraint,
@@ -22,6 +22,11 @@ from cpscheduler.environment.constraints import (
 )
 
 setups: dict[str, type["ScheduleSetup"]] = {}
+
+
+def ceil_div(a: TIME, b: TIME) -> TIME:
+    "a divided by b, rounded up to the nearest integer."
+    return -(-a // b)
 
 
 @mypyc_attr(allow_interpreted_subclasses=True)
