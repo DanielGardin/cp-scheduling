@@ -10,7 +10,7 @@ from gymnasium.spaces import Dict, Tuple, Box
 
 from gymnasium import ObservationWrapper, Env, Space
 
-from cpscheduler.environment._common import ObsType, Options, MAX_INT
+from cpscheduler.environment._common import ObsType, Options, MAX_TIME
 from cpscheduler.environment.state import ScheduleState
 from cpscheduler.gym.gym_utils import is_original_space
 
@@ -26,9 +26,7 @@ def reshape_space(space: S, shape: tuple[int, ...]) -> S:
         )
 
     if isinstance(space, Dict):
-        return Dict(
-            {key: reshape_space(value, shape) for key, value in space.spaces.items()}
-        )
+        return Dict({key: reshape_space(value, shape) for key, value in space.spaces.items()})
 
     if isinstance(space, Tuple):
         return Tuple(reshape_space(value, shape) for value in space.spaces)
@@ -67,9 +65,7 @@ class SchedulingObservationWrapper(ObservationWrapper[_Obs, _Act, ObsType], ABC)
         if is_original_space(space):
             return space
 
-        raise ValueError(
-            f"Unexpected env observation space: {self.env.observation_space}"
-        )
+        raise ValueError(f"Unexpected env observation space: {self.env.observation_space}")
 
     @abstractmethod
     def get_observation_space(self) -> Space[_Obs]:
@@ -80,9 +76,7 @@ class SchedulingObservationWrapper(ObservationWrapper[_Obs, _Act, ObsType], ABC)
         """
 
 
-class TabularObservationWrapper(
-    SchedulingObservationWrapper[dict[str, list[Any]], _Act]
-):
+class TabularObservationWrapper(SchedulingObservationWrapper[dict[str, list[Any]], _Act]):
     """
     A wrapper that converts the observation space to a single tabular space after merging
     the task and job features.
@@ -110,18 +104,14 @@ class TabularObservationWrapper(
     def observation(self, observation: ObsType) -> dict[str, list[Any]]:
         task_data, job_data = observation
 
-        merged_data = {
-            task_feature: task_data[task_feature] for task_feature in task_data
-        }
+        merged_data = {task_feature: task_data[task_feature] for task_feature in task_data}
 
         jobs_ids: list[int] = task_data["job_id"]
         for job_feature in job_data:
             if job_feature == "job_id":
                 continue
 
-            merged_data[job_feature] = [
-                job_data[job_feature][job_id] for job_id in jobs_ids
-            ]
+            merged_data[job_feature] = [job_data[job_feature][job_id] for job_id in jobs_ids]
 
         return merged_data
 
@@ -143,9 +133,7 @@ class ArrayObservationWrapper(SchedulingObservationWrapper[NDArray[np.float32], 
         n_features = (
             len(self.features)
             if self.features
-            else len(task_feature_space)
-            + len(job_feature_space)
-            - 1  # Exclude 'job_id'
+            else len(task_feature_space) + len(job_feature_space) - 1  # Exclude 'job_id'
         )
 
         return Box(
@@ -174,9 +162,7 @@ class ArrayObservationWrapper(SchedulingObservationWrapper[NDArray[np.float32], 
                 obs[:, i] = task_data[feature]
 
             elif feature in job_data:
-                obs[:, i] = [
-                    job_data[feature][job_id] for job_id in task_data["job_id"]
-                ]
+                obs[:, i] = [job_data[feature][job_id] for job_id in task_data["job_id"]]
 
             else:
                 raise ValueError(f"Feature '{feature}' not found in task or job data.")
@@ -199,8 +185,8 @@ class CPStateWrapper(SchedulingObservationWrapper[ObsType, _Act]):
                 Dict(
                     {
                         **task_feature_space,
-                        "lower_bound": Box(low=0, high=int(MAX_INT), shape=(n_tasks,)),
-                        "upper_bound": Box(low=0, high=int(MAX_INT), shape=(n_tasks,)),
+                        "lower_bound": Box(low=0, high=int(MAX_TIME), shape=(n_tasks,)),
+                        "upper_bound": Box(low=0, high=int(MAX_TIME), shape=(n_tasks,)),
                     }
                 ),
                 job_feature_space,
@@ -212,7 +198,7 @@ class CPStateWrapper(SchedulingObservationWrapper[ObsType, _Act]):
 
         state: ScheduleState = self.env.get_wrapper_attr("state")
 
-        task_data["lower_bound"] = [task.get_start_lb() for task in state.tasks]
-        task_data["upper_bound"] = [task.get_start_ub() for task in state.tasks]
+        task_data["lower_bound"] = state.variables_.start.global_lbs.copy()
+        task_data["upper_bound"] = state.variables_.start.global_ubs.copy()
 
         return task_data, job_data

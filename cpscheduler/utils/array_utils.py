@@ -26,7 +26,7 @@ from cpscheduler.utils.list_utils import ListWrapper
 
 
 @contextmanager
-def disable_numpy() -> Iterator[None]:
+def disable_numpy(disable: bool = True) -> Iterator[None]:
     """
     Context manager to temporarily disable NumPy functionality in priority dispatching.
     This is mainly used for testing the ListWrapper functionality, without relying on NumPy.
@@ -34,6 +34,10 @@ def disable_numpy() -> Iterator[None]:
     The reason for this is because we design the library to work with minimal dependencies,
     and NumPy is not a strict requirement for the core functionality.
     """
+    if not disable:
+        yield
+        return
+
     global NUMPY_AVAILABLE
     original_numpy_available = NUMPY_AVAILABLE
 
