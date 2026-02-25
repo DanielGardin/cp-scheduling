@@ -7,10 +7,25 @@ VarFieldType: TypeAlias = u8
 
 class VarField:
     START_LB: Final[VarFieldType] = 0
+    "A task have its start interval changed from [l, u) to [l', u), where l' > l."
+
     START_UB: Final[VarFieldType] = 1
+    "A task have its start interval changed from [l, u) to [l, u'), where u' < u."
+
     END_LB: Final[VarFieldType] = 2
+    "A task have its end interval changed from [l, u) to [l', u), where l' > l."
+
     END_UB: Final[VarFieldType] = 3
+    "A task have its end interval changed from [l, u) to [l, u'), where u' < u."
+
     PRESENCE: Final[VarFieldType] = 4
+    "A task have its presence changed from absent to mandatory."
+
+    ABSENCE: Final[VarFieldType] = 5
+    "A task have its presence changed from mandatory to absent."
+
+
+
 
 class Event:
     """
