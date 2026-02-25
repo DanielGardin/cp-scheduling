@@ -694,7 +694,7 @@ class ResourceConstraint(Constraint):
         for capacity, task_demand in zip(self.capacities, self.resources):
             for task_id, demand in enumerate(task_demand):
                 if demand > capacity:
-                    state.set_infeasible(task_id)
+                    state.forbid_task(task_id)
 
     def propagate(self, event: Event, state: ScheduleState) -> None:
         task_id = event.task_id
@@ -818,7 +818,7 @@ class NonRenewableResourceConstraint(Constraint):
                     continue
 
                 if self.current_capacities[i] < other_usage:
-                    state.set_infeasible(other_task)
+                    state.forbid_task(other_task)
 
 
 SetupTimes: TypeAlias = Mapping[Int, Mapping[Int, Int]] | Callable[[int, int, Any], Int]

@@ -78,7 +78,7 @@ class SchedulingEnv:
 
     # Helper variables
     _prev_obj_value: float
-    event_counter: int
+    event_count: int
     force_reset: bool
 
     def __init__(
@@ -121,7 +121,7 @@ class SchedulingEnv:
         )
 
         self._prev_obj_value = 0.0
-        self.event_counter = 0
+        self.event_count = 0
         self.force_reset = True
 
     def __repr__(self) -> str:
@@ -249,7 +249,7 @@ class SchedulingEnv:
         info: dict[str, Any] = {
             "current_time": self.state.time,
             "objective_value": self._prev_obj_value,
-            "event_count": self.event_counter,
+            "event_count": self.event_count,
         }
 
         for metric_name, metric in self.metrics.items():
@@ -294,7 +294,7 @@ class SchedulingEnv:
 
         idx = 0
         while idx < len(event_queue):
-            self.event_counter += 1
+            self.event_count += 1
             event = event_queue[idx]
 
             for constraint in combined:
@@ -357,7 +357,7 @@ class SchedulingEnv:
             constraint.reset(state)
 
         self._prev_obj_value = self.get_objective()
-        self.event_counter = 0
+        self.event_count = 0
         self.force_reset = False
 
         self.propagate()

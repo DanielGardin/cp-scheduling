@@ -32,9 +32,23 @@ class ScheduleState:
     Discrete Event Simulation (DES) state and a Constraint Satisfaction Problem (CSP) state.
 
     It has no simulation logic itself, instead, it provides an API to read and modify the current
-    state of the problem. The actual simulation logic is implemented in the SchedulingEnv class,
+    state of the problem. The actual kernel is implemented in the SchedulingEnv class,
     which knows the constraints and how to propagate changes through them.
     """
+    __slots__ = (
+        "tasks",
+        "jobs",
+        "time",
+        "variables_",
+        "task_history",
+        "awaiting_tasks",
+        "fixed_tasks",
+        "event_queue",
+        "instance",
+        "job_instance",
+        "_n_machines",
+        "infeasible"
+    )
 
     tasks: list[Task]
     "Static list of all tasks in the scheduling problem."
@@ -82,6 +96,8 @@ class ScheduleState:
         self.instance = {}
         self.job_instance = {}
         self._n_machines = 0
+
+        self.infeasible = False
 
     def __reduce__(self) -> tuple[Any, ...]:
         return (
@@ -208,16 +224,15 @@ class ScheduleState:
 
     def is_terminal(self) -> bool:
         if self.awaiting_tasks:
-            return any(
-                self.is_present(task_id) and not self.is_feasible(task_id)
-                for task_id in self.awaiting_tasks
-            )
+            return self.infeasible
 
         return all(
             self.task_history[task_id][-1].end_time <= self.time for task_id in self.fixed_tasks
         )
 
     # Constraint propagation API methods
+
+    ## Getter methods for variable values
     def get_start_lb(self, task_id: TASK_ID, machine_id: MACHINE_ID = GLOBAL_MACHINE_ID) -> TIME:
         return self.variables_.start.get_lb(task_id, machine_id)
 
@@ -236,12 +251,6 @@ class ScheduleState:
     def get_assignment(self, task_id: TASK_ID) -> MACHINE_ID:
         return self.variables_.assignment[task_id]
 
-    # def is_fixed(self, task_id: TASK_ID) -> bool:
-    #     return
-
-    def is_locked(self, task_id: TASK_ID) -> bool:
-        return self.variables_.locked[task_id]
-
     def is_present(self, task_id: TASK_ID) -> bool:
         return self.variables_.present[task_id]
 
@@ -259,8 +268,23 @@ class ScheduleState:
 
             if self.variables_.start.lbs[idx] > self.variables_.start.ubs[idx]:
                 return False
-        
+
         return True
+
+    def is_consistent(self, task_id: TASK_ID) -> bool:
+        return not self.variables_.present[task_id] or self.is_feasible(task_id)
+
+    ## Setter methods for variable values, triggering constraint propagation through events
+    def _check_state_feasibility(self, task_id: TASK_ID) -> None:
+        if not self.is_feasible(task_id):
+            if not self.tasks[task_id].optional:
+                self.infeasible = True
+                return
+
+            if self.variables_.present[task_id]:
+                self.variables_.present[task_id] = False
+                self.awaiting_tasks.discard(task_id)
+                self.event_queue.append(Event(task_id, VarField.ABSENCE, GLOBAL_MACHINE_ID))
 
     def tight_start_lb(
         self,
@@ -299,11 +323,7 @@ class ScheduleState:
 
 
         self.event_queue.append(Event(task_id, VarField.START_LB, machine_id))
-
-        if not self.is_feasible(task_id):
-            self.variables_.present[task_id] = False
-            self.awaiting_tasks.discard(task_id)
-            self.event_queue.append(Event(task_id, VarField.PRESENCE, GLOBAL_MACHINE_ID))
+        self._check_state_feasibility(task_id)
 
     def tight_start_ub(
         self,
@@ -341,11 +361,7 @@ class ScheduleState:
             end_vars.recompute_global_bounds(task_id)
 
         self.event_queue.append(Event(task_id, VarField.START_UB, machine_id))
-
-        if not self.is_feasible(task_id):
-            self.variables_.present[task_id] = False
-            self.awaiting_tasks.discard(task_id)
-            self.event_queue.append(Event(task_id, VarField.PRESENCE, GLOBAL_MACHINE_ID))
+        self._check_state_feasibility(task_id)
 
     def tight_end_lb(
         self,
@@ -383,11 +399,7 @@ class ScheduleState:
             start_vars.recompute_global_bounds(task_id)
 
         self.event_queue.append(Event(task_id, VarField.END_LB, machine_id))
-
-        if not self.is_feasible(task_id):
-            self.variables_.present[task_id] = False
-            self.awaiting_tasks.discard(task_id)
-            self.event_queue.append(Event(task_id, VarField.PRESENCE, GLOBAL_MACHINE_ID))
+        self._check_state_feasibility(task_id)
 
     def tight_end_ub(
         self,
@@ -425,45 +437,25 @@ class ScheduleState:
             start_vars.recompute_global_bounds(task_id)
 
         self.event_queue.append(Event(task_id, VarField.END_UB, machine_id))
+        self._check_state_feasibility(task_id)
 
-        if not self.is_feasible(task_id):
-            self.variables_.present[task_id] = False
-            self.awaiting_tasks.discard(task_id)
-            self.event_queue.append(Event(task_id, VarField.PRESENCE, GLOBAL_MACHINE_ID))
-
-    def set_infeasible(self, task_id: TASK_ID, machine_id: MACHINE_ID = GLOBAL_MACHINE_ID) -> None:
+    def forbid_machine(self, task_id: TASK_ID, machine_id: MACHINE_ID) -> None:
         self.tight_start_lb(task_id, MAX_TIME, machine_id)
         self.tight_start_ub(task_id, MIN_TIME, machine_id)
+
+    def require_task(self, task_id: TASK_ID) -> None:
+        if not self.variables_.present[task_id]:
+            self.variables_.present[task_id] = True
+            self.awaiting_tasks.add(task_id)
+            self.event_queue.append(Event(task_id, VarField.PRESENCE, GLOBAL_MACHINE_ID))
+
+    def forbid_task(self, task_id: TASK_ID) -> None:
+        self.forbid_machine(task_id, GLOBAL_MACHINE_ID)
 
     def require_machine(self, task_id: TASK_ID, machine_id: MACHINE_ID) -> None:
         for other_machine in self.tasks[task_id].machines:
             if other_machine != machine_id:
-                self.set_infeasible(task_id, other_machine)
-
-    def forbid_machine(self, task_id: TASK_ID, machine_id: MACHINE_ID) -> None:
-        self.set_infeasible(task_id, machine_id)
-
-    def require_task(self, task_id: TASK_ID) -> None:
-        present = self.variables_.present[task_id]
-
-        if present:
-            return
-
-        self.variables_.present[task_id] = True
-        self.awaiting_tasks.add(task_id)
-        self.event_queue.append(Event(task_id, VarField.PRESENCE, GLOBAL_MACHINE_ID))
-
-    def forbid_task(self, task_id: TASK_ID) -> None:
-        present = self.variables_.present[task_id]
-
-        if present:
-            return
-
-        self.set_infeasible(task_id)
-
-        self.variables_.present[task_id] = False
-        self.awaiting_tasks.discard(task_id)
-        self.event_queue.append(Event(task_id, VarField.PRESENCE, GLOBAL_MACHINE_ID))
+                self.forbid_machine(task_id, other_machine)
 
     # Discrete event simulation API methods
     def is_fixed(self, task_id: TASK_ID) -> bool:
@@ -499,7 +491,7 @@ class ScheduleState:
     def is_available(self, task_id: TASK_ID, machine_id: MACHINE_ID = GLOBAL_MACHINE_ID) -> bool:
         vars_ = self.variables_
 
-        if not vars_.present[task_id] or vars_.locked[task_id]:
+        if not vars_.present[task_id]:
             return False
 
         start_var = vars_.start
@@ -531,14 +523,6 @@ class ScheduleState:
             return Status.PAUSED
 
         return Status.COMPLETED
-
-    def lock_task(self, task_id: TASK_ID) -> None:
-        "Lock task from being executed, regardless of its bounds"
-        self.variables_.locked[task_id] = True
-
-    def unlock_task(self, task_id: TASK_ID) -> None:
-        "Unlock task, allowing it to be executed if its bounds allow it"
-        self.variables_.locked[task_id] = False
 
     def execute_task(self, task_id: TASK_ID, machine_id: MACHINE_ID) -> None:
         self.tight_start_lb(task_id, self.time, machine_id)

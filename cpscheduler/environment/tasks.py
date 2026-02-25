@@ -278,34 +278,27 @@ class ScheduleVariables:
     __slots__ = [
         "remaining_times",
         "assignment",
-        "locked",
         "present",
         "start",
-        "end",
-        "n_machines_feasible"
+        "end"
     ]
 
     remaining_times: list[TIME]
     assignment: list[MACHINE_ID]
 
-    locked: list[bool]
     present: list[bool]
 
     start: Bounds
     end: Bounds
-    n_machines_feasible: list[int]
 
     def __init__(self, tasks: list[Task], n_machines: int) -> None:
         self.remaining_times = initialize_matrix(len(tasks), n_machines, MAX_TIME)
         self.assignment = [GLOBAL_MACHINE_ID for _ in tasks]
 
-        self.locked = [False for _ in tasks]
         self.present = [not task.optional for task in tasks]
 
         self.start = Bounds(tasks, n_machines)
         self.end = Bounds(tasks, n_machines)
-
-        self.n_machines_feasible = [0] * len(tasks)
 
         for task_id, task in enumerate(tasks):
             for machine, processing_time in task.processing_times.items():
@@ -319,7 +312,7 @@ class ScheduleVariables:
             self.end.recompute_global_bounds(task_id)
 
     def __repr__(self) -> str:
-        return f"ScheduleVariables(remaining_times={self.remaining_times}, assignment={self.assignment}, locked={self.locked}, present={self.present}, start={self.start}, end={self.end})"
+        return f"ScheduleVariables(remaining_times={self.remaining_times}, assignment={self.assignment}, present={self.present}, start={self.start}, end={self.end})"
 
     def __reduce__(self) -> tuple[Any, ...]:
         return (
@@ -328,7 +321,6 @@ class ScheduleVariables:
             (
                 self.remaining_times,
                 self.assignment,
-                self.locked,
                 self.present,
                 self.start,
                 self.end,
@@ -337,10 +329,9 @@ class ScheduleVariables:
 
     def __setstate__(self, state: tuple[Any, ...]) -> None:
         (
-            self.remaining_times,
-            self.assignment,
-            self.locked,
-            self.present,
+            self.remaining_times[:],
+            self.assignment[:],
+            self.present[:],
             self.start,
             self.end,
         ) = state
