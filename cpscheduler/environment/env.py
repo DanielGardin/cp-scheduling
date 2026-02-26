@@ -380,7 +380,7 @@ class SchedulingEnv:
         while not schedule.is_empty():
             # Invariant: Each iteration has the time static during instruction processing
 
-            control: QueueControl = QueueControl.CONTINUE
+            control: QueueControl = QueueControl.BLOCK
             for instruction_result in schedule.instruction_queue(state):
                 # After each instruction is processed, ensure domains are updated until a fixed point
                 # is reached before processing the next instruction.
@@ -389,13 +389,24 @@ class SchedulingEnv:
                 if state.event_queue:
                     self.propagate()
 
+            # Halting conditions:
+            # - An instruction in the schedule has interrupted the processing.
+            # - If the schedule is empty, but there are tasks that can be started at the current time
+            # - If tasks can be started at the current time, but no tasks are currently executing
             if control == QueueControl.INTERRUPT:
                 # If the schedule processing was interrupted due to a instruction, do not advance
                 # the time and allow the agent to react to the new state.
                 break
 
-            if schedule.is_empty() and state.get_next_available_time() <= state.time:
+            elif schedule.is_empty() and state.get_next_available_time() <= state.time:
                 break
+
+            elif not schedule.has_scheduled_instructions():
+                if not any(
+                    state.is_executing(task_id)
+                    for task_id in state.fixed_tasks
+                ):
+                    break
 
             self.advance_clock()
 

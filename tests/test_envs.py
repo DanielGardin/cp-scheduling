@@ -132,6 +132,26 @@ def test_submit2(instance_name: str) -> None:
     assert obs["status"] == [Status.COMPLETED] * env.state.n_tasks
     assert terminated
 
+@pytest.mark.env
+@pytest.mark.parametrize("instance_name", TEST_INSTANCES)
+def test_blocking_instruction(instance_name: str) -> None:
+    env = env_setup(instance_name)
+
+    env.reset()
+
+    # Test when the action cannot be done, limit the execution to 1 second and failt after that
+
+    (obs, _), reward, *_, info = env.step(
+        [("execute", 1), ("execute", 0)] # Inverse order of execution (1 requires 0 to be completed first)
+    )
+
+    assert obs["status"][0] == Status.AWAITING
+    assert obs["status"][1] == Status.AWAITING
+    assert reward == 0
+
+
+
+
 
 # @pytest.mark.env
 # @pytest.mark.parametrize("instance_name", TEST_INSTANCES)

@@ -196,6 +196,9 @@ class Schedule:
     def is_empty(self) -> bool:
         return not (self.schedule or self.default_queue)
 
+    def has_scheduled_instructions(self) -> bool:
+        return bool(self.schedule)
+
     def get_next_instruction_time(self) -> TIME:
         return min(self.schedule) if self.schedule else MAX_TIME
 
@@ -217,17 +220,32 @@ class Schedule:
                 logger.log(result.level, log_message)
 
             if not result.done:
-                idx += 1
-
                 if control == QueueControl.CONTINUE:
-                    continue
+                    idx += 1
+
+                elif control == QueueControl.RESTART:
+                    idx = 0
+
+                elif control == QueueControl.BLOCK:
+                    break
+
+                elif control == QueueControl.INTERRUPT:
+                    yield result
+                    return
 
             else:
                 queue.pop(idx)
                 yield result
 
-            if control == QueueControl.RESTART or control == QueueControl.BLOCK:
-                idx = 0
+                if control == QueueControl.RESTART:
+                    idx = 0
+                
+                elif control == QueueControl.BLOCK:
+                    break
+
+                elif control == QueueControl.INTERRUPT:
+                    return
+
 
         if queue:
             # This only means that the queue was blocked and the remaining instructions cannot
@@ -254,24 +272,32 @@ class Schedule:
             control = result.queue_control
             log_message = result.log_message
 
-            if log_message:
-                logger.log(result.level, log_message)
-
             if not result.done:
-                idx += 1
-
                 if control == QueueControl.CONTINUE:
-                    continue
+                    idx += 1
+
+                elif control == QueueControl.RESTART:
+                    idx = 0
+
+                elif control == QueueControl.BLOCK:
+                    break
+
+                elif control == QueueControl.INTERRUPT:
+                    yield result
+                    return
 
             else:
                 queue.pop(idx)
                 yield result
 
-            if control == QueueControl.RESTART:
-                idx = 0
+                if control == QueueControl.RESTART:
+                    idx = 0
+                
+                elif control == QueueControl.BLOCK:
+                    break
 
-            elif control == QueueControl.INTERRUPT or control == QueueControl.BLOCK:
-                return
+                elif control == QueueControl.INTERRUPT:
+                    return
 
 
 def select_machine(task_id: TASK_ID, state: ScheduleState) -> MACHINE_ID:
