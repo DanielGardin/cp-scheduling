@@ -325,13 +325,13 @@ try:
                 "Machine: %{y}<extra></extra>"
             )
 
-            for job in state.jobs:
-                for task in job.tasks:
-                    for history_entry in state.task_history[task.task_id]:
+            for job_id, job_tasks in enumerate(state.instance.job_tasks):
+                for task_id in job_tasks:
+                    for history_entry in state.task_history[task_id]:
                         start_times.append(history_entry.start_time)
                         durations.append(history_entry.duration)
                         machines.append(history_entry.assignment)
-                        task_ids.append(task.task_id)
+                        task_ids.append(task_id)
 
                 fig.add_trace(
                     go.Bar(
@@ -339,11 +339,11 @@ try:
                         y=machines,
                         base=start_times,
                         orientation="h",
-                        name=f"Job {job.job_id}",
+                        name=f"Job {job_id}",
                         customdata=[
                             (
                                 task_ids[i],
-                                job.job_id,
+                                job_id,
                                 start_times[i],
                                 start_times[i] + durations[i],
                             )
@@ -351,7 +351,7 @@ try:
                         ],
                         hovertemplate=template,
                         marker=dict(
-                            color=GLASBEY_BW_PALETTE[job.job_id % 256],
+                            color=GLASBEY_BW_PALETTE[job_id % 256],
                             line=dict(color="white", width=0.5),
                         ),
                     )

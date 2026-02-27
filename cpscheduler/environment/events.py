@@ -1,9 +1,14 @@
 from typing import TypeAlias, Final
 from mypy_extensions import u8
 
-from cpscheduler.environment._common import TASK_ID, MACHINE_ID, GLOBAL_MACHINE_ID
+from cpscheduler.environment.constants import (
+    TASK_ID,
+    MACHINE_ID,
+    GLOBAL_MACHINE_ID,
+)
 
 VarFieldType: TypeAlias = u8
+
 
 class VarField:
     START_LB: Final[VarFieldType] = 0
@@ -25,17 +30,12 @@ class VarField:
     "A task have its presence changed from mandatory to absent."
 
 
-
-
 class Event:
     """
     Base class for events in the scheduling environment.
     """
-    __slots__ = (
-        "task_id",
-        "field",
-        "machine_id"
-    )
+
+    __slots__ = ("task_id", "field", "machine_id")
 
     task_id: TASK_ID
     field: VarFieldType
@@ -45,12 +45,12 @@ class Event:
         self,
         task_id: TASK_ID,
         field: VarFieldType,
-        machine_id: MACHINE_ID = GLOBAL_MACHINE_ID
+        machine_id: MACHINE_ID = GLOBAL_MACHINE_ID,
     ) -> None:
         self.task_id = task_id
         self.field = field
         self.machine_id = machine_id
-    
+
     def is_global(self) -> bool:
         return self.machine_id == GLOBAL_MACHINE_ID
 

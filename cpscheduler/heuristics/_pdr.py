@@ -1,14 +1,14 @@
-from typing import Any, overload, TYPE_CHECKING
+from typing import Any, overload
 from collections.abc import Iterable, Sequence
 from typing_extensions import TypedDict, Unpack, TypeAlias
 
 import math
-from warnings import warn
 
 from abc import ABC, abstractmethod
 from mypy_extensions import mypyc_attr
 
-from cpscheduler.environment._common import Status, ObsType
+from cpscheduler.environment.constants import Status
+from cpscheduler.environment.state import ObsType
 from cpscheduler.environment.instructions import SingleAction
 
 from cpscheduler.utils._protocols import ArrayLike, TabularRepresentation
@@ -69,12 +69,16 @@ def prob_to_lmbda(prob: float, size: int, n_iter: int) -> float:
 
     x = 1 - prob
     for _ in range(n_iter):
-        x = (prob * x**size * (size - 1) - (1 - prob)) / (size * prob * x ** (size - 1) - 1)
+        x = (prob * x**size * (size - 1) - (1 - prob)) / (
+            size * prob * x ** (size - 1) - 1
+        )
 
     return -math.log(x)
 
 
-def solve_p_star(priorities: ArrayLike, target_prob: float, n_iter: int) -> ArrayLike:
+def solve_p_star(
+    priorities: ArrayLike, target_prob: float, n_iter: int
+) -> ArrayLike:
     *batch, n_tasks = priorities.shape
     target_lmbda = prob_to_lmbda(target_prob, n_tasks, n_iter)
 
@@ -91,10 +95,14 @@ def solve_p_star(priorities: ArrayLike, target_prob: float, n_iter: int) -> Arra
             batch_size = int(torch.prod(torch.tensor(batch)))
             target_lmbda = prob_to_lmbda(target_prob, n_tasks, n_iter)
 
-            X = torch.arange(n_tasks, device=priorities.device, dtype=priorities.dtype)
+            X = torch.arange(
+                n_tasks, device=priorities.device, dtype=priorities.dtype
+            )
             X_mean = X.mean()
 
-            ordered_priorities, _ = torch.sort(priorities, dim=-1, descending=True)
+            ordered_priorities, _ = torch.sort(
+                priorities, dim=-1, descending=True
+            )
             y = priorities.reshape(batch_size, n_tasks)
             y_mean = y.mean(axis=-1)
 
@@ -119,10 +127,16 @@ def solve_p_star(priorities: ArrayLike, target_prob: float, n_iter: int) -> Arra
         lmbda = np.reshape(-cov_xy / var_x, batch)
 
     else:
-        ordered_priorities = ListWrapper.sort(priorities, reverse=True, stable=True)
+        ordered_priorities = ListWrapper.sort(
+            priorities, reverse=True, stable=True
+        )
         ts = (n_tasks + 1) / 2 - ListWrapper(range(n_tasks))
 
-        lmbda = 12 / (n_tasks * (n_tasks + 1) * (n_tasks - 1)) * (ts * ordered_priorities).sum()
+        lmbda = (
+            12
+            / (n_tasks * (n_tasks + 1) * (n_tasks - 1))
+            * (ts * ordered_priorities).sum()
+        )
 
     return lmbda / target_lmbda
 
@@ -184,7 +198,9 @@ class PriorityDispatchingRule(ABC):
             self.instruction += " job"
 
     @abstractmethod
-    def priority_rule(self, obs: TabularRepresentation[ArrayLike], time: int) -> ArrayLike:
+    def priority_rule(
+        self, obs: TabularRepresentation[ArrayLike], time: int
+    ) -> ArrayLike:
         """
         Implements a priority rule to sort the tasks in the waiting buffer by a given criterion.
         """
@@ -223,7 +239,9 @@ class PriorityDispatchingRule(ABC):
     ) -> Sequence[Sequence[SingleAction]]: ...
 
     @overload
-    def __call__(self, obs: ObsType, time: int | None = None) -> Sequence[SingleAction]: ...
+    def __call__(
+        self, obs: ObsType, time: int | None = None
+    ) -> Sequence[SingleAction]: ...
 
     @overload
     def __call__(
@@ -300,9 +318,13 @@ class CombinedRule(PriorityDispatchingRule):
     ) -> None:
         super().__init__(**kwargs)
         self.rules = list(rules)
-        self.weights = list(weights) if weights is not None else [1.0] * len(self.rules)
+        self.weights = (
+            list(weights) if weights is not None else [1.0] * len(self.rules)
+        )
 
-    def priority_rule(self, obs: TabularRepresentation[ArrayLike], time: int) -> ArrayLike:
+    def priority_rule(
+        self, obs: TabularRepresentation[ArrayLike], time: int
+    ) -> ArrayLike:
         """
         Combines the priority rules of the individual dispatching rules using the specified weights.
         """
@@ -329,7 +351,9 @@ class ShortestProcessingTime(PriorityDispatchingRule):
         super().__init__(**kwargs)
         self.processing_time = processing_time
 
-    def priority_rule(self, obs: TabularRepresentation[ArrayLike], time: int) -> ArrayLike:
+    def priority_rule(
+        self, obs: TabularRepresentation[ArrayLike], time: int
+    ) -> ArrayLike:
         return -obs[self.processing_time]
 
 
@@ -341,12 +365,16 @@ class EarliestDueDate(PriorityDispatchingRule):
     """
 
     def __init__(
-        self, due_date: FeatureTag = "due_date", **kwargs: Unpack[BasePriorityKwargs]
+        self,
+        due_date: FeatureTag = "due_date",
+        **kwargs: Unpack[BasePriorityKwargs],
     ) -> None:
         super().__init__(**kwargs)
         self.due_date = due_date
 
-    def priority_rule(self, obs: TabularRepresentation[ArrayLike], time: int) -> ArrayLike:
+    def priority_rule(
+        self, obs: TabularRepresentation[ArrayLike], time: int
+    ) -> ArrayLike:
         return -obs[self.due_date]
 
 
@@ -367,8 +395,12 @@ class ModifiedDueDate(PriorityDispatchingRule):
         self.processing_time = processing_time
         self.weight = weight
 
-    def priority_rule(self, obs: TabularRepresentation[ArrayLike], time: int) -> ArrayLike:
-        task_dues = maximum(time + obs[self.processing_time], obs[self.due_date])
+    def priority_rule(
+        self, obs: TabularRepresentation[ArrayLike], time: int
+    ) -> ArrayLike:
+        task_dues = maximum(
+            time + obs[self.processing_time], obs[self.due_date]
+        )
 
         if self.weight is not None:
             task_dues = task_dues / obs[self.weight]
@@ -394,7 +426,9 @@ class WeightedShortestProcessingTime(PriorityDispatchingRule):
         self.processing_time = processing_time
         self.weight = weight
 
-    def priority_rule(self, obs: TabularRepresentation[ArrayLike], time: int) -> ArrayLike:
+    def priority_rule(
+        self, obs: TabularRepresentation[ArrayLike], time: int
+    ) -> ArrayLike:
         return obs[self.weight] / obs[self.processing_time]
 
 
@@ -417,9 +451,13 @@ class MinimumSlackTime(PriorityDispatchingRule):
         self.processing_time = processing_time
         self.release_time = release_time
 
-    def priority_rule(self, obs: TabularRepresentation[ArrayLike], time: int) -> ArrayLike:
+    def priority_rule(
+        self, obs: TabularRepresentation[ArrayLike], time: int
+    ) -> ArrayLike:
         end_times = obs[self.processing_time] + (
-            maximum(obs[self.release_time], time) if self.release_time is not None else time
+            maximum(obs[self.release_time], time)
+            if self.release_time is not None
+            else time
         )
 
         slack = end_times - obs[self.due_date]
@@ -445,9 +483,13 @@ class CriticalRatio(PriorityDispatchingRule):
         self.processing_time = processing_time
         self.release_time = release_time
 
-    def priority_rule(self, obs: TabularRepresentation[ArrayLike], time: int) -> ArrayLike:
+    def priority_rule(
+        self, obs: TabularRepresentation[ArrayLike], time: int
+    ) -> ArrayLike:
         time_window = obs[self.due_date] - (
-            maximum(obs[self.release_time], time) if self.release_time is not None else time
+            maximum(obs[self.release_time], time)
+            if self.release_time is not None
+            else time
         )
 
         return time_window / obs[self.processing_time]
@@ -468,7 +510,9 @@ class FirstInFirstOut(PriorityDispatchingRule):
         super().__init__(**kwargs)
         self.release_time = release_time
 
-    def priority_rule(self, obs: TabularRepresentation[ArrayLike], time: int) -> ArrayLike:
+    def priority_rule(
+        self, obs: TabularRepresentation[ArrayLike], time: int
+    ) -> ArrayLike:
         return time - obs[self.release_time]
 
 
@@ -492,18 +536,24 @@ class CostOverTime(PriorityDispatchingRule):
         self.due_date = due_date
         self.release_time = release_time
 
-    def priority_rule(self, obs: TabularRepresentation[ArrayLike], time: int) -> ArrayLike:
+    def priority_rule(
+        self, obs: TabularRepresentation[ArrayLike], time: int
+    ) -> ArrayLike:
         wspt = obs[self.weight] / obs[self.processing_time]
 
         sum_processing = array_sum(obs[self.processing_time], axis=-1)
 
         end_times = obs[self.processing_time] + (
-            maximum(obs[self.release_time], time) if self.release_time is not None else time
+            maximum(obs[self.release_time], time)
+            if self.release_time is not None
+            else time
         )
 
         deadline_slack = maximum(sum_processing - obs[self.due_date], 0)
 
-        return wspt * minimum(deadline_slack / (sum_processing - end_times), 1.0)
+        return wspt * minimum(
+            deadline_slack / (sum_processing - end_times), 1.0
+        )
 
 
 class ApparentTardinessCost(PriorityDispatchingRule):
@@ -529,13 +579,17 @@ class ApparentTardinessCost(PriorityDispatchingRule):
 
         self.lookahead = lookahead
 
-    def priority_rule(self, obs: TabularRepresentation[ArrayLike], time: int) -> ArrayLike:
+    def priority_rule(
+        self, obs: TabularRepresentation[ArrayLike], time: int
+    ) -> ArrayLike:
         P_mean = array_mean(obs[self.processing_time], axis=-1)
 
         wspt = obs[self.weight] / obs[self.processing_time]
 
         start_time = (
-            maximum(obs[self.release_time], time) if self.release_time is not None else time
+            maximum(obs[self.release_time], time)
+            if self.release_time is not None
+            else time
         )
 
         slack = obs[self.due_date] - obs[self.processing_time] - start_time
@@ -563,20 +617,28 @@ class TrafficPriority(PriorityDispatchingRule):
         # self.weight = weight
         self.K = K
 
-    def priority_rule(self, obs: TabularRepresentation[ArrayLike], time: int) -> ArrayLike:
-        traffic_congestion_ratio = array_sum(obs[self.processing_time], axis=-1) / array_mean(
-            obs[self.due_date], axis=-1
-        )
+    def priority_rule(
+        self, obs: TabularRepresentation[ArrayLike], time: int
+    ) -> ArrayLike:
+        traffic_congestion_ratio = array_sum(
+            obs[self.processing_time], axis=-1
+        ) / array_mean(obs[self.due_date], axis=-1)
 
         weighted_edd = self.K / traffic_congestion_ratio - 0.5
-        weighted_edd = where(weighted_edd < 0.0, 0.0, where(weighted_edd > 1.0, 1.0, weighted_edd))
+        weighted_edd = where(
+            weighted_edd < 0.0,
+            0.0,
+            where(weighted_edd > 1.0, 1.0, weighted_edd),
+        )
 
         max_due_date = array_max(obs[self.due_date], axis=-1)
         max_processing_time = array_max(obs[self.processing_time], axis=-1)
 
         tp: ArrayLike = -(
             weighted_edd * obs[self.due_date] / max_due_date
-            + (1 - weighted_edd) * obs[self.processing_time] / max_processing_time
+            + (1 - weighted_edd)
+            * obs[self.processing_time]
+            / max_processing_time
         )
 
         return tp

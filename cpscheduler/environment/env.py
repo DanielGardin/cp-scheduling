@@ -16,23 +16,17 @@ from collections.abc import Iterable, Mapping
 from typing_extensions import TypeIs
 
 from cpscheduler.utils.list_utils import convert_to_list
-from cpscheduler.utils._protocols import Metric
+from cpscheduler.utils._protocols import Metric, InstanceTypes, InfoType, Options
 
-from cpscheduler.environment._common import (
-    InstanceTypes,
-    InfoType,
-    ObsType,
-    Options,
-    MAX_TIME,
-)
-from cpscheduler.environment.state import ScheduleState
+from cpscheduler.environment.constants import MAX_TIME
+from cpscheduler.environment.state import ScheduleState, ObsType
 from cpscheduler.environment.instructions import (
     parse_instruction,
     ActionType,
     is_single_action,
     Schedule,
     QueueControl,
-    DEFAULT_QUEUE_TIME
+    DEFAULT_QUEUE_TIME,
 )
 from cpscheduler.environment.schedule_setup import ScheduleSetup
 from cpscheduler.environment.constraints import Constraint, PassiveConstraint
@@ -43,12 +37,15 @@ from cpscheduler.environment._render import Renderer
 
 def prepare_instance(instance: InstanceTypes) -> dict[str, list[Any]]:
     "Prepare the instance data to a standard dictionary format."
-    return {str(feature): convert_to_list(instance[feature]) for feature in instance}
+    return {
+        str(feature): convert_to_list(instance[feature]) for feature in instance
+    }
 
 
 def is_info_dict(value: Any) -> TypeIs[Mapping[Any, Any]]:
     "Type guard to check if a value is an info dictionary."
     return isinstance(value, Mapping)
+
 
 class SchedulingEnv:
     """
@@ -117,7 +114,9 @@ class SchedulingEnv:
             self.set_instance(instance)
 
         self.renderer = (
-            render_mode if isinstance(render_mode, Renderer) else Renderer.get_renderer(render_mode)
+            render_mode
+            if isinstance(render_mode, Renderer)
+            else Renderer.get_renderer(render_mode)
         )
 
         self._prev_obj_value = 0.0
@@ -197,11 +196,6 @@ class SchedulingEnv:
         "Add a metric to the environment."
         self.metrics[name] = metric
 
-    def clear_instance(self) -> None:
-        "Clear the current instance data from the environment."
-        self.state.clear()
-        self.force_reset = True
-
     def _rebuild_combined_constraints(self) -> None:
         "Rebuild the combined constraint list for the propagation loop."
         self.combined_constraints = self.setup_constraints + self.constraints
@@ -220,7 +214,6 @@ class SchedulingEnv:
 
     def clear(self) -> None:
         "Clear all instance data, constraints, objectives, and metrics from the environment."
-        self.clear_instance()
         self.clear_constraints()
         self.clear_metrics()
 
@@ -232,7 +225,10 @@ class SchedulingEnv:
 
         beta = ",".join(
             [constraint.get_entry() for constraint in self.constraints]
-            + [constraint.get_entry() for constraint in self.passive_constraints]
+            + [
+                constraint.get_entry()
+                for constraint in self.passive_constraints
+            ]
         )
 
         gamma = self.objective.get_entry()
@@ -256,7 +252,12 @@ class SchedulingEnv:
             metric_value = metric(self.state)
 
             if is_info_dict(metric_value):
-                info.update({f"{metric_name}_{key}": value for key, value in metric_value.items()})
+                info.update(
+                    {
+                        f"{metric_name}_{key}": value
+                        for key, value in metric_value.items()
+                    }
+                )
 
             else:
                 info[metric_name] = metric_value
@@ -292,9 +293,8 @@ class SchedulingEnv:
         event_queue = state.event_queue
         combined = self.combined_constraints
 
-        idx = 0
+        idx = self.event_count
         while idx < len(event_queue):
-            self.event_count += 1
             event = event_queue[idx]
 
             for constraint in combined:
@@ -302,7 +302,7 @@ class SchedulingEnv:
 
             idx += 1
 
-        event_queue.clear()
+        self.event_count = len(event_queue)
 
     def advance_clock(self) -> None:
         state = self.state
@@ -350,10 +350,7 @@ class SchedulingEnv:
         self.schedule.reset()
         state.reset()
 
-        for constraint in self.constraints:
-            constraint.reset(state)
-
-        for constraint in self.setup_constraints:
+        for constraint in self.combined_constraints:
             constraint.reset(state)
 
         self._prev_obj_value = self.get_objective()
@@ -364,7 +361,9 @@ class SchedulingEnv:
 
         return self.get_state(), self.get_info()
 
-    def step(self, action: ActionType = None) -> tuple[ObsType, float, bool, bool, InfoType]:
+    def step(
+        self, action: ActionType = None
+    ) -> tuple[ObsType, float, bool, bool, InfoType]:
         state = self.state
 
         if not state.loaded or self.force_reset:
@@ -398,13 +397,15 @@ class SchedulingEnv:
                 # the time and allow the agent to react to the new state.
                 break
 
-            elif schedule.is_empty() and state.get_next_available_time() <= state.time:
+            elif (
+                schedule.is_empty()
+                and state.get_next_available_time() <= state.time
+            ):
                 break
 
             elif not schedule.has_scheduled_instructions():
                 if not any(
-                    state.is_executing(task_id)
-                    for task_id in state.fixed_tasks
+                    state.is_executing(task_id) for task_id in state.fixed_tasks
                 ):
                     break
 

@@ -15,7 +15,7 @@ from mypy_extensions import mypyc_attr
 from math import expm1
 
 from cpscheduler.utils.list_utils import convert_to_list
-from cpscheduler.environment._common import TASK_ID, Float
+from cpscheduler.environment.constants import TASK_ID, Float
 from cpscheduler.environment.state import ScheduleState
 
 objectives: dict[str, type["Objective"]] = {}
@@ -164,7 +164,11 @@ class ComposedObjective(Objective):
                     entry += " - "
                     coef = -coef
 
-            coef_str = "" if coef == 1 else str(coef) if isinstance(coef, int) else f"{coef:.2f}"
+            coef_str = (
+                ""
+                if coef == 1
+                else str(coef) if isinstance(coef, int) else f"{coef:.2f}"
+            )
 
             entry += f"{coef_str} {objective.get_entry()}"
 
@@ -212,8 +216,8 @@ class TotalCompletionTime(Objective):
     def get_current(self, state: ScheduleState) -> float:
         total_completion_time = 0.0
 
-        for job in state.jobs:
-            job_completion = _makespan(state, job.task_ids)
+        for tasks in state.instance.job_tasks:
+            job_completion = _makespan(state, tasks)
             total_completion_time += job_completion
 
         return total_completion_time
@@ -244,19 +248,25 @@ class WeightedCompletionTime(Objective):
         self.job_weights = []
 
     def __reduce__(self) -> Any:
-        return (self.__class__, (self.weights_tag, self.minimize), (self.job_weights,))
+        return (
+            self.__class__,
+            (self.weights_tag, self.minimize),
+            (self.job_weights,),
+        )
 
     def __setstate__(self, state: tuple[Any, ...]) -> None:
         (self.job_weights,) = state
 
     def initialize(self, state: ScheduleState) -> None:
-        self.job_weights = convert_to_list(state.instance[self.weights_tag], float)
+        self.job_weights = convert_to_list(
+            state.instance.task_instance[self.weights_tag], float
+        )
 
     def get_current(self, state: ScheduleState) -> float:
         weighted_completion_time = 0.0
-        for job in state.jobs:
-            weight = self.job_weights[job.job_id]
-            job_completion = _makespan(state, job.task_ids)
+        for job_id, tasks in enumerate(state.instance.job_tasks):
+            weight = self.job_weights[job_id]
+            job_completion = _makespan(state, tasks)
 
             weighted_completion_time += weight * float(job_completion)
 
@@ -299,13 +309,19 @@ class DiscountedCompletionTime(Objective):
 
     def initialize(self, state: ScheduleState) -> None:
         if self.weights_tag is not None:
-            self.job_weights = convert_to_list(state.instance[self.weights_tag], float)
+            self.job_weights = convert_to_list(
+                state.instance.task_instance[self.weights_tag], float
+            )
 
     def get_current(self, state: ScheduleState) -> float:
         discounted_completion_time = 0.0
-        for job in state.jobs:
-            weight = self.job_weights[job.job_id] if self.weights_tag is not None else 1.0
-            job_completion = _makespan(state, job.task_ids)
+        for job_id, tasks in enumerate(state.instance.job_tasks):
+            weight = (
+                self.job_weights[job_id]
+                if self.weights_tag is not None
+                else 1.0
+            )
+            job_completion = _makespan(state, tasks)
 
             discounted_completion_time -= weight * expm1(
                 -self.discount_factor * float(job_completion)
@@ -341,20 +357,26 @@ class MaximumLateness(Objective):
         self.due_dates = []
 
     def __reduce__(self) -> Any:
-        return (self.__class__, (self.due_tag, self.minimize), (self.due_dates,))
+        return (
+            self.__class__,
+            (self.due_tag, self.minimize),
+            (self.due_dates,),
+        )
 
     def __setstate__(self, state: tuple[Any, ...]) -> None:
         (self.due_dates,) = state
 
     def initialize(self, state: ScheduleState) -> None:
-        self.due_dates = convert_to_list(state.instance[self.due_tag], float)
+        self.due_dates = convert_to_list(
+            state.instance.task_instance[self.due_tag], float
+        )
 
     def get_current(self, state: ScheduleState) -> float:
         max_lateness = 0.0
 
-        for job in state.jobs:
-            job_completion = _makespan(state, job.task_ids)
-            job_lateness = job_completion - self.due_dates[job.job_id]
+        for job_id, tasks in enumerate(state.instance.job_tasks):
+            job_completion = _makespan(state, tasks)
+            job_lateness = job_completion - self.due_dates[job_id]
 
             if max_lateness < job_lateness:
                 max_lateness = job_lateness
@@ -387,21 +409,29 @@ class TotalTardiness(Objective):
         self.due_dates = []
 
     def __reduce__(self) -> Any:
-        return (self.__class__, (self.due_tag, self.minimize), (self.due_dates,))
+        return (
+            self.__class__,
+            (self.due_tag, self.minimize),
+            (self.due_dates,),
+        )
 
     def __setstate__(self, state: tuple[Any, ...]) -> None:
         (self.due_dates,) = state
 
     def initialize(self, state: ScheduleState) -> None:
-        self.due_dates = convert_to_list(state.instance[self.due_tag], float)
+        self.due_dates = convert_to_list(
+            state.instance.task_instance[self.due_tag], float
+        )
 
     def get_current(self, state: ScheduleState) -> float:
         total_tardiness = 0.0
-        for job in state.jobs:
-            due_date = self.due_dates[job.job_id]
-            job_completion = _makespan(state, job.task_ids)
+        for job_id, tasks in enumerate(state.instance.job_tasks):
+            due_date = self.due_dates[job_id]
+            job_completion = _makespan(state, tasks)
 
-            job_tardiness = job_completion - due_date if job_completion > due_date else 0
+            job_tardiness = (
+                job_completion - due_date if job_completion > due_date else 0
+            )
 
             total_tardiness += job_tardiness
 
@@ -450,17 +480,25 @@ class WeightedTardiness(Objective):
         self.due_dates, self.job_weights = state
 
     def initialize(self, state: ScheduleState) -> None:
-        self.due_dates = convert_to_list(state.instance[self.due_tag], float)
-        self.job_weights = convert_to_list(state.instance[self.weight_tag], float)
+        self.due_dates = convert_to_list(
+            state.instance.task_instance[self.due_tag], float
+        )
+        self.job_weights = convert_to_list(
+            state.instance.task_instance[self.weight_tag], float
+        )
 
     def get_current(self, state: ScheduleState) -> float:
         weighted_tardiness = 0.0
-        for job in state.jobs:
-            weight = self.job_weights[job.job_id]
-            due_date = self.due_dates[job.job_id]
-            job_completion = _makespan(state, job.task_ids)
+        for job_id, tasks in enumerate(state.instance.job_tasks):
+            weight = self.job_weights[job_id]
+            due_date = self.due_dates[job_id]
+            job_completion = _makespan(state, tasks)
 
-            job_tardiness = float(job_completion - due_date) if job_completion > due_date else 0.0
+            job_tardiness = (
+                float(job_completion - due_date)
+                if job_completion > due_date
+                else 0.0
+            )
 
             weighted_tardiness += weight * job_tardiness
 
@@ -490,21 +528,29 @@ class TotalEarliness(Objective):
         self.due_dates = []
 
     def __reduce__(self) -> Any:
-        return (self.__class__, (self.due_tag, self.minimize), (self.due_dates,))
+        return (
+            self.__class__,
+            (self.due_tag, self.minimize),
+            (self.due_dates,),
+        )
 
     def __setstate__(self, state: tuple[Any, ...]) -> None:
         (self.due_dates,) = state
 
     def initialize(self, state: ScheduleState) -> None:
-        self.due_dates = convert_to_list(state.instance[self.due_tag], float)
+        self.due_dates = convert_to_list(
+            state.instance.task_instance[self.due_tag], float
+        )
 
     def get_current(self, state: ScheduleState) -> float:
         total_earliness = 0.0
-        for job in state.jobs:
-            due_date = self.due_dates[job.job_id]
-            job_completion = _makespan(state, job.task_ids)
+        for job_id, tasks in enumerate(state.instance.job_tasks):
+            due_date = self.due_dates[job_id]
+            job_completion = _makespan(state, tasks)
 
-            job_earliness = due_date - job_completion if job_completion < due_date else 0.0
+            job_earliness = (
+                due_date - job_completion if job_completion < due_date else 0.0
+            )
 
             total_earliness += job_earliness
 
@@ -549,17 +595,25 @@ class WeightedEarliness(Objective):
         self.due_dates, self.job_weights = state
 
     def initialize(self, state: ScheduleState) -> None:
-        self.due_dates = convert_to_list(state.instance[self.due_tag], float)
-        self.job_weights = convert_to_list(state.instance[self.weight_tag], float)
+        self.due_dates = convert_to_list(
+            state.instance.task_instance[self.due_tag], float
+        )
+        self.job_weights = convert_to_list(
+            state.instance.task_instance[self.weight_tag], float
+        )
 
     def get_current(self, state: ScheduleState) -> float:
         weighted_earliness = 0.0
-        for job in state.jobs:
-            weight = self.job_weights[job.job_id]
-            due_date = self.due_dates[job.job_id]
-            job_completion = _makespan(state, job.task_ids)
+        for job_id, tasks in enumerate(state.instance.job_tasks):
+            weight = self.job_weights[job_id]
+            due_date = self.due_dates[job_id]
+            job_completion = _makespan(state, tasks)
 
-            job_earliness = float(due_date - job_completion) if job_completion < due_date else 0
+            job_earliness = (
+                float(due_date - job_completion)
+                if job_completion < due_date
+                else 0
+            )
 
             weighted_earliness += weight * job_earliness
 
@@ -590,19 +644,25 @@ class TotalTardyJobs(Objective):
         self.due_dates = []
 
     def __reduce__(self) -> Any:
-        return (self.__class__, (self.due_tag, self.minimize), (self.due_dates,))
+        return (
+            self.__class__,
+            (self.due_tag, self.minimize),
+            (self.due_dates,),
+        )
 
     def __setstate__(self, state: tuple[Any, ...]) -> None:
         (self.due_dates,) = state
 
     def initialize(self, state: ScheduleState) -> None:
-        self.due_dates = convert_to_list(state.instance[self.due_tag], float)
+        self.due_dates = convert_to_list(
+            state.instance.task_instance[self.due_tag], float
+        )
 
     def get_current(self, state: ScheduleState) -> float:
         tardy_jobs = 0
-        for job in state.jobs:
-            due_date = self.due_dates[job.job_id]
-            job_completion = _makespan(state, job.task_ids)
+        for job_id, tasks in enumerate(state.instance.job_tasks):
+            due_date = self.due_dates[job_id]
+            job_completion = _makespan(state, tasks)
 
             tardy = 1 if job_completion > due_date else 0
             tardy_jobs += tardy
@@ -650,15 +710,19 @@ class WeightedTardyJobs(Objective):
         self.due_dates, self.job_weights = state
 
     def initialize(self, state: ScheduleState) -> None:
-        self.due_dates = convert_to_list(state.instance[self.due_tag], float)
-        self.job_weights = convert_to_list(state.instance[self.weight_tag], float)
+        self.due_dates = convert_to_list(
+            state.instance.task_instance[self.due_tag], float
+        )
+        self.job_weights = convert_to_list(
+            state.instance.task_instance[self.weight_tag], float
+        )
 
     def get_current(self, state: ScheduleState) -> float:
         weighted_tardy_jobs = 0.0
-        for job in state.jobs:
-            weight = self.job_weights[job.job_id]
-            due_date = self.due_dates[job.job_id]
-            job_completion = _makespan(state, job.task_ids)
+        for job_id, tasks in enumerate(state.instance.job_tasks):
+            weight = self.job_weights[job_id]
+            due_date = self.due_dates[job_id]
+            job_completion = _makespan(state, tasks)
 
             tardy = weight if job_completion > due_date else 0.0
             weighted_tardy_jobs += tardy
@@ -700,15 +764,21 @@ class TotalFlowTime(Objective):
         (self.release_times,) = state
 
     def initialize(self, state: ScheduleState) -> None:
-        self.release_times = convert_to_list(state.instance[self.release_tag], float)
+        self.release_times = convert_to_list(
+            state.instance.task_instance[self.release_tag], float
+        )
 
     def get_current(self, state: ScheduleState) -> float:
         total_flowtime = 0.0
-        for job in state.jobs:
-            release_time = self.release_times[job.job_id]
-            job_completion = _makespan(state, job.task_ids)
+        for job_id, tasks in enumerate(state.instance.job_tasks):
+            release_time = self.release_times[job_id]
+            job_completion = _makespan(state, tasks)
 
-            job_flowtime = job_completion - release_time if job_completion > release_time else 0.0
+            job_flowtime = (
+                job_completion - release_time
+                if job_completion > release_time
+                else 0.0
+            )
 
             total_flowtime += job_flowtime
 

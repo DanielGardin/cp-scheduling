@@ -1,7 +1,7 @@
 from typing import Any
 from copy import deepcopy
 
-from cpscheduler.environment._common import TASK_ID, TIME, MACHINE_ID
+from cpscheduler.environment.constants import TASK_ID, TIME, MACHINE_ID
 from cpscheduler.environment.env import SchedulingEnv
 from cpscheduler.environment.instructions import ActionType
 from cpscheduler.environment.state import ScheduleState
@@ -19,7 +19,11 @@ def machine_utilization(state: ScheduleState) -> float:
     busy_time: TIME = 0
     for task_id in state.fixed_tasks:
         for entry in state.task_history[task_id]:
-            busy_time += entry.duration if entry.end_time <= time else time - entry.start_time
+            busy_time += (
+                entry.duration
+                if entry.end_time <= time
+                else time - entry.start_time
+            )
 
     return float(busy_time) / total_time if total_time > 0 else 1
 
@@ -32,6 +36,7 @@ def num_preemptions(state: ScheduleState) -> int:
 
     return total_switches
 
+
 def max_preemptions(state: ScheduleState) -> int:
     "Calculate the maximum number of preemption switches that occurred during the scheduling period."
     max_switches = 0
@@ -42,6 +47,7 @@ def max_preemptions(state: ScheduleState) -> int:
             max_switches = n_switches
 
     return max_switches
+
 
 def _count_inversions(arr: list[Any]) -> int:
     if len(arr) < 2:
@@ -54,17 +60,20 @@ def _count_inversions(arr: list[Any]) -> int:
     i = j = k = 0
     while i < len(left) and j < len(right):
         if left[i] <= right[j]:
-            arr[k] = left[i]; i += 1
+            arr[k] = left[i]
+            i += 1
 
         else:
             inversions += len(left) - i
-            arr[k] = right[j]; j += 1
+            arr[k] = right[j]
+            j += 1
 
         k += 1
 
     arr[k:] = left[i:] if i < len(left) else right[j:]
 
     return inversions
+
 
 class ReferenceScheduleMetrics:
     """
@@ -103,8 +112,12 @@ class ReferenceScheduleMetrics:
         cpy_env.step(reference_schedule)
 
         for task_id in cpy_env.state.fixed_tasks:
-            self.assignments[task_id] = cpy_env.state.variables_.assignment[task_id]
-            self.start_times[task_id] = cpy_env.state.variables_.start.global_lbs[task_id]
+            self.assignments[task_id] = cpy_env.state.variables_.assignment[
+                task_id
+            ]
+            self.start_times[task_id] = (
+                cpy_env.state.variables_.start.global_lbs[task_id]
+            )
 
         self.sorted_start_times = sorted(
             [(task_id, start) for task_id, start in self.start_times.items()],
@@ -114,7 +127,9 @@ class ReferenceScheduleMetrics:
     # Collect all metrics automatically in a single call to avoid redundant calculations
     def __call__(self, state: ScheduleState) -> dict[str, float]:
         metrics = {
-            "mean_displacement_distance": self.mean_displacement_distance(state),
+            "mean_displacement_distance": self.mean_displacement_distance(
+                state
+            ),
             "order_preservation": self.order_preservation(state),
             "hamming_accuracy": self.hamming_accuracy(state),
             "kendall_tau": self.kendall_tau(state),
@@ -141,11 +156,10 @@ class ReferenceScheduleMetrics:
             ref_start = self.start_times[task_id]
             actual_start = state.variables_.start.global_lbs[task_id]
 
-
             distance += (
                 ref_start - actual_start
-                if ref_start > actual_start else
-                actual_start - ref_start
+                if ref_start > actual_start
+                else actual_start - ref_start
             )
             count += 1
 
@@ -173,7 +187,7 @@ class ReferenceScheduleMetrics:
             count += 1
 
         return early_count / count if count > 0 else 1.0
-    
+
     def late_displacement_ratio(self, state: ScheduleState) -> float:
         """
         Calculate the late displacement ratio of the reference schedule.
@@ -220,12 +234,16 @@ class ReferenceScheduleMetrics:
 
         return (total_pairs - inversions) / total_pairs
 
-
     def hamming_accuracy(self, state: ScheduleState) -> float:
-        ref_order = [task_id for task_id, _ in self.sorted_start_times if task_id in state.fixed_tasks]
+        ref_order = [
+            task_id
+            for task_id, _ in self.sorted_start_times
+            if task_id in state.fixed_tasks
+        ]
 
         actual_order = sorted(
-            ref_order, key=lambda task_id: state.variables_.start.global_lbs[task_id]
+            ref_order,
+            key=lambda task_id: state.variables_.start.global_lbs[task_id],
         )
         # reference order is just the task_ids in sorted_start_times order
         matches = 0
@@ -263,7 +281,9 @@ class ReferenceScheduleMetrics:
         discordant = inversions
         denominator = (total_pairs * (total_pairs - ties)) ** 0.5
 
-        return (concordant - discordant) / denominator if denominator > 0 else 1.0
+        return (
+            (concordant - discordant) / denominator if denominator > 0 else 1.0
+        )
 
     # Machine assignment metrics
 

@@ -1,60 +1,51 @@
 from typing import Any
+from typing_extensions import TypeAlias
 
-from cpscheduler.environment._common import (
+from cpscheduler.environment.constants import (
     MAX_TIME,
     MIN_TIME,
     MACHINE_ID,
     TASK_ID,
     TIME,
-    ObsType,
     GLOBAL_MACHINE_ID,
     Status,
-    StatusType
+    StatusType,
+    Presence
 )
 from cpscheduler.environment.events import Event, VarField
-from cpscheduler.environment.tasks import Task, Job, TaskHistory, ScheduleVariables
-from cpscheduler.utils.list_utils import convert_to_list
+from cpscheduler.environment.tasks import (
+    ProblemInstance,
+    ScheduleVariables,
+    TaskHistory,
+)
 
-
-def check_instance_consistency(instance: dict[str, list[Any]]) -> int:
-    "Check if all lists in the instance have the same length."
-    lengths = {len(v) for v in instance.values()}
-
-    if len(lengths) > 1:
-        raise ValueError("Inconsistent instance data: all lists must have the same length.")
-
-    return lengths.pop() if lengths else 0
-
+ObsType: TypeAlias = tuple[dict[str, list[Any]], dict[str, list[Any]]]
 
 class ScheduleState:
     """
-    ScheduleState represents the current state of the scheduling environment, working as both a
-    Discrete Event Simulation (DES) state and a Constraint Satisfaction Problem (CSP) state.
+    ScheduleState represents the current state of the scheduling environment,
+    working as both a Discrete Event Simulation (DES) state and a Constraint
+    Satisfaction Problem (CSP) state.
 
-    It has no simulation logic itself, instead, it provides an API to read and modify the current
-    state of the problem. The actual kernel is implemented in the SchedulingEnv class,
-    which knows the constraints and how to propagate changes through them.
+    It has no simulation logic itself, instead, it provides an API to read and
+    modify the current state of the problem. The actual kernel is implemented in
+    the SchedulingEnv class, which knows the constraints and how to propagate
+    changes through them.
     """
+
     __slots__ = (
-        "tasks",
-        "jobs",
+        "instance",
         "time",
         "variables_",
-        "task_history",
+        "event_queue",
+        "infeasible",
         "awaiting_tasks",
         "fixed_tasks",
-        "event_queue",
-        "instance",
-        "job_instance",
-        "_n_machines",
-        "infeasible"
+        "task_history",
+        "loaded",
     )
 
-    tasks: list[Task]
-    "Static list of all tasks in the scheduling problem."
-
-    jobs: list[Job]
-    "Static list of all jobs in the scheduling problem."
+    instance: ProblemInstance
 
     time: TIME
     "Current simulation time."
@@ -74,16 +65,10 @@ class ScheduleState:
     event_queue: list[Event]
     "Queue of events to be processed for constraint propagation."
 
-    instance: dict[str, list[Any]]
-    job_instance: dict[str, list[Any]]
-    _n_machines: int
-
+    loaded: bool
     infeasible: bool
 
     def __init__(self) -> None:
-        self.tasks = []
-        self.jobs = []
-
         self.time = 0
 
         self.awaiting_tasks = set()
@@ -93,126 +78,38 @@ class ScheduleState:
 
         self.event_queue = []
 
-        self.instance = {}
-        self.job_instance = {}
-        self._n_machines = 0
-
         self.infeasible = False
-
-    def __reduce__(self) -> tuple[Any, ...]:
-        return (
-            self.__class__,
-            (),
-            (
-                self.tasks,
-                self.jobs,
-                self.time,
-                self.variables_,
-                self.task_history,
-                self.awaiting_tasks,
-                self.fixed_tasks,
-                self.event_queue,
-                self.instance,
-                self.job_instance,
-                self._n_machines,
-            ),
-        )
-
-    def __setstate__(self, state: tuple[Any, ...]) -> None:
-        (
-            self.tasks,
-            self.jobs,
-            self.time,
-            self.variables_,
-            self.task_history,
-            self.awaiting_tasks,
-            self.fixed_tasks,
-            self.event_queue,
-            self.instance,
-            self.job_instance,
-            self._n_machines,
-        ) = state
+        self.loaded = False
 
     # Properties
     @property
-    def n_machines(
-        self,
-    ) -> int:  # Lazy evaluation of number of machines, only works after initialization
-        if self._n_machines > 0 or not self.loaded:
-            return self._n_machines
-
-        max_machine_id = -1
-        for task in self.tasks:
-            for machine in task.machines:
-                if machine > max_machine_id:
-                    max_machine_id = machine
-
-        self._n_machines = max_machine_id + 1
-        return self._n_machines
-
-    @property
     def n_tasks(self) -> int:
-        return len(self.tasks)
+        return self.instance.n_tasks
 
     @property
     def n_jobs(self) -> int:
-        return len(self.jobs)
+        return self.instance.n_jobs
 
+    # TODO: Reduce the hit rate of this property (1.5% of the time is spent here)
     @property
-    def loaded(self) -> bool:
-        return bool(self.tasks)
+    def n_machines(self) -> int:
+        return self.instance.n_machines
 
     # Instance control methods
-    def clear(self) -> None:
-        self.tasks.clear()
-        self.jobs.clear()
-
-        self.time = 0
-        self.event_queue.clear()
-
-        self.task_history.clear()
-
-        self.awaiting_tasks.clear()
-        self.fixed_tasks.clear()
-
-        self.instance.clear()
-        self.job_instance.clear()
-        self._n_machines = 0
-
     def read_instance(
         self,
         task_data: dict[str, list[Any]],
     ) -> None:
-        self.clear()
-
-        self.instance = task_data
-        self.job_instance = {}
-        n_tasks = check_instance_consistency(task_data)
-
-        job_ids: list[TASK_ID]
-        if "job" in task_data:
-            job_ids = convert_to_list(task_data["job"], TASK_ID)
-
-        else:
-            job_ids = list(range(n_tasks))
-
-        n_jobs = max(job_ids) + 1
-        for job_id in range(n_jobs):
-            self.jobs.append(Job(job_id))
-
-        for task_id, job_id in enumerate(job_ids):
-            task = Task(task_id, job_id)
-
-            self.tasks.append(task)
-            self.jobs[job_id].add_task(task)
-
-        self.instance["task_id"] = list(range(n_tasks))
-        self.instance["job_id"] = job_ids
-        self.job_instance["job_id"] = list(range(self.n_jobs))
+        self.instance = ProblemInstance(task_data)
+        self.loaded = True
 
     # Flow control methods
     def reset(self) -> None:
-        self.variables_ = ScheduleVariables(self.tasks, self.n_machines)
+        assert (
+            self.loaded
+        ), "No instance loaded. Please load an instance before resetting the state."
+
+        self.variables_ = ScheduleVariables(self.instance)
         self.task_history = [[] for _ in range(self.n_tasks)]
 
         self.time = 0
@@ -227,34 +124,51 @@ class ScheduleState:
             return self.infeasible
 
         return all(
-            self.task_history[task_id][-1].end_time <= self.time for task_id in self.fixed_tasks
+            self.task_history[task_id][-1].end_time <= self.time
+            for task_id in self.fixed_tasks
         )
 
     # Constraint propagation API methods
 
     ## Getter methods for variable values
-    def get_start_lb(self, task_id: TASK_ID, machine_id: MACHINE_ID = GLOBAL_MACHINE_ID) -> TIME:
+    def get_start_lb(
+        self, task_id: TASK_ID, machine_id: MACHINE_ID = GLOBAL_MACHINE_ID
+    ) -> TIME:
         return self.variables_.start.get_lb(task_id, machine_id)
 
-    def get_start_ub(self, task_id: TASK_ID, machine_id: MACHINE_ID = GLOBAL_MACHINE_ID) -> TIME:
+    def get_start_ub(
+        self, task_id: TASK_ID, machine_id: MACHINE_ID = GLOBAL_MACHINE_ID
+    ) -> TIME:
         return self.variables_.start.get_ub(task_id, machine_id)
 
-    def get_end_lb(self, task_id: TASK_ID, machine_id: MACHINE_ID = GLOBAL_MACHINE_ID) -> TIME:
+    def get_end_lb(
+        self, task_id: TASK_ID, machine_id: MACHINE_ID = GLOBAL_MACHINE_ID
+    ) -> TIME:
         return self.variables_.end.get_lb(task_id, machine_id)
 
-    def get_end_ub(self, task_id: TASK_ID, machine_id: MACHINE_ID = GLOBAL_MACHINE_ID) -> TIME:
+    def get_end_ub(
+        self, task_id: TASK_ID, machine_id: MACHINE_ID = GLOBAL_MACHINE_ID
+    ) -> TIME:
         return self.variables_.end.get_ub(task_id, machine_id)
 
-    def get_remaining_time(self, task_id: TASK_ID, machine_id: MACHINE_ID) -> TIME:
-        return self.variables_.remaining_times[task_id * self.n_machines + machine_id]
+    def get_remaining_time(
+        self, task_id: TASK_ID, machine_id: MACHINE_ID
+    ) -> TIME:
+        return self.variables_.remaining_times[
+            task_id * self.n_machines + machine_id
+        ]
 
     def get_assignment(self, task_id: TASK_ID) -> MACHINE_ID:
         return self.variables_.assignment[task_id]
 
     def is_present(self, task_id: TASK_ID) -> bool:
-        return self.variables_.present[task_id]
+        return self.variables_.presence[task_id] == Presence.PRESENT
 
-    def is_feasible(self, task_id: TASK_ID, machine_id: MACHINE_ID = GLOBAL_MACHINE_ID) -> bool:
+    # TODO: Cache feasibility results to avoid redundant checks
+    # 6.7% of the time is spent in this method
+    def is_feasible(
+        self, task_id: TASK_ID, machine_id: MACHINE_ID = GLOBAL_MACHINE_ID
+    ) -> bool:   
         start = self.variables_.start
 
         lb = start.get_lb(task_id, machine_id)
@@ -263,7 +177,7 @@ class ScheduleState:
         if lb > ub or self.time > ub:
             return False
 
-        for machine in self.tasks[task_id].machines:
+        for machine in self.instance.processing_times[task_id]:
             idx = task_id * self.n_machines + machine
 
             if self.variables_.start.lbs[idx] > self.variables_.start.ubs[idx]:
@@ -272,19 +186,24 @@ class ScheduleState:
         return True
 
     def is_consistent(self, task_id: TASK_ID) -> bool:
-        return not self.variables_.present[task_id] or self.is_feasible(task_id)
+        return not self.is_present(task_id) or self.is_feasible(task_id)
 
     ## Setter methods for variable values, triggering constraint propagation through events
+
+    # This method is very inneficient when no infesibility is possible
+    # TODO: Implement a more efficient method for checking feasibility after tightening bounds
     def _check_state_feasibility(self, task_id: TASK_ID) -> None:
         if not self.is_feasible(task_id):
-            if not self.tasks[task_id].optional:
+            if not self.instance.is_optional(task_id):
                 self.infeasible = True
                 return
 
-            if self.variables_.present[task_id]:
-                self.variables_.present[task_id] = False
+            if self.is_present(task_id):
+                self.variables_.presence[task_id] = Presence.ABSENT
                 self.awaiting_tasks.discard(task_id)
-                self.event_queue.append(Event(task_id, VarField.ABSENCE, GLOBAL_MACHINE_ID))
+                self.event_queue.append(
+                    Event(task_id, VarField.ABSENCE, GLOBAL_MACHINE_ID)
+                )
 
     def tight_start_lb(
         self,
@@ -302,7 +221,7 @@ class ScheduleState:
         if machine_id == GLOBAL_MACHINE_ID:
             remaining_times = self.variables_.remaining_times
 
-            for machine in self.tasks[task_id].machines:
+            for machine in self.instance.processing_times[task_id]:
                 idx = task_id * self.n_machines + machine
 
                 if start_vars.lbs[idx] < value:
@@ -310,7 +229,7 @@ class ScheduleState:
                     end_vars.lbs[idx] = value + remaining_times[idx]
 
             start_vars.global_lbs[task_id] = value
-            end_vars.recompute_global_bounds(task_id)
+            end_vars.recompute_global_bounds(task_id) # Expensive here
 
         else:
             idx = task_id * self.n_machines + machine_id
@@ -321,9 +240,8 @@ class ScheduleState:
             start_vars.recompute_global_bounds(task_id)
             end_vars.recompute_global_bounds(task_id)
 
-
         self.event_queue.append(Event(task_id, VarField.START_LB, machine_id))
-        self._check_state_feasibility(task_id)
+        self._check_state_feasibility(task_id) # Expensive here
 
     def tight_start_ub(
         self,
@@ -341,7 +259,7 @@ class ScheduleState:
         if machine_id == GLOBAL_MACHINE_ID:
             remaining_times = self.variables_.remaining_times
 
-            for machine in self.tasks[task_id].machines:
+            for machine in self.instance.processing_times[task_id]:
                 idx = task_id * self.n_machines + machine
 
                 if start_vars.ubs[idx] > value:
@@ -379,7 +297,7 @@ class ScheduleState:
         if machine_id == GLOBAL_MACHINE_ID:
             remaining_times = self.variables_.remaining_times
 
-            for machine in self.tasks[task_id].machines:
+            for machine in self.instance.processing_times[task_id]:
                 idx = task_id * self.n_machines + machine
 
                 if end_vars.lbs[idx] < value:
@@ -417,7 +335,7 @@ class ScheduleState:
         if machine_id == GLOBAL_MACHINE_ID:
             remaining_times = self.variables_.remaining_times
 
-            for machine in self.tasks[task_id].machines:
+            for machine in self.instance.processing_times[task_id]:
                 idx = task_id * self.n_machines + machine
 
                 if end_vars.ubs[idx] > value:
@@ -444,16 +362,18 @@ class ScheduleState:
         self.tight_start_ub(task_id, MIN_TIME, machine_id)
 
     def require_task(self, task_id: TASK_ID) -> None:
-        if not self.variables_.present[task_id]:
-            self.variables_.present[task_id] = True
+        if self.variables_.presence[task_id] != Presence.PRESENT:
+            self.variables_.presence[task_id] = Presence.PRESENT
             self.awaiting_tasks.add(task_id)
-            self.event_queue.append(Event(task_id, VarField.PRESENCE, GLOBAL_MACHINE_ID))
+            self.event_queue.append(
+                Event(task_id, VarField.PRESENCE, GLOBAL_MACHINE_ID)
+            )
 
     def forbid_task(self, task_id: TASK_ID) -> None:
         self.forbid_machine(task_id, GLOBAL_MACHINE_ID)
 
     def require_machine(self, task_id: TASK_ID, machine_id: MACHINE_ID) -> None:
-        for other_machine in self.tasks[task_id].machines:
+        for other_machine in self.instance.processing_times[task_id]:
             if other_machine != machine_id:
                 self.forbid_machine(task_id, other_machine)
 
@@ -488,10 +408,12 @@ class ScheduleState:
 
         return self.task_history[task_id][-1].end_time <= self.time
 
-    def is_available(self, task_id: TASK_ID, machine_id: MACHINE_ID = GLOBAL_MACHINE_ID) -> bool:
+    def is_available(
+        self, task_id: TASK_ID, machine_id: MACHINE_ID = GLOBAL_MACHINE_ID
+    ) -> bool:
         vars_ = self.variables_
 
-        if not vars_.present[task_id]:
+        if vars_.presence[task_id] != Presence.PRESENT:
             return False
 
         start_var = vars_.start
@@ -536,7 +458,9 @@ class ScheduleState:
         start = self.variables_.start.get_lb(task_id, machine_id)
         end = self.variables_.end.get_ub(task_id, machine_id)
 
-        history_entry = TaskHistory(assignment=machine_id, start_time=start, duration=end - start)
+        history_entry = TaskHistory(
+            assignment=machine_id, start_time=start, duration=end - start
+        )
 
         self.task_history[task_id].append(history_entry)
 
@@ -553,10 +477,12 @@ class ScheduleState:
 
         remaining_times = self.variables_.remaining_times
 
-        for machine in self.tasks[task_id].machines:
+        for machine in self.instance.processing_times[task_id]:
             idx = task_id * self.n_machines + machine
 
-            work_done = ((actual_duration) * remaining_times[idx]) // (expected_duration)
+            work_done = ((actual_duration) * remaining_times[idx]) // (
+                expected_duration
+            )
             remaining_times[idx] -= work_done
 
             # TODO: Produce an event instead of directly modifying the bounds
@@ -619,10 +545,13 @@ class ScheduleState:
         return assignments
 
     def get_observation(self) -> ObsType:
-        task_obs = self.instance.copy()
-        job_obs = self.job_instance.copy()
+        task_obs = self.instance.task_instance.copy()
 
-        task_obs["status"] = [self.get_status(task_id) for task_id in range(self.n_tasks)]
-        task_obs["available"] = [self.is_available(task_id) for task_id in range(self.n_tasks)]
+        task_obs["status"] = [
+            self.get_status(task_id) for task_id in range(self.n_tasks)
+        ]
+        task_obs["available"] = [
+            self.is_available(task_id) for task_id in range(self.n_tasks)
+        ]
 
-        return task_obs, job_obs
+        return task_obs, {}

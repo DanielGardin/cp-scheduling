@@ -16,7 +16,7 @@ from enum import Enum
 from mypy_extensions import mypyc_attr
 
 
-from cpscheduler.environment._common import (
+from cpscheduler.environment.constants import (
     TASK_ID,
     TIME,
     MACHINE_ID,
@@ -38,7 +38,9 @@ def is_single_action(
     if not isinstance(action, tuple):
         return False
 
-    return isinstance(action[0], str) and all(isinstance(arg, Int) for arg in action[1:])
+    return isinstance(action[0], str) and all(
+        isinstance(arg, Int) for arg in action[1:]
+    )
 
 
 import logging
@@ -186,7 +188,9 @@ class Schedule:
         self.schedule.clear()
         self.default_queue.clear()
 
-    def add_instruction(self, instruction: "Instruction", time: TIME = DEFAULT_QUEUE_TIME) -> None:
+    def add_instruction(
+        self, instruction: "Instruction", time: TIME = DEFAULT_QUEUE_TIME
+    ) -> None:
         if time == DEFAULT_QUEUE_TIME:
             self.default_queue.append(instruction)
 
@@ -202,7 +206,9 @@ class Schedule:
     def get_next_instruction_time(self) -> TIME:
         return min(self.schedule) if self.schedule else MAX_TIME
 
-    def instruction_queue(self, state: ScheduleState) -> Iterator[InstructionResult]:
+    def instruction_queue(
+        self, state: ScheduleState
+    ) -> Iterator[InstructionResult]:
         time = state.time
 
         queue = self.schedule.get(time, [])
@@ -239,13 +245,12 @@ class Schedule:
 
                 if control == QueueControl.RESTART:
                     idx = 0
-                
+
                 elif control == QueueControl.BLOCK:
                     break
 
                 elif control == QueueControl.INTERRUPT:
                     return
-
 
         if queue:
             # This only means that the queue was blocked and the remaining instructions cannot
@@ -292,7 +297,7 @@ class Schedule:
 
                 if control == QueueControl.RESTART:
                     idx = 0
-                
+
                 elif control == QueueControl.BLOCK:
                     break
 
@@ -300,9 +305,10 @@ class Schedule:
                     return
 
 
+# TODO: Consider adding machine dispatchers (task, state) -> machine_id
 def select_machine(task_id: TASK_ID, state: ScheduleState) -> MACHINE_ID:
     "Select a machine for the given task when machine is not specified."
-    for machine in state.tasks[task_id].machines:
+    for machine in state.instance.get_machines(task_id):
         if state.is_available(task_id, machine):
             return machine
 
@@ -327,7 +333,9 @@ class Instruction:
         "Check if the instruction is ready to be processed based on the current state."
         return True
 
-    def apply(self, state: ScheduleState, schedule: Schedule) -> InstructionResult:
+    def apply(
+        self, state: ScheduleState, schedule: Schedule
+    ) -> InstructionResult:
         "Process the instruction at the given current time."
         raise NotImplementedError
 
@@ -342,14 +350,18 @@ class Instruction:
 class Noop(Instruction):
     "Noop is a no-op instruction that does nothing when applied."
 
-    def apply(self, state: ScheduleState, schedule: Schedule) -> InstructionResult:
+    def apply(
+        self, state: ScheduleState, schedule: Schedule
+    ) -> InstructionResult:
         return InstructionResult.success()
 
 
 class Execute(Instruction):
     "Executes a task on a specific machine. If the task cannot be executed, it is waited for."
 
-    def __init__(self, task_id: TASK_ID, machine_id: MACHINE_ID = GLOBAL_MACHINE_ID):
+    def __init__(
+        self, task_id: TASK_ID, machine_id: MACHINE_ID = GLOBAL_MACHINE_ID
+    ):
         self.task_id = task_id
         self.machine_id = machine_id
 
@@ -359,7 +371,9 @@ class Execute(Instruction):
 
         return f"Execute(task={self.task_id})"
 
-    def apply(self, state: ScheduleState, schedule: Schedule) -> InstructionResult:
+    def apply(
+        self, state: ScheduleState, schedule: Schedule
+    ) -> InstructionResult:
         if state.is_available(self.task_id, self.machine_id):
             if self.machine_id == GLOBAL_MACHINE_ID:
                 self.machine_id = select_machine(self.task_id, state)
@@ -374,7 +388,7 @@ class Execute(Instruction):
                 LogLevel.ERROR,
             )
 
-        if self.machine_id not in state.tasks[self.task_id].machines:
+        if self.machine_id not in state.instance.get_machines(self.task_id):
             return InstructionResult.invalid(
                 f"Machine {self.machine_id} is not eligible for task {self.task_id}.",
                 LogLevel.ERROR,
@@ -396,7 +410,9 @@ class Submit(Instruction):
 
         return f"Submit(task={self.task_id})"
 
-    def apply(self, state: ScheduleState, schedule: Schedule) -> InstructionResult:
+    def apply(
+        self, state: ScheduleState, schedule: Schedule
+    ) -> InstructionResult:
         if state.is_available(self.task_id, self.machine_id):
             if self.machine_id == GLOBAL_MACHINE_ID:
                 self.machine_id = select_machine(self.task_id, state)
@@ -405,7 +421,7 @@ class Submit(Instruction):
 
             return SUCCESS
 
-        if self.machine_id not in state.tasks[self.task_id].machines:
+        if self.machine_id not in state.instance.get_machines(self.task_id):
             return InstructionResult.invalid(
                 f"Machine {self.machine_id} is not eligible for task {self.task_id}.",
                 LogLevel.ERROR,
@@ -423,7 +439,9 @@ class Submit(Instruction):
 class ExecuteJob(Instruction):
     "Executes all tasks in a job. Can only be used in job-oriented scheduling."
 
-    def __init__(self, job_id: TASK_ID, machine: MACHINE_ID = GLOBAL_MACHINE_ID):
+    def __init__(
+        self, job_id: TASK_ID, machine: MACHINE_ID = GLOBAL_MACHINE_ID
+    ):
         self.job_id = job_id
         self.machine_id = machine
 
@@ -433,24 +451,26 @@ class ExecuteJob(Instruction):
 
         return f"Execute(job={self.job_id})"
 
-    def apply(self, state: ScheduleState, schedule: Schedule) -> InstructionResult:
-        job_tasks = state.jobs[self.job_id]
+    def apply(
+        self, state: ScheduleState, schedule: Schedule
+    ) -> InstructionResult:
+        job_tasks = state.instance.job_tasks[self.job_id]
 
-        for task in job_tasks:
-            if state.is_available(task.task_id, self.machine_id):
+        for task_id in job_tasks:
+            if state.is_available(task_id, self.machine_id):
                 machine_id = self.machine_id
 
                 if machine_id == GLOBAL_MACHINE_ID:
-                    machine_id = select_machine(task.task_id, state)
+                    machine_id = select_machine(task_id, state)
 
-                state.execute_task(task.task_id, machine_id)
+                state.execute_task(task_id, machine_id)
 
                 return InstructionResult.success(
-                    f"Task {task.task_id} in job {self.job_id} executed on machine {machine_id}"
+                    f"Task {task_id} in job {self.job_id} executed on machine {machine_id}"
                     f" at {state.time}."
                 )
 
-        if all(state.is_fixed(task.task_id) for task in job_tasks):
+        if all(state.is_fixed(task_id) for task_id in job_tasks):
             return InstructionResult.success(
                 f"All tasks in job {self.job_id} are already fixed and cannot be executed."
             )
@@ -464,7 +484,9 @@ class ExecuteJob(Instruction):
 class SubmitJob(Instruction):
     "Submits all tasks in a job. Can only be used in job-oriented scheduling."
 
-    def __init__(self, job_id: TASK_ID, machine: MACHINE_ID = GLOBAL_MACHINE_ID):
+    def __init__(
+        self, job_id: TASK_ID, machine: MACHINE_ID = GLOBAL_MACHINE_ID
+    ):
         self.job_id = job_id
         self.machine_id = machine
 
@@ -474,23 +496,25 @@ class SubmitJob(Instruction):
 
         return f"Submit(job={self.job_id})"
 
-    def apply(self, state: ScheduleState, schedule: Schedule) -> InstructionResult:
-        job_tasks = state.jobs[self.job_id]
+    def apply(
+        self, state: ScheduleState, schedule: Schedule
+    ) -> InstructionResult:
+        job_tasks = state.instance.job_tasks[self.job_id]
 
-        for task in job_tasks:
-            if state.is_available(task.task_id, self.machine_id):
+        for task_id in job_tasks:
+            if state.is_available(task_id, self.machine_id):
                 machine_id = self.machine_id
 
                 if machine_id == GLOBAL_MACHINE_ID:
-                    machine_id = select_machine(task.task_id, state)
+                    machine_id = select_machine(task_id, state)
 
-                state.execute_task(task.task_id, machine_id)
+                state.execute_task(task_id, machine_id)
 
                 return InstructionResult.success(
-                    f"Task {task.task_id} in job {self.job_id} submitted to machine {machine_id}"
+                    f"Task {task_id} in job {self.job_id} submitted to machine {machine_id}"
                 )
 
-        if all(state.is_fixed(task.task_id) for task in job_tasks):
+        if all(state.is_fixed(task_id) for task_id in job_tasks):
             return InstructionResult.success(
                 f"All tasks in job {self.job_id} are already fixed and cannot be submitted."
             )
@@ -510,15 +534,17 @@ class Pause(Instruction):
     def __repr__(self) -> str:
         return f"Pause(task={self.task_id})"
 
-    def apply(self, state: ScheduleState, schedule: Schedule) -> InstructionResult:
-        task = state.tasks[self.task_id]
-
+    def apply(
+        self, state: ScheduleState, schedule: Schedule
+    ) -> InstructionResult:
         if state.is_executing(self.task_id):
             state.pause_task(self.task_id)
 
-            return InstructionResult.success(f"Task {self.task_id} paused at time {state.time}.")
+            return InstructionResult.success(
+                f"Task {self.task_id} paused at time {state.time}."
+            )
 
-        if not task.preemptive:
+        if not state.instance.preemptive[self.task_id]:
             return InstructionResult.success(
                 f"Task {self.task_id} is not preemptive and cannot be paused.",
             )
@@ -537,9 +563,9 @@ class Resume(Instruction):
     def __repr__(self) -> str:
         return f"Resume(task={self.task_id})"
 
-    def apply(self, state: ScheduleState, schedule: Schedule) -> InstructionResult:
-        task = state.tasks[self.task_id]
-
+    def apply(
+        self, state: ScheduleState, schedule: Schedule
+    ) -> InstructionResult:
         if state.is_paused(self.task_id):
             last_machine = state.get_assignment(self.task_id)
             state.execute_task(self.task_id, last_machine)
@@ -548,7 +574,7 @@ class Resume(Instruction):
                 f"Task {self.task_id} resumed on machine {last_machine} at time {state.time}."
             )
 
-        if not task.preemptive:
+        if not state.instance.preemptive[self.task_id]:
             return InstructionResult.success(
                 f"Task {self.task_id} is not preemptive and cannot be resumed."
             )
@@ -566,8 +592,12 @@ class Resume(Instruction):
 class Checkpoint(Instruction):
     "Checkpoint is an no-op instruction used to yield control the default queue, allowing timing instructions."
 
-    def apply(self, state: ScheduleState, schedule: Schedule) -> InstructionResult:
-        return InstructionResult.success(f"Checkpoint at time {state.time} reached.")
+    def apply(
+        self, state: ScheduleState, schedule: Schedule
+    ) -> InstructionResult:
+        return InstructionResult.success(
+            f"Checkpoint at time {state.time} reached."
+        )
 
 
 class Complete(Instruction):
@@ -579,7 +609,9 @@ class Complete(Instruction):
     def __repr__(self) -> str:
         return f"Complete(task={self.task_id})"
 
-    def apply(self, state: ScheduleState, schedule: Schedule) -> InstructionResult:
+    def apply(
+        self, state: ScheduleState, schedule: Schedule
+    ) -> InstructionResult:
         if state.is_executing(self.task_id):
             end_time = state.get_end_lb(self.task_id)
 
@@ -588,7 +620,9 @@ class Complete(Instruction):
             return InstructionResult.success(f"Task {self.task_id} completed.")
 
         if state.is_completed(self.task_id):
-            return InstructionResult.success(f"Task {self.task_id} is already completed.")
+            return InstructionResult.success(
+                f"Task {self.task_id} is already completed."
+            )
 
         return InstructionResult.blocked(
             f"Task {self.task_id} is not executing and cannot be completed at the moment."
@@ -602,33 +636,45 @@ class Advance(Instruction):
         self.dt = dt
 
         if self.dt <= 0:
-            raise ValueError(f"Advance instruction requires a positive time delta, got {self.dt}.")
+            raise ValueError(
+                f"Advance instruction requires a positive time delta, got {self.dt}."
+            )
 
     def __repr__(self) -> str:
         return f"Advance(dt={self.dt})"
 
-    def apply(self, state: ScheduleState, schedule: Schedule) -> InstructionResult:
+    def apply(
+        self, state: ScheduleState, schedule: Schedule
+    ) -> InstructionResult:
         next_time = state.time + self.dt
 
         schedule.add_instruction(Checkpoint(), next_time)
 
-        return InstructionResult.success(f"Advancing time by {self.dt} to {next_time}.")
+        return InstructionResult.success(
+            f"Advancing time by {self.dt} to {next_time}."
+        )
 
 
 class Query(Instruction):
     "When processed, halts the environment and returns its current state."
 
-    def apply(self, state: ScheduleState, schedule: Schedule) -> InstructionResult:
+    def apply(
+        self, state: ScheduleState, schedule: Schedule
+    ) -> InstructionResult:
         return InstructionResult.halt(f"Querying state at time {state.time}.")
 
 
 class Clear(Instruction):
     "Clears all upcoming instructions and resets the schedule."
 
-    def apply(self, state: ScheduleState, schedule: Schedule) -> InstructionResult:
+    def apply(
+        self, state: ScheduleState, schedule: Schedule
+    ) -> InstructionResult:
         schedule.clear_schedule()
 
-        return InstructionResult.success(f"Clearing schedule at time {state.time}.")
+        return InstructionResult.success(
+            f"Clearing schedule at time {state.time}."
+        )
 
 
 def parse_args(
@@ -656,7 +702,7 @@ def parse_instruction(
             if 0 < len(args) <= 2:
                 task_id, time_or_machine = parse_args(args, 2, "execute")
 
-                machines = state.tasks[task_id].machines
+                machines = state.instance.get_machines(task_id)
 
                 if len(machines) == 1:
                     # Consider the second argument as time
@@ -677,7 +723,7 @@ def parse_instruction(
             if 0 < len(args) <= 2:
                 task_id, time_or_machine = parse_args(args, 2, "submit")
 
-                machines = state.tasks[task_id].machines
+                machines = state.instance.get_machines(task_id)
 
                 if len(machines) == 1:
                     # Consider the second argument as time
