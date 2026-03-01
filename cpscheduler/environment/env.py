@@ -305,35 +305,29 @@ class SchedulingEnv:
         self.event_count = len(event_queue)
 
     def advance_clock(self) -> None:
-        state = self.state
+        schedule = self.schedule
+        variables = self.state.variables_
+        runtime_state = self.state.runtime_state
 
         next_time = MAX_TIME
-        if state.awaiting_tasks:
-            current_time = state.time
-            global_lbs = state.variables_.start.global_lbs
-            for task_id in state.awaiting_tasks:
+        if runtime_state.awaiting_tasks:
+            current_time = self.state.time
+            global_lbs = variables.start.global_lbs
+
+            for task_id in runtime_state.awaiting_tasks:
                 task_lb = global_lbs[task_id]
 
                 if task_lb > current_time and task_lb < next_time:
                     next_time = task_lb
 
-        else:
-            last_end_time = state.time
+        elif runtime_state.executing_tasks:
+            next_time = runtime_state.last_completion_time
 
-            for task_id in state.fixed_tasks:
-                end_time = state.task_history[task_id][-1].end_time
-
-                if last_end_time < end_time:
-                    last_end_time = end_time
-
-            next_time = last_end_time
-
-        next_instruction_time = self.schedule.get_next_instruction_time()
+        next_instruction_time = schedule.get_next_instruction_time()
         if next_instruction_time < next_time:
             next_time = next_instruction_time
 
-        if next_time > state.time:
-            state.time = next_time
+        self.state.advance_time(next_time)
 
     # Environment API methods
     def reset(self, *, options: Options = None) -> tuple[ObsType, InfoType]:
@@ -385,7 +379,7 @@ class SchedulingEnv:
                 # is reached before processing the next instruction.
                 control = instruction_result.queue_control
 
-                if state.event_queue:
+                if self.event_count < len(state.event_queue):
                     self.propagate()
 
             # Halting conditions:
@@ -404,9 +398,7 @@ class SchedulingEnv:
                 break
 
             elif not schedule.has_scheduled_instructions():
-                if not any(
-                    state.is_executing(task_id) for task_id in state.fixed_tasks
-                ):
+                if not state.runtime_state.executing_tasks:
                     break
 
             self.advance_clock()

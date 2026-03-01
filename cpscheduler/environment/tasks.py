@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, TypeAlias
 from collections.abc import KeysView
 
 from cpscheduler.environment.constants import (
@@ -10,6 +10,8 @@ from cpscheduler.environment.constants import (
     GLOBAL_MACHINE_ID,
     PresenceType,
     Presence,
+    Status,
+    StatusType
 )
 
 from cpscheduler.utils.list_utils import convert_to_list
@@ -60,7 +62,8 @@ class ProblemInstance:
         self.task_instance = task_instance.copy()
 
         self.n_tasks = check_instance_consistency(task_instance)
-        assert self.n_tasks > 0, "Instance must contain at least one task."
+        if self.n_tasks == 0:
+            return # Dummy instance
 
         job_ids = convert_to_list(
             (
@@ -175,36 +178,7 @@ class ProblemInstance:
             self.processing_times,
         ) = state
 
-
-class TaskHistory:
-    assignment: MACHINE_ID
-    start_time: TIME
-    duration: TIME
-    end_time: TIME
-
-    def __init__(
-        self, assignment: MACHINE_ID, start_time: TIME, duration: TIME
-    ) -> None:
-        self.assignment = assignment
-        self.start_time = start_time
-        self.duration = duration
-        self.end_time = start_time + duration
-
-    def __repr__(self) -> str:
-        return (
-            f"TaskHistory(assignment={self.assignment}, "
-            f"start_time={self.start_time}, "
-            f"duration={self.duration}, "
-            f"end_time={self.end_time})"
-        )
-
-    def __reduce__(self) -> tuple[Any, ...]:
-        return (
-            self.__class__,
-            (self.assignment, self.start_time, self.duration),
-            (),
-        )
-
+DUMMY_INSTANCE = ProblemInstance({})
 
 class Bounds:
     """
@@ -322,6 +296,41 @@ class Bounds:
             self.global_ubs,
         ) = state
 
+class RunningMinimum:
+    "Helper class to maintain a running minimum value with efficient updates."
+
+    __slots__ = ("value", "num_minima", "_ref")
+
+    value: TIME
+    "The current minimum value among a reference list of values."
+
+    num_minima: int
+    "The number of occurrences of the current minimum value in the reference list."
+
+    _ref: list[TIME]
+    "A view of the reference list."
+
+    def __init__(self, ref: list[TIME]) -> None:
+        self.value = min(ref) if ref else MAX_TIME
+        self.num_minima = sum(1 for v in ref if v == self.value)
+
+        self._ref = ref
+
+    def update(self, old_value: TIME, new_value: TIME) -> None:
+        "Update the running minimum when a value in the reference list changes."
+        if old_value == self.value:
+            self.num_minima -= 1
+
+            if self.num_minima <= 0:
+                self.value = min(self._ref) if self._ref else MAX_TIME
+
+        if new_value < self.value:
+            self.value = new_value
+            self.num_minima = 1
+        
+        elif new_value == self.value:
+            self.num_minima += 1
+
 
 class ScheduleVariables:
     """
@@ -334,19 +343,26 @@ class ScheduleVariables:
 
     __slots__ = [
         "remaining_times",
+        "feasible_machines",
+        "n_feasible_machines",
         "assignment",
         "presence",
         "start",
-        "end"
+        "end",
+        "min_start_lb"
     ]
 
     remaining_times: list[TIME]
-    assignment: list[MACHINE_ID]
+    feasible_machines: list[list[MACHINE_ID]]
+    n_feasible_machines: list[MACHINE_ID]
 
+    assignment: list[MACHINE_ID]
     presence: list[PresenceType]
 
     start: Bounds
     end: Bounds
+
+    min_start_lb: RunningMinimum
 
     def __init__(self, instance: ProblemInstance) -> None:
         n_tasks = instance.n_tasks
@@ -360,10 +376,16 @@ class ScheduleVariables:
             for optional in instance.optional
         ]
 
+        self.feasible_machines = [[] for _ in range(n_tasks)]
+        self.n_feasible_machines = [0] * n_tasks
+
         self.start = Bounds(instance)
         self.end = Bounds(instance)
 
         for task_id, p_times in enumerate(instance.processing_times):
+            self.feasible_machines[task_id] = list(p_times.keys())
+            self.n_feasible_machines[task_id] = len(p_times)
+
             for machine, processing_time in p_times.items():
                 idx = task_id * n_machines + machine
 
@@ -373,6 +395,145 @@ class ScheduleVariables:
 
             self.start.recompute_global_bounds(task_id)
             self.end.recompute_global_bounds(task_id)
+
+        self.min_start_lb = RunningMinimum(self.start.global_lbs)
+
+    def set_start_lb(
+            self,
+            task_id: TASK_ID,
+            lb: TIME,
+            machine_id: MACHINE_ID,
+        ) -> None:
+        if machine_id == GLOBAL_MACHINE_ID:
+            remaining_times = self.remaining_times
+            start_lbs = self.start.lbs
+            end_lbs = self.end.lbs
+
+            for m_id in self.feasible_machines[task_id]:
+                idx = task_id * self.start.n_machines + m_id
+                old_value = start_lbs[idx]
+
+                if old_value < lb:
+                    start_lbs[idx] = lb
+                    end_lbs[idx] = lb + remaining_times[idx]
+
+                    self.min_start_lb.update(old_value, lb)
+
+
+            self.start.global_lbs[task_id] = lb
+            self.end.recompute_global_bounds(task_id)
+
+        else:
+            idx = task_id * self.start.n_machines + machine_id
+            old_value = self.start.lbs[idx]
+
+            self.start.lbs[idx] = lb
+            self.end.lbs[idx] = lb + self.remaining_times[idx]
+
+            self.start.recompute_global_bounds(task_id)
+            self.end.recompute_global_bounds(task_id)
+
+            self.min_start_lb.update(old_value, lb)
+
+    def set_start_ub(
+        self,
+        task_id: TASK_ID,
+        ub: TIME,
+        machine_id: MACHINE_ID,
+    ) -> None:
+        if machine_id == GLOBAL_MACHINE_ID:
+            remaining_times = self.remaining_times
+            start_ubs = self.start.ubs
+            end_ubs = self.end.ubs
+
+            for m_id in self.feasible_machines[task_id]:
+                idx = task_id * self.start.n_machines + m_id
+
+                if start_ubs[idx] > ub:
+                    start_ubs[idx] = ub
+                    end_ubs[idx] = ub + remaining_times[idx]
+
+            self.start.global_ubs[task_id] = ub
+            self.end.recompute_global_bounds(task_id)
+
+        else:
+            idx = task_id * self.start.n_machines + machine_id
+
+            self.start.ubs[idx] = ub
+            self.end.ubs[idx] = ub + self.remaining_times[idx]
+
+            self.start.recompute_global_bounds(task_id)
+            self.end.recompute_global_bounds(task_id)
+
+    def set_end_lb(
+        self,
+        task_id: TASK_ID,
+        lb: TIME,
+        machine_id: MACHINE_ID,
+    ) -> None:
+        if machine_id == GLOBAL_MACHINE_ID:
+            remaining_times = self.remaining_times
+            end_lbs = self.end.lbs
+
+            for m_id in self.feasible_machines[task_id]:
+                idx = task_id * self.start.n_machines + m_id
+                old_value = end_lbs[idx]
+
+                if old_value < lb:
+                    old_start = self.start.lbs[idx]
+                    new_start = lb - remaining_times[idx]
+
+                    end_lbs[idx] = lb
+                    self.start.lbs[idx] = new_start
+
+                    self.min_start_lb.update(old_start, new_start)
+
+            self.end.global_lbs[task_id] = lb
+            self.start.recompute_global_bounds(task_id)
+
+        else:
+            idx = task_id * self.start.n_machines + machine_id
+            old_value = self.end.lbs[idx]
+
+            self.end.lbs[idx] = lb
+            self.start.lbs[idx] = lb - self.remaining_times[idx]
+
+            self.end.recompute_global_bounds(task_id)
+            self.start.recompute_global_bounds(task_id)
+
+            self.min_start_lb.update(self.start.lbs[idx], lb - self.remaining_times[idx])
+
+    def set_end_ub(
+        self,
+        task_id: TASK_ID,
+        ub: TIME,
+        machine_id: MACHINE_ID,
+    ) -> None:
+        if machine_id == GLOBAL_MACHINE_ID:
+            remaining_times = self.remaining_times
+            end_ubs = self.end.ubs
+
+            for m_id in self.feasible_machines[task_id]:
+                idx = task_id * self.start.n_machines + m_id
+                old_value = end_ubs[idx]
+
+                if old_value > ub:
+                    end_ubs[idx] = ub
+                    self.start.ubs[idx] = ub - remaining_times[idx]
+
+            self.end.global_ubs[task_id] = ub
+            self.start.recompute_global_bounds(task_id)
+
+        else:
+            idx = task_id * self.start.n_machines + machine_id
+            old_value = self.end.ubs[idx]
+
+            self.end.ubs[idx] = ub
+            self.start.ubs[idx] = ub - self.remaining_times[idx]
+
+            self.end.recompute_global_bounds(task_id)
+            self.start.recompute_global_bounds(task_id)
+
 
     def __repr__(self) -> str:
         return (
@@ -389,7 +550,7 @@ class ScheduleVariables:
             self.start,
             self.end,
         )
-        return (self.__class__, (), state)
+        return (self.__class__, (DUMMY_INSTANCE,), state)
 
     def __setstate__(self, state: tuple[Any, ...]) -> None:
         (
@@ -398,4 +559,145 @@ class ScheduleVariables:
             self.presence,
             self.start,
             self.end,
+        ) = state
+
+TaskHistory: TypeAlias = tuple[MACHINE_ID, TIME, TIME]
+"A record of a task execution, (machine_id, start_time, end_time)"
+
+class RuntimeState:
+    """
+    Container for the runtime state of the scheduling environment.
+
+    This class is used to store any additional state information that may be
+    needed by constraints or other components of the environment. It is designed
+    to be flexible and can be extended with additional attributes as needed.
+    """
+
+    __slots__ = (
+        "history",
+        "awaiting_tasks",
+        "executing_tasks",
+        "completed_tasks",
+        "status",
+        "last_completion_time"
+    )
+
+    history: list[list[TaskHistory]]
+
+    awaiting_tasks: set[TASK_ID]
+    executing_tasks: set[TASK_ID]
+    completed_tasks: set[TASK_ID]
+
+    status: list[StatusType]
+
+    last_completion_time: TIME
+
+    def __init__(self, instance: ProblemInstance) -> None:
+        self.history = [[] for _ in range(instance.n_tasks)]
+
+        self.awaiting_tasks = set(range(instance.n_tasks))
+        self.executing_tasks = set()
+        self.completed_tasks = set()
+
+        self.status = [Status.AWAITING] * instance.n_tasks
+        self.last_completion_time = 0
+
+    def __repr__(self) -> str:
+        return (
+            f"RuntimeState(history={self.history}, "
+            f"awaiting_tasks={self.awaiting_tasks}, "
+            f"executing_tasks={self.executing_tasks}, "
+            f"completed_tasks={self.completed_tasks})"
+        )
+
+    def get_assignment(self, task_id: TASK_ID, page: int = -1) -> MACHINE_ID:
+        "Get the machine assignment of the current execution of a given task."
+        return self.history[task_id][page][0]
+
+    def get_start(self, task_id: TASK_ID, page: int = -1) -> TIME:
+        "Get the start time of the current execution of a given task."
+        return self.history[task_id][page][1]
+
+    def get_end(self, task_id: TASK_ID, page: int = -1) -> TIME:
+        "Get the end time of the current execution of a given task."
+        return self.history[task_id][page][2]
+
+    def get_history(self, task_id: TASK_ID, page: int = -1) -> TaskHistory:
+        "Get the execution history for a given task and page."
+        return self.history[task_id][page]
+
+    def is_terminal(self) -> bool:
+        "Check if no tasks are currently executing or awaiting"
+        return not self.awaiting_tasks and not self.executing_tasks
+
+    def start_task(
+            self,
+            task_id: TASK_ID,
+            machine_id: MACHINE_ID,
+            start_time: TIME,
+            end_time: TIME
+        ) -> None:
+        self.awaiting_tasks.discard(task_id)
+        self.executing_tasks.add(task_id)
+
+        self.history[task_id].append((machine_id, start_time, end_time))
+
+        self.status[task_id] = Status.EXECUTING
+
+        if end_time > self.last_completion_time:
+            self.last_completion_time = end_time
+
+    def pause_task(self, task_id: TASK_ID, time: TIME) -> None:
+        self.executing_tasks.discard(task_id)
+        self.awaiting_tasks.add(task_id)
+
+        assignment, start_time, prev_end = self.history[task_id].pop()
+
+        self.history[task_id].append(
+            (assignment, start_time, time)
+        )
+
+        self.status[task_id] = Status.PAUSED
+
+        if prev_end == self.last_completion_time:
+            self.last_completion_time = max(
+                (self.get_end(t_id)
+                for t_id in self.executing_tasks),
+                default=0
+            )
+
+    def infeasible_task(self, task_id: TASK_ID) -> None:
+        self.awaiting_tasks.discard(task_id)
+
+        self.status[task_id] = Status.INFEASIBLE
+
+    def update(self, time: TIME) -> None:
+        history = self.history
+
+        for task_id in list(self.executing_tasks):
+            if history[task_id][-1][2] <= time:
+                self.executing_tasks.remove(task_id)
+                self.completed_tasks.add(task_id)
+
+                self.status[task_id] = Status.COMPLETED
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        state = (
+            self.history,
+            self.awaiting_tasks,
+            self.executing_tasks,
+            self.completed_tasks,
+            self.status,
+            self.last_completion_time
+        )
+        return (self.__class__, (DUMMY_INSTANCE,), state)
+
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        (
+            self.history,
+            self.awaiting_tasks,
+            self.executing_tasks,
+            self.completed_tasks,
+            self.status,
+            self.last_completion_time
         ) = state

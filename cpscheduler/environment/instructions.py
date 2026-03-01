@@ -382,12 +382,6 @@ class Execute(Instruction):
 
             return SUCCESS
 
-        if state.is_fixed(self.task_id):
-            return InstructionResult.invalid(
-                f"Task {self.task_id} is already fixed.",
-                LogLevel.ERROR,
-            )
-
         if self.machine_id not in state.instance.get_machines(self.task_id):
             return InstructionResult.invalid(
                 f"Machine {self.machine_id} is not eligible for task {self.task_id}.",
@@ -424,12 +418,6 @@ class Submit(Instruction):
         if self.machine_id not in state.instance.get_machines(self.task_id):
             return InstructionResult.invalid(
                 f"Machine {self.machine_id} is not eligible for task {self.task_id}.",
-                LogLevel.ERROR,
-            )
-
-        if state.is_fixed(self.task_id):
-            return InstructionResult.invalid(
-                f"Task {self.task_id} is already fixed and cannot be submitted.",
                 LogLevel.ERROR,
             )
 
@@ -470,11 +458,6 @@ class ExecuteJob(Instruction):
                     f" at {state.time}."
                 )
 
-        if all(state.is_fixed(task_id) for task_id in job_tasks):
-            return InstructionResult.success(
-                f"All tasks in job {self.job_id} are already fixed and cannot be executed."
-            )
-
         return InstructionResult.blocked(
             f"No tasks in job {self.job_id} can be executed on machine {self.machine_id} "
             f"at time {state.time}. Waiting for any of them to become available."
@@ -513,11 +496,6 @@ class SubmitJob(Instruction):
                 return InstructionResult.success(
                     f"Task {task_id} in job {self.job_id} submitted to machine {machine_id}"
                 )
-
-        if all(state.is_fixed(task_id) for task_id in job_tasks):
-            return InstructionResult.success(
-                f"All tasks in job {self.job_id} are already fixed and cannot be submitted."
-            )
 
         return InstructionResult.deferred(
             f"No tasks in job {self.job_id} can be submitted to machine {self.machine_id} "

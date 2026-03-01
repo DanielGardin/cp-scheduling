@@ -10,8 +10,9 @@ from mypy_extensions import i64, i32, i16, u8
 # Type aliases for commonly used types
 
 # Currently MACHINE_ID and TASK_ID must have the same type due to indexing
-MACHINE_ID: TypeAlias = i32
-TASK_ID: TypeAlias = i32
+INDEX_TYPE: TypeAlias = i32
+MACHINE_ID: TypeAlias = INDEX_TYPE
+TASK_ID: TypeAlias = INDEX_TYPE
 
 TIME: TypeAlias = i32
 
@@ -56,6 +57,11 @@ PresenceType: TypeAlias = u8
 
 class Presence:
     UNDEFINED: Final[PresenceType] = 0
+
     PRESENT: Final[PresenceType] = 1
+
     ABSENT: Final[PresenceType] = 2
+
     INFEASIBLE: Final[PresenceType] = 3
+
+    FIXED: Final[PresenceType] = 4

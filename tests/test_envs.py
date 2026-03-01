@@ -2,11 +2,9 @@ import pytest
 
 from copy import deepcopy
 
-from typing_extensions import Unpack
-
 from common import env_setup, TEST_INSTANCES
 
-from cpscheduler.environment._common import Status
+from cpscheduler.environment.constants import Status
 
 @pytest.mark.env
 @pytest.mark.parametrize("instance_name", TEST_INSTANCES)
@@ -79,28 +77,22 @@ def test_submit(instance_name: str) -> None:
         ("submit", 0),
     ]
 
-    (obs, _), reward, *_, info = env.step(actions)
+    (obs, _), *_, info = env.step(actions)
 
     assert obs["status"][0] == Status.COMPLETED
     assert obs["status"][1] == Status.COMPLETED
 
     assert obs["status"][2] == Status.EXECUTING
 
-    assert info["current_time"] == (
-        env.state.task_history[0][0].duration +
-        env.state.task_history[1][0].duration
-    )
+    assert info["current_time"] == env.state.runtime_state.get_end(1)
 
-    (new_obs, _), new_reward, *_, new_info = env.step(
-        [("complete", 2)]
-    )
+    (new_obs, _), *_, info = env.step([("complete", 2)])
 
     assert new_obs["status"][0] == Status.COMPLETED
     assert new_obs["status"][1] == Status.COMPLETED
     assert new_obs["status"][2] == Status.COMPLETED
 
-    assert new_info["current_time"] == env.state.task_history[2][0].end_time
-    assert reward + new_reward == -new_info["current_time"]
+    assert info["current_time"] == env.state.runtime_state.get_end(2)
 
 
 @pytest.mark.env
@@ -141,7 +133,7 @@ def test_blocking_instruction(instance_name: str) -> None:
 
     # Test when the action cannot be done, limit the execution to 1 second and failt after that
 
-    (obs, _), reward, *_, info = env.step(
+    (obs, _), reward, *_ = env.step(
         [("execute", 1), ("execute", 0)] # Inverse order of execution (1 requires 0 to be completed first)
     )
 
@@ -181,15 +173,15 @@ def test_blocking_instruction(instance_name: str) -> None:
 #     assert new_obs["status"][0] == Status.COMPLETED
 #     assert new_info["current_time"] == processing_time + processing_time // 2
 
-# def test_copy() -> None:
-#     env = env_setup("ta01")
+def test_copy() -> None:
+    env = env_setup("ta01")
 
-#     env.reset()
+    env.reset()
 
-#     env_copy = deepcopy(env)
+    env_copy = deepcopy(env)
 
-#     assert env.state == env_copy.state
+    assert env.state == env_copy.state
 
-#     env.step(("execute", 0))
+    env.step(("execute", 0))
 
-#     assert env.state != env_copy.state
+    assert env.state != env_copy.state

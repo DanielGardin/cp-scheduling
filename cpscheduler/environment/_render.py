@@ -325,12 +325,19 @@ try:
                 "Machine: %{y}<extra></extra>"
             )
 
-            for job_id, job_tasks in enumerate(state.instance.job_tasks):
+            instance = state.instance
+            runtime_state = state.runtime_state
+
+
+            for job_id, job_tasks in enumerate(instance.job_tasks):
                 for task_id in job_tasks:
-                    for history_entry in state.task_history[task_id]:
-                        start_times.append(history_entry.start_time)
-                        durations.append(history_entry.duration)
-                        machines.append(history_entry.assignment)
+                    history = runtime_state.history[task_id]
+
+                    for (assignment, start_time, end_time) in history:
+
+                        start_times.append(start_time)
+                        durations.append(end_time - start_time)
+                        machines.append(assignment)
                         task_ids.append(task_id)
 
                 fig.add_trace(

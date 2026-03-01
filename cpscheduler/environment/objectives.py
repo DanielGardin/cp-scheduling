@@ -180,7 +180,7 @@ def _makespan(state: ScheduleState, tasks: Iterable[TASK_ID]) -> float:
     max_end_time = 0.0
 
     for task in tasks:
-        if not state.is_fixed(task):
+        if state.is_completed(task):
             continue
 
         end_time = float(state.get_end_ub(task))
@@ -199,7 +199,7 @@ class Makespan(Objective):
     _regular = True
 
     def get_current(self, state: ScheduleState) -> float:
-        return _makespan(state, state.fixed_tasks)
+        return _makespan(state, state.runtime_state.completed_tasks)
 
     def get_entry(self) -> str:
         return "C_max"

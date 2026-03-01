@@ -11,22 +11,25 @@ VarFieldType: TypeAlias = u8
 
 
 class VarField:
-    START_LB: Final[VarFieldType] = 0
+    ASSIGNMENT: Final[VarFieldType] = 0
+    "A task have its domain colapsed to a single machine and l = u = start time."
+
+    START_LB: Final[VarFieldType] = 1
     "A task have its start interval changed from [l, u) to [l', u), where l' > l."
 
-    START_UB: Final[VarFieldType] = 1
+    START_UB: Final[VarFieldType] = 2
     "A task have its start interval changed from [l, u) to [l, u'), where u' < u."
 
-    END_LB: Final[VarFieldType] = 2
+    END_LB: Final[VarFieldType] = 3
     "A task have its end interval changed from [l, u) to [l', u), where l' > l."
 
-    END_UB: Final[VarFieldType] = 3
+    END_UB: Final[VarFieldType] = 4
     "A task have its end interval changed from [l, u) to [l, u'), where u' < u."
 
-    PRESENCE: Final[VarFieldType] = 4
+    PRESENCE: Final[VarFieldType] = 5
     "A task have its presence changed from absent to mandatory."
 
-    ABSENCE: Final[VarFieldType] = 5
+    ABSENCE: Final[VarFieldType] = 6
     "A task have its presence changed from mandatory to absent."
 
 
@@ -50,6 +53,9 @@ class Event:
         self.task_id = task_id
         self.field = field
         self.machine_id = machine_id
+
+    def is_assignment(self) -> bool:
+        return self.field == VarField.ASSIGNMENT
 
     def is_global(self) -> bool:
         return self.machine_id == GLOBAL_MACHINE_ID
