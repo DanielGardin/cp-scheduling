@@ -1,0 +1,245 @@
+from typing import Any
+from typing_extensions import Self
+from collections.abc import Iterable, Mapping
+
+from cpscheduler.environment.constants import (
+    TASK_ID,
+    MACHINE_ID,
+    TIME,
+    Int,
+    GLOBAL_MACHINE_ID,
+    MAX_TIME
+)
+from cpscheduler.environment.events import Event
+from cpscheduler.environment.state import ScheduleState
+
+from cpscheduler.environment.constraints.base import Constraint
+
+class MachineEligibilityConstraint(Constraint):
+    """
+    Machine eligibility constraint for the scheduling environment.
+    This constraint defines the machines on which each task can be executed.
+
+    Arguments:
+        eligibility: Mapping[int, Iterable[int]]
+            A mapping of task IDs to a list of machine IDs on which the task can be executed.
+
+    Note:
+        This constraint is limited by the setup of the scheduling environment,
+        meaning that you cannot:
+        - add machines that do not exist in the environment.
+        - include/exclude machines that would make the task incompatible with the scheduling setup.
+        - exclude all machines for a task.
+
+        By default, if eligibility is not defined for a task, it is assumed that the task
+        can be executed on the original set of machines defined by the scheduling setup.
+    """
+
+    eligibility: dict[TASK_ID, set[MACHINE_ID]]
+
+    def __init__(self, eligibility: Mapping[Int, Iterable[Int]]):
+        self.eligibility = {
+            TASK_ID(task): {MACHINE_ID(machine) for machine in machines}
+            for task, machines in eligibility.items()
+        }
+
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (self.eligibility,),
+            (),
+        )
+
+    def reset(self, state: ScheduleState) -> None:
+        for task_id, machines in self.eligibility.items():
+            for other_machine in state.instance.processing_times[task_id]:
+                if other_machine not in machines:
+                    state.forbid_machine(task_id, other_machine)
+
+    def get_entry(self) -> str:
+        return "M_j"
+
+
+class MachineConstraint(Constraint):
+    """
+    General Parallel machine constraint, differs from DisjunctiveConstraint as the disjunctive
+    constraint have groups with predefined tasks, while the machine constraint defines its groups
+    based on the machine assignment of the tasks.
+
+    This is mainly a setup constraint, if the expected behavior is to constrain tasks on which
+    machines they can be assigned to, use the MachineEligibilityConstraint instead.
+    """
+
+    machine_map: list[set[TASK_ID]]
+
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (),
+            (self.machine_map,),
+        )
+
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        (self.machine_map,) = state
+
+    def reset(self, state: ScheduleState) -> None:
+        self.machine_map = [set() for _ in range(state.n_machines)]
+
+        for task_id, machines in enumerate(state.instance.processing_times):
+            for machine in machines:
+                self.machine_map[machine].add(TASK_ID(task_id))
+
+        return
+
+    def propagate(self, event: Event, state: ScheduleState) -> None:
+        task_id = event.task_id
+
+        if not event.is_assignment():
+            return
+
+        machine_id = state.get_assignment(task_id)
+        assert machine_id != GLOBAL_MACHINE_ID
+
+        for machine_tasks in self.machine_map:
+            machine_tasks.discard(task_id)
+
+        end_time = state.get_end_lb(task_id)
+
+        for other_task in self.machine_map[machine_id]:
+            state.tight_start_lb(other_task, end_time, machine_id)
+
+class MachineBreakdownConstraint(Constraint):
+    """
+    Machine breakdown constraint for the scheduling environment.
+
+    This constraint defines the breakdowns for machines, which are the times
+    when the machines are unavailable for task execution. The breakdowns can be defined
+    as a mapping of machine IDs to a list of (start_time, end_time) tuples representing
+    the breakdown intervals.
+
+    Arguments:
+        breakdowns: Mapping[int, Iterable[tuple[int, int]]]
+            A mapping of machine IDs to a list of (start_time, end_time) tuples
+            representing the breakdown intervals for each machine.
+
+        name: Optional[str] = None
+            An optional name for the constraint.
+    """
+
+    breakdowns: dict[MACHINE_ID, list[tuple[TIME, TIME]]]
+    next_breakdown: dict[MACHINE_ID, int]
+
+    def __init__(self, breakdowns: Mapping[Int, Iterable[tuple[Int, Int]]]):
+        self.breakdowns = {
+            MACHINE_ID(machine): sorted(
+                (TIME(start), TIME(end)) for start, end in intervals
+            )
+            for machine, intervals in breakdowns.items()
+        }
+
+        self.next_breakdown = {machine: 0 for machine in self.breakdowns}
+
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (self.breakdowns,),
+            (self.next_breakdown,),
+        )
+
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        (self.next_breakdown,) = state
+
+    @classmethod
+    def from_machine_step_function(
+        cls, step_function: Mapping[Int, Int]
+    ) -> Self:
+        """
+        Create a MachineBreakdownConstraint from a machine step function.
+        This function is only useful in Parallel Machine Environments, where machines are
+        indistinguishable and if suffices to define the number of available machines at each
+        time step.
+
+        Arguments:
+            step_function: Mapping[int, int]
+                A mapping of time steps to the number of available machines from that time onward.
+
+            name: Optional[str] = None
+                An optional name for the constraint.
+        """
+        breakdowns: dict[Int, list[tuple[Int, Int]]] = {}
+
+        sorted_times = sorted([int(time) for time in step_function.keys()])
+        n_machines = max(int(count) for count in step_function.values())
+
+        for time in sorted_times:
+            available_machines = int(step_function[TIME(time)])
+
+            for machine in range(available_machines):
+                if machine not in breakdowns:
+                    continue
+
+                start, end = breakdowns[machine][-1]
+                if end == MAX_TIME:
+                    breakdowns[machine][-1] = (start, time)
+
+            for machine in range(available_machines, n_machines):
+                if (
+                    breakdowns.setdefault(machine, [])
+                    and breakdowns[machine][-1][1] == time
+                ):
+                    continue
+
+                breakdowns[machine].append((time, MAX_TIME))
+
+        return cls(breakdowns)
+
+    def reset(self, state: ScheduleState) -> None:
+        for machine in self.breakdowns:
+            self.next_breakdown[machine] = 0
+
+            for task_id in list(state.runtime_state.awaiting_tasks):
+                start_lb = state.get_start_lb(task_id, machine)
+
+                for _, end in self.breakdowns[machine]:
+                    if start_lb < end:
+                        state.tight_start_lb(task_id, end, machine)
+
+                    else:
+                        self.next_breakdown[machine] += 1
+
+    def propagate(self, event: Event, state: ScheduleState) -> None:
+        task_id = event.task_id
+
+        # TODO: implement is_fixed
+        if state.is_completed(task_id):
+            return
+
+        for machine in state.instance.processing_times[task_id]:
+            if machine not in self.breakdowns:
+                continue
+
+            current_index = self.next_breakdown[machine]
+            breakdown_intervals = self.breakdowns[machine]
+
+            end_lb = state.get_end_lb(task_id, machine)
+            start_lb = state.get_start_lb(task_id, machine)
+
+            while current_index < len(breakdown_intervals):
+                start, end = breakdown_intervals[current_index]
+
+                if end <= state.time:
+                    self.next_breakdown[machine] += 1
+                    current_index += 1
+                    continue
+
+                if end_lb <= start:
+                    break
+
+                if start_lb < end:
+                    state.tight_start_lb(task_id, end, machine)
+                    break
+
+                current_index += 1
+
+    def get_entry(self) -> str:
+        return "brkdwn"
