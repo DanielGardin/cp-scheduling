@@ -2,10 +2,11 @@ from typing import Any
 
 from cpscheduler.utils.list_utils import convert_to_list
 
-from cpscheduler.environment.constants import TASK_ID, TIME, Int
+from cpscheduler.environment.constants import TaskID, Time, Int
 from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import Constraint
+
 
 class ReleaseDateConstraint(Constraint):
     """
@@ -25,7 +26,7 @@ class ReleaseDateConstraint(Constraint):
     """
 
     release_tag: str
-    release_dates: list[TIME]
+    release_dates: list[Time]
 
     def __init__(self, release_dates: str = "release_time"):
         self.release_tag = release_dates
@@ -42,7 +43,7 @@ class ReleaseDateConstraint(Constraint):
 
     def initialize(self, state: ScheduleState) -> None:
         self.release_dates = convert_to_list(
-            state.instance.task_instance[self.release_tag], TIME
+            state.instance.task_instance[self.release_tag], Time
         )
 
     def reset(self, state: ScheduleState) -> None:
@@ -51,7 +52,7 @@ class ReleaseDateConstraint(Constraint):
 
     def get_entry(self) -> str:
         if self.release_dates:
-            release_time = self.release_dates[TASK_ID(0)]
+            release_time = self.release_dates[TaskID(0)]
 
             for rt in self.release_dates:
                 if rt != release_time:
@@ -80,15 +81,15 @@ class DeadlineConstraint(Constraint):
     """
 
     due_tag: str
-    due_dates: list[TIME]
+    due_dates: list[Time]
 
-    const_due: TIME | None
+    const_due: Time | None
 
     def __init__(
         self, due_dates: str = "due_dates", const_due: Int | None = None
     ):
         self.due_tag = due_dates
-        self.const_due = TIME(const_due) if const_due is not None else None
+        self.const_due = Time(const_due) if const_due is not None else None
 
         self.due_dates = []
 
@@ -105,7 +106,7 @@ class DeadlineConstraint(Constraint):
     def initialize(self, state: ScheduleState) -> None:
         if self.const_due is None:
             self.due_dates = convert_to_list(
-                state.instance.task_instance[self.due_tag], TIME
+                state.instance.task_instance[self.due_tag], Time
             )
 
     def reset(self, state: ScheduleState) -> None:

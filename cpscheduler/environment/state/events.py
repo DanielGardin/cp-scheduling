@@ -2,8 +2,8 @@ from typing import TypeAlias, Final
 from mypy_extensions import u8
 
 from cpscheduler.environment.constants import (
-    TASK_ID,
-    MACHINE_ID,
+    TaskID,
+    MachineID,
     GLOBAL_MACHINE_ID,
 )
 
@@ -32,6 +32,8 @@ class VarField:
     ABSENCE: Final[VarFieldType] = 6
     "A task have its presence changed from mandatory to absent."
 
+    INFEASIBLE: Final[VarFieldType] = 7
+    "A task has been determined to be infeasible."
 
 class Event:
     """
@@ -40,15 +42,15 @@ class Event:
 
     __slots__ = ("task_id", "field", "machine_id")
 
-    task_id: TASK_ID
+    task_id: TaskID
     field: VarFieldType
-    machine_id: MACHINE_ID
+    machine_id: MachineID
 
     def __init__(
         self,
-        task_id: TASK_ID,
+        task_id: TaskID,
         field: VarFieldType,
-        machine_id: MACHINE_ID = GLOBAL_MACHINE_ID,
+        machine_id: MachineID = GLOBAL_MACHINE_ID,
     ) -> None:
         self.task_id = task_id
         self.field = field

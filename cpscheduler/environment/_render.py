@@ -328,12 +328,11 @@ try:
             instance = state.instance
             runtime_state = state.runtime_state
 
-
             for job_id, job_tasks in enumerate(instance.job_tasks):
                 for task_id in job_tasks:
                     history = runtime_state.history[task_id]
 
-                    for (assignment, start_time, end_time) in history:
+                    for assignment, start_time, end_time in history:
 
                         start_times.append(start_time)
                         durations.append(end_time - start_time)

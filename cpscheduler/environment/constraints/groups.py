@@ -3,20 +3,21 @@ from collections.abc import Iterable
 
 from cpscheduler.utils.list_utils import convert_to_list
 
-from cpscheduler.environment.constants import TASK_ID, Int
-from cpscheduler.environment.events import Event
+from cpscheduler.environment.constants import TaskID, Int
+from cpscheduler.environment.state.events import Event
 from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import Constraint
 
-class NonOverlapConstraint(Constraint):
-    groups_map: list[set[TASK_ID]]
 
-    current_groups: list[set[TASK_ID]]
+class NonOverlapConstraint(Constraint):
+    groups_map: list[set[TaskID]]
+
+    current_groups: list[set[TaskID]]
 
     def __init__(self, task_groups: Iterable[Iterable[Int]]):
         self.groups_map = [
-            set(convert_to_list(task_group, TASK_ID))
+            set(convert_to_list(task_group, TaskID))
             for task_group in task_groups
         ]
 

@@ -12,7 +12,7 @@ from mypy_extensions import mypyc_attr
 
 from cpscheduler.utils.list_utils import convert_to_list
 
-from cpscheduler.environment.constants import MACHINE_ID, TIME, Int
+from cpscheduler.environment.constants import MachineID, Time, Int
 from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.constraints import (
     Constraint,
@@ -24,7 +24,7 @@ from cpscheduler.environment.constraints import (
 setups: dict[str, type["ScheduleSetup"]] = {}
 
 
-def ceil_div(a: TIME, b: TIME) -> TIME:
+def ceil_div(a: Time, b: Time) -> Time:
     "a divided by b, rounded up to the nearest integer."
     return -(-a // b)
 
@@ -79,7 +79,7 @@ class SingleMachineSetup(ScheduleSetup):
         for task_id, p_time in enumerate(
             instance.task_instance[self.processing_times]
         ):
-            instance.set_processing_time(task_id, 0, TIME(p_time))
+            instance.set_processing_time(task_id, 0, Time(p_time))
 
     def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
         if not self.disjunctive:
@@ -112,7 +112,7 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
             instance.task_instance[self.processing_times]
         ):
             for machine in range(self.n_machines):
-                instance.set_processing_time(task_id, machine, TIME(p_time))
+                instance.set_processing_time(task_id, machine, Time(p_time))
 
     def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
         return (MachineConstraint(),) if self.disjunctive else ()
@@ -144,7 +144,7 @@ class UniformParallelMachineSetup(ScheduleSetup):
             instance.task_instance[self.processing_times]
         ):
             for machine, speed in enumerate(self.speed):
-                p_time = ceil_div(TIME(p_time), speed)
+                p_time = ceil_div(Time(p_time), speed)
 
                 instance.set_processing_time(task_id, machine, p_time)
 
@@ -178,7 +178,7 @@ class UnrelatedParallelMachineSetup(ScheduleSetup):
             p_times = instance.task_instance[p_time_feature]
 
             for task_id, p_time in enumerate(p_times):
-                instance.set_processing_time(task_id, machine, TIME(p_time))
+                instance.set_processing_time(task_id, machine, Time(p_time))
 
     def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
         return (MachineConstraint(),) if self.disjunctive else ()
@@ -208,10 +208,10 @@ class JobShopSetup(ScheduleSetup):
         n_machines = 0
 
         for task_id in range(instance.n_tasks):
-            machine: MACHINE_ID = instance.task_instance[self.machine_feature][
+            machine: MachineID = instance.task_instance[self.machine_feature][
                 task_id
             ]
-            p_time = TIME(
+            p_time = Time(
                 instance.task_instance[self.processing_times][task_id]
             )
 
@@ -283,7 +283,7 @@ class OpenShopSetup(ScheduleSetup):
 
             for task_id, p_time in enumerate(p_times):
                 instance.set_processing_time(
-                    task_id, MACHINE_ID(machine), TIME(p_time)
+                    task_id, MachineID(machine), Time(p_time)
                 )
 
     def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:

@@ -16,7 +16,12 @@ from collections.abc import Iterable, Mapping
 from typing_extensions import TypeIs
 
 from cpscheduler.utils.list_utils import convert_to_list
-from cpscheduler.utils._protocols import Metric, InstanceTypes, InfoType, Options
+from cpscheduler.utils._protocols import (
+    Metric,
+    InstanceTypes,
+    InfoType,
+    Options,
+)
 
 from cpscheduler.environment.constants import MAX_TIME
 from cpscheduler.environment.state import ScheduleState, ObsType
@@ -25,8 +30,10 @@ from cpscheduler.environment.instructions import (
     ActionType,
     is_single_action,
     Schedule,
-    QueueControl,
     DEFAULT_QUEUE_TIME,
+    QueueControlType,
+    BLOCK,
+    INTERRUPT
 )
 from cpscheduler.environment.schedule_setup import ScheduleSetup
 from cpscheduler.environment.constraints import Constraint, PassiveConstraint
@@ -45,7 +52,6 @@ def prepare_instance(instance: InstanceTypes) -> dict[str, list[Any]]:
 def is_info_dict(value: Any) -> TypeIs[Mapping[Any, Any]]:
     "Type guard to check if a value is an info dictionary."
     return isinstance(value, Mapping)
-
 
 class SchedulingEnv:
     """
@@ -373,7 +379,7 @@ class SchedulingEnv:
         while not schedule.is_empty():
             # Invariant: Each iteration has the time static during instruction processing
 
-            control: QueueControl = QueueControl.BLOCK
+            control: QueueControlType = BLOCK
             for instruction_result in schedule.instruction_queue(state):
                 # After each instruction is processed, ensure domains are updated until a fixed point
                 # is reached before processing the next instruction.
@@ -386,7 +392,7 @@ class SchedulingEnv:
             # - An instruction in the schedule has interrupted the processing.
             # - If the schedule is empty, but there are tasks that can be started at the current time
             # - If tasks can be started at the current time, but no tasks are currently executing
-            if control == QueueControl.INTERRUPT:
+            if control == INTERRUPT:
                 # If the schedule processing was interrupted due to a instruction, do not advance
                 # the time and allow the agent to react to the new state.
                 break

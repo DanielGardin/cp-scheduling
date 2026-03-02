@@ -3,17 +3,18 @@ from typing_extensions import Self
 from collections.abc import Iterable, Mapping
 
 from cpscheduler.environment.constants import (
-    TASK_ID,
-    MACHINE_ID,
-    TIME,
+    TaskID,
+    MachineID,
+    Time,
     Int,
     GLOBAL_MACHINE_ID,
-    MAX_TIME
+    MAX_TIME,
 )
-from cpscheduler.environment.events import Event
+from cpscheduler.environment.state.events import Event
 from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import Constraint
+
 
 class MachineEligibilityConstraint(Constraint):
     """
@@ -35,11 +36,11 @@ class MachineEligibilityConstraint(Constraint):
         can be executed on the original set of machines defined by the scheduling setup.
     """
 
-    eligibility: dict[TASK_ID, set[MACHINE_ID]]
+    eligibility: dict[TaskID, set[MachineID]]
 
     def __init__(self, eligibility: Mapping[Int, Iterable[Int]]):
         self.eligibility = {
-            TASK_ID(task): {MACHINE_ID(machine) for machine in machines}
+            TaskID(task): {MachineID(machine) for machine in machines}
             for task, machines in eligibility.items()
         }
 
@@ -70,7 +71,7 @@ class MachineConstraint(Constraint):
     machines they can be assigned to, use the MachineEligibilityConstraint instead.
     """
 
-    machine_map: list[set[TASK_ID]]
+    machine_map: list[set[TaskID]]
 
     def __reduce__(self) -> Any:
         return (
@@ -87,7 +88,7 @@ class MachineConstraint(Constraint):
 
         for task_id, machines in enumerate(state.instance.processing_times):
             for machine in machines:
-                self.machine_map[machine].add(TASK_ID(task_id))
+                self.machine_map[machine].add(TaskID(task_id))
 
         return
 
@@ -108,6 +109,7 @@ class MachineConstraint(Constraint):
         for other_task in self.machine_map[machine_id]:
             state.tight_start_lb(other_task, end_time, machine_id)
 
+
 class MachineBreakdownConstraint(Constraint):
     """
     Machine breakdown constraint for the scheduling environment.
@@ -126,13 +128,13 @@ class MachineBreakdownConstraint(Constraint):
             An optional name for the constraint.
     """
 
-    breakdowns: dict[MACHINE_ID, list[tuple[TIME, TIME]]]
-    next_breakdown: dict[MACHINE_ID, int]
+    breakdowns: dict[MachineID, list[tuple[Time, Time]]]
+    next_breakdown: dict[MachineID, int]
 
     def __init__(self, breakdowns: Mapping[Int, Iterable[tuple[Int, Int]]]):
         self.breakdowns = {
-            MACHINE_ID(machine): sorted(
-                (TIME(start), TIME(end)) for start, end in intervals
+            MachineID(machine): sorted(
+                (Time(start), Time(end)) for start, end in intervals
             )
             for machine, intervals in breakdowns.items()
         }
@@ -172,7 +174,7 @@ class MachineBreakdownConstraint(Constraint):
         n_machines = max(int(count) for count in step_function.values())
 
         for time in sorted_times:
-            available_machines = int(step_function[TIME(time)])
+            available_machines = int(step_function[Time(time)])
 
             for machine in range(available_machines):
                 if machine not in breakdowns:

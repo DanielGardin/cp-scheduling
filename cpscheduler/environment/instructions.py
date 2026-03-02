@@ -11,15 +11,13 @@ from typing_extensions import Self
 from collections.abc import Iterable, Iterator
 from typing_extensions import Unpack, TypeIs
 
-from enum import Enum
-
-from mypy_extensions import mypyc_attr
+from mypy_extensions import mypyc_attr, u8
 
 
 from cpscheduler.environment.constants import (
-    TASK_ID,
-    TIME,
-    MACHINE_ID,
+    TaskID,
+    Time,
+    MachineID,
     Int,
     GLOBAL_MACHINE_ID,
     MAX_TIME,
@@ -47,31 +45,25 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+DEBUG = logging.DEBUG
+INFO = logging.INFO
+WARNING = logging.WARNING
+ERROR = logging.ERROR
+CRITICAL = logging.CRITICAL
 
-class LogLevel:
-    "LogLevel represents the severity of a log message, guiding how it should be handled by the environment."
+QueueControlType: TypeAlias = u8
 
-    CRITICAL: Final[int] = 50
-    FATAL: Final[int] = CRITICAL
-    ERROR: Final[int] = 40
-    WARNING: Final[int] = 30
-    WARN: Final[int] = WARNING
-    INFO: Final[int] = 20
-    DEBUG: Final[int] = 10
-    NOTSET: Final[int] = 0
-
-
-class QueueControl(Enum):
-    CONTINUE = 1
+class QueueControl:
+    CONTINUE: Final[QueueControlType] = 1
     "Continue processing the next instruction in the queue after this one is processed."
 
-    RESTART = 2
+    RESTART: Final[QueueControlType] = 2
     "Restart the queue from the beginning after this instruction is processed."
 
-    BLOCK = 3
+    BLOCK: Final[QueueControlType] = 3
     "Block the processing of subsequent instructions in the same time step until this instruction is resolved."
 
-    INTERRUPT = 4
+    INTERRUPT: Final[QueueControlType] = 4
     "Interrupt the processing of subsequent instructions in the same time step and halt."
 
 
@@ -86,7 +78,7 @@ class InstructionResult:
     done: bool
     "Whether the instruction was successfully processed and should be removed from the schedule."
 
-    queue_control: QueueControl
+    queue_control: QueueControlType
 
     log_message: str
     "Optional message to be logged when the instruction is processed."
@@ -97,9 +89,9 @@ class InstructionResult:
     def __init__(
         self,
         done: bool = False,
-        queue_control: QueueControl = QueueControl.CONTINUE,
+        queue_control: QueueControlType = CONTINUE,
         log_message: str = "",
-        level: int = LogLevel.DEBUG,
+        level: int = DEBUG,
     ) -> None:
         self.done = done
         self.queue_control = queue_control
@@ -107,55 +99,55 @@ class InstructionResult:
         self.level = level
 
     @classmethod
-    def success(cls, message: str = "", level: int = LogLevel.DEBUG) -> Self:
+    def success(cls, message: str = "", level: int = DEBUG) -> Self:
         return cls(
             done=True,
-            queue_control=QueueControl.CONTINUE,
+            queue_control=CONTINUE,
             log_message=message,
             level=level,
         )
 
     @classmethod
-    def deferred(cls, message: str = "", level: int = LogLevel.DEBUG) -> Self:
+    def deferred(cls, message: str = "", level: int = DEBUG) -> Self:
         return cls(
             done=False,
-            queue_control=QueueControl.CONTINUE,
+            queue_control=CONTINUE,
             log_message=message,
             level=level,
         )
 
     @classmethod
-    def restart(cls, message: str = "", level: int = LogLevel.DEBUG) -> Self:
+    def restart(cls, message: str = "", level: int = DEBUG) -> Self:
         return cls(
             done=True,
-            queue_control=QueueControl.RESTART,
+            queue_control=RESTART,
             log_message=message,
             level=level,
         )
 
     @classmethod
-    def blocked(cls, message: str = "", level: int = LogLevel.DEBUG) -> Self:
+    def blocked(cls, message: str = "", level: int = DEBUG) -> Self:
         return cls(
             done=False,
-            queue_control=QueueControl.BLOCK,
+            queue_control=BLOCK,
             log_message=message,
             level=level,
         )
 
     @classmethod
-    def halt(cls, message: str = "", level: int = LogLevel.DEBUG) -> Self:
+    def halt(cls, message: str = "", level: int = DEBUG) -> Self:
         return cls(
             done=True,
-            queue_control=QueueControl.INTERRUPT,
+            queue_control=INTERRUPT,
             log_message=message,
             level=level,
         )
 
     @classmethod
-    def invalid(cls, message: str = "", level: int = LogLevel.DEBUG) -> Self:
+    def invalid(cls, message: str = "", level: int = DEBUG) -> Self:
         return cls(
             done=False,
-            queue_control=QueueControl.INTERRUPT,
+            queue_control=INTERRUPT,
             log_message=message,
             level=level,
         )
@@ -169,11 +161,11 @@ HALT = InstructionResult.halt()
 INVALID = InstructionResult.invalid()
 
 
-DEFAULT_QUEUE_TIME: Final[TIME] = -1
+DEFAULT_QUEUE_TIME: Final[Time] = -1
 
 
 class Schedule:
-    schedule: dict[TIME, list["Instruction"]]
+    schedule: dict[Time, list["Instruction"]]
     default_queue: list["Instruction"]
 
     def __init__(self) -> None:
@@ -189,7 +181,7 @@ class Schedule:
         self.default_queue.clear()
 
     def add_instruction(
-        self, instruction: "Instruction", time: TIME = DEFAULT_QUEUE_TIME
+        self, instruction: "Instruction", time: Time = DEFAULT_QUEUE_TIME
     ) -> None:
         if time == DEFAULT_QUEUE_TIME:
             self.default_queue.append(instruction)
@@ -203,7 +195,7 @@ class Schedule:
     def has_scheduled_instructions(self) -> bool:
         return bool(self.schedule)
 
-    def get_next_instruction_time(self) -> TIME:
+    def get_next_instruction_time(self) -> Time:
         return min(self.schedule) if self.schedule else MAX_TIME
 
     def instruction_queue(
@@ -226,16 +218,16 @@ class Schedule:
                 logger.log(result.level, log_message)
 
             if not result.done:
-                if control == QueueControl.CONTINUE:
+                if control == CONTINUE:
                     idx += 1
 
-                elif control == QueueControl.RESTART:
+                elif control == RESTART:
                     idx = 0
 
-                elif control == QueueControl.BLOCK:
+                elif control == BLOCK:
                     break
 
-                elif control == QueueControl.INTERRUPT:
+                elif control == INTERRUPT:
                     yield result
                     return
 
@@ -243,13 +235,13 @@ class Schedule:
                 queue.pop(idx)
                 yield result
 
-                if control == QueueControl.RESTART:
+                if control == RESTART:
                     idx = 0
 
-                elif control == QueueControl.BLOCK:
+                elif control == BLOCK:
                     break
 
-                elif control == QueueControl.INTERRUPT:
+                elif control == INTERRUPT:
                     return
 
         if queue:
@@ -262,7 +254,7 @@ class Schedule:
 
             logger.error(error_message)
 
-            yield InstructionResult.invalid(error_message, level=LogLevel.ERROR)
+            yield InstructionResult.invalid(error_message, level=ERROR)
             return
 
         self.schedule.pop(time, None)
@@ -278,16 +270,16 @@ class Schedule:
             log_message = result.log_message
 
             if not result.done:
-                if control == QueueControl.CONTINUE:
+                if control == CONTINUE:
                     idx += 1
 
-                elif control == QueueControl.RESTART:
+                elif control == RESTART:
                     idx = 0
 
-                elif control == QueueControl.BLOCK:
+                elif control == BLOCK:
                     break
 
-                elif control == QueueControl.INTERRUPT:
+                elif control == INTERRUPT:
                     yield result
                     return
 
@@ -295,18 +287,18 @@ class Schedule:
                 queue.pop(idx)
                 yield result
 
-                if control == QueueControl.RESTART:
+                if control == RESTART:
                     idx = 0
 
-                elif control == QueueControl.BLOCK:
+                elif control == BLOCK:
                     break
 
-                elif control == QueueControl.INTERRUPT:
+                elif control == INTERRUPT:
                     return
 
 
 # TODO: Consider adding machine dispatchers (task, state) -> machine_id
-def select_machine(task_id: TASK_ID, state: ScheduleState) -> MACHINE_ID:
+def select_machine(task_id: TaskID, state: ScheduleState) -> MachineID:
     "Select a machine for the given task when machine is not specified."
     for machine in state.instance.get_machines(task_id):
         if state.is_available(task_id, machine):
@@ -339,7 +331,7 @@ class Instruction:
         "Process the instruction at the given current time."
         raise NotImplementedError
 
-    def lower_bound_time(self, state: ScheduleState) -> TIME:
+    def lower_bound_time(self, state: ScheduleState) -> Time:
         "Calculate the lower bound time for the instruction to be ready based on the current state."
         return state.time
 
@@ -360,7 +352,7 @@ class Execute(Instruction):
     "Executes a task on a specific machine. If the task cannot be executed, it is waited for."
 
     def __init__(
-        self, task_id: TASK_ID, machine_id: MACHINE_ID = GLOBAL_MACHINE_ID
+        self, task_id: TaskID, machine_id: MachineID = GLOBAL_MACHINE_ID
     ):
         self.task_id = task_id
         self.machine_id = machine_id
@@ -385,7 +377,7 @@ class Execute(Instruction):
         if self.machine_id not in state.instance.get_machines(self.task_id):
             return InstructionResult.invalid(
                 f"Machine {self.machine_id} is not eligible for task {self.task_id}.",
-                LogLevel.ERROR,
+                ERROR,
             )
 
         return BLOCKED
@@ -394,7 +386,7 @@ class Execute(Instruction):
 class Submit(Instruction):
     "Submits a task to a specific machine. If the task cannot be executed, it is waited for."
 
-    def __init__(self, id: TASK_ID, machine: MACHINE_ID = GLOBAL_MACHINE_ID):
+    def __init__(self, id: TaskID, machine: MachineID = GLOBAL_MACHINE_ID):
         self.task_id = id
         self.machine_id = machine
 
@@ -418,7 +410,7 @@ class Submit(Instruction):
         if self.machine_id not in state.instance.get_machines(self.task_id):
             return InstructionResult.invalid(
                 f"Machine {self.machine_id} is not eligible for task {self.task_id}.",
-                LogLevel.ERROR,
+                ERROR,
             )
 
         return DEFERRED
@@ -428,7 +420,7 @@ class ExecuteJob(Instruction):
     "Executes all tasks in a job. Can only be used in job-oriented scheduling."
 
     def __init__(
-        self, job_id: TASK_ID, machine: MACHINE_ID = GLOBAL_MACHINE_ID
+        self, job_id: TaskID, machine: MachineID = GLOBAL_MACHINE_ID
     ):
         self.job_id = job_id
         self.machine_id = machine
@@ -468,7 +460,7 @@ class SubmitJob(Instruction):
     "Submits all tasks in a job. Can only be used in job-oriented scheduling."
 
     def __init__(
-        self, job_id: TASK_ID, machine: MACHINE_ID = GLOBAL_MACHINE_ID
+        self, job_id: TaskID, machine: MachineID = GLOBAL_MACHINE_ID
     ):
         self.job_id = job_id
         self.machine_id = machine
@@ -506,7 +498,7 @@ class SubmitJob(Instruction):
 class Pause(Instruction):
     "Pauses a task if it is currently executing. Can only be used in preemptive scheduling."
 
-    def __init__(self, task_id: TASK_ID):
+    def __init__(self, task_id: TaskID):
         self.task_id = task_id
 
     def __repr__(self) -> str:
@@ -535,7 +527,7 @@ class Pause(Instruction):
 class Resume(Instruction):
     "Resumes a paused task in the same machine it was executing before being paused."
 
-    def __init__(self, task_id: TASK_ID):
+    def __init__(self, task_id: TaskID):
         self.task_id = task_id
 
     def __repr__(self) -> str:
@@ -581,7 +573,7 @@ class Checkpoint(Instruction):
 class Complete(Instruction):
     "Advances the current time to the end of an executing task."
 
-    def __init__(self, task_id: TASK_ID):
+    def __init__(self, task_id: TaskID):
         self.task_id = task_id
 
     def __repr__(self) -> str:
@@ -610,7 +602,7 @@ class Complete(Instruction):
 class Advance(Instruction):
     "Advances the current time by a specified amount or to the next decision point if not specified."
 
-    def __init__(self, dt: TIME) -> None:
+    def __init__(self, dt: Time) -> None:
         self.dt = dt
 
         if self.dt <= 0:
@@ -672,7 +664,7 @@ def parse_args(
 
 def parse_instruction(
     instruction: str | Instruction, args: list[Int], state: ScheduleState
-) -> tuple[Instruction, TIME]:
+) -> tuple[Instruction, Time]:
     "Parse raw instruction arguments into an Instruction object and the scheduled time."
 
     match instruction:

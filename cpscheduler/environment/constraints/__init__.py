@@ -29,39 +29,36 @@ __all__ = [
     "MachineBreakdownConstraint",
 ]
 
-from cpscheduler.environment.constraints.base import (
+from .base import (
     constraints,
     Constraint,
     PassiveConstraint,
 )
 
-from cpscheduler.environment.constraints.machine import (
+from .machine import (
     MachineConstraint,
     MachineEligibilityConstraint,
-    MachineBreakdownConstraint
+    MachineBreakdownConstraint,
 )
 
-from cpscheduler.environment.constraints.passive import (
+from .passive import (
     PreemptionConstraint,
     OptionalityConstraint,
-    ConstantProcessingTime
+    ConstantProcessingTime,
 )
 
-from cpscheduler.environment.constraints.precedence import (
-    PrecedenceConstraint,
-    NoWaitConstraint
-)
+from .precedence import PrecedenceConstraint, NoWaitConstraint
 
-from cpscheduler.environment.constraints.resources import (
+from .resources import (
     ResourceConstraint,
     NonRenewableResourceConstraint,
 )
 
-from cpscheduler.environment.constraints.setup import SetupConstraint
+from .setup import SetupConstraint
 
-from cpscheduler.environment.constraints.time_windows import (
+from .time_windows import (
     ReleaseDateConstraint,
     DeadlineConstraint,
 )
 
-from cpscheduler.environment.constraints.groups import NonOverlapConstraint
+from .groups import NonOverlapConstraint

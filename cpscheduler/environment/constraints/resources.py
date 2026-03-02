@@ -4,11 +4,12 @@ from collections.abc import Iterable
 from cpscheduler.utils.list_utils import convert_to_list
 from cpscheduler.utils.general_algo import binary_search
 
-from cpscheduler.environment.constants import TIME, Float, MAX_TIME
-from cpscheduler.environment.events import Event
+from cpscheduler.environment.constants import Time, Float, MAX_TIME
+from cpscheduler.environment.state.events import Event
 from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import Constraint
+
 
 class ResourceConstraint(Constraint):
     """
@@ -50,7 +51,7 @@ class ResourceConstraint(Constraint):
     So, when a task starts at time t, we insert its end time into the next_available_time list,
     and update the available_resources list accordingly.
     """
-    next_available_time: list[list[TIME]]
+    next_available_time: list[list[Time]]
     available_resources: list[list[float]]
 
     def __init__(

@@ -15,7 +15,7 @@ from mypy_extensions import mypyc_attr
 from math import expm1
 
 from cpscheduler.utils.list_utils import convert_to_list
-from cpscheduler.environment.constants import TASK_ID, Float
+from cpscheduler.environment.constants import TaskID, Float
 from cpscheduler.environment.state import ScheduleState
 
 objectives: dict[str, type["Objective"]] = {}
@@ -26,9 +26,10 @@ class Objective:
     """
     Base class for all objective functions in the scheduling environment.
 
-    Objective functions are used to evaluate the performance of a scheduling algorithm.
-    They can be used to guide the search for an optimal schedule by providing a numerical value
-    that represents the quality of the schedule.
+    Objective functions are used to evaluate the performance of a scheduling
+    algorithm.
+    They can be used to guide the search for an optimal schedule by providing a
+    numerical value that represents the quality of the schedule.
     """
 
     _regular: ClassVar[bool] = False
@@ -45,7 +46,7 @@ class Objective:
 
     @property
     def regular(self) -> bool:
-        "Whether the objective is regular, i.e., whether it is non-decreasing with respect to task completion times."
+        "The objective is regular, when it is non-decreasing w.r.t completion times."
         return self._regular
 
     def __repr__(self) -> str:
@@ -71,7 +72,7 @@ class Objective:
         Get the current value of the objective function. This is useful for checking
         the performance of the scheduling algorithm along the episode.
         """
-        return 0
+        return 0.
 
     def __call__(self, state: ScheduleState) -> float:
         "Call the objective function to get the current value."
@@ -175,7 +176,7 @@ class ComposedObjective(Objective):
         return entry
 
 
-def _makespan(state: ScheduleState, tasks: Iterable[TASK_ID]) -> float:
+def _makespan(state: ScheduleState, tasks: Iterable[TaskID]) -> float:
     "Compute the makespan of a set of tasks."
     max_end_time = 0.0
 
@@ -193,7 +194,8 @@ def _makespan(state: ScheduleState, tasks: Iterable[TASK_ID]) -> float:
 
 class Makespan(Objective):
     """
-    Classic makespan objective function, which aims to minimize the time at which all tasks are completed.
+    Classic makespan objective function, which aims to minimize the time at
+    which all tasks are completed.
     """
 
     _regular = True
@@ -207,8 +209,8 @@ class Makespan(Objective):
 
 class TotalCompletionTime(Objective):
     """
-    The total completion time objective function, which aims to minimize the sum of completion times
-    of all tasks.
+    The total completion time objective function, which aims to minimize the sum
+    of completion times of all tasks.
     """
 
     _regular = True
@@ -228,9 +230,10 @@ class TotalCompletionTime(Objective):
 
 class WeightedCompletionTime(Objective):
     """
-    The weighted completion time objective function, which aims to minimize the weighted sum of
-    completion times of all tasks. Each task has a weight associated with it, and the objective
-    function is the sum of the completion times multiplied by their respective weights.
+    The weighted completion time objective function, which aims to minimize the
+    weighted sum of completion times of all tasks. 
+    Each task has a weight associated with it, and the objective function is the
+    sum of the completion times multiplied by their respective weights.
     """
 
     _regular = True
@@ -338,8 +341,10 @@ class DiscountedCompletionTime(Objective):
 
 class MaximumLateness(Objective):
     """
-    The maximum lateness objective function, which aims to minimize the maximum lateness of all
-    tasks. Lateness is defined as the difference between the completion time and the due date.
+    The maximum lateness objective function, which aims to minimize the maximum
+    lateness of all tasks.
+    Lateness is defined as the difference between the completion time and the
+    due date.
     """
 
     _regular = True
@@ -389,9 +394,10 @@ class MaximumLateness(Objective):
 
 class TotalTardiness(Objective):
     """
-    The total tardiness objective function, which aims to minimize the sum of tardiness of all
-    tasks. Tardiness is defined as the difference between the completion time and the due date,
-    if the task is completed late.
+    The total tardiness objective function, which aims to minimize the sum of
+    tardiness of all tasks.
+    Tardiness is defined as the difference between the completion time and the
+    due date, if the task is completed late.
     """
 
     _regular = True

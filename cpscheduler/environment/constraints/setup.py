@@ -1,8 +1,8 @@
 from typing import Any, TypeAlias
 from collections.abc import Mapping, Callable
 
-from cpscheduler.environment.constants import TASK_ID, TIME, Int
-from cpscheduler.environment.events import Event
+from cpscheduler.environment.constants import TaskID, Time, Int
+from cpscheduler.environment.state.events import Event
 from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import Constraint
@@ -10,6 +10,7 @@ from cpscheduler.environment.constraints.base import Constraint
 SetupTimes: TypeAlias = (
     Mapping[Int, Mapping[Int, Int]] | Callable[[int, int, Any], Int]
 )
+
 
 class SetupConstraint(Constraint):
     """
@@ -29,7 +30,7 @@ class SetupConstraint(Constraint):
             An optional name for the constraint.
     """
 
-    original_setup_times: dict[TASK_ID, dict[TASK_ID, TIME]]
+    original_setup_times: dict[TaskID, dict[TaskID, Time]]
     setup_fn: Callable[[int, int, ScheduleState], Int] | None = None
 
     def __init__(self, setup_times: SetupTimes) -> None:
@@ -39,8 +40,8 @@ class SetupConstraint(Constraint):
 
         else:
             self.original_setup_times = {
-                TASK_ID(task): {
-                    TASK_ID(child): TIME(time)
+                TaskID(task): {
+                    TaskID(child): Time(time)
                     for child, time in children.items()
                 }
                 for task, children in setup_times.items()
@@ -61,17 +62,17 @@ class SetupConstraint(Constraint):
             self.original_setup_times.clear()
 
             for task_id in range(state.n_tasks):
-                self.original_setup_times[TASK_ID(task_id)] = {}
+                self.original_setup_times[TaskID(task_id)] = {}
 
                 for child_id in range(state.n_tasks):
                     if task_id == child_id:
                         continue
 
-                    setup_time = TIME(self.setup_fn(task_id, child_id, state))
+                    setup_time = Time(self.setup_fn(task_id, child_id, state))
 
                     if setup_time > 0:
-                        self.original_setup_times[TASK_ID(task_id)][
-                            TASK_ID(child_id)
+                        self.original_setup_times[TaskID(task_id)][
+                            TaskID(child_id)
                         ] = setup_time
 
     def reset(self, state: ScheduleState) -> None:

@@ -1,10 +1,11 @@
 from typing import NoReturn
 from mypy_extensions import mypyc_attr
 
-from cpscheduler.environment.events import Event
+from cpscheduler.environment.state.events import Event
 from cpscheduler.environment.state import ScheduleState
 
 constraints: dict[str, type["Constraint"]] = {}
+
 
 @mypyc_attr(allow_interpreted_subclasses=True)
 class Constraint:
@@ -33,6 +34,7 @@ class Constraint:
         "Produce the β entry for the constraint."
         return ""
 
+
 class PassiveConstraint(Constraint):
     """
     Passive constraints are compile-time constraints on the instance and do not interact with
@@ -42,12 +44,12 @@ class PassiveConstraint(Constraint):
 
     def propagate(self, event: Event, state: ScheduleState) -> NoReturn:
         "Passive constraint does not propagate any changes."
-        raise NotImplementedError(
+        raise RuntimeError(
             "Passive constraint does not propagate any changes."
         )
 
     def reset(self, state: ScheduleState) -> NoReturn:
         "Passive constraint does not reset any state."
-        raise NotImplementedError(
+        raise RuntimeError(
             "Passive constraint does not reset any state."
         )

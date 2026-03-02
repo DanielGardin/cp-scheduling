@@ -1,7 +1,7 @@
 from typing import Any
 from copy import deepcopy
 
-from cpscheduler.environment.constants import TASK_ID, TIME, MACHINE_ID
+from cpscheduler.environment.constants import TaskID, Time, MachineID
 from cpscheduler.environment.env import SchedulingEnv
 from cpscheduler.environment.instructions import ActionType
 from cpscheduler.environment.state import ScheduleState
@@ -16,13 +16,11 @@ def machine_utilization(state: ScheduleState) -> float:
     time = state.time
 
     total_time = float(time * state.n_machines)
-    busy_time: TIME = 0
+    busy_time: Time = 0
     for history in state.runtime_state.history:
         for _, start_time, duration in history:
             busy_time += (
-                duration
-                if start_time + duration <= time
-                else time - start_time
+                duration if start_time + duration <= time else time - start_time
             )
 
     return float(busy_time) / total_time if total_time > 0 else 1
@@ -99,10 +97,10 @@ class ReferenceScheduleMetrics:
 
     """
 
-    start_times: dict[TASK_ID, TIME]
-    assignments: dict[TASK_ID, MACHINE_ID]
+    start_times: dict[TaskID, Time]
+    assignments: dict[TaskID, MachineID]
 
-    sorted_start_times: list[tuple[TASK_ID, TIME]]
+    sorted_start_times: list[tuple[TaskID, Time]]
 
     # TODO: Ensure that cpy_env time has all scheduled tasks completed.
     def __init__(self, reference_schedule: ActionType, env: SchedulingEnv):

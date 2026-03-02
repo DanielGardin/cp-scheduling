@@ -3,10 +3,11 @@ from collections.abc import Iterable
 
 from cpscheduler.utils.list_utils import convert_to_list
 
-from cpscheduler.environment.constants import TASK_ID, TIME, Int
+from cpscheduler.environment.constants import TaskID, Time, Int
 from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import PassiveConstraint
+
 
 class PreemptionConstraint(PassiveConstraint):
     """
@@ -27,7 +28,7 @@ class PreemptionConstraint(PassiveConstraint):
         the `allow_preemption` flag in the `SchedulingEnv` initialization.
     """
 
-    task_ids: list[TASK_ID]
+    task_ids: list[TaskID]
     all_tasks: bool
     preemption_tag: str
 
@@ -43,7 +44,7 @@ class PreemptionConstraint(PassiveConstraint):
             self.preemption_tag = task_ids
 
         else:
-            self.task_ids = convert_to_list(task_ids, TASK_ID)
+            self.task_ids = convert_to_list(task_ids, TaskID)
 
     def __reduce__(self) -> Any:
         task_ids = (
@@ -90,7 +91,7 @@ class OptionalityConstraint(PassiveConstraint):
             A list of task IDs to be marked as optional. If None, all tasks are marked as optional.
     """
 
-    task_ids: list[TASK_ID]
+    task_ids: list[TaskID]
     all_tasks: bool
 
     def __init__(self, task_ids: Iterable[Int] | str | None = None) -> None:
@@ -105,7 +106,7 @@ class OptionalityConstraint(PassiveConstraint):
             self.optionality_tag = task_ids
 
         else:
-            self.task_ids = convert_to_list(task_ids, TASK_ID)
+            self.task_ids = convert_to_list(task_ids, TaskID)
 
     def __reduce__(self) -> Any:
         task_ids = (
@@ -156,10 +157,10 @@ class ConstantProcessingTime(PassiveConstraint):
             An optional name for the constraint.
     """
 
-    processing_time: TIME
+    processing_time: Time
 
     def __init__(self, processing_time: Int = 1):
-        self.processing_time = TIME(processing_time)
+        self.processing_time = Time(processing_time)
 
     def __reduce__(self) -> Any:
         return (

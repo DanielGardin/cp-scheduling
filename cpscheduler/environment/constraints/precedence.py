@@ -4,11 +4,12 @@ from typing_extensions import Self
 
 from cpscheduler.utils.general_algo import topological_sort
 
-from cpscheduler.environment.constants import TASK_ID, Int
-from cpscheduler.environment.events import Event
+from cpscheduler.environment.constants import TaskID, Int
+from cpscheduler.environment.state.events import Event
 from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import Constraint
+
 
 class PrecedenceConstraint(Constraint):
     """
@@ -26,11 +27,11 @@ class PrecedenceConstraint(Constraint):
             An optional name for the constraint.
     """
 
-    precedence: dict[TASK_ID, list[TASK_ID]]
+    precedence: dict[TaskID, list[TaskID]]
 
     def __init__(self, precedence: Mapping[Int, Sequence[Int]]):
         self.precedence = {
-            TASK_ID(task): [TASK_ID(child) for child in children]
+            TaskID(task): [TaskID(child) for child in children]
             for task, children in precedence.items()
         }
 
@@ -73,7 +74,7 @@ class PrecedenceConstraint(Constraint):
     def is_outtree(self) -> bool:
         "Check if the precedence graph is an out-tree."
         n_children = 0
-        unique_children: set[TASK_ID] = set()
+        unique_children: set[TaskID] = set()
 
         for tasks in self.precedence.values():
             n_children += len(tasks)
@@ -132,7 +133,7 @@ class NoWaitConstraint(PrecedenceConstraint):
             An optional name for the constraint.
     """
 
-    transposed_precedence: dict[TASK_ID, list[TASK_ID]]
+    transposed_precedence: dict[TaskID, list[TaskID]]
 
     def __init__(self, precedence: Mapping[Int, Sequence[Int]]):
         super().__init__(precedence)
@@ -153,7 +154,7 @@ class NoWaitConstraint(PrecedenceConstraint):
 
         task_id = event.task_id
 
-        if state.is_fixed(task_id):
+        if True:
             if task_id in self.precedence:
                 end_time = state.get_end_lb(task_id)
 
