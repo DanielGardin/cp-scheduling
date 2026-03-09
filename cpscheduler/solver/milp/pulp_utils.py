@@ -6,7 +6,6 @@ Utility model for easy modeling with PuLP.
 
 from typing import Any, Literal, TypeAlias, overload
 from collections.abc import Iterable, Mapping, Sequence
-from typing_extensions import TypedDict, NotRequired
 
 from pulp import (
     LpProblem,
@@ -18,47 +17,40 @@ from pulp import (
     LpConstraint,
 )
 
-
-class SolverConfig(TypedDict, total=False):
-    "Configurations for the solver."
-
-    quiet: NotRequired[bool]
-    "Whether to suppress solver output."
-    time_limit: NotRequired[int]
-    "Time limit for the solver in seconds."
-    warm_start: NotRequired[bool]
-    "Whether to use warm start for the solver."
-    keep_files: NotRequired[bool]
-    "Whether to keep the solver files after solving."
-    options: NotRequired[Sequence[str]]
-    "Additional solver options to pass to the solver."
-    ...
-
-
-def parse_solver_config(solver_config: SolverConfig) -> dict[str, Any]:
-    config: dict[str, Any] = {}
-
-    if solver_config.pop("quiet", False):
-        config["msg"] = 0
-
-    time_limit = solver_config.pop("time_limit", None)
-    if time_limit is not None:
-        config["timeLimit"] = time_limit
-
-    if solver_config.pop("warm_start", False):
-        config["warmStart"] = True
-
-    if solver_config.pop("keep_files", False):
-        config["keepFiles"] = True
-
-    return config | solver_config
-
-
 PULP_EXPRESSION: TypeAlias = LpVariable | LpAffineExpression
 PULP_PARAM: TypeAlias = PULP_EXPRESSION | int | float
 
-# Default value for big-M method, can be adjusted based on problem scale
-GLOBAL_BIG_M = 1e6
+def create_binary_var(name: str, relaxed: bool) -> LpVariable:
+    """
+    Create a binary variable, or a continuous variable in [0, 1] if relaxed.
+
+    Args:
+        name: The name of the variable.
+        relaxed: Whether to create a continuous variable in [0, 1] instead of a
+        binary variable.
+
+    Returns:
+        The created variable.
+    """
+    return LpVariable(
+        name,
+        lowBound=0,
+        upBound=1,
+        cat=LpContinuous if relaxed else LpBinary
+    )
+
+
+def count_variables(variables: Iterable[Any] | PULP_EXPRESSION | int) -> int:
+    if isinstance(variables, Mapping):
+        return sum(count_variables(v) for v in variables.values())
+
+    if isinstance(variables, Iterable):
+        return sum(count_variables(v) for v in variables)
+
+    if isinstance(variables, LpVariable):
+        return 1
+
+    return 0
 
 
 def get_value(param: PULP_PARAM) -> float:
@@ -82,7 +74,9 @@ def get_value(param: PULP_PARAM) -> float:
     return float(value)
 
 
-def set_initial_value(param: PULP_PARAM, value: float | int, check: bool = True) -> None:
+def set_initial_value(
+    param: PULP_PARAM, value: float | int, check: bool = True
+) -> None:
     """
     Set the initial value of a PULP parameter or expression.
 
@@ -103,11 +97,11 @@ def set_initial_value(param: PULP_PARAM, value: float | int, check: bool = True)
             assert isinstance(var, LpVariable)
             var.setInitialValue((value - constant) / scalar, check=check)
 
-    elif isinstance(param, (int, float)):
-        if param != value:
-            raise ValueError(
-                f"Cannot set initial value of a constant parameter {param} to {value}."
-            )
+    elif param != value:
+        raise ValueError(
+            f"Cannot set initial value of a constant parameter {param} of "
+            f"type {type(param)} to {value}."
+        )
 
 
 def get_initial_value(param: PULP_PARAM) -> float:
@@ -185,6 +179,54 @@ def get_lb(param: PULP_PARAM) -> float | int:
     return param
 
 
+def set_ub(param: PULP_PARAM, ub: float | int) -> None:
+    """
+    Set the upper bound of a PULP parameter.
+
+    Args:
+        param: A PULP parameter.
+        ub: The upper bound to set.
+    """
+    if isinstance(param, LpVariable):
+        param.upBound = ub
+
+    elif isinstance(param, LpAffineExpression):
+        for var, coeff in param.items():
+            if coeff > 0:
+                set_ub(var, (ub - param.constant) / coeff)
+            else:
+                set_lb(var, (ub - param.constant) / coeff)
+
+    elif get_ub(param) > ub:
+        raise ValueError(
+            f"Cannot set upper bound of a constant parameter {param} of "
+            f"type {type(param)} to {ub}."
+        )
+
+def set_lb(param: PULP_PARAM, lb: float | int) -> None:
+    """
+    Set the lower bound of a PULP parameter.
+
+    Args:
+        param: A PULP parameter.
+        lb: The lower bound to set.
+    """
+    if isinstance(param, LpVariable):
+        param.lowBound = lb
+
+    elif isinstance(param, LpAffineExpression):
+        for var, coeff in param.items():
+            if coeff > 0:
+                set_lb(var, (lb - param.constant) / coeff)
+            else:
+                set_ub(var, (lb - param.constant) / coeff)
+
+    elif get_lb(param) < lb:
+        raise ValueError(
+            f"Cannot set lower bound of a constant parameter {param} of "
+            f"type {type(param)} to {lb}."
+        )
+
 @overload
 def get_values(params: PULP_PARAM) -> float | int: ...
 
@@ -219,7 +261,9 @@ def is_true(constraint: LpConstraint | bool) -> bool | None:
     return None
 
 
-def pulp_add_constraint(model: LpProblem, constraint: LpConstraint | bool, name: str) -> None:
+def pulp_add_constraint(
+    model: LpProblem, constraint: LpConstraint | bool, name: str
+) -> None:
     """
     Adds a constraint to the PuLP model.
 
@@ -363,34 +407,28 @@ def implication_pulp(
             A tuple containing the lhs, operator, and rhs for the implication. Defaults to None.
     """
     if isinstance(antecedent, PULP_PARAM):
-        antecedent = [antecedent]
+        antecedent = (antecedent,)
 
     lhs, operator, rhs = consequent
-    if all(is_true(premise == 1) for premise in antecedent):
 
-        full_consequent = (
-            lhs <= rhs if operator == "<=" else lhs >= rhs if operator == ">=" else lhs == rhs
-        )
+    premises: list[PULP_PARAM] = []
+    for var in antecedent:
+        if is_true(var == 1):
+            continue
 
-        pulp_add_constraint(
-            model,
-            full_consequent,
-            name if name is not None else f"{lhs}_{operator}_{rhs}",
-        )
+        if is_true(var == 0):
+            # If any antecedent is 0, the constraint is vacuously satisfied
+            return
 
-        return
+        premises.append(var)
 
-    elif any(is_true(premise == 0) for premise in antecedent):
-        # If any antecedent is 0, the lhs is unconstrained
-        return
-
-    elif and_formulation:
-        premise = and_pulp(model, antecedent, name=name)
+    if and_formulation:
+        premise = and_pulp(model,premises)
         n_vars = 1
 
     else:
-        premise = lpSum(antecedent)
-        n_vars = sum(1 for _ in antecedent)
+        premise = lpSum(premises)
+        n_vars = len(premises)
 
     if operator == "==":
         pulp_add_constraint(
@@ -464,3 +502,64 @@ def abs_pulp(
     )
 
     return abs_var
+
+
+def bilinear_pulp(
+    model: LpProblem,
+    var1: PULP_PARAM,
+    var2: PULP_PARAM,
+    bilinear_var: LpVariable | None = None,
+    name: str | None = None,
+) -> LpVariable:
+    """
+    Adds constraints to the model to define bilinear_var as the product of var1 and var2.
+    This is done using the McCormick relaxation for bilinear terms.
+
+    Parameters:
+        model (LpProblem): The PuLP problem instance.
+        var1 (LpVariable | LpAffineExpression | int | float): The first variable in the product.
+        var2 (LpVariable | LpAffineExpression | int | float): The second variable in the product.
+        bilinear_var (LpVariable, optional): The variable to represent the product. Defaults to None.
+        name (str, optional): A prefix for constraint names. Defaults to None.
+
+    Returns:
+        LpVariable: The variable representing the product of var1 and var2.
+    """
+    if name is None:
+        name = f"bilinear_{var1}_{var2}"
+
+    if bilinear_var is None:
+        bilinear_var = LpVariable(name, lowBound=None, cat=LpContinuous)
+
+    # Get bounds for var1 and var2
+    var1_lb = get_lb(var1)
+    var1_ub = get_ub(var1)
+    var2_lb = get_lb(var2)
+    var2_ub = get_ub(var2)
+
+    # McCormick relaxation constraints
+    pulp_add_constraint(
+        model,
+        bilinear_var >= var1_lb * var2 + var1 * var2_lb - var1_lb * var2_lb,
+        f"{name}_mc1",
+    )
+
+    pulp_add_constraint(
+        model,
+        bilinear_var >= var1_ub * var2 + var1 * var2_ub - var1_ub * var2_ub,
+        f"{name}_mc2",
+    )
+
+    pulp_add_constraint(
+        model,
+        bilinear_var <= var1_ub * var2 + var1 * var2_lb - var1_ub * var2_lb,
+        f"{name}_mc3",
+    )
+
+    pulp_add_constraint(
+        model,
+        bilinear_var <= var1_lb * var2 + var1 * var2_ub - var1_lb * var2_ub,
+        f"{name}_mc4",
+    )
+
+    return bilinear_var
