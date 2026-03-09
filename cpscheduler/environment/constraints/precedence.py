@@ -28,12 +28,21 @@ class PrecedenceConstraint(Constraint):
     """
 
     precedence: dict[TaskID, list[TaskID]]
+    transposed_precedence: dict[TaskID, list[TaskID]]
 
     def __init__(self, precedence: Mapping[Int, Sequence[Int]]):
         self.precedence = {
             TaskID(task): [TaskID(child) for child in children]
             for task, children in precedence.items()
         }
+
+        self.transposed_precedence = {}
+
+        for task_id, children in self.precedence.items():
+            for child_id in children:
+                self.transposed_precedence.setdefault(child_id, []).append(
+                    task_id
+                )
 
     def __reduce__(self) -> Any:
         return (
@@ -98,6 +107,12 @@ class PrecedenceConstraint(Constraint):
             for child_id in self.precedence[task_id]:
                 state.tight_start_lb(child_id, end_time)
 
+        elif event.is_upper_bound() and task_id in self.transposed_precedence:
+            start_time = state.get_start_ub(task_id)
+
+            for parent_id in self.transposed_precedence[task_id]:
+                state.tight_end_ub(parent_id, start_time)
+
     def get_entry(self) -> str:
         intree = self.is_intree()
         outtree = self.is_outtree()
@@ -133,18 +148,8 @@ class NoWaitConstraint(PrecedenceConstraint):
             An optional name for the constraint.
     """
 
-    transposed_precedence: dict[TaskID, list[TaskID]]
-
     def __init__(self, precedence: Mapping[Int, Sequence[Int]]):
         super().__init__(precedence)
-
-        self.transposed_precedence = {}
-
-        for task_id, children in self.precedence.items():
-            for child_id in children:
-                self.transposed_precedence.setdefault(child_id, []).append(
-                    task_id
-                )
 
         if not self.is_intree():
             raise ValueError("No-wait constraint must be an in-tree.")
@@ -154,7 +159,7 @@ class NoWaitConstraint(PrecedenceConstraint):
 
         task_id = event.task_id
 
-        if True:
+        if state.is_fixed(task_id):
             if task_id in self.precedence:
                 end_time = state.get_end_lb(task_id)
 

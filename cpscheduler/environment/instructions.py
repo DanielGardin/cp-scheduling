@@ -7,9 +7,8 @@ with the scheduler.
 """
 
 from typing import TypeAlias, Final
-from typing_extensions import Self
+from typing_extensions import Self, Unpack, TypeIs
 from collections.abc import Iterable, Iterator
-from typing_extensions import Unpack, TypeIs
 
 from mypy_extensions import mypyc_attr, u8
 

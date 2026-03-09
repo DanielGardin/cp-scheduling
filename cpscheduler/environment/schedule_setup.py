@@ -197,23 +197,25 @@ class JobShopSetup(ScheduleSetup):
         processing_times: str = "processing_time",
         operation_order: str = "operation",
         machine_feature: str = "machine",
+        disjunctive: bool = True,
     ):
         self.processing_times = processing_times
         self.operation_order = operation_order
         self.machine_feature = machine_feature
+
+        self.disjunctive = disjunctive
 
     def initialize(self, state: ScheduleState) -> None:
         instance = state.instance
 
         n_machines = 0
 
+        machine_ids = instance.task_instance[self.machine_feature]
+        processing_times = instance.task_instance[self.processing_times]
+
         for task_id in range(instance.n_tasks):
-            machine: MachineID = instance.task_instance[self.machine_feature][
-                task_id
-            ]
-            p_time = Time(
-                instance.task_instance[self.processing_times][task_id]
-            )
+            machine: MachineID = machine_ids[task_id]
+            p_time: Time = processing_times[task_id]
 
             instance.set_processing_time(task_id, machine, p_time)
 
@@ -223,8 +225,6 @@ class JobShopSetup(ScheduleSetup):
         self.n_machines = n_machines
 
     def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
-        disjunctive_constraint = MachineConstraint()
-
         precedence_mapping: dict[Int, list[Int]] = {}
         task_orders: list[list[int]] = [[] for _ in range(state.n_jobs)]
 
@@ -252,10 +252,41 @@ class JobShopSetup(ScheduleSetup):
 
         precedence_constraint = PrecedenceConstraint(precedence_mapping)
 
-        return (disjunctive_constraint, precedence_constraint)
+        return (
+            (MachineConstraint(), precedence_constraint)
+            if self.disjunctive else
+            (precedence_constraint,)
+        )
+    
+    def get_entry(self) -> str:
+        return f"J{self.n_machines}"
 
+class FlowShopSetup(JobShopSetup):
+    """
+    Flow Shop Scheduling Setup.
 
-class OpenShopSetup(ScheduleSetup):
+    This setup is used for scheduling tasks in a flow shop environment where
+    each task has a specific operation order and all tasks follow the same
+    machine order.
+    """
+
+    def __init__(
+        self,
+        processing_times: str = "processing_time",
+        operation_order: str = "operation",
+        disjunctive: bool = True,
+    ):
+        super().__init__(
+            processing_times=processing_times,
+            operation_order=operation_order,
+            machine_feature=operation_order,
+            disjunctive=disjunctive,
+        )
+
+    def get_entry(self) -> str:
+        return f"F{self.n_machines}"
+
+class OpenShopSetup(JobShopSetup):
     """
     Open Shop Scheduling Setup.
 
@@ -263,35 +294,27 @@ class OpenShopSetup(ScheduleSetup):
     processed on any machine, and the order of operations is not fixed.
     """
 
-    processing_times: list[str]
-
     def __init__(
         self,
-        processing_times: Iterable[str],
+        processing_times: str = "processing_time",
+        machine_feature: str = "machine",
         disjunctive: bool = True,
     ):
-        self.processing_times = list(processing_times)
-        self.disjunctive = disjunctive
-
-        self.n_machines = len(self.processing_times)
-
-    def initialize(self, state: ScheduleState) -> None:
-        instance = state.instance
-
-        for machine, p_time_feature in enumerate(self.processing_times):
-            p_times = instance.task_instance[p_time_feature]
-
-            for task_id, p_time in enumerate(p_times):
-                instance.set_processing_time(
-                    task_id, MachineID(machine), Time(p_time)
-                )
+        super().__init__(
+            processing_times=processing_times,
+            operation_order="", # Open shop does not have a fixed operation order
+            machine_feature=machine_feature,
+            disjunctive=disjunctive,
+        )
 
     def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
         task_disjunction = NonOverlapConstraint(state.instance.job_tasks)
 
-        if not self.disjunctive:
-            return (task_disjunction,)
+        return (
+            (MachineConstraint(), task_disjunction)
+            if self.disjunctive else
+            (task_disjunction,)
+        )
 
-        machine_disjunction = MachineConstraint()
-
-        return (task_disjunction, machine_disjunction)
+    def get_entry(self) -> str:
+        return f"O{self.n_machines}"

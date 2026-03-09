@@ -8,6 +8,36 @@ from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.constraints.base import Constraint
 
 
+class HorizonConstraint(Constraint):
+    """
+    Horizon constraint for the scheduling environment.
+
+    Defines a hard upper bound on the completion time of all tasks.
+
+    This is technically equivalent to a deadline constraint with a constant
+    deadline for all tasks, but differs on the semantic level, as it does not
+    produce a standalone entry in the schedule.
+
+    Arguments:
+        horizon: int
+            The upper bound on the completion time of all tasks.
+    """
+
+    horizon: Time
+
+    def __init__(self, horizon: Int):
+        self.horizon = Time(horizon)
+
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (self.horizon,),
+        )
+
+    def reset(self, state: ScheduleState) -> None:
+        for task_id in range(state.n_tasks):
+            state.tight_end_ub(task_id, self.horizon)
+
 class ReleaseDateConstraint(Constraint):
     """
     Release date constraint for the scheduling environment.
@@ -20,9 +50,6 @@ class ReleaseDateConstraint(Constraint):
         release_dates: Mapping[int, int] | str
             A mapping of task IDs to their respective release dates. If a string is provided,
             it refers to a column in the tasks data that contains the release dates for each task.
-
-        name: Optional[str] = None
-            An optional name for the constraint.
     """
 
     release_tag: str

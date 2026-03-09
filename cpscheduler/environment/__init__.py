@@ -24,9 +24,12 @@ __all__ = [
     "UniformParallelMachineSetup",
     "UnrelatedParallelMachineSetup",
     "JobShopSetup",
+    "FlowShopSetup",
     "OpenShopSetup",
     # Beta constraints
     "Constraint",
+    "PassiveConstraint",
+    "MachineConstraint",
     "PreemptionConstraint",
     "OptionalityConstraint",
     "MachineEligibilityConstraint",
@@ -36,6 +39,7 @@ __all__ = [
     "NonOverlapConstraint",
     "ReleaseDateConstraint",
     "DeadlineConstraint",
+    "HorizonConstraint",
     "ResourceConstraint",
     "NonRenewableResourceConstraint",
     "SetupConstraint",
@@ -54,6 +58,8 @@ __all__ = [
     "TotalTardyJobs",
     "WeightedTardyJobs",
     "TotalFlowTime",
+    "DiscountedCompletionTime",
+    "RejectionCost",
 ]
 
 from .env import SchedulingEnv

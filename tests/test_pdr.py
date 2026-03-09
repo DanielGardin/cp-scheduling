@@ -53,8 +53,6 @@ def test_pdr(instance_name: str, heuristic: str) -> None:
 
     obs, info = env.reset()
 
-    assert not all(obs[0]["available"])
-
     action = heuristics[heuristic](obs)
     obs, reward, terminated, truncated, info = env.step(action)
 

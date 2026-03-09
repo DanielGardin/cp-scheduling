@@ -312,7 +312,7 @@ class SchedulingEnv:
 
     def advance_clock(self) -> None:
         schedule = self.schedule
-        variables = self.state.variables_
+        variables = self.state._variables
         runtime_state = self.state.runtime_state
 
         next_time = MAX_TIME

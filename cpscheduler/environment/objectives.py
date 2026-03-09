@@ -181,7 +181,7 @@ def _makespan(state: ScheduleState, tasks: Iterable[TaskID]) -> float:
     max_end_time = 0.0
 
     for task in tasks:
-        if state.is_completed(task):
+        if not state.is_completed(task):
             continue
 
         end_time = float(state.get_end_ub(task))

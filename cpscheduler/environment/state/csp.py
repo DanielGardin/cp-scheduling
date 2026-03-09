@@ -62,9 +62,10 @@ class Presence:
     UNDEFINED: Final[PresenceType] = 0b11
     "Task presence has not been determined yet. Initial value for optional tasks."
 
-UNDEFINED = Presence.UNDEFINED
+PRESENCE_INFEASIBLE = Presence.INFEASIBLE
 PRESENT = Presence.PRESENT
 ABSENT = Presence.ABSENT
+UNDEFINED = Presence.UNDEFINED
 
 class Bounds:
     """
@@ -129,14 +130,6 @@ class Bounds:
         self.ubs = ubs
         self.global_ubs = global_ubs
 
-    def __repr__(self) -> str:
-        return (
-            f"Bounds(lbs={self.lbs}, "
-            f"ubs={self.ubs}, "
-            f"global_lbs={self.global_lbs}, "
-            f"global_ubs={self.global_ubs})"
-        )
-
     def get_lb(self, task_id: TaskID, machine_id: MachineID) -> Time:
         if machine_id == GLOBAL_MACHINE_ID:
             return self.global_lbs[task_id]
@@ -172,6 +165,18 @@ class Bounds:
                 max_value = self.ubs[idx]
 
         self.global_ubs[task_id] = max_value
+
+    def __eq__(self, value: object) -> bool:
+        if not isinstance(value, Bounds):
+            return NotImplemented
+
+        return (
+            self.n_machines == value.n_machines and
+            self.lbs == value.lbs and
+            self.global_lbs == value.global_lbs and
+            self.ubs == value.ubs and
+            self.global_ubs == value.global_ubs
+        )
 
     def __reduce__(self) -> tuple[Any, ...]:
         state = (
@@ -270,9 +275,9 @@ class ScheduleVariables:
 
         if new_presence == old_presence:
             return None
-        
+
         self.presence[task_id] = new_presence
-        if new_presence == INFEASIBLE:
+        if new_presence == PRESENCE_INFEASIBLE:
             self.feasible[task_id] = False
             return Event(task_id, INFEASIBLE)
     
@@ -285,7 +290,7 @@ class ScheduleVariables:
         if machine_id in self.feasible_machines[task_id]:
             self.set_start_lb(task_id, MAX_TIME, machine_id)
             return Event(task_id, INFEASIBLE, machine_id)
-    
+
         return None
 
 
@@ -588,6 +593,11 @@ class ScheduleVariables:
         self.end.lbs[idx] = end_time
         self.end.ubs[idx] = end_time
 
+        self.start.global_lbs[task_id] = time
+        self.start.global_ubs[task_id] = time
+        self.end.global_lbs[task_id] = end_time
+        self.end.global_ubs[task_id] = end_time
+
         self.feasible_machines[task_id].clear()
         self.feasible_machines[task_id].append(machine_id)
 
@@ -598,6 +608,18 @@ class ScheduleVariables:
             f"ScheduleVariables(remaining_times={self.remaining_times}, "
             f"assignment={self.assignment}, presence={self.presence}, "
             f"start={self.start}, end={self.end})"
+        )
+
+    def __eq__(self, value: object) -> bool:
+        if not isinstance(value, ScheduleVariables):
+            return NotImplemented
+
+        return (
+            self.remaining_times == value.remaining_times and
+            self.assignment == value.assignment and
+            self.presence == value.presence and
+            self.start == value.start and
+            self.end == value.end
         )
 
     def __reduce__(self) -> tuple[Any, ...]:

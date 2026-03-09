@@ -23,6 +23,7 @@ __all__ = [
     "NonOverlapConstraint",
     "ReleaseDateConstraint",
     "DeadlineConstraint",
+    "HorizonConstraint",
     "ResourceConstraint",
     "NonRenewableResourceConstraint",
     "SetupConstraint",
@@ -59,6 +60,7 @@ from .setup import SetupConstraint
 from .time_windows import (
     ReleaseDateConstraint,
     DeadlineConstraint,
+    HorizonConstraint,
 )
 
 from .groups import NonOverlapConstraint

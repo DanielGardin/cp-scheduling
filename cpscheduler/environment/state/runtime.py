@@ -128,6 +128,18 @@ class RuntimeState:
 
                 self.status[task_id] = Status.COMPLETED
 
+    def __eq__(self, value: object) -> bool:
+        if not isinstance(value, RuntimeState):
+            return NotImplemented
+
+        return (
+            self.history == value.history
+            and self.awaiting_tasks == value.awaiting_tasks
+            and self.executing_tasks == value.executing_tasks
+            and self.completed_tasks == value.completed_tasks
+            and self.status == value.status
+        )
+
     def __reduce__(self) -> tuple[Any, ...]:
         state = (
             self.history,

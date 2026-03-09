@@ -162,7 +162,7 @@ class ProblemInstance:
             self.optional,
             self.processing_times,
         )
-        return (self.__class__.__new__, (self.__class__,), state)
+        return (self.__class__, ({},), state)
 
     def __setstate__(self, state: tuple[Any, ...]) -> None:
         (

@@ -110,14 +110,11 @@ class ReferenceScheduleMetrics:
         cpy_env = deepcopy(env)
         cpy_env.step(reference_schedule)
 
-        for task_id in cpy_env.state.runtime_state.completed_tasks:
-            self.assignments[task_id] = cpy_env.state.variables_.assignment[
-                task_id
-            ]
+        runtime = cpy_env.state.runtime_state
 
-            self.start_times[task_id] = (
-                cpy_env.state.variables_.start.global_lbs[task_id]
-            )
+        for task_id in runtime.completed_tasks:
+            self.assignments[task_id] = runtime.get_assignment(task_id)
+            self.start_times[task_id] = runtime.get_start(task_id)
 
         self.sorted_start_times = sorted(
             [(task_id, start) for task_id, start in self.start_times.items()],
@@ -149,12 +146,13 @@ class ReferenceScheduleMetrics:
         distance = 0
         count = 0
 
-        for task_id in state.runtime_state.completed_tasks:
+        runtime = state.runtime_state
+        for task_id in runtime.completed_tasks:
             if task_id not in self.start_times:
                 continue
 
             ref_start = self.start_times[task_id]
-            actual_start = state.variables_.start.global_lbs[task_id]
+            actual_start = runtime.get_start(task_id)
 
             distance += (
                 ref_start - actual_start
@@ -174,12 +172,13 @@ class ReferenceScheduleMetrics:
         early_count = 0
         count = 0
 
+        runtime = state.runtime_state
         for task_id in state.runtime_state.completed_tasks:
             if task_id not in self.start_times:
                 continue
 
             ref_start = self.start_times[task_id]
-            actual_start = state.variables_.start.global_lbs[task_id]
+            actual_start = runtime.get_start(task_id)
 
             if actual_start < ref_start:
                 early_count += 1
@@ -197,12 +196,13 @@ class ReferenceScheduleMetrics:
         late_count = 0
         count = 0
 
-        for task_id in state.runtime_state.completed_tasks:
+        runtime = state.runtime_state
+        for task_id in runtime.completed_tasks:
             if task_id not in self.start_times:
                 continue
 
             ref_start = self.start_times[task_id]
-            actual_start = state.variables_.start.global_lbs[task_id]
+            actual_start = runtime.get_start(task_id)
 
             if actual_start > ref_start:
                 late_count += 1
@@ -219,10 +219,12 @@ class ReferenceScheduleMetrics:
         This metric is the ratio of the number of tasks that maintain their order
         in the reference schedule to the total number of tasks.
         """
+
+        runtime = state.runtime_state
         actual_times = [
-            state.variables_.start.global_lbs[task_id]
+            runtime.get_start(task_id)
             for task_id, _ in self.sorted_start_times
-            if task_id in state.runtime_state.completed_tasks
+            if task_id in runtime.completed_tasks
         ]
 
         n = len(actual_times)
@@ -243,7 +245,7 @@ class ReferenceScheduleMetrics:
 
         actual_order = sorted(
             ref_order,
-            key=lambda task_id: state.variables_.start.global_lbs[task_id],
+            key=lambda task_id: state.runtime_state.get_start(task_id),
         )
         # reference order is just the task_ids in sorted_start_times order
         matches = 0
@@ -254,10 +256,12 @@ class ReferenceScheduleMetrics:
         return matches / len(actual_order) if actual_order else 1.0
 
     def kendall_tau(self, state: ScheduleState) -> float:
+        runtime = state.runtime_state
+
         actual_times = [
-            state.variables_.start.global_lbs[task_id]
+            runtime.get_start(task_id)
             for task_id, _ in self.sorted_start_times
-            if task_id in state.runtime_state.completed_tasks
+            if task_id in runtime.completed_tasks
         ]
         n = len(actual_times)
         if n < 2:
@@ -291,12 +295,13 @@ class ReferenceScheduleMetrics:
         matches = 0
         count = 0
 
+        runtime = state.runtime_state
         for task_id in state.runtime_state.completed_tasks:
             if task_id not in self.assignments:
                 continue
 
             ref_machine = self.assignments[task_id]
-            actual_machine = state.variables_.assignment[task_id]
+            actual_machine = runtime.get_assignment(task_id)
 
             if ref_machine == actual_machine:
                 matches += 1

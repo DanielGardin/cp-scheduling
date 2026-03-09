@@ -1,7 +1,6 @@
 "Common types and constants used in the environment module."
 
-from typing import Final, SupportsInt, SupportsFloat
-from typing_extensions import TypeAlias
+from typing import TypeAlias, Final, SupportsInt, SupportsFloat
 
 from mypy_extensions import i64, i32, i16, u8
 

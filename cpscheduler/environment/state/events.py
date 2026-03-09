@@ -1,4 +1,4 @@
-from typing import TypeAlias, Final
+from typing import Any, TypeAlias, Final
 from mypy_extensions import u8
 
 from cpscheduler.environment.constants import (
@@ -55,6 +55,12 @@ class Event:
         self.task_id = task_id
         self.field = field
         self.machine_id = machine_id
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        return (
+            self.__class__,
+            (self.task_id, self.field, self.machine_id),
+        )
 
     def is_assignment(self) -> bool:
         return self.field == VarField.ASSIGNMENT
