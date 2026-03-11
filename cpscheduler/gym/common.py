@@ -2,7 +2,8 @@ from numpy import int64
 
 from gymnasium.spaces import Tuple, Text, Box, OneOf, Sequence
 
-from cpscheduler.environment._common import MAX_TIME, Options, InstanceConfig
+from cpscheduler.environment.constants import MAX_TIME
+from cpscheduler.utils._protocols import Options, InstanceConfig
 
 InstructionSpace = Text(max_length=10)
 IntSpace = Box(low=0, high=int(MAX_TIME), shape=(), dtype=int64)

@@ -3,11 +3,9 @@ from collections.abc import Iterable
 
 from abc import ABC
 
-import random
-
 from gymnasium import Env, Wrapper, Space
 
-from cpscheduler.environment._common import (
+from cpscheduler.utils._protocols import (
     Options,
     InstanceTypes,
     InstanceConfig,
@@ -74,7 +72,9 @@ class InstanceWrapper(Wrapper[_Obs, _Act, _Obs, _Act], ABC):
         """
         return {}
 
-    def manipulate_instance(self, instance_config: InstanceConfig) -> InstanceConfig:
+    def manipulate_instance(
+        self, instance_config: InstanceConfig
+    ) -> InstanceConfig:
         """
         Manipulate the instance configuration before resetting the environment.
 
@@ -100,7 +100,8 @@ class InstanceWrapper(Wrapper[_Obs, _Act, _Obs, _Act], ABC):
         instance_config = self._parse_options(seed, options)
 
         obs, info = super().reset(
-            seed=seed, options=dict(instance_config) if instance_config else None
+            seed=seed,
+            options=dict(instance_config) if instance_config else None,
         )
 
         if instance_config or not previously_loaded:
@@ -119,21 +120,42 @@ class InstancePoolWrapper(InstanceWrapper[_Obs, _Act]):
     env : Env
         The scheduling environment to wrap.
 
-    instances : list[DataFrame]
-        A list of DataFrames representing different scheduling problem instances.
+    instances : Iterable[InstanceTypes]
+        An iterable of instances, randomly sampled during environment reset.
+
+    p : list[float] | None
+        A list of probabilities associated with each instance in the pool.
     """
 
     def __init__(
         self,
         env: Env[_Obs, _Act],
         instance_pool: Iterable[InstanceTypes],
+        p: list[float] | None = None,
     ):
         self.instances = list(instance_pool)
+
+        if p is not None:
+            if len(p) != len(self.instances):
+                raise ValueError(
+                    "Length of probability list must match number of instances."
+                )
+
+            if not abs(sum(p) - 1.0) < 1e-8:
+                raise ValueError("Probabilities must sum to 1.")
+
+            if any(prob < 0 for prob in p):
+                raise ValueError("Probabilities must be non-negative.")
+
+            self.p = p
+
+        else:
+            self.p = [1.0 / len(self.instances)] * len(self.instances)
 
         super().__init__(env)
 
     def generate_instance(self) -> InstanceConfig:
-        idx = self.np_random.choice(len(self.instances))
+        idx = self.np_random.choice(len(self.instances), p=self.p)
 
         instance = self.instances[idx]
 

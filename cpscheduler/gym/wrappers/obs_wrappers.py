@@ -10,8 +10,9 @@ from gymnasium.spaces import Dict, Tuple, Box
 
 from gymnasium import ObservationWrapper, Env, Space
 
-from cpscheduler.environment._common import ObsType, Options, MAX_TIME
-from cpscheduler.environment.state import ScheduleState
+from cpscheduler.utils._protocols import Options
+from cpscheduler.environment.constants import MAX_TIME
+from cpscheduler.environment.state import ScheduleState, ObsType
 from cpscheduler.gym.gym_utils import is_original_space
 
 S = TypeVar("S", Space[Any], Box, Dict, Tuple)
@@ -26,7 +27,12 @@ def reshape_space(space: S, shape: tuple[int, ...]) -> S:
         )
 
     if isinstance(space, Dict):
-        return Dict({key: reshape_space(value, shape) for key, value in space.spaces.items()})
+        return Dict(
+            {
+                key: reshape_space(value, shape)
+                for key, value in space.spaces.items()
+            }
+        )
 
     if isinstance(space, Tuple):
         return Tuple(reshape_space(value, shape) for value in space.spaces)
@@ -38,7 +44,9 @@ _Obs = TypeVar("_Obs")
 _Act = TypeVar("_Act")
 
 
-class SchedulingObservationWrapper(ObservationWrapper[_Obs, _Act, ObsType], ABC):
+class SchedulingObservationWrapper(
+    ObservationWrapper[_Obs, _Act, ObsType], ABC
+):
     def __init__(self, env: Env[ObsType, _Act]):
         super().__init__(env)
         self.observation_space = self.get_observation_space()
@@ -51,7 +59,9 @@ class SchedulingObservationWrapper(ObservationWrapper[_Obs, _Act, ObsType], ABC)
     ) -> tuple[_Obs, dict[str, Any]]:
         previously_loaded = self.get_wrapper_attr("loaded")
 
-        obs, info = super().reset(seed=seed, options=dict(options) if options else None)
+        obs, info = super().reset(
+            seed=seed, options=dict(options) if options else None
+        )
 
         if options is not None or not previously_loaded:
             self.observation_space = self.get_observation_space()
@@ -65,7 +75,9 @@ class SchedulingObservationWrapper(ObservationWrapper[_Obs, _Act, ObsType], ABC)
         if is_original_space(space):
             return space
 
-        raise ValueError(f"Unexpected env observation space: {self.env.observation_space}")
+        raise ValueError(
+            f"Unexpected env observation space: {self.env.observation_space}"
+        )
 
     @abstractmethod
     def get_observation_space(self) -> Space[_Obs]:
@@ -76,7 +88,9 @@ class SchedulingObservationWrapper(ObservationWrapper[_Obs, _Act, ObsType], ABC)
         """
 
 
-class TabularObservationWrapper(SchedulingObservationWrapper[dict[str, list[Any]], _Act]):
+class TabularObservationWrapper(
+    SchedulingObservationWrapper[dict[str, list[Any]], _Act]
+):
     """
     A wrapper that converts the observation space to a single tabular space after merging
     the task and job features.
@@ -104,25 +118,33 @@ class TabularObservationWrapper(SchedulingObservationWrapper[dict[str, list[Any]
     def observation(self, observation: ObsType) -> dict[str, list[Any]]:
         task_data, job_data = observation
 
-        merged_data = {task_feature: task_data[task_feature] for task_feature in task_data}
+        merged_data = {
+            task_feature: task_data[task_feature] for task_feature in task_data
+        }
 
         jobs_ids: list[int] = task_data["job_id"]
         for job_feature in job_data:
             if job_feature == "job_id":
                 continue
 
-            merged_data[job_feature] = [job_data[job_feature][job_id] for job_id in jobs_ids]
+            merged_data[job_feature] = [
+                job_data[job_feature][job_id] for job_id in jobs_ids
+            ]
 
         return merged_data
 
 
-class ArrayObservationWrapper(SchedulingObservationWrapper[NDArray[np.float32], _Act]):
+class ArrayObservationWrapper(
+    SchedulingObservationWrapper[NDArray[np.float32], _Act]
+):
     """
     A wrapper that converts the observation space to a single array space after merging
     the task and job features.
     """
 
-    def __init__(self, env: Env[ObsType, _Act], features: Iterable[str] | None = None):
+    def __init__(
+        self, env: Env[ObsType, _Act], features: Iterable[str] | None = None
+    ):
         self.features = list(features) if features is not None else []
 
         super().__init__(env)
@@ -133,7 +155,9 @@ class ArrayObservationWrapper(SchedulingObservationWrapper[NDArray[np.float32], 
         n_features = (
             len(self.features)
             if self.features
-            else len(task_feature_space) + len(job_feature_space) - 1  # Exclude 'job_id'
+            else len(task_feature_space)
+            + len(job_feature_space)
+            - 1  # Exclude 'job_id'
         )
 
         return Box(
@@ -162,10 +186,14 @@ class ArrayObservationWrapper(SchedulingObservationWrapper[NDArray[np.float32], 
                 obs[:, i] = task_data[feature]
 
             elif feature in job_data:
-                obs[:, i] = [job_data[feature][job_id] for job_id in task_data["job_id"]]
+                obs[:, i] = [
+                    job_data[feature][job_id] for job_id in task_data["job_id"]
+                ]
 
             else:
-                raise ValueError(f"Feature '{feature}' not found in task or job data.")
+                raise ValueError(
+                    f"Feature '{feature}' not found in task or job data."
+                )
 
         return obs
 
@@ -185,8 +213,12 @@ class CPStateWrapper(SchedulingObservationWrapper[ObsType, _Act]):
                 Dict(
                     {
                         **task_feature_space,
-                        "lower_bound": Box(low=0, high=int(MAX_TIME), shape=(n_tasks,)),
-                        "upper_bound": Box(low=0, high=int(MAX_TIME), shape=(n_tasks,)),
+                        "lower_bound": Box(
+                            low=0, high=int(MAX_TIME), shape=(n_tasks,)
+                        ),
+                        "upper_bound": Box(
+                            low=0, high=int(MAX_TIME), shape=(n_tasks,)
+                        ),
                     }
                 ),
                 job_feature_space,

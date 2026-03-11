@@ -12,8 +12,15 @@ from gymnasium import Env, Space
 
 from cpscheduler.utils._protocols import Metric
 
-from cpscheduler.environment import SchedulingEnv, ScheduleSetup, Constraint, Objective
-from cpscheduler.environment._common import InstanceTypes, ObsType, Options
+from cpscheduler.environment import (
+    SchedulingEnv,
+    ScheduleSetup,
+    Constraint,
+    Objective,
+)
+from cpscheduler.utils._protocols import InstanceTypes, Options
+
+from cpscheduler.environment.state import ObsType
 from cpscheduler.environment.instructions import ActionType
 from cpscheduler.environment._render import Renderer
 
@@ -48,6 +55,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
             render_mode=render_mode,
         )
 
+        self._env.reset()
         self.observation_space = self.get_observation_space()
 
     def get_observation_space(self) -> Space[ObsType]:
@@ -82,10 +90,18 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
 
         return obs, {key: value for key, value in info.items()}
 
-    def step(self, action: ActionType) -> tuple[ObsType, float, bool, bool, dict[str, Any]]:
+    def step(
+        self, action: ActionType
+    ) -> tuple[ObsType, float, bool, bool, dict[str, Any]]:
         obs, reward, done, truncated, info = self._env.step(action)
 
-        return obs, reward, done, truncated, {key: value for key, value in info.items()}
+        return (
+            obs,
+            reward,
+            done,
+            truncated,
+            {key: value for key, value in info.items()},
+        )
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._env, name)

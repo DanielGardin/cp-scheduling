@@ -8,18 +8,22 @@ import numpy as np
 
 from gymnasium.spaces import Space, Dict, Tuple, Box, MultiBinary, Text
 
-from cpscheduler.environment._common import MAX_TIME, MIN_TIME
+from cpscheduler.environment.constants import MAX_TIME, MIN_TIME
 
 
 def is_original_space(space: Any) -> TypeIs[Iterable[Dict]]:
     "Check if the space is the original space type (Dict of Dicts)."
-    return isinstance(space, Tuple) and all(isinstance(s, Dict) for s in space.spaces)
+    return isinstance(space, Tuple) and all(
+        isinstance(s, Dict) for s in space.spaces
+    )
 
 
 @singledispatch
 def create_list_space(elem: Any, size: int) -> Space[Any]:
     "Create a Gymnasium space for a list of a specific type and size."
-    raise NotImplementedError(f"Unsupported type {type(elem)} for creating list space.")
+    raise NotImplementedError(
+        f"Unsupported type {type(elem)} for creating list space."
+    )
 
 
 @create_list_space.register
@@ -31,7 +35,9 @@ def _(elem: str, size: int) -> Space[tuple[str, ...]]:
 @create_list_space.register
 def _(elem: int, size: int) -> Space[Iterable[int]]:
     "Create a Gymnasium space for a list of integers."
-    return Box(low=int(MIN_TIME), high=int(MAX_TIME), shape=(size,), dtype=np.int64)
+    return Box(
+        low=int(MIN_TIME), high=int(MAX_TIME), shape=(size,), dtype=np.int64
+    )
 
 
 @create_list_space.register
@@ -55,7 +61,9 @@ def infer_collection_space(
     "Infer the Gymnasium space of a collection based on its elements."
 
     if isinstance(obs, Mapping):
-        return Dict({key: infer_collection_space(value) for key, value in obs.items()})
+        return Dict(
+            {key: infer_collection_space(value) for key, value in obs.items()}
+        )
 
     if isinstance(obs, tuple):
         return Tuple(infer_collection_space(elem) for elem in obs)

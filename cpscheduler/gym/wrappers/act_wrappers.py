@@ -8,8 +8,9 @@ from numpy import int64
 from gymnasium import ActionWrapper, Env
 from gymnasium.spaces import Space, Box, Sequence
 
+from cpscheduler.utils._protocols import Options
 from cpscheduler.environment.instructions import ActionType
-from cpscheduler.environment._common import Int, Options
+from cpscheduler.environment.constants import Int
 
 _Obs = TypeVar("_Obs")
 _Act = TypeVar("_Act")
@@ -32,9 +33,13 @@ class SchedulingActionWrapper(ActionWrapper[_Obs, _Act, ActionType], ABC):
     ) -> tuple[_Obs, dict[str, Any]]:
         previously_loaded = self.get_wrapper_attr("loaded")
 
-        obs, info = super().reset(seed=seed, options=dict(options) if options else None)
+        obs, info = super().reset(
+            seed=seed, options=dict(options) if options else None
+        )
 
-        if self.requires_loaded and (options is not None or not previously_loaded):
+        if self.requires_loaded and (
+            options is not None or not previously_loaded
+        ):
             self.action_space = self.get_action_space()
 
         return obs, info
