@@ -1,4 +1,3 @@
-
 from itertools import combinations
 
 from cpscheduler.environment import SchedulingEnv
@@ -6,23 +5,21 @@ from cpscheduler.environment.constants import TaskID, MachineID
 
 from cpscheduler.solver.formulation import SymmetryBreaking
 
-from cpscheduler.solver.milp.pulp_utils import (
-    implication_pulp
-)
+from cpscheduler.solver.milp.pulp_utils import implication_pulp
 
 from cpscheduler.solver.milp.disjunctive.formulation import (
-    DisjunctiveMILPFormulation
+    DisjunctiveMILPFormulation,
 )
 
+
 class DominanceRuleSymmetryBreaking(
-    SymmetryBreaking[DisjunctiveMILPFormulation],
-    register=False
+    SymmetryBreaking[DisjunctiveMILPFormulation], register=False
 ):
     """
     A symmetry breaking constraint that enforces a dominance rule on the schedule.
 
     This is a helper class that can be used to define specific dominance rules
-    by implementing only the `dominance_rule` and `is_appliable` methods.    
+    by implementing only the `dominance_rule` and `is_appliable` methods.
     """
 
     def __init_subclass__(cls) -> None:
@@ -48,7 +45,9 @@ class DominanceRuleSymmetryBreaking(
             "dominance_rule method."
         )
 
-    def apply(self, formulation: DisjunctiveMILPFormulation, env: SchedulingEnv) -> None:
+    def apply(
+        self, formulation: DisjunctiveMILPFormulation, env: SchedulingEnv
+    ) -> None:
         for task_i, task_j in combinations(range(env.state.n_tasks), 2):
             for machine_id in range(env.state.n_machines):
                 if self.dominance_rule(
@@ -78,7 +77,7 @@ class DominanceRuleSymmetryBreaking(
                         formulation.end_times[prec_task],
                         "<=",
                         formulation.start_times[succ_task],
-                    )
+                    ),
                 )
 
                 implication_pulp(

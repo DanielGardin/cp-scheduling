@@ -234,7 +234,7 @@
 #     """
 #     In partition problems, break symmetry by ordering by Smith's rules.
 #     The smith's rule states that there is a optimal solution such that
-#     the task 
+#     the task
 #     """
 #     state = env.state
 

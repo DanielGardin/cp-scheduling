@@ -103,7 +103,9 @@ def wrap_observation(obs: Any) -> TabularRepresentation[ArrayLike]:
 
 def maximum(x1: Any, x2: Any) -> ArrayLike:
     result: ArrayLike
-    if TORCH_AVAILABLE and (isinstance(x1, torch.Tensor) or isinstance(x2, torch.Tensor)):
+    if TORCH_AVAILABLE and (
+        isinstance(x1, torch.Tensor) or isinstance(x2, torch.Tensor)
+    ):
         if not isinstance(x1, torch.Tensor):
             x1 = torch.tensor(x1)
 
@@ -129,7 +131,9 @@ def maximum(x1: Any, x2: Any) -> ArrayLike:
 
 def minimum(x1: Any, x2: Any) -> ArrayLike:
     result: ArrayLike
-    if TORCH_AVAILABLE and (isinstance(x1, torch.Tensor) or isinstance(x2, torch.Tensor)):
+    if TORCH_AVAILABLE and (
+        isinstance(x1, torch.Tensor) or isinstance(x2, torch.Tensor)
+    ):
         if not isinstance(x1, torch.Tensor):
             x1 = torch.tensor(x1)
 
@@ -161,7 +165,9 @@ def argsort(
 ) -> ArrayLike:
     result: ArrayLike
     if TORCH_AVAILABLE and isinstance(x, torch.Tensor):
-        result = torch.argsort(x, descending=descending, stable=stable, dim=axis)
+        result = torch.argsort(
+            x, descending=descending, stable=stable, dim=axis
+        )
 
     elif NUMPY_AVAILABLE:
         result = np.argsort(

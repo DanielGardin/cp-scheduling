@@ -28,11 +28,12 @@ _Constraint = TypeVar("_Constraint", bound=Constraint)
 _Objective = TypeVar("_Objective", bound=Objective)
 _Setup = TypeVar("_Setup", bound=ScheduleSetup)
 
+
 class SymmetryBreaking(Generic[F]):
     """
     Base class for symmetry breaking constraints.
 
-    Symmetry breaking constraints are used to reduce the search space of the 
+    Symmetry breaking constraints are used to reduce the search space of the
     solver by eliminating symmetric solutions.
     For example, in parallel machine scheduling, if two machines are identical,
     we can add a constraint that forces the first task to be assigned to the
@@ -56,7 +57,7 @@ class SymmetryBreaking(Generic[F]):
                     f"SymmetryBreaking subclasses must specify a single type  "
                     f"argument representing the formulation type. Got {args}."
                 )
-            
+
             formulation_type = args[0]
             if not issubclass(formulation_type, Formulation):
                 raise TypeError(
@@ -71,19 +72,22 @@ class SymmetryBreaking(Generic[F]):
         Check if the symmetry breaking constraint is appliable to the given environment.
         """
         raise NotImplementedError
-    
+
     def apply(self, formulation: F, env: SchedulingEnv) -> None:
         """
         Apply the symmetry breaking constraint to the given environment.
         """
         raise NotImplementedError
 
+
 class Formulation(ABC):
     _name: ClassVar[str]
 
     _setup_registry: ClassVar[dict[type[ScheduleSetup], Exporter[Any, Any]]]
     _constraint_registry: ClassVar[dict[type[Constraint], Exporter[Any, Any]]]
-    _objective_registry: ClassVar[dict[type[Objective], VariableExporter[Any, Any]]]
+    _objective_registry: ClassVar[
+        dict[type[Objective], VariableExporter[Any, Any]]
+    ]
     _symmetry_breaking_registry: ClassVar[list[SymmetryBreaking[Self]]]
 
     def __init_subclass__(cls, formulation_name: str) -> None:
@@ -130,7 +134,6 @@ class Formulation(ABC):
         for constraint in constraints:
             cls._constraint_registry[constraint] = lambda self, state, c: None
 
-
     @classmethod
     def register_objective(
         cls: type[F], objective: type[_Objective]
@@ -138,7 +141,7 @@ class Formulation(ABC):
         """
         Register an objective function for the formulation.
 
-        Differently from setups and constraints, objectives can return a 
+        Differently from setups and constraints, objectives can return a
         variable or an expression representing the objective value.
         This allows for more complex objectives that may require auxiliary
         variables or expressions to be defined in the model.
@@ -156,7 +159,7 @@ class Formulation(ABC):
         """
 
         def decorator(
-            fn: VariableExporter[F, _Objective]
+            fn: VariableExporter[F, _Objective],
         ) -> VariableExporter[F, _Objective]:
             cls._objective_registry[objective] = fn
             return fn
@@ -166,7 +169,7 @@ class Formulation(ABC):
     @classmethod
     def register_symmetry_breaking(
         cls: type[F], symmetry_breaking: type[SymmetryBreaking[F]]
-        ) -> None:
+    ) -> None:
         cls._symmetry_breaking_registry.append(symmetry_breaking())
 
     @abstractmethod
@@ -213,8 +216,9 @@ class Formulation(ABC):
             f"warm_start method not available for {type(self).__name__}."
         )
 
-
-    def build(self: Self, env: SchedulingEnv, symmetry_break: bool = False) -> None:
+    def build(
+        self: Self, env: SchedulingEnv, symmetry_break: bool = False
+    ) -> None:
         """
         Build the model for the scheduling problem.
 

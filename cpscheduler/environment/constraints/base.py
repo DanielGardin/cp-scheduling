@@ -44,12 +44,8 @@ class PassiveConstraint(Constraint):
 
     def propagate(self, event: Event, state: ScheduleState) -> NoReturn:
         "Passive constraint does not propagate any changes."
-        raise RuntimeError(
-            "Passive constraint does not propagate any changes."
-        )
+        raise RuntimeError("Passive constraint does not propagate any changes.")
 
     def reset(self, state: ScheduleState) -> NoReturn:
         "Passive constraint does not reset any state."
-        raise RuntimeError(
-            "Passive constraint does not reset any state."
-        )
+        raise RuntimeError("Passive constraint does not reset any state.")

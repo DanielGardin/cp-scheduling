@@ -11,12 +11,16 @@ from cpscheduler.common import unwrap_env
 
 from cpscheduler.solver.formulation import Formulation
 
+
 class SolverResult(NamedTuple):
     action: Sequence[SingleAction]
     objective_value: float
     status: str
 
+
 F = TypeVar("F", bound=Formulation)
+
+
 class SchedulingSolver(Generic[F]):
     env: SchedulingEnv
     formulation: F
@@ -33,9 +37,7 @@ class SchedulingSolver(Generic[F]):
     ):
         self.env = unwrap_env(env)
         if horizon is not None:
-            self.env.add_constraint(
-                HorizonConstraint(horizon)
-            )
+            self.env.add_constraint(HorizonConstraint(horizon))
 
         self.formulation = formulation
 
@@ -68,12 +70,12 @@ class SchedulingSolver(Generic[F]):
         cpy_env.step(actions)
         self.formulation.warm_start(cpy_env)
 
-    def solve(self, **kwargs: Any) -> SolverResult:
+    def solve(self, *args: Any, **kwargs: Any) -> SolverResult:
         "Solve the scheduling problem using the built model."
         if not self._built:
             self.build()
 
-        status = self.formulation.solve(**kwargs)
+        status = self.formulation.solve(*args, **kwargs)
 
         objective_value = self.formulation.get_objective_value()
 
@@ -85,7 +87,5 @@ class SchedulingSolver(Generic[F]):
         actions.sort(key=lambda x: (x[-1], x[1]))
 
         return SolverResult(
-            action=actions,
-            objective_value=objective_value,
-            status=status
+            action=actions, objective_value=objective_value, status=status
         )

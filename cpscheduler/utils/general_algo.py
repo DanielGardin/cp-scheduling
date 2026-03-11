@@ -9,60 +9,9 @@ if TYPE_CHECKING:
 T = TypeVar("T")
 
 
-class O1Set(Generic[T]):
-    _items: list[T]
-    _pos: dict[T, int]
-
-    def __init__(self, *items: T):
-        self._items = list(items)
-        self._pos = {item: idx for idx, item in enumerate(self._items)}
-
-    def __repr__(self) -> str:
-        return f"O1Set({self._items})"
-
-    def __len__(self) -> int:
-        return len(self._items)
-
-    def __contains__(self, item: T) -> bool:
-        return item in self._pos
-
-    def clear(self) -> None:
-        self._items.clear()
-        self._pos.clear()
-
-    def add(self, item: T) -> None:
-        if item in self._pos:
-            return
-
-        self._pos[item] = len(self._items)
-        self._items.append(item)
-
-    def discard(self, item: T) -> None:
-        if item in self._pos:
-            self.remove(item)
-
-    def pop(self) -> T:
-        item = self._items.pop()
-        self._pos.pop(item)
-        return item
-
-    def update(self, items: Sequence[T]) -> None:
-        for item in items:
-            self.add(item)
-
-    def remove(self, item: T) -> None:
-        idx = self._pos.pop(item)
-        last_item = self._items.pop()
-
-        if idx < len(self._items):
-            self._items[idx] = last_item
-            self._pos[last_item] = idx
-
-    def __iter__(self) -> Iterator[T]:
-        return iter(self._items)
-
-
-def topological_sort(precedence_map: dict[int, list[int]], n_tasks: int) -> list[int]:
+def topological_sort(
+    precedence_map: dict[int, list[int]], n_tasks: int
+) -> list[int]:
     """
     Perform a topological sort on a directed acyclic graph.
 
@@ -84,7 +33,9 @@ def topological_sort(precedence_map: dict[int, list[int]], n_tasks: int) -> list
         for child in children:
             in_degree[child] += 1
 
-    queue = deque([task for task, degree in enumerate(in_degree) if degree == 0])
+    queue = deque(
+        [task for task, degree in enumerate(in_degree) if degree == 0]
+    )
 
     topological_order: list[int] = []
 

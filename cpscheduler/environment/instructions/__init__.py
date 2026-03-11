@@ -26,7 +26,7 @@ from .schedule import (
     InstructionResult,
     QueueControl,
     Instruction,
-    DEFAULT_QUEUE_TIME
+    DEFAULT_QUEUE_TIME,
 )
 
 from typing import TypeAlias
@@ -37,6 +37,7 @@ from cpscheduler.environment.constants import Int, Time
 SingleAction: TypeAlias = tuple["str | Instruction", Unpack[tuple[Int, ...]]]
 ActionType: TypeAlias = SingleAction | Iterable[SingleAction] | None
 
+
 def is_single_action(
     action: ActionType,
 ) -> TypeIs[SingleAction]:
@@ -46,8 +47,11 @@ def is_single_action(
 
     return isinstance(action[0], (str, Instruction))
 
+
 from cpscheduler.environment.state import ScheduleState
 from cpscheduler.utils.list_utils import convert_to_list
+
+
 def parse_args(
     args: list[Int],
     output_size: int,

@@ -1,7 +1,7 @@
 """
 symmetry_breaking.py
 
-This module contains some implementations of symmetry breaking constraints. 
+This module contains some implementations of symmetry breaking constraints.
 Symmetry breaking constraints are used to reduce the search space of the solver
 by eliminating symmetric solutions.
 For example, in parallel machine scheduling, if two machines are identical, we

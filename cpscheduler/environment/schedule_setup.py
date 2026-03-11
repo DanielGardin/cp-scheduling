@@ -254,12 +254,13 @@ class JobShopSetup(ScheduleSetup):
 
         return (
             (MachineConstraint(), precedence_constraint)
-            if self.disjunctive else
-            (precedence_constraint,)
+            if self.disjunctive
+            else (precedence_constraint,)
         )
-    
+
     def get_entry(self) -> str:
         return f"J{self.n_machines}"
+
 
 class FlowShopSetup(JobShopSetup):
     """
@@ -286,6 +287,7 @@ class FlowShopSetup(JobShopSetup):
     def get_entry(self) -> str:
         return f"F{self.n_machines}"
 
+
 class OpenShopSetup(JobShopSetup):
     """
     Open Shop Scheduling Setup.
@@ -302,7 +304,7 @@ class OpenShopSetup(JobShopSetup):
     ):
         super().__init__(
             processing_times=processing_times,
-            operation_order="", # Open shop does not have a fixed operation order
+            operation_order="",  # Open shop does not have a fixed operation order
             machine_feature=machine_feature,
             disjunctive=disjunctive,
         )
@@ -312,8 +314,8 @@ class OpenShopSetup(JobShopSetup):
 
         return (
             (MachineConstraint(), task_disjunction)
-            if self.disjunctive else
-            (task_disjunction,)
+            if self.disjunctive
+            else (task_disjunction,)
         )
 
     def get_entry(self) -> str:

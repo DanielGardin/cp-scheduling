@@ -16,7 +16,9 @@ def convert_to_list(array: Iterable[_T], dtype: None = ...) -> list[_T]: ...
 def convert_to_list(array: Any, dtype: None = ...) -> list[Any]: ...
 
 
-def convert_to_list(array: Iterable[Any], dtype: type[Any] | None = None) -> list[Any]:
+def convert_to_list(
+    array: Iterable[Any], dtype: type[Any] | None = None
+) -> list[Any]:
     """
     Convert an iterable to a list. If a dtype is provided, the elements of the list will be casted
     to that type.
@@ -78,7 +80,10 @@ class ListWrapper(Generic[_T_co]):
 
     def astype(self, dtype: type[_S] | Any) -> "ListWrapper[_S]":
         return ListWrapper(
-            [x.astype(dtype) if hasattr(x, "astype") else dtype(x) for x in self._data]
+            [
+                x.astype(dtype) if hasattr(x, "astype") else dtype(x)
+                for x in self._data
+            ]
         )
 
     def __array__(self, dtype: Any = None) -> ArrayLike:
@@ -105,11 +110,17 @@ class ListWrapper(Generic[_T_co]):
 
         if isinstance(index, Iterable):
             if all(isinstance(i, bool) for i in index):
-                return ListWrapper([self._data[i] for i, flag in enumerate(index) if flag])
+                return ListWrapper(
+                    [self._data[i] for i, flag in enumerate(index) if flag]
+                )
 
-            return ListWrapper([self._data[i] for i in index if isinstance(i, int)])
+            return ListWrapper(
+                [self._data[i] for i in index if isinstance(i, int)]
+            )
 
-    def __setitem__(self, index: int | Iterable[int] | slice | Iterable[bool], value: Any) -> None:
+    def __setitem__(
+        self, index: int | Iterable[int] | slice | Iterable[bool], value: Any
+    ) -> None:
         if isinstance(index, int):
             self._data[index] = value
             return
@@ -139,7 +150,9 @@ class ListWrapper(Generic[_T_co]):
         return f"ListWrapper({self._data})"
 
     @overload
-    def __add__(self, other: Iterable[_T_co] | _T_co, /) -> "ListWrapper[_T_co]": ...
+    def __add__(
+        self, other: Iterable[_T_co] | _T_co, /
+    ) -> "ListWrapper[_T_co]": ...
     @overload
     def __add__(self, other: Any, /) -> "ListWrapper[Any]": ...
 
@@ -159,7 +172,9 @@ class ListWrapper(Generic[_T_co]):
         return self.__add__(other)
 
     @overload
-    def __sub__(self, other: Iterable[_T_co] | _T_co, /) -> "ListWrapper[_T_co]": ...
+    def __sub__(
+        self, other: Iterable[_T_co] | _T_co, /
+    ) -> "ListWrapper[_T_co]": ...
     @overload
     def __sub__(self, other: Any, /) -> "ListWrapper[Any]": ...
 
@@ -176,7 +191,9 @@ class ListWrapper(Generic[_T_co]):
         return ListWrapper([x - other for x in self._data])
 
     @overload
-    def __rsub__(self, other: Iterable[_T_co] | _T_co, /) -> "ListWrapper[_T_co]": ...
+    def __rsub__(
+        self, other: Iterable[_T_co] | _T_co, /
+    ) -> "ListWrapper[_T_co]": ...
     @overload
     def __rsub__(self, other: Any, /) -> "ListWrapper[Any]": ...
 
@@ -196,7 +213,9 @@ class ListWrapper(Generic[_T_co]):
         return ListWrapper([-x for x in self._data])
 
     @overload
-    def __mul__(self, other: Iterable[_T_co] | _T_co, /) -> "ListWrapper[_T_co]": ...
+    def __mul__(
+        self, other: Iterable[_T_co] | _T_co, /
+    ) -> "ListWrapper[_T_co]": ...
     @overload
     def __mul__(self, other: Any, /) -> "ListWrapper[Any]": ...
 
@@ -423,18 +442,26 @@ class ListWrapper(Generic[_T_co]):
     ) -> "ListWrapper[_T_co]":
         if is_pure_iterable(x1):
             if is_pure_iterable(x2):
-                return ListWrapper([a if cond else b for cond, a, b in zip(condition, x1, x2)])
+                return ListWrapper(
+                    [a if cond else b for cond, a, b in zip(condition, x1, x2)]
+                )
 
             else:
-                return ListWrapper([a if cond else x2 for cond, a in zip(condition, x1)])
+                return ListWrapper(
+                    [a if cond else x2 for cond, a in zip(condition, x1)]
+                )
 
         elif is_pure_iterable(x2):
-            return ListWrapper([x1 if cond else b for cond, b in zip(condition, x2)])
+            return ListWrapper(
+                [x1 if cond else b for cond, b in zip(condition, x2)]
+            )
 
         return ListWrapper([x1 if cond else x2 for cond in condition])
 
     @staticmethod
-    def sort(x: Iterable[_T_co], reverse: bool = False, stable: bool = False) -> "ListWrapper[int]":
+    def sort(
+        x: Iterable[_T_co], reverse: bool = False, stable: bool = False
+    ) -> "ListWrapper[int]":
         if not stable:
             return ListWrapper(sorted(x, reverse=reverse))
 

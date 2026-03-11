@@ -35,6 +35,7 @@ class VarField:
     INFEASIBLE: Final[VarFieldType] = 7
     "A task has been determined to be infeasible."
 
+
 class Event:
     """
     Base class for events in the scheduling environment.
@@ -70,8 +71,8 @@ class Event:
 
     def is_infeasibility(self) -> bool:
         return (
-            self.field == VarField.INFEASIBLE and
-            self.machine_id == GLOBAL_MACHINE_ID
+            self.field == VarField.INFEASIBLE
+            and self.machine_id == GLOBAL_MACHINE_ID
         )
 
     def is_start_field(self) -> bool:

@@ -49,6 +49,7 @@ def is_info_dict(value: Any) -> TypeIs[Mapping[Any, Any]]:
     "Type guard to check if a value is an info dictionary."
     return isinstance(value, Mapping)
 
+
 class SchedulingEnv:
     """
     SchedulingEnv is a custom environment for generic scheduling problems. It is designed to be

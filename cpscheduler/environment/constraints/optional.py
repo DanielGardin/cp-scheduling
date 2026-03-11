@@ -2,6 +2,7 @@ from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import PassiveConstraint
 
+
 class RejectableConstraint(PassiveConstraint):
     """
     A scheduling problem with rejection allows a subset of tasks to be rejected,

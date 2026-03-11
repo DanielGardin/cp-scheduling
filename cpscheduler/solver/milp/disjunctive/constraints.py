@@ -19,7 +19,7 @@ from cpscheduler.environment.constraints import (
 
 from cpscheduler.solver.milp.pulp_utils import (
     pulp_add_constraint,
-    implication_pulp
+    implication_pulp,
 )
 
 from cpscheduler.solver.milp.disjunctive.formulation import (
@@ -31,6 +31,7 @@ DisjunctiveMILPFormulation.mark_constraint_as_handled(
     DeadlineConstraint,
     HorizonConstraint,
 )
+
 
 @DisjunctiveMILPFormulation.register_constraint(PrecedenceConstraint)
 def prec_constraint(
@@ -48,7 +49,8 @@ def prec_constraint(
             )
 
             formulation.set_order(task_id, child_id)
-    
+
+
 @DisjunctiveMILPFormulation.register_constraint(NoWaitConstraint)
 def no_wait_constraint(
     formulation: DisjunctiveMILPFormulation,
@@ -66,6 +68,7 @@ def no_wait_constraint(
 
             formulation.set_order(task_id, child_id)
 
+
 @DisjunctiveMILPFormulation.register_constraint(NonOverlapConstraint)
 def non_overlap_constraint(
     formulation: DisjunctiveMILPFormulation,
@@ -77,7 +80,7 @@ def non_overlap_constraint(
             order_var = formulation.get_order(i, j)
             presence_i = formulation.present[i]
             presence_j = formulation.present[j]
-            
+
             implication_pulp(
                 formulation.model,
                 antecedent=(
@@ -164,6 +167,7 @@ def resource_constraint(
         "Resource constraints are not available in the disjunctive formulation at the moment."
     )
 
+
 @DisjunctiveMILPFormulation.register_constraint(NonRenewableResourceConstraint)
 def non_renewable_resource_constraint(
     formulation: DisjunctiveMILPFormulation,
@@ -182,6 +186,7 @@ def non_renewable_resource_constraint(
             resource_demand <= capacity,
             f"non_renewable_resource_{resource_id}",
         )
+
 
 @DisjunctiveMILPFormulation.register_constraint(SetupConstraint)
 def setup_constraint(

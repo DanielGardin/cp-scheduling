@@ -8,7 +8,7 @@ from cpscheduler.environment.constants import (
     Time,
     GLOBAL_MACHINE_ID,
     MAX_TIME,
-    MIN_TIME
+    MIN_TIME,
 )
 
 from cpscheduler.environment.state.events import Event, VarField
@@ -30,11 +30,12 @@ INFEASIBLE = VarField.INFEASIBLE
 
 PresenceType: TypeAlias = u8
 
+
 class Presence:
     """
     Presence is a domain for optional tasks, when they can be either present or
     absent from the schedule.
-    
+
     It can be represented as a two bit integer
     XY
     where:
@@ -62,10 +63,12 @@ class Presence:
     UNDEFINED: Final[PresenceType] = 0b11
     "Task presence has not been determined yet. Initial value for optional tasks."
 
+
 PRESENCE_INFEASIBLE = Presence.INFEASIBLE
 PRESENT = Presence.PRESENT
 ABSENT = Presence.ABSENT
 UNDEFINED = Presence.UNDEFINED
+
 
 class Bounds:
     """
@@ -142,7 +145,9 @@ class Bounds:
 
         return self.ubs[task_id * self.n_machines + machine_id]
 
-    def recompute_global_lb(self, task_id: TaskID, feasible_machines: list[MachineID]) -> None:
+    def recompute_global_lb(
+        self, task_id: TaskID, feasible_machines: list[MachineID]
+    ) -> None:
         row = task_id * self.n_machines
 
         min_value = MAX_TIME
@@ -154,7 +159,9 @@ class Bounds:
 
         self.global_lbs[task_id] = min_value
 
-    def recompute_global_ub(self, task_id: TaskID, feasible_machines: list[MachineID]) -> None:
+    def recompute_global_ub(
+        self, task_id: TaskID, feasible_machines: list[MachineID]
+    ) -> None:
         row = task_id * self.n_machines
 
         max_value = MIN_TIME
@@ -171,11 +178,11 @@ class Bounds:
             return NotImplemented
 
         return (
-            self.n_machines == value.n_machines and
-            self.lbs == value.lbs and
-            self.global_lbs == value.global_lbs and
-            self.ubs == value.ubs and
-            self.global_ubs == value.global_ubs
+            self.n_machines == value.n_machines
+            and self.lbs == value.lbs
+            and self.global_lbs == value.global_lbs
+            and self.ubs == value.ubs
+            and self.global_ubs == value.global_ubs
         )
 
     def __reduce__(self) -> tuple[Any, ...]:
@@ -196,6 +203,7 @@ class Bounds:
             self.ubs,
             self.global_ubs,
         ) = state
+
 
 class ScheduleVariables:
     """
@@ -236,8 +244,7 @@ class ScheduleVariables:
         remaining_times = [MAX_TIME] * (n_tasks * n_machines)
 
         presence = [
-            UNDEFINED if optional else PRESENT
-            for optional in instance.optional
+            UNDEFINED if optional else PRESENT for optional in instance.optional
         ]
 
         feasible_machines: list[list[MachineID]] = [[] for _ in range(n_tasks)]
@@ -269,7 +276,9 @@ class ScheduleVariables:
         self.feasible = [True] * n_tasks
         self.fixed = [False] * n_tasks
 
-    def restrict_presence(self, task_id: TaskID, mask: PresenceType) -> Event | None:
+    def restrict_presence(
+        self, task_id: TaskID, mask: PresenceType
+    ) -> Event | None:
         old_presence = self.presence[task_id]
         new_presence = old_presence & mask
 
@@ -286,7 +295,9 @@ class ScheduleVariables:
             PRESENCE if new_presence == PRESENT else ABSENCE,
         )
 
-    def restrict_machine(self, task_id: TaskID, machine_id: MachineID) -> Event | None:
+    def restrict_machine(
+        self, task_id: TaskID, machine_id: MachineID
+    ) -> Event | None:
         if machine_id in self.feasible_machines[task_id]:
             self.set_start_lb(task_id, MAX_TIME, machine_id)
             return Event(task_id, INFEASIBLE, machine_id)
@@ -315,7 +326,7 @@ class ScheduleVariables:
 
         if machine_id != GLOBAL_MACHINE_ID:
             idx = row + machine_id
-    
+
             old_lb = start_lbs[idx]
             end_lb = lb + remaining_times[idx]
 
@@ -337,7 +348,7 @@ class ScheduleVariables:
             if old_lb == start_global_lbs[task_id]:
                 self.start.recompute_global_lb(task_id, feasible_machines)
                 self.end.recompute_global_lb(task_id, feasible_machines)
-            
+
             return Event(task_id, START_LB, machine_id)
 
         for m_id in feasible_machines[:]:
@@ -563,7 +574,9 @@ class ScheduleVariables:
 
         return Event(task_id, END_UB)
 
-    def assign(self, task_id: TaskID, time: Time, machine_id: MachineID) -> Event:
+    def assign(
+        self, task_id: TaskID, time: Time, machine_id: MachineID
+    ) -> Event:
         row = task_id * self.start.n_machines
         idx = row + machine_id
         duration = self.remaining_times[idx]
@@ -576,10 +589,10 @@ class ScheduleVariables:
         end_time = time + duration
 
         if (
-            time < start_lb or
-            time > start_ub or
-            end_time < end_lb or
-            end_time > end_ub
+            time < start_lb
+            or time > start_ub
+            or end_time < end_lb
+            or end_time > end_ub
         ):
             self.feasible[task_id] = False
             return Event(task_id, INFEASIBLE)
@@ -614,11 +627,11 @@ class ScheduleVariables:
             return NotImplemented
 
         return (
-            self.remaining_times == value.remaining_times and
-            self.assignment == value.assignment and
-            self.presence == value.presence and
-            self.start == value.start and
-            self.end == value.end
+            self.remaining_times == value.remaining_times
+            and self.assignment == value.assignment
+            and self.presence == value.presence
+            and self.start == value.start
+            and self.end == value.end
         )
 
     def __reduce__(self) -> tuple[Any, ...]:

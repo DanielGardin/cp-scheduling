@@ -72,7 +72,7 @@ class Objective:
         Get the current value of the objective function. This is useful for checking
         the performance of the scheduling algorithm along the episode.
         """
-        return 0.
+        return 0.0
 
     def __call__(self, state: ScheduleState) -> float:
         "Call the objective function to get the current value."
@@ -231,7 +231,7 @@ class TotalCompletionTime(Objective):
 class WeightedCompletionTime(Objective):
     """
     The weighted completion time objective function, which aims to minimize the
-    weighted sum of completion times of all tasks. 
+    weighted sum of completion times of all tasks.
     Each task has a weight associated with it, and the objective function is the
     sum of the completion times multiplied by their respective weights.
     """
@@ -793,6 +793,7 @@ class TotalFlowTime(Objective):
     def get_entry(self) -> str:
         return "ΣF_j"
 
+
 class RejectionCost(Objective):
     """
     The rejection cost objective function, which aims to minimize the total cost
@@ -815,17 +816,17 @@ class RejectionCost(Objective):
         super().__init__(minimize)
         self.cost_tag = cost_tag
         self.rejection_costs = []
-    
+
     def __reduce__(self) -> Any:
         return (
             self.__class__,
             (self.cost_tag, self.minimize),
             (self.rejection_costs,),
         )
-    
+
     def __setstate__(self, state: tuple[Any, ...]) -> None:
         (self.rejection_costs,) = state
-    
+
     def initialize(self, state: ScheduleState) -> None:
         self.rejection_costs = convert_to_list(
             state.instance.task_instance[self.cost_tag], float

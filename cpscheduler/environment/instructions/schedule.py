@@ -1,4 +1,3 @@
-
 from typing import TypeAlias, Final
 from typing_extensions import Self
 from collections.abc import Iterator
@@ -19,6 +18,7 @@ ERROR = logging.ERROR
 CRITICAL = logging.CRITICAL
 
 QueueControlType: TypeAlias = u8
+
 
 class QueueControl:
     CONTINUE: Final[QueueControlType] = 1
@@ -119,7 +119,9 @@ class InstructionResult:
             level=level,
         )
 
+
 DEFAULT_QUEUE_TIME: Final[Time] = -1
+
 
 class Schedule:
     schedule: dict[Time, list["Instruction"]]

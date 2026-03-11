@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 
 from pulp import (
@@ -9,7 +10,8 @@ from pulp import (
     LpContinuous,
     LpBinary,
     getSolver,
-    LpStatus
+    LpStatus,
+    listSolvers,
 )
 
 from cpscheduler.environment import SchedulingEnv
@@ -123,21 +125,19 @@ class DisjunctiveMILPFormulation(Formulation, formulation_name="disjunctive"):
                 else:
                     for machine_id in machines:
                         assignments[machine_id] = create_binary_var(
-                            f"assign_{task_id}_{machine_id}",
-                            self.relaxed
+                            f"assign_{task_id}_{machine_id}", self.relaxed
                         )
 
                 presence: PULP_PARAM
                 if state.is_present(task_id):
                     presence = 1
-                
+
                 elif state.is_absent(task_id):
                     presence = 0
-                
+
                 else:
                     presence = create_binary_var(
-                        f"present_{task_id}",
-                        self.relaxed
+                        f"present_{task_id}", self.relaxed
                     )
 
                 self.present.append(presence)
@@ -146,19 +146,23 @@ class DisjunctiveMILPFormulation(Formulation, formulation_name="disjunctive"):
 
     def solve(
         self,
-        solver_tag: str,
+        solver_tag: str | None = None,
         quiet: bool = False,
         time_limit: float | None = None,
         keep_files: bool = False,
-        **solver_kwargs: Any
+        **solver_kwargs: Any,
     ) -> str:
+        if solver_tag is None:
+            solver_tag = listSolvers(True)[0]
+            logging.info(f"No solver specified, using {solver_tag}.")
+
         self._solver = getSolver(
             solver_tag,
             msg=not quiet,
             timeLimit=time_limit,
             keepFiles=keep_files,
             **solver_kwargs,
-            **self._config
+            **self._config,
         )
 
         self.model.solve(self._solver)
@@ -227,7 +231,7 @@ class DisjunctiveMILPFormulation(Formulation, formulation_name="disjunctive"):
                 )
 
             return self.orders[(i, j)]
-    
+
         if (j, i) not in self.orders:
             self.orders[(j, i)] = LpVariable(
                 f"order_{j}_{i}",
@@ -235,7 +239,7 @@ class DisjunctiveMILPFormulation(Formulation, formulation_name="disjunctive"):
                 upBound=1,
                 cat=LpContinuous if self.relaxed else LpBinary,
             )
-        
+
         return 1 - self.orders[(j, i)]
 
     def set_order(self, i: int, j: int) -> None:
@@ -252,7 +256,7 @@ class DisjunctiveMILPFormulation(Formulation, formulation_name="disjunctive"):
                     self.orders[(i, j)] == 1,
                     f"order_{i}_prec_{j}",
                 )
-            
+
         if (j, i) not in self.orders:
             self.orders[(j, i)] = 0
 

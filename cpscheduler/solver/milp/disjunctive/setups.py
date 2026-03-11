@@ -11,10 +11,7 @@ from cpscheduler.environment.schedule_setup import (
     OpenShopSetup,
 )
 
-from cpscheduler.solver.milp.pulp_utils import (
-    PULP_PARAM,
-    pulp_add_constraint
-)
+from cpscheduler.solver.milp.pulp_utils import PULP_PARAM, pulp_add_constraint
 
 from cpscheduler.solver.milp.disjunctive.formulation import (
     DisjunctiveMILPFormulation,
@@ -34,6 +31,7 @@ def non_preemptive_constraint(
         f"non_preemptive_{task_id}",
     )
 
+
 def assignment_constraint(
     formulation: DisjunctiveMILPFormulation,
     state: ScheduleState,
@@ -44,6 +42,7 @@ def assignment_constraint(
             lpSum(formulation.assignments[task_id]) == 1,
             f"assignment_{task_id}",
         )
+
 
 @DisjunctiveMILPFormulation.register_setup(SingleMachineSetup)
 def single_machine_setup(
@@ -61,6 +60,7 @@ def single_machine_setup(
             processing_time,
             task_id,
         )
+
 
 @DisjunctiveMILPFormulation.register_setup(IdenticalParallelMachineSetup)
 def identical_parallel_machine_setup(
@@ -80,6 +80,7 @@ def identical_parallel_machine_setup(
             processing_time,
             task_id,
         )
+
 
 @DisjunctiveMILPFormulation.register_setup(UniformParallelMachineSetup)
 def parallel_machine_setup(
@@ -105,6 +106,7 @@ def parallel_machine_setup(
             task_id,
         )
 
+
 @DisjunctiveMILPFormulation.register_setup(UnrelatedParallelMachineSetup)
 def unrelated_parallel_machine_setup(
     formulation: DisjunctiveMILPFormulation,
@@ -129,6 +131,7 @@ def unrelated_parallel_machine_setup(
             task_id,
         )
 
+
 @DisjunctiveMILPFormulation.register_setup(FlowShopSetup)
 @DisjunctiveMILPFormulation.register_setup(JobShopSetup)
 def job_shop_setup(
@@ -147,6 +150,7 @@ def job_shop_setup(
             processing_time,
             task_id,
         )
+
 
 @DisjunctiveMILPFormulation.register_setup(OpenShopSetup)
 def open_shop_setup(

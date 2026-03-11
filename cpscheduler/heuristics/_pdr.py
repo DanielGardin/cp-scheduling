@@ -37,12 +37,13 @@ if TORCH_AVAILABLE:
 
 def initialize_array(arr: Any) -> ArrayLike:
     if TORCH_AVAILABLE:
-        return torch.tensor(arr) # type: ignore[no-any-return]
+        return torch.tensor(arr)  # type: ignore[no-any-return]
 
     elif NUMPY_AVAILABLE:
         return np.asarray(arr)
-    
+
     return ListWrapper(arr)
+
 
 def sample_gumbel(x: ArrayLike, seed: int | None = None) -> ArrayLike:
     result: ArrayLike
@@ -365,6 +366,7 @@ class ShortestProcessingTime(PriorityDispatchingRule):
     ) -> ArrayLike:
         return -obs[self.processing_time]
 
+
 class MostWorkRemaining(PriorityDispatchingRule):
     """
     Most Work Remaining (MWKR) heuristic.
@@ -406,6 +408,7 @@ class MostWorkRemaining(PriorityDispatchingRule):
                 priorities[i] = cumulative
 
         return priorities
+
 
 class MostOperationsRemaining(PriorityDispatchingRule):
     """
@@ -449,6 +452,7 @@ class MostOperationsRemaining(PriorityDispatchingRule):
                 priorities[i] = remaining
 
         return initialize_array(priorities)
+
 
 class EarliestDueDate(PriorityDispatchingRule):
     """

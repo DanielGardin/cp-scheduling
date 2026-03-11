@@ -15,6 +15,7 @@ DUMMY_INSTANCE = ProblemInstance({})
 TaskHistory: TypeAlias = tuple[MachineID, Time, Time]
 "A record of a task execution, (machine_id, start_time, end_time)"
 
+
 class RuntimeState:
     """
     Container for the runtime state of the scheduling environment.

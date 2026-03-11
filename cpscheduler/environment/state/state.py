@@ -5,7 +5,7 @@ from cpscheduler.environment.constants import (
     MachineID,
     TaskID,
     Time,
-    GLOBAL_MACHINE_ID
+    GLOBAL_MACHINE_ID,
 )
 from cpscheduler.environment.state.events import Event
 from cpscheduler.environment.state.csp import ScheduleVariables, PRESENT, ABSENT
@@ -13,6 +13,7 @@ from cpscheduler.environment.state.instance import ProblemInstance
 from cpscheduler.environment.state.runtime import RuntimeState
 
 ObsType: TypeAlias = tuple[dict[str, list[Any]], dict[str, list[Any]]]
+
 
 class ScheduleState:
     """
@@ -137,13 +138,13 @@ class ScheduleState:
 
     def get_machines(self, task_id: TaskID) -> list[MachineID]:
         return self._variables.feasible_machines[task_id]
-    
+
     def is_fixed(self, task_id: TaskID) -> bool:
         return self._variables.fixed[task_id]
 
     def is_present(self, task_id: TaskID) -> bool:
         return self._variables.presence[task_id] == PRESENT
-    
+
     def is_absent(self, task_id: TaskID) -> bool:
         return self._variables.presence[task_id] == ABSENT
 
@@ -311,12 +312,12 @@ class ScheduleState:
 
             if lb < min_lb and lb > current_time:
                 min_lb = global_lbs[task_id]
-        
+
         return min_lb
 
     def get_next_available_time(self) -> Time:
         min_lb = MAX_TIME
-        
+
         global_lbs = self._variables.start.global_lbs
         awaiting_tasks = self.runtime_state.awaiting_tasks
 

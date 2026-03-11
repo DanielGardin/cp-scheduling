@@ -38,6 +38,7 @@ class HorizonConstraint(Constraint):
         for task_id in range(state.n_tasks):
             state.tight_end_ub(task_id, self.horizon)
 
+
 class ReleaseDateConstraint(Constraint):
     """
     Release date constraint for the scheduling environment.

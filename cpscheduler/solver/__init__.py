@@ -1,9 +1,8 @@
-
 __all__ = [
     "SchedulingSolver",
     "Formulation",
     "SymmetryBreaking",
-    "DisjunctiveMILPFormulation"
+    "DisjunctiveMILPFormulation",
 ]
 
 from .solver import SchedulingSolver

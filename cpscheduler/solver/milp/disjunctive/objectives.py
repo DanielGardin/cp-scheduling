@@ -24,6 +24,7 @@ from cpscheduler.solver.milp.disjunctive.formulation import (
     DisjunctiveMILPFormulation,
 )
 
+
 def jobs_makespan(
     formulation: DisjunctiveMILPFormulation,
     state: ScheduleState,
@@ -37,7 +38,7 @@ def jobs_makespan(
             name=f"makespan_job_{job_id}",
         )
         makespans.append(job_makespan)
-    
+
     return makespans
 
 
@@ -48,6 +49,7 @@ def objective(
     objective: Objective,
 ) -> int:
     return 0
+
 
 @DisjunctiveMILPFormulation.register_objective(Makespan)
 def makespan_objective(
@@ -64,6 +66,7 @@ def makespan_objective(
     formulation.model.setObjective(makespan)
 
     return makespan
+
 
 @DisjunctiveMILPFormulation.register_objective(ComposedObjective)
 def composed_objective(
@@ -90,6 +93,7 @@ def composed_objective(
 
     return objective_value
 
+
 @DisjunctiveMILPFormulation.register_objective(TotalCompletionTime)
 def total_completion_time_objective(
     formulation: DisjunctiveMILPFormulation,
@@ -103,6 +107,7 @@ def total_completion_time_objective(
     formulation.model.setObjective(total_completion_time)
 
     return total_completion_time
+
 
 @DisjunctiveMILPFormulation.register_objective(WeightedCompletionTime)
 def weighted_completion_time_objective(

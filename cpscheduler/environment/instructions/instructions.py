@@ -1,10 +1,8 @@
-
-
 from cpscheduler.environment.constants import (
     TaskID,
     Time,
     MachineID,
-    GLOBAL_MACHINE_ID
+    GLOBAL_MACHINE_ID,
 )
 from cpscheduler.environment.state import ScheduleState
 
@@ -15,6 +13,7 @@ from cpscheduler.environment.instructions.schedule import (
 )
 
 import logging
+
 ERROR = logging.ERROR
 
 SUCCESS = InstructionResult.success()
@@ -24,6 +23,7 @@ BLOCKED = InstructionResult.blocked()
 HALT = InstructionResult.halt()
 INVALID = InstructionResult.invalid()
 
+
 # TODO: Consider adding machine dispatchers (task, state) -> machine_id
 def select_machine(task_id: TaskID, state: ScheduleState) -> MachineID:
     "Select a machine for the given task when machine is not specified."
@@ -32,6 +32,7 @@ def select_machine(task_id: TaskID, state: ScheduleState) -> MachineID:
             return machine
 
     return GLOBAL_MACHINE_ID
+
 
 class Noop(Instruction):
     "Noop is a no-op instruction that does nothing when applied."
@@ -113,9 +114,7 @@ class Submit(Instruction):
 class ExecuteJob(Instruction):
     "Executes all tasks in a job. Can only be used in job-oriented scheduling."
 
-    def __init__(
-        self, job_id: TaskID, machine: MachineID = GLOBAL_MACHINE_ID
-    ):
+    def __init__(self, job_id: TaskID, machine: MachineID = GLOBAL_MACHINE_ID):
         self.job_id = job_id
         self.machine_id = machine
 
@@ -153,9 +152,7 @@ class ExecuteJob(Instruction):
 class SubmitJob(Instruction):
     "Submits all tasks in a job. Can only be used in job-oriented scheduling."
 
-    def __init__(
-        self, job_id: TaskID, machine: MachineID = GLOBAL_MACHINE_ID
-    ):
+    def __init__(self, job_id: TaskID, machine: MachineID = GLOBAL_MACHINE_ID):
         self.job_id = job_id
         self.machine_id = machine
 
