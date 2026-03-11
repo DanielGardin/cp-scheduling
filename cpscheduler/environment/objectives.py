@@ -792,3 +792,50 @@ class TotalFlowTime(Objective):
 
     def get_entry(self) -> str:
         return "ΣF_j"
+
+class RejectionCost(Objective):
+    """
+    The rejection cost objective function, which aims to minimize the total cost
+    of rejected jobs.
+    A job is considered rejected when it is optional and either:
+    - Is unfeasible to schedule.
+    - Was not scheduled when the environment reaches a terminal state.
+    """
+
+    _regular = False
+
+    cost_tag: str
+    rejection_costs: list[float]
+
+    def __init__(
+        self,
+        cost_tag: str = "rejection_cost",
+        minimize: bool = True,
+    ):
+        super().__init__(minimize)
+        self.cost_tag = cost_tag
+        self.rejection_costs = []
+    
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (self.cost_tag, self.minimize),
+            (self.rejection_costs,),
+        )
+    
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
+        (self.rejection_costs,) = state
+    
+    def initialize(self, state: ScheduleState) -> None:
+        self.rejection_costs = convert_to_list(
+            state.instance.task_instance[self.cost_tag], float
+        )
+
+    def get_current(self, state: ScheduleState) -> float:
+        total_rejection_cost = 0.0
+
+        for task_id, opt in enumerate(state.instance.optional):
+            if opt and not state.is_fixed(task_id):
+                total_rejection_cost += self.rejection_costs[task_id]
+
+        return total_rejection_cost
