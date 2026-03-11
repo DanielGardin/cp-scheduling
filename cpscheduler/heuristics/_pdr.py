@@ -35,6 +35,15 @@ if TORCH_AVAILABLE:
     import torch
 
 
+def initialize_array(arr: Any) -> ArrayLike:
+    if TORCH_AVAILABLE:
+        return torch.tensor(arr) # type: ignore[no-any-return]
+
+    elif NUMPY_AVAILABLE:
+        return np.asarray(arr)
+    
+    return ListWrapper(arr)
+
 def sample_gumbel(x: ArrayLike, seed: int | None = None) -> ArrayLike:
     result: ArrayLike
     if TORCH_AVAILABLE and isinstance(x, torch.Tensor):
@@ -356,6 +365,90 @@ class ShortestProcessingTime(PriorityDispatchingRule):
     ) -> ArrayLike:
         return -obs[self.processing_time]
 
+class MostWorkRemaining(PriorityDispatchingRule):
+    """
+    Most Work Remaining (MWKR) heuristic.
+
+    This heuristic selects the job with the most work remaining as the next job to be scheduled.
+    """
+
+    def __init__(
+        self,
+        operation_label: str = "operation",
+        processing_time_label: str = "processing_time",
+        **kwargs: Unpack[BasePriorityKwargs],
+    ):
+        super().__init__(**kwargs)
+        self.operation_label = operation_label
+        self.processing_time_label = processing_time_label
+
+    def priority_rule(
+        self, obs: TabularRepresentation[ArrayLike], time: int
+    ) -> ArrayLike:
+        operation_ids = obs[self.operation_label]
+        processing_times = obs[self.processing_time_label]
+
+        job_to_indices: dict[int, list[int]] = {}
+        for idx, job_id in enumerate(obs["job_id"]):
+            jid: int = int(job_id)
+            job_to_indices.setdefault(jid, []).append(idx)
+
+        priorities = initialize_array([0.0] * len(operation_ids))
+
+        # For each job, compute remaining work backward along its operation_ids
+        for indices in job_to_indices.values():
+            # Sort by operation index within the job
+            indices.sort(key=lambda i: int(operation_ids[i]))
+
+            cumulative: float = 0.0
+            for i in reversed(indices):
+                cumulative += float(processing_times[i])
+                priorities[i] = cumulative
+
+        return priorities
+
+class MostOperationsRemaining(PriorityDispatchingRule):
+    """
+    Most Operations Remaining (MOPNR) heuristic.
+
+    This heuristic selects the earliest job to be done in the waiting buffer as the next job to be scheduled.
+    """
+
+    def __init__(
+        self,
+        operation_label: str = "operation",
+        **kwargs: Unpack[BasePriorityKwargs],
+    ):
+        super().__init__(**kwargs)
+        self.operation_label = operation_label
+
+    def priority_rule(
+        self, obs: TabularRepresentation[ArrayLike], time: int
+    ) -> ArrayLike:
+        operations = obs[self.operation_label]
+        jobs = obs["job_id"]
+
+        n: int = len(operations)
+
+        # Group operation indices by job
+        job_to_indices: dict[int, list[int]] = {}
+        for idx, job_id in enumerate(jobs):
+            jid: int = int(job_id)
+            job_to_indices.setdefault(jid, []).append(idx)
+
+        priorities: list[int] = [0] * n
+
+        # For each job, compute remaining operation count backward
+        for indices in job_to_indices.values():
+            # Sort by operation index within the job
+            indices.sort(key=lambda i: int(operations[i]))
+
+            remaining: int = 0
+            for i in reversed(indices):
+                remaining += 1
+                priorities[i] = remaining
+
+        return initialize_array(priorities)
 
 class EarliestDueDate(PriorityDispatchingRule):
     """

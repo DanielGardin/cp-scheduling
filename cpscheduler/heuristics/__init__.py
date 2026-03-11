@@ -18,6 +18,8 @@ __all__ = [
 from ._pdr import (
     PriorityDispatchingRule,
     ShortestProcessingTime,
+    MostOperationsRemaining,
+    MostWorkRemaining,
     EarliestDueDate,
     ModifiedDueDate,
     WeightedShortestProcessingTime,
@@ -27,10 +29,4 @@ from ._pdr import (
     CriticalRatio,
     ApparentTardinessCost,
     TrafficPriority,
-)
-
-from .legacy_pdr import (
-    RandomPriority,
-    MostOperationsRemaining,
-    MostWorkRemaining,
 )
