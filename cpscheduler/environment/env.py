@@ -26,14 +26,10 @@ from cpscheduler.utils._protocols import (
 from cpscheduler.environment.constants import MAX_TIME
 from cpscheduler.environment.state import ScheduleState, ObsType
 from cpscheduler.environment.instructions import (
-    parse_instruction,
     ActionType,
-    is_single_action,
     Schedule,
-    DEFAULT_QUEUE_TIME,
-    QueueControlType,
-    BLOCK,
-    INTERRUPT
+    parse_instruction,
+    is_single_action,
 )
 from cpscheduler.environment.schedule_setup import ScheduleSetup
 from cpscheduler.environment.constraints import Constraint, PassiveConstraint
@@ -281,16 +277,8 @@ class SchedulingEnv:
 
         state = self.state
 
-        current_time = state.time
         for single_action, *args in action:
             instruction, time = parse_instruction(single_action, args, state)
-
-            if time < current_time and time != DEFAULT_QUEUE_TIME:
-                raise ValueError(
-                    f"Cannot schedule instruction {instruction} at past time {time} "
-                    f"from current time {current_time}."
-                )
-
             self.schedule.add_instruction(instruction, time)
 
     def propagate(self) -> None:
@@ -312,28 +300,21 @@ class SchedulingEnv:
 
     def advance_clock(self) -> None:
         schedule = self.schedule
-        variables = self.state._variables
+        state = self.state
         runtime_state = self.state.runtime_state
 
         next_time = MAX_TIME
         if runtime_state.awaiting_tasks:
-            current_time = self.state.time
-            global_lbs = variables.start.global_lbs
-
-            for task_id in runtime_state.awaiting_tasks:
-                task_lb = global_lbs[task_id]
-
-                if task_lb > current_time and task_lb < next_time:
-                    next_time = task_lb
+            next_time = state.get_next_start_lb()
 
         elif runtime_state.executing_tasks:
-            next_time = runtime_state.last_completion_time
+            next_time = state.get_last_completion_time()
 
         next_instruction_time = schedule.get_next_instruction_time()
         if next_instruction_time < next_time:
             next_time = next_instruction_time
 
-        self.state.advance_time(next_time)
+        state.advance_time(next_time)
 
     # Environment API methods
     def reset(self, *, options: Options = None) -> tuple[ObsType, InfoType]:
@@ -379,11 +360,10 @@ class SchedulingEnv:
         while not schedule.is_empty():
             # Invariant: Each iteration has the time static during instruction processing
 
-            control: QueueControlType = BLOCK
-            for instruction_result in schedule.instruction_queue(state):
+            for _ in schedule.instruction_queue(state):
                 # After each instruction is processed, ensure domains are updated until a fixed point
                 # is reached before processing the next instruction.
-                control = instruction_result.queue_control
+                # control = instruction_result.queue_control
 
                 if self.event_count < len(state.event_queue):
                     self.propagate()
@@ -392,12 +372,12 @@ class SchedulingEnv:
             # - An instruction in the schedule has interrupted the processing.
             # - If the schedule is empty, but there are tasks that can be started at the current time
             # - If tasks can be started at the current time, but no tasks are currently executing
-            if control == INTERRUPT:
-                # If the schedule processing was interrupted due to a instruction, do not advance
-                # the time and allow the agent to react to the new state.
-                break
+            # if control == INTERRUPT:
+            #     # If the schedule processing was interrupted due to a instruction, do not advance
+            #     # the time and allow the agent to react to the new state.
+            #     break
 
-            elif (
+            if (
                 schedule.is_empty()
                 and state.get_next_available_time() <= state.time
             ):

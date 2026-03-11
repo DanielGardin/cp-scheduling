@@ -9,11 +9,10 @@ from cpscheduler.environment.constants import (
 )
 from cpscheduler.environment.state.events import Event
 from cpscheduler.environment.state.csp import ScheduleVariables, PRESENT, ABSENT
-from cpscheduler.environment.state.des import ProblemInstance
+from cpscheduler.environment.state.instance import ProblemInstance
 from cpscheduler.environment.state.runtime import RuntimeState
 
 ObsType: TypeAlias = tuple[dict[str, list[Any]], dict[str, list[Any]]]
-
 
 class ScheduleState:
     """
@@ -168,12 +167,12 @@ class ScheduleState:
     ## Setter methods for variable values, triggering constraint propagation through events
     def require_task(self, task_id: TaskID) -> None:
         event = self._variables.restrict_presence(task_id, PRESENT)
-        if event is not None:
+        if event:
             self.event_queue.append(event)
 
     def forbid_task(self, task_id: TaskID) -> None:
         event = self._variables.restrict_presence(task_id, ABSENT)
-        if event is not None:
+        if event:
             self.event_queue.append(event)
 
     def tight_start_lb(
@@ -219,7 +218,6 @@ class ScheduleState:
 
         if event:
             self.event_queue.append(event)
-
 
     def forbid_machine(self, task_id: TaskID, machine_id: MachineID) -> None:
         event = self._variables.restrict_machine(task_id, machine_id)
@@ -301,16 +299,37 @@ class ScheduleState:
         self._variables.assignment[task_id] = GLOBAL_MACHINE_ID
         self.runtime_state.pause_task(task_id, self.time)
 
+    def get_next_start_lb(self) -> Time:
+        min_lb = MAX_TIME
+
+        global_lbs = self._variables.start.global_lbs
+        awaiting_tasks = self.runtime_state.awaiting_tasks
+        current_time = self.time
+
+        for task_id in awaiting_tasks:
+            lb = global_lbs[task_id]
+
+            if lb < min_lb and lb > current_time:
+                min_lb = global_lbs[task_id]
+        
+        return min_lb
+
     def get_next_available_time(self) -> Time:
-        next_time = MAX_TIME
+        min_lb = MAX_TIME
+        
+        global_lbs = self._variables.start.global_lbs
+        awaiting_tasks = self.runtime_state.awaiting_tasks
 
-        for task_id in self.runtime_state.awaiting_tasks:
-            start_lb = self._variables.start.global_lbs[task_id]
+        for task_id in awaiting_tasks:
+            lb = global_lbs[task_id]
 
-            if start_lb < next_time:
-                next_time = start_lb
+            if lb < min_lb:
+                min_lb = lb
 
-        return next_time
+        return min_lb
+
+    def get_last_completion_time(self) -> Time:
+        return self.runtime_state.last_completion_time
 
     def get_machine_execution(self) -> dict[MachineID, list[TaskID]]:
         assignments: dict[MachineID, list[TaskID]] = {

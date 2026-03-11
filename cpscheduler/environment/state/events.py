@@ -68,6 +68,12 @@ class Event:
     def is_global(self) -> bool:
         return self.machine_id == GLOBAL_MACHINE_ID
 
+    def is_infeasibility(self) -> bool:
+        return (
+            self.field == VarField.INFEASIBLE and
+            self.machine_id == GLOBAL_MACHINE_ID
+        )
+
     def is_start_field(self) -> bool:
         field = self.field
 

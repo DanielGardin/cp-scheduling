@@ -12,7 +12,7 @@ from cpscheduler.environment.constants import (
 )
 
 from cpscheduler.environment.state.events import Event, VarField
-from cpscheduler.environment.state.des import ProblemInstance
+from cpscheduler.environment.state.instance import ProblemInstance
 
 
 DUMMY_INSTANCE = ProblemInstance({})
@@ -280,7 +280,7 @@ class ScheduleVariables:
         if new_presence == PRESENCE_INFEASIBLE:
             self.feasible[task_id] = False
             return Event(task_id, INFEASIBLE)
-    
+
         return Event(
             task_id,
             PRESENCE if new_presence == PRESENT else ABSENCE,
@@ -292,7 +292,6 @@ class ScheduleVariables:
             return Event(task_id, INFEASIBLE, machine_id)
 
         return None
-
 
     def set_start_lb(
         self,

@@ -8,7 +8,7 @@ from cpscheduler.environment.constants import (
     StatusType,
 )
 
-from cpscheduler.environment.state.des import ProblemInstance
+from cpscheduler.environment.state.instance import ProblemInstance
 
 DUMMY_INSTANCE = ProblemInstance({})
 
