@@ -1,6 +1,6 @@
 import pytest
 
-from time import process_time
+from time import perf_counter
 
 from common import env_setup, TEST_INSTANCES
 
@@ -8,24 +8,25 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+@pytest.mark.solver
 @pytest.mark.parametrize("instance_name", TEST_INSTANCES)
 def test_solve(instance_name: str) -> None:
     pytest.importorskip("pulp")
-    from cpscheduler.solver import PulpSolver
+    from cpscheduler.solver import SchedulingSolver, DisjunctiveMILPFormulation
 
     env = env_setup(instance_name)
     env.reset()
 
-    time = -process_time()
-    solver = PulpSolver(env, tighten=True, symmetry_breaking=False)
+    time = -perf_counter()
+    solver = SchedulingSolver(env, formulation=DisjunctiveMILPFormulation(), horizon=10000)
+    solver.warm_start([("submit", task_id) for task_id in range(env.state.n_tasks)])
     solver.build()
-    time += process_time()
+    time += perf_counter()
     logger.info(f"Initialized solver in {time:.2f} s")
 
-    time = -process_time()
+    time = -perf_counter()
     try:
         action, optimal_value, optimal = solver.solve(
-            solver_tag="CPLEX_CMD",
             time_limit=5,
             keep_files=False,
         )
@@ -34,15 +35,15 @@ def test_solve(instance_name: str) -> None:
         raise e
 
     finally:
-        time += process_time()
+        time += perf_counter()
         logger.info(f"Solved took {time:.2f} s to solve instance")
 
     assert len(action) == env.state.n_tasks
 
-    time = -process_time()
+    time = -perf_counter()
     env.reset()
     *_, info = env.step(action)
-    time += process_time()
+    time += perf_counter()
 
     logger.info(f"Simulation took {time:.2f} s")
 

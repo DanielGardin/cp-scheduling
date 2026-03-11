@@ -13,6 +13,8 @@ def test_reset(instance_name: str) -> None:
 
     (obs, _), info = env.reset()
 
+    assert not all(obs["available"])
+
     assert info["current_time"] == 0
     assert obs["status"][0] == Status.AWAITING
     assert obs["available"][0]
@@ -140,38 +142,6 @@ def test_blocking_instruction(instance_name: str) -> None:
     assert obs["status"][0] == Status.AWAITING
     assert obs["status"][1] == Status.AWAITING
     assert reward == 0
-
-
-
-
-
-# @pytest.mark.env
-# @pytest.mark.parametrize("instance_name", TEST_INSTANCES)
-# def test_pause(instance_name: str) -> None:
-#     env = env_setup(instance_name, allow_preemption=True)
-
-#     env.reset()
-
-#     processing_time = next(iter(env.state.tasks[0].processing_times.values()))
-#     actions: list[tuple[str, Unpack[tuple[int, ...]]]] = [
-#         ("execute", 0),
-#         ("advance", processing_time // 2),
-#         ("pause", 0),
-#         ("advance", processing_time // 2),
-#         ("query",),
-#         ("execute", 0),
-#         ("complete", 0),
-#     ]
-
-#     (obs, _), *_, info = env.step(actions)
-
-#     assert obs["status"][0] == Status.PAUSED
-#     assert info["current_time"] == 2 * (processing_time // 2)
-
-#     (new_obs, _), *_, new_info = env.step()
-
-#     assert new_obs["status"][0] == Status.COMPLETED
-#     assert new_info["current_time"] == processing_time + processing_time // 2
 
 def test_copy() -> None:
     env = env_setup("ta01")

@@ -54,7 +54,7 @@ def test_pdr(instance_name: str, heuristic: str) -> None:
     obs, info = env.reset()
 
     action = heuristics[heuristic](obs)
-    obs, reward, terminated, truncated, info = env.step(action)
+    obs, _, terminated, _, info = env.step(action)
 
     assert info["current_time"] == pdr_expected_results[instance_name][heuristic]
     assert terminated

@@ -1,9 +1,5 @@
 import random
 
-import pytest
-
-import logging
-
 from cpscheduler.environment.env import SchedulingEnv
 from cpscheduler.environment.constraints import (
     PrecedenceConstraint,
@@ -17,8 +13,6 @@ from cpscheduler.environment.constraints import (
     MachineBreakdownConstraint,
     MachineEligibilityConstraint,
     ConstantProcessingTime,
-    PreemptionConstraint,
-    OptionalityConstraint,
 )
 from cpscheduler.environment.schedule_setup import (
     SingleMachineSetup,
@@ -173,7 +167,7 @@ def test_machine_breakdown_constraint() -> None:
     assert env.state.get_start_lb(0, 0) == 5
 
 
-def test_machine_eligibility_constraint(caplog: pytest.LogCaptureFixture) -> None:
+def test_machine_eligibility_constraint() -> None:
     instance = {"processing_time": [3]}
     env = SchedulingEnv(
         IdenticalParallelMachineSetup(n_machines=2, disjunctive=False),
@@ -183,15 +177,7 @@ def test_machine_eligibility_constraint(caplog: pytest.LogCaptureFixture) -> Non
 
     env.reset()
 
-    machines = list(env.state.tasks[0].machines)
-    assert machines == [1]
-
-    # Capture a logging error, expect an Error log
-    # using logging module to capture logs
-    with caplog.at_level(logging.ERROR):
-        env.step(("execute", 0, 0, 0))  # task_id, machine_id, time
-
-    assert "Machine 0 is not eligible for task 0." in caplog.text
+    assert env.state.is_feasible(0, 1) and not env.state.is_feasible(0, 0)
 
 def test_constant_processing_time_overrides_processing_times() -> None:
     instance = {"processing_time": [random.randint(1, 10) for _ in range(10)]}
@@ -203,18 +189,8 @@ def test_constant_processing_time_overrides_processing_times() -> None:
 
     env.reset()
 
-    for task in env.state.tasks:
-        assert all(p == 1 for p in task.processing_times.values())
-
-
-# def test_passive_constraints_set_task_flags() -> None:
-#     instance = {"processing_time": [1, 1]}
-#     env = _make_env(
-#         instance,
-#         SingleMachineSetup(disjunctive=False),
-#         constraints=[PreemptionConstraint([0]), OptionalityConstraint()],
-#     )
-
-#     assert env.state.tasks[0].preemptive
-#     assert not env.state.tasks[1].preemptive
-#     assert all(task.optional for task in env.state.tasks)
+    for task_id in range(env.state.n_tasks):
+        assert all(
+            p_time == 1
+            for p_time in env.state.instance.processing_times[task_id].values()
+        )
