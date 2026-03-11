@@ -1,7 +1,7 @@
 from typing import NoReturn
 from mypy_extensions import mypyc_attr
 
-from cpscheduler.environment.state.events import Event
+from cpscheduler.environment.state.events import DomainEvent
 from cpscheduler.environment.state import ScheduleState
 
 constraints: dict[str, type["Constraint"]] = {}
@@ -27,7 +27,7 @@ class Constraint:
     def reset(self, state: ScheduleState) -> None:
         "Reset the constraint to its initial state."
 
-    def propagate(self, event: Event, state: ScheduleState) -> None:
+    def propagate(self, event: DomainEvent, state: ScheduleState) -> None:
         "Given a bound change, propagate the constraint to other tasks."
 
     def get_entry(self) -> str:
@@ -42,7 +42,7 @@ class PassiveConstraint(Constraint):
     They are used to provide task information and to set up the initial state for the scheduler.
     """
 
-    def propagate(self, event: Event, state: ScheduleState) -> NoReturn:
+    def propagate(self, event: DomainEvent, state: ScheduleState) -> NoReturn:
         "Passive constraint does not propagate any changes."
         raise RuntimeError("Passive constraint does not propagate any changes.")
 

@@ -4,7 +4,7 @@ from collections.abc import Iterable
 from cpscheduler.utils.list_utils import convert_to_list
 
 from cpscheduler.environment.constants import TaskID, Int
-from cpscheduler.environment.state.events import Event
+from cpscheduler.environment.state.events import DomainEvent
 from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import Constraint
@@ -31,7 +31,7 @@ class NonOverlapConstraint(Constraint):
     def reset(self, state: ScheduleState) -> None:
         self.current_groups = [group.copy() for group in self.groups_map]
 
-    def propagate(self, event: Event, state: ScheduleState) -> None:
+    def propagate(self, event: DomainEvent, state: ScheduleState) -> None:
         task_id = event.task_id
 
         if not event.is_assignment():

@@ -36,9 +36,9 @@ class VarField:
     "A task has been determined to be infeasible."
 
 
-class Event:
+class DomainEvent:
     """
-    Base class for events in the scheduling environment.
+    Base class for CP events in the scheduling environment.
     """
 
     __slots__ = ("task_id", "field", "machine_id")

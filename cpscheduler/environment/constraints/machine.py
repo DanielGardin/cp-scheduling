@@ -10,7 +10,7 @@ from cpscheduler.environment.constants import (
     GLOBAL_MACHINE_ID,
     MAX_TIME,
 )
-from cpscheduler.environment.state.events import Event
+from cpscheduler.environment.state.events import DomainEvent
 from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import Constraint
@@ -92,7 +92,7 @@ class MachineConstraint(Constraint):
 
         return
 
-    def propagate(self, event: Event, state: ScheduleState) -> None:
+    def propagate(self, event: DomainEvent, state: ScheduleState) -> None:
         task_id = event.task_id
 
         if not event.is_assignment():
@@ -209,7 +209,7 @@ class MachineBreakdownConstraint(Constraint):
                     else:
                         self.next_breakdown[machine] += 1
 
-    def propagate(self, event: Event, state: ScheduleState) -> None:
+    def propagate(self, event: DomainEvent, state: ScheduleState) -> None:
         task_id = event.task_id
 
         # TODO: implement is_fixed

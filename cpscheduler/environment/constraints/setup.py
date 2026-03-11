@@ -2,13 +2,13 @@ from typing import Any, TypeAlias
 from collections.abc import Mapping, Callable
 
 from cpscheduler.environment.constants import TaskID, Time, Int
-from cpscheduler.environment.state.events import Event
+from cpscheduler.environment.state.events import DomainEvent
 from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import Constraint
 
 SetupTimes: TypeAlias = (
-    Mapping[Int, Mapping[Int, Int]] | Callable[[int, int, Any], Int]
+    Mapping[Int, Mapping[Int, Int]] | Callable[[int, int, ScheduleState], Int]
 )
 
 
@@ -81,7 +81,7 @@ class SetupConstraint(Constraint):
             for task_id, children in self.original_setup_times.items()
         }
 
-    def propagate(self, event: Event, state: ScheduleState) -> None:
+    def propagate(self, event: DomainEvent, state: ScheduleState) -> None:
         task_id = event.task_id
 
         if not event.is_assignment() or task_id not in self.setup_times:

@@ -7,7 +7,7 @@ from cpscheduler.environment.constants import (
     Time,
     GLOBAL_MACHINE_ID,
 )
-from cpscheduler.environment.state.events import Event
+from cpscheduler.environment.state.events import DomainEvent
 from cpscheduler.environment.state.csp import ScheduleVariables, PRESENT, ABSENT
 from cpscheduler.environment.state.instance import ProblemInstance
 from cpscheduler.environment.state.runtime import RuntimeState
@@ -48,7 +48,7 @@ class ScheduleState:
     runtime_state: RuntimeState
     "Encapsulates the runtime state of the tasks, such as their history and current status"
 
-    event_queue: list[Event]
+    event_queue: list[DomainEvent]
     "Queue of events to be processed for constraint propagation."
 
     loaded: bool

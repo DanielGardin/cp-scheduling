@@ -11,7 +11,7 @@ from cpscheduler.environment.constants import (
     MIN_TIME,
 )
 
-from cpscheduler.environment.state.events import Event, VarField
+from cpscheduler.environment.state.events import DomainEvent, VarField
 from cpscheduler.environment.state.instance import ProblemInstance
 
 
@@ -278,7 +278,7 @@ class ScheduleVariables:
 
     def restrict_presence(
         self, task_id: TaskID, mask: PresenceType
-    ) -> Event | None:
+    ) -> DomainEvent | None:
         old_presence = self.presence[task_id]
         new_presence = old_presence & mask
 
@@ -288,19 +288,19 @@ class ScheduleVariables:
         self.presence[task_id] = new_presence
         if new_presence == PRESENCE_INFEASIBLE:
             self.feasible[task_id] = False
-            return Event(task_id, INFEASIBLE)
+            return DomainEvent(task_id, INFEASIBLE)
 
-        return Event(
+        return DomainEvent(
             task_id,
             PRESENCE if new_presence == PRESENT else ABSENCE,
         )
 
     def restrict_machine(
         self, task_id: TaskID, machine_id: MachineID
-    ) -> Event | None:
+    ) -> DomainEvent | None:
         if machine_id in self.feasible_machines[task_id]:
             self.set_start_lb(task_id, MAX_TIME, machine_id)
-            return Event(task_id, INFEASIBLE, machine_id)
+            return DomainEvent(task_id, INFEASIBLE, machine_id)
 
         return None
 
@@ -309,7 +309,7 @@ class ScheduleVariables:
         task_id: TaskID,
         lb: Time,
         machine_id: MachineID,
-    ) -> Event | None:
+    ) -> DomainEvent | None:
         if lb <= self.start.get_lb(task_id, machine_id):
             return None
 
@@ -341,15 +341,15 @@ class ScheduleVariables:
 
                 if not feasible_machines:
                     self.feasible[task_id] = False
-                    return Event(task_id, INFEASIBLE)
+                    return DomainEvent(task_id, INFEASIBLE)
 
-                return Event(task_id, INFEASIBLE, machine_id)
+                return DomainEvent(task_id, INFEASIBLE, machine_id)
 
             if old_lb == start_global_lbs[task_id]:
                 self.start.recompute_global_lb(task_id, feasible_machines)
                 self.end.recompute_global_lb(task_id, feasible_machines)
 
-            return Event(task_id, START_LB, machine_id)
+            return DomainEvent(task_id, START_LB, machine_id)
 
         for m_id in feasible_machines[:]:
             idx = row + m_id
@@ -366,16 +366,16 @@ class ScheduleVariables:
 
         if not feasible_machines:
             self.feasible[task_id] = False
-            return Event(task_id, INFEASIBLE)
+            return DomainEvent(task_id, INFEASIBLE)
 
-        return Event(task_id, START_LB)
+        return DomainEvent(task_id, START_LB)
 
     def set_start_ub(
         self,
         task_id: TaskID,
         ub: Time,
         machine_id: MachineID,
-    ) -> Event | None:
+    ) -> DomainEvent | None:
         if ub >= self.start.get_ub(task_id, machine_id):
             return None
 
@@ -402,9 +402,9 @@ class ScheduleVariables:
 
                 if not feasible_machines:
                     self.feasible[task_id] = False
-                    return Event(task_id, INFEASIBLE)
+                    return DomainEvent(task_id, INFEASIBLE)
 
-                return Event(task_id, INFEASIBLE, machine_id)
+                return DomainEvent(task_id, INFEASIBLE, machine_id)
 
             old_ub = start_ubs[idx]
 
@@ -415,7 +415,7 @@ class ScheduleVariables:
                 self.start.recompute_global_ub(task_id, feasible_machines)
                 self.end.recompute_global_ub(task_id, feasible_machines)
 
-            return Event(task_id, START_UB, machine_id)
+            return DomainEvent(task_id, START_UB, machine_id)
 
         for m_id in feasible_machines[:]:
             idx = row + m_id
@@ -434,16 +434,16 @@ class ScheduleVariables:
 
         if not feasible_machines:
             self.feasible[task_id] = False
-            return Event(task_id, INFEASIBLE)
+            return DomainEvent(task_id, INFEASIBLE)
 
-        return Event(task_id, START_UB)
+        return DomainEvent(task_id, START_UB)
 
     def set_end_lb(
         self,
         task_id: TaskID,
         lb: Time,
         machine_id: MachineID,
-    ) -> Event | None:
+    ) -> DomainEvent | None:
         if lb <= self.end.get_lb(task_id, machine_id):
             return None
 
@@ -469,9 +469,9 @@ class ScheduleVariables:
 
                 if not feasible_machines:
                     self.feasible[task_id] = False
-                    return Event(task_id, INFEASIBLE)
+                    return DomainEvent(task_id, INFEASIBLE)
 
-                return Event(task_id, INFEASIBLE, machine_id)
+                return DomainEvent(task_id, INFEASIBLE, machine_id)
 
             old_lb = end_lbs[idx]
 
@@ -482,7 +482,7 @@ class ScheduleVariables:
                 self.start.recompute_global_lb(task_id, feasible_machines)
                 self.end.recompute_global_lb(task_id, feasible_machines)
 
-            return Event(task_id, END_LB, machine_id)
+            return DomainEvent(task_id, END_LB, machine_id)
 
         for m_id in feasible_machines[:]:
             idx = row + m_id
@@ -502,16 +502,16 @@ class ScheduleVariables:
 
         if not feasible_machines:
             self.feasible[task_id] = False
-            return Event(task_id, INFEASIBLE)
+            return DomainEvent(task_id, INFEASIBLE)
 
-        return Event(task_id, END_LB)
+        return DomainEvent(task_id, END_LB)
 
     def set_end_ub(
         self,
         task_id: TaskID,
         ub: Time,
         machine_id: MachineID,
-    ) -> Event | None:
+    ) -> DomainEvent | None:
         if ub >= self.end.get_ub(task_id, machine_id):
             return None
 
@@ -537,9 +537,9 @@ class ScheduleVariables:
 
                 if not feasible_machines:
                     self.feasible[task_id] = False
-                    return Event(task_id, INFEASIBLE)
+                    return DomainEvent(task_id, INFEASIBLE)
 
-                return Event(task_id, INFEASIBLE, machine_id)
+                return DomainEvent(task_id, INFEASIBLE, machine_id)
 
             old_ub = end_ubs[idx]
 
@@ -550,7 +550,7 @@ class ScheduleVariables:
                 self.start.recompute_global_ub(task_id, feasible_machines)
                 self.end.recompute_global_ub(task_id, feasible_machines)
 
-            return Event(task_id, END_UB, machine_id)
+            return DomainEvent(task_id, END_UB, machine_id)
 
         for m_id in feasible_machines[:]:
             idx = row + m_id
@@ -570,13 +570,13 @@ class ScheduleVariables:
 
         if not feasible_machines:
             self.feasible[task_id] = False
-            return Event(task_id, INFEASIBLE)
+            return DomainEvent(task_id, INFEASIBLE)
 
-        return Event(task_id, END_UB)
+        return DomainEvent(task_id, END_UB)
 
     def assign(
         self, task_id: TaskID, time: Time, machine_id: MachineID
-    ) -> Event:
+    ) -> DomainEvent:
         row = task_id * self.start.n_machines
         idx = row + machine_id
         duration = self.remaining_times[idx]
@@ -595,7 +595,7 @@ class ScheduleVariables:
             or end_time > end_ub
         ):
             self.feasible[task_id] = False
-            return Event(task_id, INFEASIBLE)
+            return DomainEvent(task_id, INFEASIBLE)
 
         self.assignment[task_id] = machine_id
         self.fixed[task_id] = True
@@ -613,7 +613,7 @@ class ScheduleVariables:
         self.feasible_machines[task_id].clear()
         self.feasible_machines[task_id].append(machine_id)
 
-        return Event(task_id, ASSIGNMENT, machine_id)
+        return DomainEvent(task_id, ASSIGNMENT, machine_id)
 
     def __repr__(self) -> str:
         return (

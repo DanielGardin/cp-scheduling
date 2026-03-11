@@ -5,7 +5,7 @@ from typing_extensions import Self
 from cpscheduler.utils.general_algo import topological_sort
 
 from cpscheduler.environment.constants import TaskID, Int
-from cpscheduler.environment.state.events import Event
+from cpscheduler.environment.state.events import DomainEvent
 from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import Constraint
@@ -98,7 +98,7 @@ class PrecedenceConstraint(Constraint):
             for child_id in self.precedence[task_id]:
                 state.tight_start_lb(child_id, end_time)
 
-    def propagate(self, event: Event, state: ScheduleState) -> None:
+    def propagate(self, event: DomainEvent, state: ScheduleState) -> None:
         task_id = event.task_id
 
         if event.is_lower_bound() and task_id in self.precedence:
@@ -154,7 +154,7 @@ class NoWaitConstraint(PrecedenceConstraint):
         if not self.is_intree():
             raise ValueError("No-wait constraint must be an in-tree.")
 
-    def propagate(self, event: Event, state: ScheduleState) -> None:
+    def propagate(self, event: DomainEvent, state: ScheduleState) -> None:
         super().propagate(event, state)
 
         task_id = event.task_id
