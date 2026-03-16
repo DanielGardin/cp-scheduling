@@ -4,6 +4,7 @@ from cpscheduler.environment.env import SchedulingEnv
 from cpscheduler.environment.constraints import (
     PrecedenceConstraint,
     NoWaitConstraint,
+    ORPrecedenceConstraint,
     NonOverlapConstraint,
     ReleaseDateConstraint,
     DeadlineConstraint,
@@ -24,7 +25,7 @@ def test_precedence_constraint_on_reset() -> None:
     instance = {"processing_time": [3, 2, 4, 1, 5]}
     env = SchedulingEnv(
         SingleMachineSetup(disjunctive=False),
-        (PrecedenceConstraint({0: [1, 2], 1: [3, 4], 2: [4]}),),
+        (PrecedenceConstraint({1: [0], 2: [0], 3: [1], 4: [1, 2]}),),
         instance=instance,
     )
 
@@ -39,14 +40,29 @@ def test_no_wait_constraint() -> None:
     instance = {"processing_time": [3, 2]}
     env = SchedulingEnv(
         SingleMachineSetup(disjunctive=False),
-        constraints=[NoWaitConstraint({0: [1]})],
+        constraints=[NoWaitConstraint({1: [0]})],
         instance=instance,
     )
     env.reset()
 
+    assert env.state.get_start_lb(1) == 3
+
     env.step(("execute", 0, 0))
 
     assert env.state.get_start_ub(1) == 3
+
+def test_or_precedence_constraint_on_reset() -> None:
+    instance = {"processing_time": [3, 2, 4, 1, 5]}
+    env = SchedulingEnv(
+        SingleMachineSetup(disjunctive=False),
+        (ORPrecedenceConstraint({2: [0, 1], 3: [2]}),),
+        instance=instance,
+    )
+
+    env.reset()
+
+    assert env.state.get_start_lb(2) == 2
+    assert env.state.get_start_lb(3) == 6
 
 
 def test_no_wait_constraint_parallel() -> None:
@@ -54,7 +70,7 @@ def test_no_wait_constraint_parallel() -> None:
     env = SchedulingEnv(
         IdenticalParallelMachineSetup(n_machines=2, disjunctive=False),
         constraints=[
-            NoWaitConstraint({0: [1]}),
+            NoWaitConstraint({1: [0]}),
             ReleaseDateConstraint("release_time"),
         ],
         instance=instance,

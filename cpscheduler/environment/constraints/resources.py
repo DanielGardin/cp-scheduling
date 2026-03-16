@@ -5,7 +5,6 @@ from cpscheduler.utils.list_utils import convert_to_list
 from cpscheduler.utils.general_algo import binary_search
 
 from cpscheduler.environment.constants import Time, Float, MAX_TIME
-from cpscheduler.environment.state.events import DomainEvent
 from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import Constraint
@@ -97,12 +96,9 @@ class ResourceConstraint(Constraint):
                 if demand > capacity:
                     state.forbid_task(task_id)
 
-    def propagate(self, event: DomainEvent, state: ScheduleState) -> None:
-        task_id = event.task_id
-
-        if not event.is_assignment():
-            return
-
+    def on_assignment(
+        self, task_id: Time, machine_id: Time, state: ScheduleState
+    ) -> None:
         for i, task_resources in enumerate(self.resources):
             resource_usage = task_resources[task_id]
 
@@ -208,12 +204,9 @@ class NonRenewableResourceConstraint(Constraint):
     def reset(self, state: ScheduleState) -> None:
         self.current_capacities = self.capacities.copy()
 
-    def propagate(self, event: DomainEvent, state: ScheduleState) -> None:
-        task_id = event.task_id
-
-        if not event.is_assignment():
-            return
-
+    def on_assignment(
+        self, task_id: Time, machine_id: Time, state: ScheduleState
+    ) -> None:
         for i, task_resources in enumerate(self.resources):
             resource_usage = task_resources[task_id]
 

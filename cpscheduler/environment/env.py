@@ -25,6 +25,7 @@ from cpscheduler.utils._protocols import (
 
 from cpscheduler.environment.constants import MAX_TIME
 from cpscheduler.environment.state import ScheduleState, ObsType
+from cpscheduler.environment.state.events import VarField
 from cpscheduler.environment.instructions import (
     ActionType,
     Schedule,
@@ -291,10 +292,36 @@ class SchedulingEnv:
         idx = self.event_count
         while idx < len(event_queue):
             event = event_queue[idx]
+            task_id = event.task_id
+            machine_id = event.machine_id
 
-            for constraint in combined:
-                constraint.propagate(event, state)
-
+            match event.field:
+                case VarField.ASSIGNMENT:
+                    for constraint in combined:
+                        constraint.on_assignment(task_id, machine_id, state)
+                case VarField.START_LB:
+                    for constraint in combined:
+                        constraint.on_start_lb(task_id, machine_id, state)
+                case VarField.START_UB:
+                    for constraint in combined:
+                        constraint.on_start_ub(task_id, machine_id, state)
+                case VarField.END_LB:
+                    for constraint in combined:
+                        constraint.on_end_lb(task_id, machine_id, state)
+                case VarField.END_UB:
+                    for constraint in combined:
+                        constraint.on_end_ub(task_id, machine_id, state)
+                case VarField.PRESENCE:
+                    for constraint in combined:
+                        constraint.on_presence(task_id, state)
+                case VarField.ABSENCE:
+                    for constraint in combined:
+                        constraint.on_absence(task_id, state)
+                case VarField.INFEASIBLE:
+                    for constraint in combined:
+                        constraint.on_infeasibility(task_id, machine_id, state)
+                case _:
+                    raise ValueError(f"Unknown event field: {event.field}")
             idx += 1
 
         self.event_count = len(event_queue)
@@ -316,6 +343,11 @@ class SchedulingEnv:
             next_time = next_instruction_time
 
         state.advance_time(next_time)
+
+        for constraint in self.combined_constraints:
+            constraint.on_time_update(next_time, state)
+
+        self.propagate()
 
     # Environment API methods
     def reset(self, *, options: Options = None) -> tuple[ObsType, InfoType]:

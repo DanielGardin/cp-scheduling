@@ -10,10 +10,12 @@ from cpscheduler.environment.constants import (
     GLOBAL_MACHINE_ID,
     MAX_TIME,
 )
-from cpscheduler.environment.state.events import DomainEvent
+
 from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import Constraint
+
+# from cpscheduler.utils.list_utils import convert_to_list
 
 
 class MachineEligibilityConstraint(Constraint):
@@ -63,7 +65,7 @@ class MachineEligibilityConstraint(Constraint):
 
 class MachineConstraint(Constraint):
     """
-    General Parallel machine constraint, differs from DisjunctiveConstraint as the disjunctive
+    General Parallel machine constraint, differs from NonOverlapConstraint as the disjunctive
     constraint have groups with predefined tasks, while the machine constraint defines its groups
     based on the machine assignment of the tasks.
 
@@ -90,19 +92,21 @@ class MachineConstraint(Constraint):
             for machine in machines:
                 self.machine_map[machine].add(TaskID(task_id))
 
-        return
+    def on_infeasibility(
+        self, task_id: TaskID, machine_id: TaskID, state: ScheduleState
+    ) -> None:
+        if machine_id == GLOBAL_MACHINE_ID:
+            for machine in state.instance.get_machines(task_id):
+                self.machine_map[machine].remove(task_id)
 
-    def propagate(self, event: DomainEvent, state: ScheduleState) -> None:
-        task_id = event.task_id
+        else:
+            self.machine_map[machine_id].discard(task_id)
 
-        if not event.is_assignment():
-            return
-
-        machine_id = state.get_assignment(task_id)
-        assert machine_id != GLOBAL_MACHINE_ID
-
-        for machine_tasks in self.machine_map:
-            machine_tasks.discard(task_id)
+    def on_assignment(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        for machine in state.instance.get_machines(task_id):
+            self.machine_map[machine].discard(task_id)
 
         end_time = state.get_end_lb(task_id)
 
@@ -209,39 +213,63 @@ class MachineBreakdownConstraint(Constraint):
                     else:
                         self.next_breakdown[machine] += 1
 
-    def propagate(self, event: DomainEvent, state: ScheduleState) -> None:
-        task_id = event.task_id
-
-        # TODO: implement is_fixed
-        if state.is_completed(task_id):
-            return
-
-        for machine in state.instance.processing_times[task_id]:
-            if machine not in self.breakdowns:
-                continue
-
+    def on_time_update(self, time: Time, state: ScheduleState) -> None:
+        for machine, breakdown_intervals in self.breakdowns.items():
             current_index = self.next_breakdown[machine]
-            breakdown_intervals = self.breakdowns[machine]
-
-            end_lb = state.get_end_lb(task_id, machine)
-            start_lb = state.get_start_lb(task_id, machine)
 
             while current_index < len(breakdown_intervals):
                 start, end = breakdown_intervals[current_index]
 
-                if end <= state.time:
+                if end <= time:
                     self.next_breakdown[machine] += 1
                     current_index += 1
                     continue
 
-                if end_lb <= start:
-                    break
+                if start <= time < end:
+                    for task_id in list(state.runtime_state.awaiting_tasks):
+                        start_lb = state.get_start_lb(task_id, machine)
 
-                if start_lb < end:
-                    state.tight_start_lb(task_id, end, machine)
-                    break
+                        if start_lb < end:
+                            state.tight_start_lb(task_id, end, machine)
 
-                current_index += 1
+                break
 
     def get_entry(self) -> str:
         return "brkdwn"
+
+
+# class BatchConstraint(MachineConstraint):
+#     """
+#     Parallel batch machine constraint with capacity b.
+
+#     Generalization of MachineConstraint (which corresponds to b = 1).
+#     Each machine can process up to `capacity[m]` tasks simultaneously,
+#     """
+
+#     capacity: list[int]
+
+#     def __init__(self, capacity: Iterable[Int] | Int):
+#         super().__init__()
+
+#         if isinstance(capacity, int):
+#             self.capacity = [int(capacity)] * len(self.machine_map)
+
+#         else:
+#             self.capacity = convert_to_list(capacity, int)
+
+
+#     def __reduce__(self) -> Any:
+#         return (
+#             self.__class__,
+#             (self.capacity,),
+#             (self.machine_map,),
+#         )
+
+#     def propagate(self, event: DomainEvent, state: ScheduleState) -> None:
+#         task_id = event.task_id
+
+#         if not event.is_assignment():
+#             return
+
+#         machine_id = state.get_assignment(task_id)
+#         assert machine_id != GLOBAL_MACHINE_ID

@@ -5,10 +5,10 @@ from typing_extensions import Self
 from cpscheduler.utils.general_algo import topological_sort
 
 from cpscheduler.environment.constants import TaskID, Int
-from cpscheduler.environment.state.events import DomainEvent
 from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import Constraint
+from cpscheduler.utils.list_utils import convert_to_list
 
 
 class PrecedenceConstraint(Constraint):
@@ -27,27 +27,30 @@ class PrecedenceConstraint(Constraint):
             An optional name for the constraint.
     """
 
-    precedence: dict[TaskID, list[TaskID]]
-    transposed_precedence: dict[TaskID, list[TaskID]]
+    parents: dict[TaskID, list[TaskID]]
+    "A mapping of task IDs to their parent task IDs."
+
+    children: dict[TaskID, list[TaskID]]
+    "A mapping of task IDs to their child task IDs."
 
     def __init__(self, precedence: Mapping[Int, Sequence[Int]]):
-        self.precedence = {
-            TaskID(task): [TaskID(child) for child in children]
-            for task, children in precedence.items()
+        self.parents = {
+            TaskID(child_id): convert_to_list(parent_ids, TaskID)
+            for child_id, parent_ids in precedence.items()
         }
 
-        self.transposed_precedence = {}
+        self.children = {}
+        for child_id, parent_ids in self.parents.items():
+            for parent_id in parent_ids:
+                if parent_id not in self.children:
+                    self.children[parent_id] = []
 
-        for task_id, children in self.precedence.items():
-            for child_id in children:
-                self.transposed_precedence.setdefault(child_id, []).append(
-                    task_id
-                )
+                self.children[parent_id].append(child_id)
 
     def __reduce__(self) -> Any:
         return (
             self.__class__,
-            (self.precedence,),
+            (self.parents,),
             (),
         )
 
@@ -74,44 +77,54 @@ class PrecedenceConstraint(Constraint):
 
     def is_intree(self) -> bool:
         "Check if the precedence graph is an in-tree."
-        for tasks in self.precedence.values():
-            if len(tasks) > 1:
+        for parents in self.parents.values():
+            if len(parents) > 1:
                 return False
 
         return True
 
     def is_outtree(self) -> bool:
         "Check if the precedence graph is an out-tree."
-        n_children = 0
-        unique_children: set[TaskID] = set()
+        for children in self.children.values():
+            if len(children) > 1:
+                return False
 
-        for tasks in self.precedence.values():
-            n_children += len(tasks)
-            unique_children.update(tasks)
-
-        return n_children == len(unique_children)
+        return True
 
     def reset(self, state: ScheduleState) -> None:
-        for task_id in topological_sort(self.precedence, state.n_tasks):
+        for task_id in topological_sort(self.children, state.n_tasks):
             end_time = state.get_end_lb(task_id)
 
-            for child_id in self.precedence[task_id]:
+            for child_id in self.children[task_id]:
                 state.tight_start_lb(child_id, end_time)
 
-    def propagate(self, event: DomainEvent, state: ScheduleState) -> None:
-        task_id = event.task_id
-
-        if event.is_lower_bound() and task_id in self.precedence:
+    def on_start_lb(
+        self, task_id: TaskID, machine_id: TaskID, state: ScheduleState
+    ) -> None:
+        if task_id in self.children:
             end_time = state.get_end_lb(task_id)
 
-            for child_id in self.precedence[task_id]:
+            for child_id in self.children[task_id]:
                 state.tight_start_lb(child_id, end_time)
 
-        elif event.is_upper_bound() and task_id in self.transposed_precedence:
+    def on_start_ub(
+        self, task_id: TaskID, machine_id: TaskID, state: ScheduleState
+    ) -> None:
+        if task_id in self.parents:
             start_time = state.get_start_ub(task_id)
 
-            for parent_id in self.transposed_precedence[task_id]:
+            for parent_id in self.parents[task_id]:
                 state.tight_end_ub(parent_id, start_time)
+
+    def on_end_lb(
+        self, task_id: TaskID, machine_id: TaskID, state: ScheduleState
+    ) -> None:
+        self.on_start_lb(task_id, machine_id, state)
+
+    def on_end_ub(
+        self, task_id: TaskID, machine_id: TaskID, state: ScheduleState
+    ) -> None:
+        self.on_start_ub(task_id, machine_id, state)
 
     def get_entry(self) -> str:
         intree = self.is_intree()
@@ -154,23 +167,91 @@ class NoWaitConstraint(PrecedenceConstraint):
         if not self.is_intree():
             raise ValueError("No-wait constraint must be an in-tree.")
 
-    def propagate(self, event: DomainEvent, state: ScheduleState) -> None:
-        super().propagate(event, state)
+    def on_assignment(
+        self, task_id: TaskID, machine_id: TaskID, state: ScheduleState
+    ) -> None:
+        if task_id in self.children:
+            end_time = state.get_end_lb(task_id)
 
-        task_id = event.task_id
+            for child_id in self.children[task_id]:
+                state.tight_start_ub(child_id, end_time)
 
-        if state.is_fixed(task_id):
-            if task_id in self.precedence:
-                end_time = state.get_end_lb(task_id)
+    def on_start_lb(
+        self, task_id: TaskID, machine_id: TaskID, state: ScheduleState
+    ) -> None:
+        super().on_start_lb(task_id, machine_id, state)
 
-                for child_id in self.precedence[task_id]:
-                    state.tight_start_ub(child_id, end_time)
-
-        elif event.is_lower_bound() and task_id in self.transposed_precedence:
+        if task_id in self.parents:
             start_time = state.get_start_lb(task_id)
 
-            for parent_id in self.transposed_precedence[task_id]:
+            for parent_id in self.parents[task_id]:
                 state.tight_end_lb(parent_id, start_time)
 
     def get_entry(self) -> str:
         return "nwt"
+
+
+class ORPrecedenceConstraint(PrecedenceConstraint):
+    """
+    OR precedence constraint for the scheduling environment.
+
+    This constraint defines a precedence relationship where at least one of the
+    parent tasks must be completed before the child task can start.
+
+    Arguments:
+        precedence: Mapping[int, Iterable[int]]
+            A mapping of task IDs to a list of task IDs that must be completed before
+            the task can start. For example, if task 1 or task 2 must be completed before task 3 can start,
+            the precedence mapping would be {3: [1, 2]}.
+
+        name: Optional[str] = None
+            An optional name for the constraint.
+    """
+
+    def __init__(self, precedence: Mapping[Int, Sequence[Int]]):
+        super().__init__(precedence)
+
+    def reset(self, state: ScheduleState) -> None:
+        for task_id in topological_sort(self.children, state.n_tasks):
+            if task_id in self.parents:
+                earliest_start = min(
+                    state.get_end_lb(parent_id)
+                    for parent_id in self.parents[task_id]
+                )
+                state.tight_start_lb(task_id, earliest_start)
+
+    def on_start_lb(
+        self, task_id: TaskID, machine_id: TaskID, state: ScheduleState
+    ) -> None:
+        if task_id in self.children:
+            for child_id in self.children[task_id]:
+                earliest_start = min(
+                    state.get_end_lb(parent_id)
+                    for parent_id in self.parents[child_id]
+                )
+                state.tight_start_lb(child_id, earliest_start)
+
+    def on_start_ub(
+        self, task_id: TaskID, machine_id: TaskID, state: ScheduleState
+    ) -> None:
+        if task_id in self.parents:
+            start_time = state.get_start_ub(task_id)
+
+            feasible_parents = [
+                parent_id
+                for parent_id in self.parents[task_id]
+                if state.get_end_ub(parent_id) <= start_time
+            ]
+
+            if not feasible_parents:
+                any_parent_id = self.parents[task_id][0]
+                state.tight_end_ub(any_parent_id, start_time)
+
+            elif len(feasible_parents) == 1:
+                state.tight_end_ub(feasible_parents[0], start_time)
+
+            # When there are multiple feasible parents, we cannot decide which
+            # one to tighten, so we do nothing.
+
+    def get_entry(self) -> str:
+        return "or-prec"

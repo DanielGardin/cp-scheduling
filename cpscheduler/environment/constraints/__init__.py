@@ -13,12 +13,14 @@ __all__ = [
     "constraints",
     "Constraint",
     "PassiveConstraint",
+    "SoftConstraint",
     "MachineConstraint",
     "PreemptionConstraint",
     "OptionalityConstraint",
     "MachineEligibilityConstraint",
     "PrecedenceConstraint",
     "NoWaitConstraint",
+    "ORPrecedenceConstraint",
     "ConstantProcessingTime",
     "NonOverlapConstraint",
     "ReleaseDateConstraint",
@@ -34,6 +36,7 @@ from .base import (
     constraints,
     Constraint,
     PassiveConstraint,
+    SoftConstraint,
 )
 
 from .machine import (
@@ -48,7 +51,11 @@ from .passive import (
     ConstantProcessingTime,
 )
 
-from .precedence import PrecedenceConstraint, NoWaitConstraint
+from .precedence import (
+    PrecedenceConstraint,
+    NoWaitConstraint,
+    ORPrecedenceConstraint,
+)
 
 from .resources import (
     ResourceConstraint,

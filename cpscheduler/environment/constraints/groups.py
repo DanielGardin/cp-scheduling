@@ -3,8 +3,7 @@ from collections.abc import Iterable
 
 from cpscheduler.utils.list_utils import convert_to_list
 
-from cpscheduler.environment.constants import TaskID, Int
-from cpscheduler.environment.state.events import DomainEvent
+from cpscheduler.environment.constants import TaskID, MachineID, Int
 from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import Constraint
@@ -31,13 +30,10 @@ class NonOverlapConstraint(Constraint):
     def reset(self, state: ScheduleState) -> None:
         self.current_groups = [group.copy() for group in self.groups_map]
 
-    def propagate(self, event: DomainEvent, state: ScheduleState) -> None:
-        task_id = event.task_id
-
-        if not event.is_assignment():
-            return
-
-        for group_tasks in self.groups_map:
+    def on_assignment(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        for group_tasks in self.current_groups:
             if task_id not in group_tasks:
                 continue
 

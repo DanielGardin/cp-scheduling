@@ -246,7 +246,7 @@ class JobShopSetup(ScheduleSetup):
 
             prec = tasks[0]
             for task_id in tasks[1:]:
-                precedence_mapping[prec] = [task_id]
+                precedence_mapping[task_id] = [prec]
 
                 prec = task_id
 

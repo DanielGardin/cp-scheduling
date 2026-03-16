@@ -2,7 +2,6 @@ from typing import Any, TypeAlias
 from collections.abc import Mapping, Callable
 
 from cpscheduler.environment.constants import TaskID, Time, Int
-from cpscheduler.environment.state.events import DomainEvent
 from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import Constraint
@@ -33,6 +32,8 @@ class SetupConstraint(Constraint):
     original_setup_times: dict[TaskID, dict[TaskID, Time]]
     setup_fn: Callable[[int, int, ScheduleState], Int] | None = None
 
+    current_setup_times: dict[TaskID, dict[TaskID, Time]]
+
     def __init__(self, setup_times: SetupTimes) -> None:
         if callable(setup_times):
             self.setup_fn = setup_times
@@ -51,11 +52,11 @@ class SetupConstraint(Constraint):
         return (
             self.__class__,
             (self.setup_fn or self.original_setup_times,),
-            (self.original_setup_times,),
+            (self.current_setup_times,),
         )
 
     def __setstate__(self, state: tuple[Any, ...]) -> None:
-        (self.original_setup_times,) = state
+        (self.current_setup_times,) = state
 
     def initialize(self, state: ScheduleState) -> None:
         if self.setup_fn is not None:
@@ -76,25 +77,21 @@ class SetupConstraint(Constraint):
                         ] = setup_time
 
     def reset(self, state: ScheduleState) -> None:
-        self.setup_times = {
+        self.current_setup_times = {
             task_id: children.copy()
             for task_id, children in self.original_setup_times.items()
         }
 
-    def propagate(self, event: DomainEvent, state: ScheduleState) -> None:
-        task_id = event.task_id
+    def on_assignment(
+        self, task_id: TaskID, machine_id: TaskID, state: ScheduleState
+    ) -> None:
+        for other_tasks in self.current_setup_times.values():
+            other_tasks.pop(task_id, None)
 
-        if not event.is_assignment() or task_id not in self.setup_times:
-            return
+        if task_id in self.current_setup_times:
+            end_time = state.get_end_lb(task_id)
 
-        end_time = state.get_end_lb(task_id)
-
-        for child_id in list(self.setup_times[task_id].keys()):
-            # TODO: implement is_fixed
-            if state.is_completed(child_id):
-                self.setup_times[task_id].pop(child_id)
-                continue
-
-            setup_time = self.setup_times[task_id][child_id]
-
-            state.tight_start_lb(child_id, end_time + setup_time)
+            for child_id, setup_time in self.current_setup_times[
+                task_id
+            ].items():
+                state.tight_start_lb(child_id, end_time + setup_time)
