@@ -15,7 +15,7 @@ from cpscheduler.environment.state.violations import ViolationState
 
 ObsType: TypeAlias = tuple[dict[str, list[Any]], dict[str, list[Any]]]
 
-
+# @profile
 class ScheduleState:
     """
     ScheduleState represents the current state of the scheduling environment,
@@ -262,13 +262,19 @@ class ScheduleState:
     def is_available(
         self, task_id: TaskID, machine_id: MachineID = GLOBAL_MACHINE_ID
     ) -> bool:
-        vars_ = self._variables
+        if task_id not in self.runtime_state.awaiting_tasks:
+            return False
 
-        start_var = vars_.start
+        return self._compute_available(task_id, machine_id)
+
+    def _compute_available(
+        self, task_id: TaskID, machine_id: MachineID = GLOBAL_MACHINE_ID
+    ) -> bool:
+        start_var = self._variables.start
         t = self.time
 
         lb = start_var.get_lb(task_id, machine_id)
-        if lb > t:
+        if t < lb:
             return False
 
         ub = start_var.get_ub(task_id, machine_id)
@@ -358,11 +364,13 @@ class ScheduleState:
 
     def get_observation(self) -> ObsType:
         task_obs = self.instance.task_instance.copy()
+        available = [False] * self.n_tasks
 
         task_obs["status"] = self.runtime_state.status.copy()
-        task_obs["available"] = [
-            self.is_available(task_id) for task_id in range(self.n_tasks)
-        ]
+        for task_id in self.runtime_state.awaiting_tasks:
+            available[task_id] = self._compute_available(task_id)
+
+        task_obs["available"] = available
 
         return task_obs, {}
 
