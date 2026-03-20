@@ -1,6 +1,6 @@
 import pytest
 
-from common import env_setup
+from common import  env_setup
 
 from cpscheduler.heuristics import (
     ShortestProcessingTime,
@@ -9,21 +9,15 @@ from cpscheduler.heuristics import (
     PriorityDispatchingRule,
 )
 
+from cpscheduler import SchedulingEnv
+
 import logging
 
 logger = logging.getLogger(__name__)
 
 pdr_expected_results = {
-    "ta01": {
-        "SPT": 1462,
-        "MOPNR": 1438,
-        "MWKR": 1491,
-    },
-    "ta05": {
-        "SPT": 1618,
-        "MOPNR": 1448,
-        "MWKR": 1494,
-    },
+    "ta01": {"SPT": 1462, "MOPNR": 1438, "MWKR": 1491},
+    "ta05": {"SPT": 1618, "MOPNR": 1448, "MWKR": 1494},
     "ta10": {"SPT": 1697, "MOPNR": 1582, "MWKR": 1534},
     "ta15": {"SPT": 1835, "MOPNR": 1682, "MWKR": 1696},
     "ta20": {"SPT": 1710, "MOPNR": 1622, "MWKR": 1689},
@@ -38,10 +32,15 @@ pdr_expected_results = {
     "ta80": {"SPT": 5848, "MOPNR": 5707, "MWKR": 5505},
 }
 
-heuristics: dict[str, PriorityDispatchingRule] = {
-    "SPT": ShortestProcessingTime(),
-    "MOPNR": MostOperationsRemaining(),
-    "MWKR": MostWorkRemaining(),
+envs: dict[str, SchedulingEnv] = {
+    instance_name: env_setup(instance_name)
+    for instance_name in pdr_expected_results
+}
+
+heuristics: dict[str, type[PriorityDispatchingRule]] = {
+    "SPT": ShortestProcessingTime,
+    "MOPNR": MostOperationsRemaining,
+    "MWKR": MostWorkRemaining,
 }
 
 
@@ -49,36 +48,31 @@ heuristics: dict[str, PriorityDispatchingRule] = {
 @pytest.mark.parametrize("instance_name", pdr_expected_results)
 @pytest.mark.parametrize("heuristic", heuristics)
 def test_pdr(instance_name: str, heuristic: str) -> None:
-    env = env_setup(instance_name)
+    env = envs[instance_name]
+    pdr = heuristics[heuristic]()
 
     obs, info = env.reset()
 
-    action = heuristics[heuristic](obs)
+    action = pdr(obs)
     obs, _, terminated, _, info = env.step(action)
 
-    assert info["current_time"] == pdr_expected_results[instance_name][heuristic]
     assert terminated
+    assert info["current_time"] == pdr_expected_results[instance_name][heuristic]
 
 @pytest.mark.heuristics
 @pytest.mark.parametrize("instance_name", pdr_expected_results)
-def test_dynamic(instance_name: str) -> None:
-    env = env_setup(instance_name)
-
-    obs, info = env.reset()
-
-    action = ShortestProcessingTime()(obs)
-    *_, info = env.step(action)
-
-    static_time = info["current_time"]
+@pytest.mark.parametrize("heuristic", heuristics)
+def test_dynamic(instance_name: str, heuristic: str) -> None:
+    env = envs[instance_name]
+    pdr = heuristics[heuristic](available=True, strict=True)
 
     obs, info = env.reset()
 
     done = False
-    dynamic_actor = ShortestProcessingTime(available=True, strict=True)
     while not done:
         assert any(obs[0]["available"])
 
-        single_action = dynamic_actor(obs)[0]
+        single_action = pdr(obs)[0]
         obs, _, done, _, info = env.step(single_action)
 
-    assert info["current_time"] == static_time
+    assert info["current_time"] == pdr_expected_results[instance_name][heuristic]

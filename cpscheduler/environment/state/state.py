@@ -11,6 +11,7 @@ from cpscheduler.environment.state.events import DomainEvent
 from cpscheduler.environment.state.csp import ScheduleVariables, PRESENT, ABSENT
 from cpscheduler.environment.state.instance import ProblemInstance
 from cpscheduler.environment.state.runtime import RuntimeState
+from cpscheduler.environment.state.violations import ViolationState
 
 ObsType: TypeAlias = tuple[dict[str, list[Any]], dict[str, list[Any]]]
 
@@ -32,6 +33,7 @@ class ScheduleState:
         "time",
         "_variables",
         "runtime_state",
+        "violation_state",
         "event_queue",
         "infeasible",
         "loaded",
@@ -48,6 +50,8 @@ class ScheduleState:
     runtime_state: RuntimeState
     "Encapsulates the runtime state of the tasks, such as their history and current status"
 
+    violation_state: ViolationState
+
     event_queue: list[DomainEvent]
     "Queue of events to be processed for constraint propagation."
 
@@ -57,6 +61,7 @@ class ScheduleState:
     def __init__(self) -> None:
         self.time = 0
         self.event_queue = []
+        self.violation_state = ViolationState()
 
         self.infeasible = False
         self.loaded = False
@@ -91,6 +96,8 @@ class ScheduleState:
         self.time = 0
 
         self.event_queue.clear()
+        self.violation_state.clear_violations()
+
         self._variables = ScheduleVariables(self.instance)
         self.runtime_state = RuntimeState(self.instance)
 
@@ -299,6 +306,17 @@ class ScheduleState:
 
         self._variables.assignment[task_id] = GLOBAL_MACHINE_ID
         self.runtime_state.pause_task(task_id, self.time)
+
+    def record_violation(
+        self,
+        constraint: str,
+        penalty: float = 1.0,
+    ) -> None:
+        self.violation_state.record_violation(
+            self.time,
+            penalty,
+            constraint,
+        )
 
     def get_next_start_lb(self) -> Time:
         min_lb = MAX_TIME

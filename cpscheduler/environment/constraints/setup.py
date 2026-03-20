@@ -59,22 +59,27 @@ class SetupConstraint(Constraint):
         (self.current_setup_times,) = state
 
     def initialize(self, state: ScheduleState) -> None:
-        if self.setup_fn is not None:
-            self.original_setup_times.clear()
+        if self.setup_fn is None:
+            return
 
-            for task_id in range(state.n_tasks):
-                self.original_setup_times[TaskID(task_id)] = {}
+        setup_times = {}
+        n_tasks = state.n_tasks
 
-                for child_id in range(state.n_tasks):
-                    if task_id == child_id:
-                        continue
+        for task_id in range(n_tasks):
+            task_setup_times = {}
 
-                    setup_time = Time(self.setup_fn(task_id, child_id, state))
+            for child_id in range(n_tasks):
+                if task_id == child_id:
+                    continue
 
-                    if setup_time > 0:
-                        self.original_setup_times[TaskID(task_id)][
-                            TaskID(child_id)
-                        ] = setup_time
+                setup_time = Time(self.setup_fn(task_id, child_id, state))
+
+                if setup_time > 0:
+                    task_setup_times[TaskID(child_id)] = setup_time
+
+            setup_times[TaskID(task_id)] = task_setup_times
+
+        self.original_setup_times = setup_times
 
     def reset(self, state: ScheduleState) -> None:
         self.current_setup_times = {
@@ -85,13 +90,14 @@ class SetupConstraint(Constraint):
     def on_assignment(
         self, task_id: TaskID, machine_id: TaskID, state: ScheduleState
     ) -> None:
-        for other_tasks in self.current_setup_times.values():
+        setup_times = self.current_setup_times
+
+        for other_tasks in setup_times.values():
             other_tasks.pop(task_id, None)
 
-        if task_id in self.current_setup_times:
+        if task_id in setup_times:
             end_time = state.get_end_lb(task_id)
+            setup_times_for_task = setup_times.pop(task_id)
 
-            for child_id, setup_time in self.current_setup_times[
-                task_id
-            ].items():
+            for child_id, setup_time in setup_times_for_task.items():
                 state.tight_start_lb(child_id, end_time + setup_time)

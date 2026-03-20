@@ -581,37 +581,34 @@ class ScheduleVariables:
         idx = row + machine_id
         duration = self.remaining_times[idx]
 
-        start_lb = self.start.lbs[idx]
-        start_ub = self.start.ubs[idx]
-        end_lb = self.end.lbs[idx]
-        end_ub = self.end.ubs[idx]
-
         end_time = time + duration
 
         if (
-            time < start_lb
-            or time > start_ub
-            or end_time < end_lb
-            or end_time > end_ub
+            time < self.start.lbs[idx]
+            or time > self.start.ubs[idx]
+            or end_time < self.end.lbs[idx]
+            or end_time > self.end.ubs[idx]
         ):
             self.feasible[task_id] = False
             return DomainEvent(task_id, INFEASIBLE)
 
+        start = self.start
+        end = self.end
+
         self.assignment[task_id] = machine_id
         self.fixed[task_id] = True
 
-        self.start.lbs[idx] = time
-        self.start.ubs[idx] = time
-        self.end.lbs[idx] = end_time
-        self.end.ubs[idx] = end_time
+        start.lbs[idx] = time
+        start.ubs[idx] = time
+        end.lbs[idx] = end_time
+        end.ubs[idx] = end_time
 
-        self.start.global_lbs[task_id] = time
-        self.start.global_ubs[task_id] = time
-        self.end.global_lbs[task_id] = end_time
-        self.end.global_ubs[task_id] = end_time
+        start.global_lbs[task_id] = time
+        start.global_ubs[task_id] = time
+        end.global_lbs[task_id] = end_time
+        end.global_ubs[task_id] = end_time
 
-        self.feasible_machines[task_id].clear()
-        self.feasible_machines[task_id].append(machine_id)
+        self.feasible_machines[task_id] = [machine_id]
 
         return DomainEvent(task_id, ASSIGNMENT, machine_id)
 

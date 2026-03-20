@@ -1,4 +1,5 @@
-from typing import Any, TypeAlias
+from typing import Any
+from typing_extensions import NamedTuple
 
 from cpscheduler.environment.constants import (
     MachineID,
@@ -12,8 +13,12 @@ from cpscheduler.environment.state.instance import ProblemInstance
 
 DUMMY_INSTANCE = ProblemInstance({})
 
-TaskHistory: TypeAlias = tuple[MachineID, Time, Time]
-"A record of a task execution, (machine_id, start_time, end_time)"
+class TaskHistory(NamedTuple):
+    "A record of a task execution, (machine_id, start_time, end_time)"
+
+    machine_id: MachineID
+    start_time: Time
+    end_time: Time
 
 
 class RuntimeState:
@@ -92,7 +97,7 @@ class RuntimeState:
         self.awaiting_tasks.discard(task_id)
         self.executing_tasks.add(task_id)
 
-        self.history[task_id].append((machine_id, start_time, end_time))
+        self.history[task_id].append(TaskHistory(machine_id, start_time, end_time))
 
         self.status[task_id] = Status.EXECUTING
 
@@ -105,7 +110,7 @@ class RuntimeState:
 
         assignment, start_time, prev_end = self.history[task_id].pop()
 
-        self.history[task_id].append((assignment, start_time, time))
+        self.history[task_id].append(TaskHistory(assignment, start_time, time))
 
         self.status[task_id] = Status.PAUSED
 

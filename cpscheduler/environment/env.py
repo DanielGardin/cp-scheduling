@@ -23,10 +23,9 @@ from cpscheduler.utils._protocols import (
     Options,
 )
 
-from cpscheduler.environment.constants import MAX_TIME
 from cpscheduler.environment.state import ScheduleState, ObsType
 from cpscheduler.environment.state.events import VarField
-from cpscheduler.environment.instructions import (
+from cpscheduler.environment.des import (
     ActionType,
     Schedule,
     parse_instruction,
@@ -279,9 +278,9 @@ class SchedulingEnv:
 
         state = self.state
 
-        for single_action, *args in action:
-            instruction, time = parse_instruction(single_action, args, state)
-            self.schedule.add_instruction(instruction, time)
+        for intruction_args in action:
+            instruction, time, priority = parse_instruction(intruction_args)
+            self.schedule.add_event(instruction, state, time, priority)
 
     def propagate(self) -> None:
         "Propagate the new bounds through the constraints until a fixed-point is reached."
@@ -299,55 +298,78 @@ class SchedulingEnv:
                 case VarField.ASSIGNMENT:
                     for constraint in combined:
                         constraint.on_assignment(task_id, machine_id, state)
+
                 case VarField.START_LB:
                     for constraint in combined:
                         constraint.on_start_lb(task_id, machine_id, state)
+
                 case VarField.START_UB:
                     for constraint in combined:
                         constraint.on_start_ub(task_id, machine_id, state)
+
                 case VarField.END_LB:
                     for constraint in combined:
                         constraint.on_end_lb(task_id, machine_id, state)
+
                 case VarField.END_UB:
                     for constraint in combined:
                         constraint.on_end_ub(task_id, machine_id, state)
+
                 case VarField.PRESENCE:
                     for constraint in combined:
                         constraint.on_presence(task_id, state)
+
                 case VarField.ABSENCE:
                     for constraint in combined:
                         constraint.on_absence(task_id, state)
+
                 case VarField.INFEASIBLE:
                     for constraint in combined:
                         constraint.on_infeasibility(task_id, machine_id, state)
+
                 case _:
                     raise ValueError(f"Unknown event field: {event.field}")
+
             idx += 1
 
         self.event_count = len(event_queue)
 
-    def advance_clock(self) -> None:
+    def advance_clock(self) -> bool:
         schedule = self.schedule
         state = self.state
-        runtime_state = self.state.runtime_state
 
-        next_time = MAX_TIME
-        if runtime_state.awaiting_tasks:
-            next_time = state.get_next_start_lb()
+        empty_schedule = schedule.is_empty()
 
-        elif runtime_state.executing_tasks:
-            next_time = state.get_last_completion_time()
+        if not empty_schedule:
+            next_time = schedule.next_time()
 
-        next_instruction_time = schedule.get_next_instruction_time()
-        if next_instruction_time < next_time:
-            next_time = next_instruction_time
+        else:
+            if state.runtime_state.awaiting_tasks:
+                next_time = state.get_next_start_lb()
 
-        state.advance_time(next_time)
+            else:
+                next_time = state.get_last_completion_time()
+
+
+        self.state.advance_time(next_time)
+
+        # TODO: The only way a infeasible action can currently be detected
+        # is if it causes the schedule to indefinitely postpone events
+        # Locked semantics can help, we don't need to worry about
+        # tighetning bounds at each time step because no events can be
+        # wrongly processed at an intermediate time.
+        # for task_id in state.runtime_state.awaiting_tasks:
+        #     start_lb = state.get_start_lb(task_id)
+
+        #     if start_lb <= state.time:
+        #         state.tight_start_lb(task_id, state.time)
 
         for constraint in self.combined_constraints:
-            constraint.on_time_update(next_time, state)
+            constraint.on_time_update(next_time, self.state)
 
         self.propagate()
+
+        return not empty_schedule
 
     # Environment API methods
     def reset(self, *, options: Options = None) -> tuple[ObsType, InfoType]:
@@ -359,6 +381,7 @@ class SchedulingEnv:
                 "Environment has not been loaded with an instance. "
                 "Please call reset(options={'instance':<instance>}) or set_instance(<instance>) before resetting."
             )
+
         state = self.state
 
         self.schedule.reset()
@@ -390,37 +413,16 @@ class SchedulingEnv:
 
         schedule = self.schedule
 
-        while not schedule.is_empty():
+        while self.advance_clock() and not state.is_terminal():
             # Invariant: Each iteration has the time static during instruction processing
-
-            for _ in schedule.instruction_queue(state):
+            for event in schedule.instruction_queue(state):
                 # After each instruction is processed, ensure domains are updated until a fixed point
                 # is reached before processing the next instruction.
                 # control = instruction_result.queue_control
+                event.process(state, schedule)
 
                 if self.event_count < len(state.event_queue):
                     self.propagate()
-
-            # Halting conditions:
-            # - An instruction in the schedule has interrupted the processing.
-            # - If the schedule is empty, but there are tasks that can be started at the current time
-            # - If tasks can be started at the current time, but no tasks are currently executing
-            # if control == INTERRUPT:
-            #     # If the schedule processing was interrupted due to a instruction, do not advance
-            #     # the time and allow the agent to react to the new state.
-            #     break
-
-            if (
-                schedule.is_empty()
-                and state.get_next_available_time() <= state.time
-            ):
-                break
-
-            elif not schedule.has_scheduled_instructions():
-                if not state.runtime_state.executing_tasks:
-                    break
-
-            self.advance_clock()
 
         # Gymnasium-like step return
         obs = self.get_state()
@@ -472,6 +474,9 @@ class SchedulingEnv:
                 self.renderer,
                 self.state,
                 self.schedule,
+                self._prev_obj_value,
+                self.event_count,
+                self.force_reset,
             ),
         )
 
@@ -491,4 +496,7 @@ class SchedulingEnv:
             self.renderer,
             self.state,
             self.schedule,
+            self._prev_obj_value,
+            self.event_count,
+            self.force_reset,
         ) = state

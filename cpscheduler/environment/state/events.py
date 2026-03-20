@@ -35,7 +35,6 @@ class VarField:
     INFEASIBLE: Final[VarFieldType] = 7
     "A task has been determined to be infeasible."
 
-
 class DomainEvent:
     """
     Base class for CP events in the scheduling environment.

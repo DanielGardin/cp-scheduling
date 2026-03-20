@@ -47,7 +47,7 @@ def test_no_wait_constraint() -> None:
 
     assert env.state.get_start_lb(1) == 3
 
-    env.step(("execute", 0, 0))
+    env.step((0, "execute", 0))
 
     assert env.state.get_start_ub(1) == 3
 
@@ -92,7 +92,7 @@ def test_non_overlap_constraint() -> None:
 
     env.reset()
 
-    env.step(("execute", 0, 0))
+    env.step((0, "execute", 0))
 
     assert env.state.get_start_lb(1) == 3
     assert env.state.get_start_lb(2) == 3
@@ -125,13 +125,13 @@ def test_resource_constraint() -> None:
 
     env.reset()
 
-    env.step(("execute", 0))
+    env.step((0, "execute", 0))
 
     assert env.state.get_start_lb(1) == 3
     assert env.state.get_start_lb(2) == 0
     assert env.state.get_start_lb(3) == 3
 
-    env.step(("execute", 2))
+    env.step((0, "execute", 2))
 
     assert env.state.get_start_lb(3) == 7
 
@@ -144,7 +144,7 @@ def test_nonrenewable_resource_constraint() -> None:
     )
 
     env.reset()
-    env.step(("execute", 0))
+    env.step((0, "execute", 0))
 
     assert not env.state.is_feasible(1, 0)
 
@@ -159,12 +159,12 @@ def test_setup_constraint() -> None:
     )
 
     env.reset()
-    env.step(("execute", 0))
+    env.step((0, "execute", 0))
 
     assert env.state.get_start_lb(1) == 7
 
     env.reset()
-    env.step(("execute", 1))
+    env.step((0, "execute", 1))
 
     assert env.state.get_start_lb(0) == 3
 

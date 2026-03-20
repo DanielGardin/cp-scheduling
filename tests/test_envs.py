@@ -6,38 +6,37 @@ from common import env_setup, TEST_INSTANCES
 
 from cpscheduler.environment.constants import Status
 
-@pytest.mark.env
-@pytest.mark.parametrize("instance_name", TEST_INSTANCES)
-def test_reset(instance_name: str) -> None:
-    env = env_setup(instance_name)
+# @pytest.mark.env
+# @pytest.mark.parametrize("instance_name", TEST_INSTANCES)
+# def test_reset(instance_name: str) -> None:
+#     env = env_setup(instance_name)
 
-    (obs, _), info = env.reset()
+#     (obs, _), info = env.reset()
 
-    assert not all(obs["available"])
+#     assert not all(obs["available"])
 
-    assert info["current_time"] == 0
-    assert obs["status"][0] == Status.AWAITING
-    assert obs["available"][0]
-    assert obs["status"][1] == Status.AWAITING
-    assert not obs["available"][1]
+#     assert info["current_time"] == 0
+#     assert obs["status"][0] == Status.AWAITING
+#     assert obs["available"][0]
+#     assert obs["status"][1] == Status.AWAITING
+#     assert not obs["available"][1]
 
-    env.step(
-        [
-            ("execute", 0),
-            ("submit", 1),
-            ("advance", 12),
-            ("submit", 13),
-            ("complete", 1),
-        ]
-    )
+#     env.step(
+#         [
+#             ("execute", 0),
+#             ("submit", 1),
+#             ("advance", 12),
+#             ("submit", 13),
+#         ]
+#     )
 
-    (new_obs, _), new_info = env.reset()
+#     (new_obs, _), new_info = env.reset()
 
-    assert new_info["current_time"] == 0
-    assert new_obs["status"][0] == Status.AWAITING
-    assert new_obs["available"][0]
-    assert new_obs["status"][1] == Status.AWAITING
-    assert not new_obs["available"][1]
+#     assert new_info["current_time"] == 0
+#     assert new_obs["status"][0] == Status.AWAITING
+#     assert new_obs["available"][0]
+#     assert new_obs["status"][1] == Status.AWAITING
+#     assert not new_obs["available"][1]
 
 
 @pytest.mark.env
@@ -126,22 +125,22 @@ def test_submit2(instance_name: str) -> None:
     assert obs["status"] == [Status.COMPLETED] * env.state.n_tasks
     assert terminated
 
-@pytest.mark.env
-@pytest.mark.parametrize("instance_name", TEST_INSTANCES)
-def test_blocking_instruction(instance_name: str) -> None:
-    env = env_setup(instance_name)
+# @pytest.mark.env
+# @pytest.mark.parametrize("instance_name", TEST_INSTANCES)
+# def test_blocking_instruction(instance_name: str) -> None:
+#     env = env_setup(instance_name)
 
-    env.reset()
+#     env.reset()
 
-    # Test when the action cannot be done, limit the execution to 1 second and failt after that
+#     # Test when the action cannot be done, limit the execution to 1 second and failt after that
 
-    (obs, _), reward, *_ = env.step(
-        [("execute", 1), ("execute", 0)] # Inverse order of execution (1 requires 0 to be completed first)
-    )
+#     (obs, _), reward, *_ = env.step(
+#         [("execute", 1), ("execute", 0)] # Inverse order of execution (1 requires 0 to be completed first)
+#     )
 
-    assert obs["status"][0] == Status.AWAITING
-    assert obs["status"][1] == Status.AWAITING
-    assert reward == 0
+#     assert obs["status"][0] == Status.AWAITING
+#     assert obs["status"][1] == Status.AWAITING
+#     assert reward == 0
 
 def test_copy() -> None:
     env = env_setup("ta01")

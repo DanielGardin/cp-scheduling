@@ -9,7 +9,7 @@ from mypy_extensions import mypyc_attr
 
 from cpscheduler.environment.constants import Status
 from cpscheduler.environment.state import ObsType
-from cpscheduler.environment.instructions import SingleAction
+from cpscheduler.environment.des import SingleAction
 
 from cpscheduler.utils._protocols import ArrayLike, TabularRepresentation
 from cpscheduler.utils.list_utils import ListWrapper
