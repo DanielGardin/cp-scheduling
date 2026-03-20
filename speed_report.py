@@ -7,8 +7,6 @@ from collections.abc import Sequence
 from time import perf_counter
 from prettytable import PrettyTable, TableStyle
 
-import numpy as np
-
 import tyro
 from tyro.conf import arg
 
@@ -16,6 +14,8 @@ from cpscheduler import SchedulingEnv, JobShopSetup, __compiled__, __version__
 from cpscheduler.instances import read_jsp_instance
 from cpscheduler.heuristics._pdr import ShortestProcessingTime
 from cpscheduler.utils.array_utils import disable_numpy
+
+from cpscheduler.gym import SchedulingEnvGym
 
 root = Path(__file__).parent
 
@@ -26,33 +26,45 @@ WARNING = "\033[93m"
 def ok_fail(condition: bool) -> str:
     return (OK + "[PASS]" if condition else FAIL + "[FAIL]") + RESET
 
-
+# These times are based on the results of the CPEnv implementation by Tassel, Pierre
+# Environment compiled: https://github.com/ingambe/JobShopCPEnv
 benchmark_times = {
-    # "yn01": float("inf"),
-    "dmu10": 0.4,
-    "dmu20": 0.8,
-    "dmu30": 1.4,
-    "dmu40": 2.1,
-    "dmu50": 0.4,
-    "dmu60": 0.8,
-    "dmu70": 1.6,
-    "dmu80": 2.2,
-    "la10": 0.05,
-    "la20": 0.05,
-    "la30": 0.18,
-    "la40": 0.18,
-    "orb10": 0.05,
-    "swv10": 0.3,
-    "swv20": 1.0,
-    "ta10": 0.16,
-    "ta20": 0.3,
-    "ta30": 0.4,
-    "ta40": 0.6,
-    "ta50": 0.8,
-    "ta60": 1.6,
-    "ta70": 2.0,
-    "ta80": 7.8,
-    # "lta_j100_m100_10": 90.0,
+    "dmu05": 0.16,
+    "dmu10": 0.21,
+    "dmu15": 0.41,
+    "dmu20": 0.46,
+    "dmu25": 0.57,
+    "dmu30": 0.9,
+    "dmu35": 0.88,
+    "dmu40": 1.2,
+    "dmu45": 0.16,
+    "dmu50": 0.22,
+    "dmu55": 0.35,
+    "dmu60": 0.46,
+    "dmu65": 0.59,
+    "dmu70": 0.82,
+    "dmu75": 0.88,
+    "dmu80": 1.2,
+    "la05": 0.01,
+    "la10": 0.02,
+    "la15": 0.04,
+    "la20": 0.03,
+    "la25": 0.06,
+    "la30": 0.1,
+    "la35": 0.21,
+    "la40": 0.09,
+    "orb10": 0.03,
+    "swv05": 0.1,
+    "swv10": 0.16,
+    "swv20": 0.55,
+    "ta10": 0.1,
+    "ta20": 0.15,
+    "ta30": 0.21,
+    "ta40": 0.33,
+    "ta50": 0.45,
+    "ta60": 0.88,
+    "ta70": 1.2,
+    "ta80": 4.6,
 }
 
 RESET = "\033[0m"
@@ -252,7 +264,6 @@ class RunResult:
         self.n_tasks: dict[str, int] = {}
         self.n_events: dict[str, int] = {}
 
-        self.instance_times: dict[str, list[float]] = {}
         self.initialization_times: dict[str, list[float]] = {}
         self.reset_times: dict[str, list[float]] = {}
         self.pdr_times: dict[str, list[float]] = {}
@@ -271,7 +282,6 @@ class RunResult:
         self.n_events[instance_name] = n_events
 
         self.current_run = 0
-        self.instance_times[instance_name] = []
         self.initialization_times[instance_name] = []
         self.reset_times[instance_name] = []
         self.pdr_times[instance_name] = []
@@ -281,7 +291,6 @@ class RunResult:
 
     def log_run(
         self,
-        instance_time: float,
         setup_time: float,
         reset_time: float,
         pdr_time: float,
@@ -293,8 +302,7 @@ class RunResult:
             raise ValueError("No instance started. Call start_instance() before logging runs.")
 
         instance_name = self.current_instance
-        
-        self.instance_times[instance_name].append(instance_time)
+
         self.initialization_times[instance_name].append(setup_time)
         self.reset_times[instance_name].append(reset_time)
         self.pdr_times[instance_name].append(pdr_time)
@@ -305,7 +313,6 @@ class RunResult:
         table = PrettyTable([
             "Instance",
         ] + ([
-            "Instance time",
             "Initialization time",
             "Reset time",
             "PDR time",
@@ -321,7 +328,6 @@ class RunResult:
         table.set_style(TableStyle.MARKDOWN)
 
         for instance_name in self.instance_names:
-            instance_read_time = format_time(self.instance_times[instance_name])
             self.initialization_time = format_time(self.initialization_times[instance_name])
             reset_time = format_time(self.reset_times[instance_name])
             pdr_time = format_time(self.pdr_times[instance_name])
@@ -349,7 +355,6 @@ class RunResult:
             table.add_row([
                 instance_name,
             ] + ([
-                instance_read_time,
                 self.initialization_time,
                 reset_time,
                 pdr_time,
@@ -368,26 +373,41 @@ class RunResult:
 
     def plot_results(self) -> None:
         from matplotlib.axes import Axes
-
         import matplotlib.pyplot as plt
         import seaborn as sns
+        import numpy as np
+        from scipy import stats
+        from statistics import mean
 
-        sns.set_theme(style="whitegrid", palette="Set2", font_scale=1.2)
+        sns.set_theme(style="whitegrid", palette="Set2")
 
         ax: Sequence[Axes]
-        fig, ax = plt.subplots(ncols=2, figsize=(18, 4), width_ratios=[2, 1])
+        fig, ax = plt.subplots(
+            ncols=2,
+            figsize=(18, 4),
+            width_ratios=[2, 1],
+            constrained_layout=True,
+        )
 
-        stages = ["instance", "initialization", "reset", "pdr", "step"]
+        stages = ["initialization", "reset", "pdr", "step"]
 
-        bottom = [0.] * len(self.instance_names)
+        # Sort instances by total time descending
+        totals = [
+            sum(mean(self.__dict__[f"{stage}_times"][i]) for stage in stages)
+            for i in self.instance_names
+        ]
+        sorted_pairs = sorted(zip(totals, self.instance_names), reverse=True)
+        sorted_totals, sorted_instances = zip(*sorted_pairs)
+
+        bottom = [0.0] * len(sorted_instances)
         for stage in stages:
             stage_times = [
                 mean(self.__dict__[f"{stage}_times"][instance])
-                for instance in self.instance_names
+                for instance in sorted_instances
             ]
 
             ax[0].bar(
-                self.instance_names,
+                sorted_instances,
                 stage_times,
                 label=stage,
                 linewidth=0,
@@ -396,52 +416,73 @@ class RunResult:
 
             bottom = [b + t for b, t in zip(bottom, stage_times)]
 
+        for i, (_, total) in enumerate(zip(sorted_instances, sorted_totals)):
+            ax[0].text(
+                i,
+                total + 0.01 * max(sorted_totals),
+                f"{1000 * total:.0f} ms" if total >= 0.001 else f"{total * 1e6:.0f} µs",
+                ha="center",
+                va="bottom",
+                fontsize=5,
+                # rotation=90,
+            )
+
+        ax[0].margins(x=0.01, y=0.1)
         ax[0].set_title("Time per stage for each instance")
         ax[0].set_xlabel("Instance")
         ax[0].set_ylabel("Time (s)")
-        ax[0].legend(title="Stage", loc="upper left")
-        ax[0].set_xticks(self.instance_names)
-        ax[0].set_xticklabels(self.instance_names, rotation=90)
 
-        ax[1].set_title("Average time vs Number of Tasks")
-        ax[1].set_xlabel("Number of Tasks")
-        ax[1].set_ylabel("Average time (s)")
+        ax[0].legend(title="Stage", loc="upper right")
+        ax[0].set_xticks(range(len(sorted_instances)))
+        ax[0].set_xticklabels(sorted_instances, rotation=90, fontsize=6)
 
-        # Fit a quadratic curve to the data
+        # --- Right plot ---
+        fit_color = "#2563EB"
+
         task_numbers = [self.n_tasks[instance] for instance in self.instance_names]
         perf = [mean(self.simulation_times[instance]) for instance in self.instance_names]
-        perf_err = [std(self.simulation_times[instance]) for instance in self.instance_names]
 
-        fit_coef, *_ = np.polyfit(task_numbers, perf, 2)
+        slope, intercept, _, p_value, std_err = stats.linregress(
+            np.log(task_numbers), np.log(perf)
+        )
 
-        x = np.linspace(0.9* min(task_numbers), 1.1 * max(task_numbers), 100)
+        alpha = 0.05
+        t_val = stats.t.ppf(1 - alpha / 2, len(task_numbers) - 2)
+        exp_conf_interval = t_val * std_err
+
+        x = np.logspace(
+            np.log10(min(task_numbers)) - 0.05,
+            np.log10(max(task_numbers)) + 0.05,
+            100,
+        )
+
         ax[1].plot(
             x,
-            fit_coef * x**2,
-            color="red",
-            label="Quadratic Fit",
+            np.exp(intercept) * x**slope,
+            color=fit_color,
+            label=f"Linear Fit (k={slope:.2f} ± {exp_conf_interval:.2f})",
             zorder=1,
         )
 
-        sup_coef = max((perf) / n_tasks**2 for perf, n_tasks in zip(perf, task_numbers))
-        inf_coef = min((perf) / n_tasks**2 for perf, n_tasks in zip(perf, task_numbers))
-
-        # Plot the area between the curves
         ax[1].fill_between(
             x,
-            inf_coef * x**2,
-            sup_coef * x**2,
-            color="lightblue",
-            alpha=0.5,
-            label="Quadratic Growth Area",
+            np.exp(intercept) * x ** (slope - exp_conf_interval),
+            np.exp(intercept) * x ** (slope + exp_conf_interval),
+            color=fit_color,
+            alpha=0.15,
+            label="95% Confidence Interval",
             zorder=0,
         )
 
-        # Scatter plot with error bars
+        perf_err = [std(self.simulation_times[instance]) for instance in self.instance_names]
+
+        yerr_lower = [p - p / np.exp(e / p) for p, e in zip(perf, perf_err)]
+        yerr_upper = [p * np.exp(e / p) - p for p, e in zip(perf, perf_err)]
+
         ax[1].errorbar(
             task_numbers,
             perf,
-            yerr=perf_err,
+            yerr=[yerr_lower, yerr_upper] if self.current_run > 1 else None,
             color="black",
             fmt="o",
             ecolor="black",
@@ -452,10 +493,12 @@ class RunResult:
         )
 
         ax[1].loglog()
+        ax[1].set_title("Average time vs Number of Tasks")
+        ax[1].set_xlabel("Number of Tasks")
+        ax[1].set_ylabel("Average time (s)")
         ax[1].legend()
 
-        fig.suptitle("Speed Benchmark Report", fontsize=16, fontweight="bold")
-        fig.subplots_adjust(top=0.9)  # Adjust the top to make space for the title
+        fig.suptitle("Speed Benchmark Report", fontweight="bold")
 
         fig.savefig(root / "report.pdf", dpi=300)
         plt.show()
@@ -475,10 +518,12 @@ def print_header() -> None:
             "`git submodule update --init`?"
         )
 
+
 def run_cli(
     n_runs: Annotated[int, arg(aliases=("-n",))] = 1,
     full: bool = False,
     quiet: Annotated[bool, arg(aliases=("-q",))] = False,
+    gym: Annotated[bool, arg(aliases=("-g",))] = False,
     plot: bool = False,
     numpy: bool = True,
     dynamic: bool = False,
@@ -496,6 +541,17 @@ def run_cli(
 
     quiet: bool
         If True, suppress the output of the benchmark results.
+
+    gym: bool
+        If True, run the benchmark using the Gym interface.
+
+    numpy: bool
+        If True, allow the use of NumPy in the agent's decision making. Disabling
+        this can help isolate the time spent on the environment itself.
+
+    dynamic: bool
+        If True, run the benchmark in dynamic mode, where the agent makes a decision
+        at each step. If False, the agent makes a single decision for the entire schedule.
 
     plot: bool
         If True, plot the benchmark results.
@@ -538,29 +594,16 @@ def run_cli(
                 dots = 0
 
         instance_path = root / "instances/jobshop" / f"{instance_name}.txt"
-
-        env = SchedulingEnv(JobShopSetup(), instance=read_jsp_instance(instance_path)[0])
-        obs, _ = env.reset()
-        env.step(agent(obs))
-
-        result.start_instance(
-            instance_name,
-            n_tasks=env.state.n_tasks,
-            n_events=env.event_count,
-        )
-
-        del env
-
-        for _ in range(n_runs):
+        instance, _ = read_jsp_instance(instance_path)
+        for i in range(n_runs):
             global_tick = perf_counter()
+            if gym:
+                env = SchedulingEnvGym(JobShopSetup(), instance=instance)
+            
+            else:
+                env = SchedulingEnv(JobShopSetup(), instance=instance)
 
-            tick = perf_counter()
-            instance, _ = read_jsp_instance(instance_path)
-            instance_read_time = perf_counter() - tick
-
-            tick = perf_counter()
-            env = SchedulingEnv(JobShopSetup(), instance=instance)
-            initialization_times = perf_counter() - tick
+            initialization_times = perf_counter() - global_tick
 
             tick = perf_counter()
             obs, _ = env.reset()
@@ -592,8 +635,15 @@ def run_cli(
 
             simulation_time = perf_counter() - global_tick
 
+            if i == 0:
+                result.start_instance(
+                    instance_name,
+                    n_tasks=env.state.n_tasks,
+                    n_events=env.event_count,
+                )
+
+
             result.log_run(
-                instance_read_time,
                 initialization_times,
                 reset_time,
                 pdr_time,

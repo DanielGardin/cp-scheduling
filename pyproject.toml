@@ -20,17 +20,25 @@ authors = [
 description = "Solving Scheduling Problems with Constraint Programming and Reinforcement Learning"
 readme = "README.md"
 requires-python = ">=3.10"
+license = { text = "MIT" }
 classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    "MIT AND (Apache-2.0 OR BSD-2-Clause)",
+    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
 dependencies = [
     "mypy_extensions",
 ]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cpscheduler*"]
+
+[project.urls]
+Repository = "https://github.com/DanielGardin/cp-scheduling"
 
 [project.optional-dependencies]
 
@@ -48,7 +56,6 @@ rl = [
     "tqdm >= 4.67.1",
     "wandb >= 0.21.0",
     "tensorboard >= 2.19.0",
-    "tqdm >= 4.67.1",
     "tyro >= 0.9.26"
 ]
 
@@ -69,14 +76,12 @@ dev = [
     "black >= 25.1.0"
 ]
 
-[tool.setuptools]
-packages = ["cpscheduler"]
-
 [tool.black]
-line-length = 100
+line-length = 80
 target-version = ["py310"]
 
 [tool.mypy]
+exclude = ['cpscheduler/rl']
 strict = true
 pretty = true
 show_error_codes = true
@@ -123,3 +128,17 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = "tensorboard.*"
 ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "compilation: mark a test as a compilation test",
+    "env: mark a test as an environment test",
+    "solver: mark a test as a solver test",
+    "heuristics: mark a test as a heuristics test",
+    "vector: mark a test as a vector test",
+]
+log_cli = true
+log_cli_level = "INFO"
+log_cli_format = "%(asctime)s [%(levelname)8s] %(message)s (%(filename)s:%(lineno)s)"
+log_cli_date_format = "%Y-%m-%d %H:%M:%S"

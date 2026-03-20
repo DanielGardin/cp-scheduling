@@ -1,0 +1,16 @@
+# Include essentials
+include LICENSE
+include README.md
+include pyproject.toml
+include setup.py
+
+# Include source
+recursive-include cpscheduler *.py
+
+# Exclude non-distribution files
+prune benchmarks
+prune tests
+prune instances
+prune build
+prune cpscheduler.egg-info
+exclude clear.sh speed_report.py logging.conf test.ipynb

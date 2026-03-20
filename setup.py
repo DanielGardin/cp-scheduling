@@ -10,9 +10,7 @@ if USE_MYPYC:
     from mypyc.build import mypycify
     compiling_dirs: list[str] = [
         "cpscheduler/environment",
-        # "cpscheduler/utils",
-        # "cpscheduler/instances",
-        # "cpscheduler/heuristics",
+        "cpscheduler/utils",
     ]
 
     blacklist: set[str] = set([

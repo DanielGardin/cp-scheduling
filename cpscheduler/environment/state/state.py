@@ -15,7 +15,6 @@ from cpscheduler.environment.state.violations import ViolationState
 
 ObsType: TypeAlias = tuple[dict[str, list[Any]], dict[str, list[Any]]]
 
-# @profile
 class ScheduleState:
     """
     ScheduleState represents the current state of the scheduling environment,

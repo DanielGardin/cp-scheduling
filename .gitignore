@@ -8,6 +8,7 @@ logs/
 *.logs
 /__*.py
 data/
+benchmarks/
 
 # C extensions
 *.so
