@@ -22,6 +22,11 @@ class Renderer:
         super().__init_subclass__()
 
         if cls.render_name is not None:
+            if cls.render_name in renderers:
+                raise ValueError(
+                    f"Renderer name '{cls.render_name}' is already registered."
+                )
+
             renderers[cls.render_name] = cls()
 
     @classmethod

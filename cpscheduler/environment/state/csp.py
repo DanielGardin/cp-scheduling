@@ -638,6 +638,9 @@ class ScheduleVariables:
             self.presence,
             self.start,
             self.end,
+            self.feasible_machines,
+            self.feasible,
+            self.fixed,
         )
         return (self.__class__, (DUMMY_INSTANCE,), state)
 
@@ -648,4 +651,7 @@ class ScheduleVariables:
             self.presence,
             self.start,
             self.end,
+            self.feasible_machines,
+            self.feasible,
+            self.fixed,
         ) = state

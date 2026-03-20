@@ -3,7 +3,7 @@ from copy import deepcopy
 
 from cpscheduler.environment.constants import TaskID, Time, MachineID
 from cpscheduler.environment.env import SchedulingEnv
-from cpscheduler.environment.instructions import ActionType
+from cpscheduler.environment.des import ActionType
 from cpscheduler.environment.state import ScheduleState
 
 
@@ -18,9 +18,9 @@ def machine_utilization(state: ScheduleState) -> float:
     total_time = float(time * state.n_machines)
     busy_time: Time = 0
     for history in state.runtime_state.history:
-        for _, start_time, duration in history:
+        for _, start_time, end_time in history:
             busy_time += (
-                duration if start_time + duration <= time else time - start_time
+                end_time - start_time if end_time <= time else time - start_time
             )
 
     return float(busy_time) / total_time if total_time > 0 else 1

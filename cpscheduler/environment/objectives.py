@@ -122,6 +122,11 @@ class ComposedObjective(Objective):
             else convert_to_list(coefficients, float)
         )
 
+        if len(self.coefficients) != len(self.objectives):
+            raise ValueError(
+                "The number of coefficients must match the number of objectives."
+            )
+
     @property
     def regular(self) -> bool:
         "A composed objective is regular if all its component objectives are regular."
@@ -154,26 +159,31 @@ class ComposedObjective(Objective):
         return current_value
 
     def get_entry(self) -> str:
-        entry = ""
+        terms: list[str] = []
 
         for coef, objective in zip(self.coefficients, self.objectives):
-            if entry:
-                if coef >= 0:
-                    entry += " + "
+            if coef == 0:
+                continue
 
-                else:
-                    entry += " - "
-                    coef = -coef
+            abs_coef = abs(coef)
+            if abs_coef == 1:
+                term = objective.get_entry()
 
-            coef_str = (
-                ""
-                if coef == 1
-                else str(coef) if isinstance(coef, int) else f"{coef:.2f}"
-            )
+            else:
+                coef_str = (
+                    str(int(abs_coef))
+                    if abs_coef.is_integer()
+                    else f"{abs_coef:.2f}"
+                )
+                term = f"{coef_str} {objective.get_entry()}"
 
-            entry += f"{coef_str} {objective.get_entry()}"
+            if not terms:
+                terms.append(f"- {term}" if coef < 0 else term)
 
-        return entry
+            else:
+                terms.append(f"{'-' if coef < 0 else '+'} {term}")
+
+        return " ".join(terms) if terms else "0"
 
 
 def _makespan(state: ScheduleState, tasks: Iterable[TaskID]) -> float:

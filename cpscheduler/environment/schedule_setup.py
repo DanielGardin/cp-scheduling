@@ -133,6 +133,9 @@ class UniformParallelMachineSetup(ScheduleSetup):
     ):
         self.speed = convert_to_list(speed, int)
 
+        if any(s <= 0 for s in self.speed):
+            raise ValueError("Machine speeds must be positive integers.")
+
         self.processing_times = processing_times
         self.disjunctive = disjunctive
         self.n_machines = len(self.speed)
@@ -140,11 +143,12 @@ class UniformParallelMachineSetup(ScheduleSetup):
     def initialize(self, state: ScheduleState) -> None:
         instance = state.instance
 
-        for task_id, p_time in enumerate(
+        for task_id, global_p_time in enumerate(
             instance.task_instance[self.processing_times]
         ):
+            base_time = Time(global_p_time)
             for machine, speed in enumerate(self.speed):
-                p_time = ceil_div(Time(p_time), speed)
+                p_time = ceil_div(base_time, speed)
 
                 instance.set_processing_time(task_id, machine, p_time)
 

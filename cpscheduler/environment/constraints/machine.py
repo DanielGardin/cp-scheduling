@@ -93,11 +93,11 @@ class MachineConstraint(Constraint):
                 self.machine_map[machine].add(TaskID(task_id))
 
     def on_infeasibility(
-        self, task_id: TaskID, machine_id: TaskID, state: ScheduleState
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:
         if machine_id == GLOBAL_MACHINE_ID:
             for machine in state.instance.get_machines(task_id):
-                self.machine_map[machine].remove(task_id)
+                self.machine_map[machine].discard(task_id)
 
         else:
             self.machine_map[machine_id].discard(task_id)

@@ -1,7 +1,7 @@
 from typing import Any, TypeAlias
 from collections.abc import Mapping, Callable
 
-from cpscheduler.environment.constants import TaskID, Time, Int
+from cpscheduler.environment.constants import Time, TaskID, MachineID, Int
 from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import Constraint
@@ -88,7 +88,7 @@ class SetupConstraint(Constraint):
         }
 
     def on_assignment(
-        self, task_id: TaskID, machine_id: TaskID, state: ScheduleState
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:
         setup_times = self.current_setup_times
 

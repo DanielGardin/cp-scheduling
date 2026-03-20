@@ -49,7 +49,6 @@ def is_info_dict(value: Any) -> TypeIs[Mapping[Any, Any]]:
     "Type guard to check if a value is an info dictionary."
     return isinstance(value, Mapping)
 
-
 class SchedulingEnv:
     """
     SchedulingEnv is a custom environment for generic scheduling problems. It is designed to be
@@ -332,7 +331,7 @@ class SchedulingEnv:
 
             idx += 1
 
-        self.event_count = len(event_queue)
+        self.event_count = idx
 
     def advance_clock(self) -> bool:
         schedule = self.schedule
@@ -367,7 +366,8 @@ class SchedulingEnv:
         for constraint in self.combined_constraints:
             constraint.on_time_update(next_time, self.state)
 
-        self.propagate()
+        if self.event_count < len(state.event_queue):
+            self.propagate()
 
         return not empty_schedule
 

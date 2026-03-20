@@ -173,15 +173,21 @@ class ScheduleState:
         return lb == ub or (lb < ub and self.time <= ub)
 
     ## Setter methods for variable values, triggering constraint propagation through events
+    def _enqueue_event(self, event: DomainEvent) -> None:
+        if event.is_infeasibility():
+            self.infeasible = True
+        
+        self.event_queue.append(event)
+
     def require_task(self, task_id: TaskID) -> None:
         event = self._variables.restrict_presence(task_id, PRESENT)
         if event:
-            self.event_queue.append(event)
+            self._enqueue_event(event)
 
     def forbid_task(self, task_id: TaskID) -> None:
         event = self._variables.restrict_presence(task_id, ABSENT)
         if event:
-            self.event_queue.append(event)
+            self._enqueue_event(event)
 
     def tight_start_lb(
         self,
@@ -192,7 +198,7 @@ class ScheduleState:
         event = self._variables.set_start_lb(task_id, value, machine_id)
 
         if event:
-            self.event_queue.append(event)
+            self._enqueue_event(event)
 
     def tight_start_ub(
         self,
@@ -203,7 +209,7 @@ class ScheduleState:
         event = self._variables.set_start_ub(task_id, value, machine_id)
 
         if event:
-            self.event_queue.append(event)
+            self._enqueue_event(event)
 
     def tight_end_lb(
         self,
@@ -214,7 +220,7 @@ class ScheduleState:
         event = self._variables.set_end_lb(task_id, value, machine_id)
 
         if event:
-            self.event_queue.append(event)
+            self._enqueue_event(event)
 
     def tight_end_ub(
         self,
@@ -225,13 +231,13 @@ class ScheduleState:
         event = self._variables.set_end_ub(task_id, value, machine_id)
 
         if event:
-            self.event_queue.append(event)
+            self._enqueue_event(event)
 
     def forbid_machine(self, task_id: TaskID, machine_id: MachineID) -> None:
         event = self._variables.restrict_machine(task_id, machine_id)
 
         if event:
-            self.event_queue.append(event)
+            self._enqueue_event(event)
 
     def require_machine(self, task_id: TaskID, machine_id: MachineID) -> None:
         for other_machine in self.instance.processing_times[task_id]:
@@ -273,7 +279,7 @@ class ScheduleState:
         start_time = self.time
 
         event = self._variables.assign(task_id, start_time, machine_id)
-        self.event_queue.append(event)
+        self._enqueue_event(event)
 
         end_time = start_time + self.get_remaining_time(task_id, machine_id)
         self.runtime_state.start_task(task_id, machine_id, start_time, end_time)
@@ -328,22 +334,11 @@ class ScheduleState:
         for task_id in awaiting_tasks:
             lb = global_lbs[task_id]
 
-            if lb < min_lb and lb > current_time:
+            if lb < min_lb:
                 min_lb = global_lbs[task_id]
 
-        return min_lb
-
-    def get_next_available_time(self) -> Time:
-        min_lb = MAX_TIME
-
-        global_lbs = self._variables.start.global_lbs
-        awaiting_tasks = self.runtime_state.awaiting_tasks
-
-        for task_id in awaiting_tasks:
-            lb = global_lbs[task_id]
-
-            if lb < min_lb:
-                min_lb = lb
+            elif lb <= current_time:
+                return current_time
 
         return min_lb
 
@@ -377,6 +372,7 @@ class ScheduleState:
             self.time,
             self._variables,
             self.runtime_state,
+            self.violation_state,
             self.event_queue,
             self.infeasible,
             self.loaded,
@@ -389,6 +385,7 @@ class ScheduleState:
             self.time,
             self._variables,
             self.runtime_state,
+            self.violation_state,
             self.event_queue,
             self.infeasible,
             self.loaded,
