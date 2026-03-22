@@ -1,8 +1,9 @@
 from pathlib import Path
 
-from typing import Annotated
+from typing import Annotated, Literal, get_args
 from collections.abc import Sequence
 
+import gc
 
 from time import perf_counter
 from prettytable import PrettyTable, TableStyle
@@ -12,7 +13,21 @@ from tyro.conf import arg
 
 from cpscheduler import SchedulingEnv, JobShopSetup, __compiled__, __version__
 from cpscheduler.instances import read_jsp_instance
-from cpscheduler.heuristics._pdr import ShortestProcessingTime
+from cpscheduler.heuristics import (
+    PriorityDispatchingRule,
+    ShortestProcessingTime,
+    MostOperationsRemaining,
+    MostWorkRemaining,
+    EarliestDueDate,
+    ModifiedDueDate,
+    WeightedShortestProcessingTime,
+    MinimumSlackTime,
+    FirstInFirstOut,
+    CostOverTime,
+    CriticalRatio,
+    ApparentTardinessCost,
+    TrafficPriority,
+)
 from cpscheduler.utils.array_utils import disable_numpy
 
 from cpscheduler.gym import SchedulingEnvGym
@@ -25,6 +40,39 @@ WARNING = "\033[93m"
 
 def ok_fail(condition: bool) -> str:
     return (OK + "[PASS]" if condition else FAIL + "[FAIL]") + RESET
+
+
+PDR_NAMES = Literal[
+    "spt",
+    "mor",
+    "mwr",
+    "edd",
+    "mdd",
+    "wspt",
+    "mst",
+    "fifo",
+    "cot",
+    "cr",
+    "atc",
+    "tp",
+]
+
+pdrs: dict[str, type[PriorityDispatchingRule]] = {
+    "spt": ShortestProcessingTime,
+    "mor": MostOperationsRemaining,
+    "mwr": MostWorkRemaining,
+    "edd": EarliestDueDate,
+    "mdd": ModifiedDueDate,
+    "wspt": WeightedShortestProcessingTime,
+    "mst": MinimumSlackTime,
+    "fifo": FirstInFirstOut,
+    "cot": CostOverTime,
+    "cr": CriticalRatio,
+    "atc": ApparentTardinessCost,
+    "tp": TrafficPriority,
+}
+
+assert set(pdrs.keys()) == set(get_args(PDR_NAMES)), "PDR_NAMES must match keys of pdrs dictionary"
 
 # These times are based on the results of the CPEnv implementation by Tassel, Pierre
 # Environment compiled: https://github.com/ingambe/JobShopCPEnv
@@ -65,6 +113,7 @@ benchmark_times = {
     "ta60": 0.88,
     "ta70": 1.2,
     "ta80": 4.6,
+    # "lta_j1000_m10_10": 90.0
 }
 
 RESET = "\033[0m"
@@ -522,8 +571,9 @@ def print_header() -> None:
 def run_cli(
     n_runs: Annotated[int, arg(aliases=("-n",))] = 1,
     full: bool = False,
-    quiet: Annotated[bool, arg(aliases=("-q",))] = False,
     gym: Annotated[bool, arg(aliases=("-g",))] = False,
+    pdr: PDR_NAMES = "spt",
+    quiet: Annotated[bool, arg(aliases=("-q",))] = False,
     plot: bool = False,
     numpy: bool = True,
     dynamic: bool = False,
@@ -539,11 +589,14 @@ def run_cli(
     full: bool
         If True, run the benchmark times for all the environment stages.
 
-    quiet: bool
-        If True, suppress the output of the benchmark results.
-
     gym: bool
         If True, run the benchmark using the Gym interface.
+
+    pdr: PDR_NAMES
+        The priority dispatching rule to use for the benchmark.
+
+    quiet: bool
+        If True, suppress the output of the benchmark results.
 
     numpy: bool
         If True, allow the use of NumPy in the agent's decision making. Disabling
@@ -569,8 +622,7 @@ def run_cli(
     print("Running bechmark: time")
     result = RunResult()
 
-    # TODO: Make the PDR a parameter
-    agent = ShortestProcessingTime(available=dynamic)
+    agent = pdrs[pdr](available=dynamic)
 
     dots = 0
     if not quiet:
@@ -593,9 +645,16 @@ def run_cli(
                 )
                 dots = 0
 
+
         instance_path = root / "instances/jobshop" / f"{instance_name}.txt"
         instance, _ = read_jsp_instance(instance_path)
+        gc.collect()
+        gc.freeze()
+
+        env: SchedulingEnv | SchedulingEnvGym
         for i in range(n_runs):
+            gc.disable()
+
             global_tick = perf_counter()
             if gym:
                 env = SchedulingEnvGym(JobShopSetup(), instance=instance)
@@ -652,7 +711,10 @@ def run_cli(
             )
 
             del env
+            gc.enable()
 
+        gc.collect()
+        gc.unfreeze()
     result.print_results(full=full)
 
     if plot:

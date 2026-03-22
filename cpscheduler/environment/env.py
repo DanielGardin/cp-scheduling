@@ -287,7 +287,7 @@ class SchedulingEnv:
         event_queue = state.event_queue
         combined = self.combined_constraints
 
-        idx = self.event_count
+        idx = 0
         while idx < len(event_queue):
             event = event_queue[idx]
             task_id = event.task_id
@@ -331,7 +331,9 @@ class SchedulingEnv:
 
             idx += 1
 
-        self.event_count = idx
+        self.event_count += idx
+        state.event_queue.clear()
+
 
     def advance_clock(self) -> bool:
         schedule = self.schedule
@@ -366,8 +368,7 @@ class SchedulingEnv:
         for constraint in self.combined_constraints:
             constraint.on_time_update(next_time, self.state)
 
-        if self.event_count < len(state.event_queue):
-            self.propagate()
+        self.propagate()
 
         return not empty_schedule
 
@@ -421,8 +422,7 @@ class SchedulingEnv:
                 # control = instruction_result.queue_control
                 event.process(state, schedule)
 
-                if self.event_count < len(state.event_queue):
-                    self.propagate()
+                self.propagate()
 
         # Gymnasium-like step return
         obs = self.get_state()
