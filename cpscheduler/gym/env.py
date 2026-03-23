@@ -21,7 +21,7 @@ from cpscheduler.environment import (
 from cpscheduler.utils._protocols import InstanceTypes, Options
 
 from cpscheduler.environment.state import ObsType
-from cpscheduler.environment.instructions import ActionType
+from cpscheduler.environment.des import ActionType
 from cpscheduler.environment._render import Renderer
 
 from .gym_utils import infer_collection_space

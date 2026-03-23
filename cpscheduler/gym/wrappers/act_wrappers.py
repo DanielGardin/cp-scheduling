@@ -9,7 +9,7 @@ from gymnasium import ActionWrapper, Env
 from gymnasium.spaces import Space, Box, Sequence
 
 from cpscheduler.utils._protocols import Options
-from cpscheduler.environment.instructions import ActionType
+from cpscheduler.environment.des import ActionType
 from cpscheduler.environment.constants import Int
 
 _Obs = TypeVar("_Obs")
