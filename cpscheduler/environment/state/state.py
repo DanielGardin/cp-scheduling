@@ -8,12 +8,16 @@ from cpscheduler.environment.constants import (
     GLOBAL_MACHINE_ID,
 )
 from cpscheduler.environment.state.events import DomainEvent
-from cpscheduler.environment.state.csp import ScheduleVariables, PRESENT, ABSENT
+from cpscheduler.environment.state.csp import ScheduleVariables, Presence
 from cpscheduler.environment.state.instance import ProblemInstance
 from cpscheduler.environment.state.runtime import RuntimeState
 from cpscheduler.environment.state.violations import ViolationState
 
 ObsType: TypeAlias = tuple[dict[str, list[Any]], dict[str, list[Any]]]
+
+PRESENT = Presence.PRESENT
+ABSENT = Presence.ABSENT
+INFEASIBLE = Presence.INFEASIBLE
 
 class ScheduleState:
     """
@@ -34,7 +38,6 @@ class ScheduleState:
         "runtime_state",
         "violation_state",
         "event_queue",
-        "infeasible",
         "loaded",
     )
 
@@ -55,14 +58,12 @@ class ScheduleState:
     "Queue of events to be processed for constraint propagation."
 
     loaded: bool
-    infeasible: bool
 
     def __init__(self) -> None:
         self.time = 0
         self.event_queue = []
         self.violation_state = ViolationState()
 
-        self.infeasible = False
         self.loaded = False
 
     # Properties
@@ -101,7 +102,7 @@ class ScheduleState:
         self.runtime_state = RuntimeState(self.instance)
 
     def is_terminal(self) -> bool:
-        return self.infeasible or self.runtime_state.is_terminal()
+        return self._variables.infeasible or self.runtime_state.is_terminal()
 
     def advance_time(self, new_time: Time) -> None:
         assert new_time >= self.time, "Cannot go back in time."
@@ -154,39 +155,24 @@ class ScheduleState:
     def is_absent(self, task_id: TaskID) -> bool:
         return self._variables.presence[task_id] == ABSENT
 
-    # TODO: Cache feasibility results to avoid redundant checks
-    # 6.7% of the time is spent in this method
     def is_feasible(
         self, task_id: TaskID, machine_id: MachineID = GLOBAL_MACHINE_ID
     ) -> bool:
-        if not self._variables.feasible[task_id]:
-            return False
-
-        elif machine_id == GLOBAL_MACHINE_ID:
-            return True
-
-        idx = task_id * self.instance.n_machines + machine_id
-        lb = self._variables.start.lbs[idx]
-        ub = self._variables.start.ubs[idx]
-
-        return lb == ub or (lb < ub and self.time <= ub)
+        if machine_id == GLOBAL_MACHINE_ID:
+            return self._variables.presence[task_id] != INFEASIBLE
+        
+        return machine_id in self._variables.feasible_machines[task_id]
 
     ## Setter methods for variable values, triggering constraint propagation through events
-    def _enqueue_event(self, event: DomainEvent) -> None:
-        if event.is_infeasibility():
-            self.infeasible = True
-        
-        self.event_queue.append(event)
-
     def require_task(self, task_id: TaskID) -> None:
         event = self._variables.restrict_presence(task_id, PRESENT)
         if event:
-            self._enqueue_event(event)
+            self.event_queue.append(event)
 
     def forbid_task(self, task_id: TaskID) -> None:
         event = self._variables.restrict_presence(task_id, ABSENT)
         if event:
-            self._enqueue_event(event)
+            self.event_queue.append(event)
 
     def tight_start_lb(
         self,
@@ -197,7 +183,7 @@ class ScheduleState:
         event = self._variables.set_start_lb(task_id, value, machine_id)
 
         if event:
-            self._enqueue_event(event)
+            self.event_queue.append(event)
 
     def tight_start_ub(
         self,
@@ -208,7 +194,7 @@ class ScheduleState:
         event = self._variables.set_start_ub(task_id, value, machine_id)
 
         if event:
-            self._enqueue_event(event)
+            self.event_queue.append(event)
 
     def tight_end_lb(
         self,
@@ -219,7 +205,7 @@ class ScheduleState:
         event = self._variables.set_end_lb(task_id, value, machine_id)
 
         if event:
-            self._enqueue_event(event)
+            self.event_queue.append(event)
 
     def tight_end_ub(
         self,
@@ -230,13 +216,13 @@ class ScheduleState:
         event = self._variables.set_end_ub(task_id, value, machine_id)
 
         if event:
-            self._enqueue_event(event)
+            self.event_queue.append(event)
 
     def forbid_machine(self, task_id: TaskID, machine_id: MachineID) -> None:
         event = self._variables.restrict_machine(task_id, machine_id)
 
         if event:
-            self._enqueue_event(event)
+            self.event_queue.append(event)
 
     def require_machine(self, task_id: TaskID, machine_id: MachineID) -> None:
         for other_machine in self.instance.processing_times[task_id]:
@@ -284,7 +270,7 @@ class ScheduleState:
         start_time = self.time
 
         event = self._variables.assign(task_id, start_time, machine_id)
-        self._enqueue_event(event)
+        self.event_queue.append(event)
 
         end_time = start_time + self.get_remaining_time(task_id, machine_id)
         self.runtime_state.start_task(task_id, machine_id, start_time, end_time)
@@ -339,11 +325,12 @@ class ScheduleState:
         for task_id in awaiting_tasks:
             lb = global_lbs[task_id]
 
+            if lb <= current_time:
+                return current_time
+
             if lb < min_lb:
                 min_lb = global_lbs[task_id]
 
-            elif lb <= current_time:
-                return current_time
 
         return min_lb
 
@@ -381,7 +368,6 @@ class ScheduleState:
             self.runtime_state,
             self.violation_state,
             self.event_queue,
-            self.infeasible,
             self.loaded,
         )
         return (self.__class__, (), state)
@@ -394,7 +380,6 @@ class ScheduleState:
             self.runtime_state,
             self.violation_state,
             self.event_queue,
-            self.infeasible,
             self.loaded,
         ) = state
 

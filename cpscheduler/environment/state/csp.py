@@ -26,7 +26,7 @@ END_LB = VarField.END_LB
 END_UB = VarField.END_UB
 PRESENCE = VarField.PRESENCE
 ABSENCE = VarField.ABSENCE
-INFEASIBLE = VarField.INFEASIBLE
+INFEASIBILITY = VarField.INFEASIBILITY
 
 PresenceType: TypeAlias = u8
 
@@ -63,11 +63,33 @@ class Presence:
     UNDEFINED: Final[PresenceType] = 0b11
     "Task presence has not been determined yet. Initial value for optional tasks."
 
-
-PRESENCE_INFEASIBLE = Presence.INFEASIBLE
+INFEASIBLE = Presence.INFEASIBLE
 PRESENT = Presence.PRESENT
 ABSENT = Presence.ABSENT
 UNDEFINED = Presence.UNDEFINED
+
+
+def presence_to_str(presence: PresenceType) -> str:
+        if presence == INFEASIBLE:
+            return "INFEASIBLE"
+
+        elif presence == PRESENT:
+            return "PRESENT"
+
+        elif presence == ABSENT:
+            return "ABSENT"
+
+        elif presence == UNDEFINED:
+            return "UNDEFINED"
+
+        else:
+            raise ValueError(f"Invalid presence value: {presence}.")
+
+def can_be_present(presence: PresenceType) -> bool:
+    return (presence & PRESENT) != 0
+
+def can_be_absent(presence: PresenceType) -> bool:
+    return (presence & ABSENT) != 0
 
 
 class Bounds:
@@ -219,23 +241,23 @@ class ScheduleVariables:
         "feasible_machines",
         "assignment",
         "presence",
-        "feasible",
         "fixed",
         "start",
         "end",
+        "infeasible"
     ]
 
     remaining_times: list[Time]
     feasible_machines: list[list[MachineID]]
 
     assignment: list[MachineID]
-    presence: list[u8]
+    presence: list[PresenceType]
 
     start: Bounds
     end: Bounds
 
-    feasible: list[bool]
     fixed: list[bool]
+    infeasible: bool
 
     def __init__(self, instance: ProblemInstance) -> None:
         n_tasks = instance.n_tasks
@@ -273,8 +295,8 @@ class ScheduleVariables:
         self.end = end
 
         self.assignment = [GLOBAL_MACHINE_ID] * n_tasks
-        self.feasible = [True] * n_tasks
         self.fixed = [False] * n_tasks
+        self.infeasible = False
 
     def restrict_presence(
         self, task_id: TaskID, mask: PresenceType
@@ -285,22 +307,38 @@ class ScheduleVariables:
         if new_presence == old_presence:
             return None
 
-        self.presence[task_id] = new_presence
-        if new_presence == PRESENCE_INFEASIBLE:
-            self.feasible[task_id] = False
-            return DomainEvent(task_id, INFEASIBLE)
+        assert new_presence != UNDEFINED, "Impossible to loosen presence constraints."
+        if new_presence == PRESENT:
+            field = PRESENCE
+        
+        elif new_presence == ABSENT:
+            field = ABSENCE
+        
+        elif new_presence == INFEASIBLE:
+            # The task cannot be present nor absent, it is infeasible based on
+            # the current propagation.
+            self.infeasible = True
+            field = INFEASIBILITY
 
-        return DomainEvent(
-            task_id,
-            PRESENCE if new_presence == PRESENT else ABSENCE,
-        )
+        else:
+            raise ValueError("Invalid presence mask, cannot be applied.")
+
+        return DomainEvent(task_id, field)
+
+    def require_task(self, task_id: TaskID) -> DomainEvent | None:
+        "Require a task to be present in the schedule."
+        return self.restrict_presence(task_id, PRESENT)
+    
+    def forbid_task(self, task_id: TaskID) -> DomainEvent | None:
+        "Forbid a task from being present in the schedule."
+        return self.restrict_presence(task_id, ABSENT)
 
     def restrict_machine(
         self, task_id: TaskID, machine_id: MachineID
     ) -> DomainEvent | None:
         if machine_id in self.feasible_machines[task_id]:
             self.set_start_lb(task_id, MAX_TIME, machine_id)
-            return DomainEvent(task_id, INFEASIBLE, machine_id)
+            return DomainEvent(task_id, INFEASIBILITY, machine_id)
 
         return None
 
@@ -340,10 +378,9 @@ class ScheduleVariables:
                 self.end.recompute_global_lb(task_id, feasible_machines)
 
                 if not feasible_machines:
-                    self.feasible[task_id] = False
-                    return DomainEvent(task_id, INFEASIBLE)
+                    return self.restrict_presence(task_id, ABSENT)
 
-                return DomainEvent(task_id, INFEASIBLE, machine_id)
+                return DomainEvent(task_id, INFEASIBILITY, machine_id)
 
             if old_lb == start_global_lbs[task_id]:
                 self.start.recompute_global_lb(task_id, feasible_machines)
@@ -365,8 +402,7 @@ class ScheduleVariables:
         self.end.recompute_global_lb(task_id, feasible_machines)
 
         if not feasible_machines:
-            self.feasible[task_id] = False
-            return DomainEvent(task_id, INFEASIBLE)
+            return self.restrict_presence(task_id, ABSENT)
 
         return DomainEvent(task_id, START_LB)
 
@@ -401,10 +437,9 @@ class ScheduleVariables:
                 self.end.recompute_global_ub(task_id, feasible_machines)
 
                 if not feasible_machines:
-                    self.feasible[task_id] = False
-                    return DomainEvent(task_id, INFEASIBLE)
+                    return self.restrict_presence(task_id, ABSENT)
 
-                return DomainEvent(task_id, INFEASIBLE, machine_id)
+                return DomainEvent(task_id, INFEASIBILITY, machine_id)
 
             old_ub = start_ubs[idx]
 
@@ -433,8 +468,7 @@ class ScheduleVariables:
         self.end.recompute_global_ub(task_id, feasible_machines)
 
         if not feasible_machines:
-            self.feasible[task_id] = False
-            return DomainEvent(task_id, INFEASIBLE)
+            return self.restrict_presence(task_id, ABSENT)
 
         return DomainEvent(task_id, START_UB)
 
@@ -468,10 +502,9 @@ class ScheduleVariables:
                 self.end.recompute_global_lb(task_id, feasible_machines)
 
                 if not feasible_machines:
-                    self.feasible[task_id] = False
-                    return DomainEvent(task_id, INFEASIBLE)
+                    return self.restrict_presence(task_id, ABSENT)
 
-                return DomainEvent(task_id, INFEASIBLE, machine_id)
+                return DomainEvent(task_id, INFEASIBILITY, machine_id)
 
             old_lb = end_lbs[idx]
 
@@ -501,8 +534,7 @@ class ScheduleVariables:
         self.end.recompute_global_lb(task_id, feasible_machines)
 
         if not feasible_machines:
-            self.feasible[task_id] = False
-            return DomainEvent(task_id, INFEASIBLE)
+            return self.restrict_presence(task_id, ABSENT)
 
         return DomainEvent(task_id, END_LB)
 
@@ -536,10 +568,9 @@ class ScheduleVariables:
                 self.end.recompute_global_ub(task_id, feasible_machines)
 
                 if not feasible_machines:
-                    self.feasible[task_id] = False
-                    return DomainEvent(task_id, INFEASIBLE)
+                    return self.restrict_presence(task_id, ABSENT)
 
-                return DomainEvent(task_id, INFEASIBLE, machine_id)
+                return DomainEvent(task_id, INFEASIBILITY, machine_id)
 
             old_ub = end_ubs[idx]
 
@@ -569,8 +600,7 @@ class ScheduleVariables:
         self.end.recompute_global_ub(task_id, feasible_machines)
 
         if not feasible_machines:
-            self.feasible[task_id] = False
-            return DomainEvent(task_id, INFEASIBLE)
+            return self.restrict_presence(task_id, ABSENT)
 
         return DomainEvent(task_id, END_UB)
 
@@ -583,17 +613,28 @@ class ScheduleVariables:
 
         end_time = time + duration
 
-        if (
-            time < self.start.lbs[idx]
-            or time > self.start.ubs[idx]
-            or end_time < self.end.lbs[idx]
-            or end_time > self.end.ubs[idx]
-        ):
-            self.feasible[task_id] = False
-            return DomainEvent(task_id, INFEASIBLE)
-
         start = self.start
         end = self.end
+        presence = self.presence
+
+        if (
+            time < start.lbs[idx]
+            or time > start.ubs[idx]
+            or end_time < end.lbs[idx]
+            or end_time > end.ubs[idx]
+        ):
+            raise ValueError(
+                f"Cannot assign task {task_id} to machine {machine_id} at time {time}, "
+                f"it violates the bounds for that machine: "
+                f"start interval = [{self.start.lbs[idx]}, {self.start.ubs[idx]}]."
+            )
+
+        elif not can_be_present(presence[task_id]):
+            raise ValueError(
+                f"Cannot assign task {task_id} to machine {machine_id} at time {time}, "
+                f"it violates the presence constraints for that task: "
+                f"presence = {presence_to_str(self.presence[task_id])}."
+            )
 
         self.assignment[task_id] = machine_id
         self.fixed[task_id] = True
@@ -602,6 +643,7 @@ class ScheduleVariables:
         start.ubs[idx] = time
         end.lbs[idx] = end_time
         end.ubs[idx] = end_time
+        presence[task_id] = PRESENT
 
         start.global_lbs[task_id] = time
         start.global_ubs[task_id] = time
@@ -639,7 +681,6 @@ class ScheduleVariables:
             self.start,
             self.end,
             self.feasible_machines,
-            self.feasible,
             self.fixed,
         )
         return (self.__class__, (DUMMY_INSTANCE,), state)
@@ -652,6 +693,5 @@ class ScheduleVariables:
             self.start,
             self.end,
             self.feasible_machines,
-            self.feasible,
             self.fixed,
         ) = state

@@ -7,6 +7,7 @@ from cpscheduler.environment.constants import (
     Time,
     Status,
     StatusType,
+    MIN_TIME
 )
 
 from cpscheduler.environment.state.instance import ProblemInstance
@@ -57,7 +58,7 @@ class RuntimeState:
         self.completed_tasks = set()
 
         self.status = [Status.AWAITING] * instance.n_tasks
-        self.last_completion_time = 0
+        self.last_completion_time = MIN_TIME
 
     def __repr__(self) -> str:
         return (
@@ -97,7 +98,9 @@ class RuntimeState:
         self.awaiting_tasks.discard(task_id)
         self.executing_tasks.add(task_id)
 
-        self.history[task_id].append(TaskHistory(machine_id, start_time, end_time))
+        self.history[task_id].append(
+            TaskHistory(machine_id, start_time, end_time)
+        )
 
         self.status[task_id] = Status.EXECUTING
 
@@ -110,7 +113,9 @@ class RuntimeState:
 
         assignment, start_time, prev_end = self.history[task_id].pop()
 
-        self.history[task_id].append(TaskHistory(assignment, start_time, time))
+        self.history[task_id].append(
+            TaskHistory(assignment, start_time, time)
+        )
 
         self.status[task_id] = Status.PAUSED
 

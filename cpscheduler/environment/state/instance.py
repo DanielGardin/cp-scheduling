@@ -36,7 +36,7 @@ class ProblemInstance:
         "task_instance",
         "n_tasks",
         "n_jobs",
-        "_n_machines",
+        "n_machines",
     )
 
     job_ids: list[TaskID]
@@ -50,52 +50,44 @@ class ProblemInstance:
 
     n_tasks: int
     n_jobs: int
-    _n_machines: int
+    n_machines: int
 
     def __init__(
         self,
         task_instance: dict[str, list[Any]],
     ) -> None:
-        self.task_instance = task_instance.copy()
+        task_instance = task_instance.copy()
 
-        self.n_tasks = check_instance_consistency(task_instance)
+        n_tasks = check_instance_consistency(task_instance)
 
         job_ids = convert_to_list(
             (
                 task_instance["job"]
                 if "job" in task_instance
-                else range(self.n_tasks)
+                else range(n_tasks)
             ),
             TaskID,
         )
 
-        self.job_ids = job_ids
-        self.n_jobs = max(job_ids) + 1 if job_ids else 0
-
-        self.preemptive = [False] * self.n_tasks
-        self.optional = [False] * self.n_tasks
-        self.processing_times = [{} for _ in range(self.n_tasks)]
-
-        self._n_machines = 0
-
-        self.job_tasks = [[] for _ in range(self.n_jobs)]
+        n_jobs = max(job_ids) + 1 if job_ids else 0
+        job_tasks: list[list[TaskID]] = [[] for _ in range(n_jobs)]
         for task_id, job_id in enumerate(job_ids):
-            self.job_tasks[job_id].append(task_id)
+            job_tasks[job_id].append(task_id)
 
-        self.task_instance["job_id"] = self.job_ids
-        self.task_instance["task_id"] = list(range(self.n_tasks))
+        self.preemptive = [False] * n_tasks
+        self.optional = [False] * n_tasks
+        self.processing_times = [{} for _ in range(n_tasks)]
 
-    @property
-    def n_machines(self) -> int:
-        if self._n_machines > 0:
-            return self._n_machines
+        self.job_tasks = job_tasks
+        task_instance["job_id"] = job_ids
+        task_instance["task_id"] = list(range(n_tasks))
 
-        for p_times in self.processing_times:
-            for machine_id in p_times:
-                if machine_id >= self._n_machines:
-                    self._n_machines = machine_id + 1
+        self.task_instance = task_instance
+        self.job_ids = job_ids
 
-        return self._n_machines
+        self.n_tasks = n_tasks
+        self.n_jobs = n_jobs
+        self.n_machines = 0
 
     def is_preemptive(self, task_id: TaskID) -> bool:
         "Check if a task allows preemption."
@@ -132,6 +124,9 @@ class ProblemInstance:
         if time < 0:
             raise ValueError("Processing time cannot be negative.")
 
+        if machine_id + 1 > self.n_machines:
+            self.n_machines = machine_id + 1
+
         self.processing_times[task_id][machine_id] = time
 
     def remove_machine(self, task_id: TaskID, machine_id: MachineID) -> None:
@@ -151,7 +146,7 @@ class ProblemInstance:
             self.task_instance,
             self.n_tasks,
             self.n_jobs,
-            self._n_machines,
+            self.n_machines,
             self.job_ids,
             self.job_tasks,
             self.preemptive,
@@ -165,7 +160,7 @@ class ProblemInstance:
             self.task_instance,
             self.n_tasks,
             self.n_jobs,
-            self._n_machines,
+            self.n_machines,
             self.job_ids,
             self.job_tasks,
             self.preemptive,

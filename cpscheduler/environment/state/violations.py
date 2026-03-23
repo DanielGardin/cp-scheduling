@@ -37,7 +37,7 @@ class ViolationState:
             ViolationRecord(time, penalty, constraint)
         )
         self.total_penalty += penalty
-    
+
     def clear_violations(self) -> None:
         "Clear all recorded violations and reset the total penalty."
         self.violations.clear()

@@ -32,8 +32,18 @@ class VarField:
     ABSENCE: Final[VarFieldType] = 6
     "A task have its presence changed from mandatory to absent."
 
-    INFEASIBLE: Final[VarFieldType] = 7
+    INFEASIBILITY: Final[VarFieldType] = 7
     "A task has been determined to be infeasible."
+
+ASSIGNMENT = VarField.ASSIGNMENT
+START_LB = VarField.START_LB
+START_UB = VarField.START_UB
+END_LB = VarField.END_LB
+END_UB = VarField.END_UB
+PRESENCE = VarField.PRESENCE
+ABSENCE = VarField.ABSENCE
+INFEASIBILITY = VarField.INFEASIBILITY
+
 
 class DomainEvent:
     """
@@ -63,33 +73,33 @@ class DomainEvent:
         )
 
     def is_assignment(self) -> bool:
-        return self.field == VarField.ASSIGNMENT
+        return self.field == ASSIGNMENT
 
     def is_global(self) -> bool:
         return self.machine_id == GLOBAL_MACHINE_ID
 
     def is_infeasibility(self) -> bool:
         return (
-            self.field == VarField.INFEASIBLE
+            self.field == INFEASIBILITY
             and self.machine_id == GLOBAL_MACHINE_ID
         )
 
     def is_start_field(self) -> bool:
         field = self.field
 
-        return field == VarField.START_LB or field == VarField.START_UB
+        return field == START_LB or field == START_UB
 
     def is_end_field(self) -> bool:
         field = self.field
 
-        return field == VarField.END_LB or field == VarField.END_UB
+        return field == END_LB or field == END_UB
 
     def is_lower_bound(self) -> bool:
         field = self.field
 
-        return field == VarField.START_LB or field == VarField.END_LB
+        return field == START_LB or field == END_LB
 
     def is_upper_bound(self) -> bool:
         field = self.field
 
-        return field == VarField.START_UB or field == VarField.END_UB
+        return field == START_UB or field == END_UB

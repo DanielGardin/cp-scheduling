@@ -5,6 +5,15 @@ from cpscheduler.environment.state.events import DomainEvent, VarField
 from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.constants import TaskID, MachineID, Time
 
+ASSIGNMENT = VarField.ASSIGNMENT
+START_LB = VarField.START_LB
+START_UB = VarField.START_UB
+END_LB = VarField.END_LB
+END_UB = VarField.END_UB
+PRESENCE = VarField.PRESENCE
+ABSENCE = VarField.ABSENCE
+INFEASIBILITY = VarField.INFEASIBILITY
+
 constraints: dict[str, type["Constraint"]] = {}
 
 
@@ -33,33 +42,37 @@ class Constraint:
     @final
     def propagate(self, event: DomainEvent, state: ScheduleState) -> None:
         "Deprecated method for propagating a domain event. Use the specific event handlers instead."
-        match event.field:
-            case VarField.ASSIGNMENT:
-                self.on_assignment(event.task_id, event.machine_id, state)
 
-            case VarField.START_LB:
-                self.on_start_lb(event.task_id, event.machine_id, state)
+        field = event.field
+        task_id = event.task_id
+        machine_id = event.machine_id
 
-            case VarField.START_UB:
-                self.on_start_ub(event.task_id, event.machine_id, state)
-
-            case VarField.END_LB:
-                self.on_end_lb(event.task_id, event.machine_id, state)
-
-            case VarField.END_UB:
-                self.on_end_ub(event.task_id, event.machine_id, state)
-
-            case VarField.PRESENCE:
-                self.on_presence(event.task_id, state)
-
-            case VarField.ABSENCE:
-                self.on_absence(event.task_id, state)
-
-            case VarField.INFEASIBLE:
-                self.on_infeasibility(event.task_id, event.machine_id, state)
-
-            case _:
-                raise ValueError(f"Unknown event field: {event.field}")
+        if field == START_LB:
+            self.on_start_lb(task_id, machine_id, state)
+        
+        elif field == START_UB:
+            self.on_start_ub(task_id, machine_id, state)
+        
+        elif field == END_LB:
+            self.on_end_lb(task_id, machine_id, state)
+        
+        elif field == END_UB:
+            self.on_end_ub(task_id, machine_id, state)
+        
+        elif field == ASSIGNMENT:
+            self.on_assignment(task_id, machine_id, state)
+        
+        elif field == PRESENCE:
+            self.on_presence(task_id, state)
+        
+        elif field == ABSENCE:
+            self.on_absence(task_id, state)
+        
+        elif field == INFEASIBILITY:
+            self.on_infeasibility(task_id, machine_id, state)
+        
+        else:
+            raise ValueError(f"Unknown event field: {field}")
 
     def on_assignment(
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState

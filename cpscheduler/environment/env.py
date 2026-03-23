@@ -37,6 +37,15 @@ from cpscheduler.environment.objectives import Objective
 
 from cpscheduler.environment._render import Renderer
 
+ASSIGNMENT = VarField.ASSIGNMENT
+START_LB = VarField.START_LB
+START_UB = VarField.START_UB
+END_LB = VarField.END_LB
+END_UB = VarField.END_UB
+PRESENCE = VarField.PRESENCE
+ABSENCE = VarField.ABSENCE
+INFEASIBILITY = VarField.INFEASIBILITY
+
 
 def prepare_instance(instance: InstanceTypes) -> dict[str, list[Any]]:
     "Prepare the instance data to a standard dictionary format."
@@ -292,42 +301,42 @@ class SchedulingEnv:
             event = event_queue[idx]
             task_id = event.task_id
             machine_id = event.machine_id
+            field = event.field
 
-            match event.field:
-                case VarField.ASSIGNMENT:
-                    for constraint in combined:
-                        constraint.on_assignment(task_id, machine_id, state)
+            if field == ASSIGNMENT:
+                for constraint in combined:
+                    constraint.on_assignment(task_id, machine_id, state)
 
-                case VarField.START_LB:
-                    for constraint in combined:
-                        constraint.on_start_lb(task_id, machine_id, state)
+            elif field == START_LB:
+                for constraint in combined:
+                    constraint.on_start_lb(task_id, machine_id, state)
+            
+            elif field == START_UB:
+                for constraint in combined:
+                    constraint.on_start_ub(task_id, machine_id, state)
+            
+            elif field == END_LB:
+                for constraint in combined:
+                    constraint.on_end_lb(task_id, machine_id, state)
+            
+            elif field == END_UB:
+                for constraint in combined:
+                    constraint.on_end_ub(task_id, machine_id, state)
+            
+            elif field == PRESENCE:
+                for constraint in combined:
+                    constraint.on_presence(task_id, state)
+            
+            elif field == ABSENCE:
+                for constraint in combined:
+                    constraint.on_absence(task_id, state)
+            
+            elif field == INFEASIBILITY:
+                for constraint in combined:
+                    constraint.on_infeasibility(task_id, machine_id, state)
 
-                case VarField.START_UB:
-                    for constraint in combined:
-                        constraint.on_start_ub(task_id, machine_id, state)
-
-                case VarField.END_LB:
-                    for constraint in combined:
-                        constraint.on_end_lb(task_id, machine_id, state)
-
-                case VarField.END_UB:
-                    for constraint in combined:
-                        constraint.on_end_ub(task_id, machine_id, state)
-
-                case VarField.PRESENCE:
-                    for constraint in combined:
-                        constraint.on_presence(task_id, state)
-
-                case VarField.ABSENCE:
-                    for constraint in combined:
-                        constraint.on_absence(task_id, state)
-
-                case VarField.INFEASIBLE:
-                    for constraint in combined:
-                        constraint.on_infeasibility(task_id, machine_id, state)
-
-                case _:
-                    raise ValueError(f"Unknown event field: {event.field}")
+            else:
+                raise ValueError(f"Unknown event field: {field}")
 
             idx += 1
 
