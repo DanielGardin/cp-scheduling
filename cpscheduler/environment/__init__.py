@@ -24,6 +24,7 @@ __all__ = [
     "UniformParallelMachineSetup",
     "UnrelatedParallelMachineSetup",
     "JobShopSetup",
+    "FlexibleJobShopSetup",
     "FlowShopSetup",
     "OpenShopSetup",
     # Beta constraints

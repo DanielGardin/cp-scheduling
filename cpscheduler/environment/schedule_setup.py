@@ -188,23 +188,21 @@ class UnrelatedParallelMachineSetup(ScheduleSetup):
         return (MachineConstraint(),) if self.disjunctive else ()
 
 
-class JobShopSetup(ScheduleSetup):
+class OpenShopSetup(ScheduleSetup):
     """
-    Job Shop Scheduling Setup.
+    Open Shop Scheduling Setup.
 
-    This setup is used for scheduling tasks in a job shop environment where each task has a specific
-    operation order and is assigned to a specific machine.
+    This setup is used for scheduling tasks in an open shop environment where each task can be
+    processed on any machine, and the order of operations is not fixed.
     """
 
     def __init__(
         self,
         processing_times: str = "processing_time",
-        operation_order: str = "operation",
         machine_feature: str = "machine",
         disjunctive: bool = True,
     ):
         self.processing_times = processing_times
-        self.operation_order = operation_order
         self.machine_feature = machine_feature
 
         self.disjunctive = disjunctive
@@ -227,6 +225,43 @@ class JobShopSetup(ScheduleSetup):
                 n_machines = machine + 1
 
         self.n_machines = n_machines
+
+
+    def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
+        task_disjunction = NonOverlapConstraint(state.instance.job_tasks)
+
+        return (
+            (MachineConstraint(), task_disjunction)
+            if self.disjunctive
+            else (task_disjunction,)
+        )
+
+    def get_entry(self) -> str:
+        return f"O{self.n_machines}"
+
+
+class JobShopSetup(OpenShopSetup):
+    """
+    Job Shop Scheduling Setup.
+
+    This setup is used for scheduling tasks in a job shop environment where each task has a specific
+    operation order and is assigned to a specific machine.
+    """
+
+    def __init__(
+        self,
+        processing_times: str = "processing_time",
+        operation_order: str = "operation",
+        machine_feature: str = "machine",
+        disjunctive: bool = True,
+    ):
+        super().__init__(
+            processing_times=processing_times,
+            machine_feature=machine_feature,
+            disjunctive=disjunctive,
+        )
+
+        self.operation_order = operation_order
 
     def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
         precedence_mapping: dict[Int, list[Int]] = {}
@@ -266,6 +301,64 @@ class JobShopSetup(ScheduleSetup):
         return f"J{self.n_machines}"
 
 
+class FlexibleJobShopSetup(UnrelatedParallelMachineSetup):
+    """
+    Flexible Job Shop Scheduling Setup.
+
+    This setup is a variant of the job shop scheduling problem, where each task
+    can be processed on one of several machines instead of a specific machine.
+    The operation order is still fixed, but the machine assignment is flexible,
+    allowing for more scheduling options and potentially better solutions.
+    """
+
+    def __init__(
+        self,
+        processing_times: Iterable[str],
+        operation_order: str = "operation",
+        disjunctive: bool = True,
+    ):
+        super().__init__(
+            processing_times=processing_times,
+            disjunctive=disjunctive,
+        )
+
+        self.operation_order = operation_order
+
+    def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
+        precedence_mapping: dict[Int, list[Int]] = {}
+        task_orders: list[list[int]] = [[] for _ in range(state.n_jobs)]
+
+        operations = state.instance.task_instance[self.operation_order]
+
+        for task_id, operation in enumerate(operations):
+            job_id = state.instance.job_ids[task_id]
+
+            if len(task_orders[job_id]) <= operation:
+                task_orders[job_id].extend(
+                    -1 for _ in range(len(task_orders[job_id]), operation + 1)
+                )
+
+            task_orders[job_id][operation] = task_id
+
+        for tasks in task_orders:
+            if len(tasks) < 2:
+                continue
+
+            prec = tasks[0]
+            for task_id in tasks[1:]:
+                precedence_mapping[task_id] = [prec]
+
+                prec = task_id
+
+        precedence_constraint = PrecedenceConstraint(precedence_mapping)
+
+        return (
+            (MachineConstraint(), precedence_constraint)
+            if self.disjunctive
+            else (precedence_constraint,)
+        )
+
+
 class FlowShopSetup(JobShopSetup):
     """
     Flow Shop Scheduling Setup.
@@ -291,36 +384,3 @@ class FlowShopSetup(JobShopSetup):
     def get_entry(self) -> str:
         return f"F{self.n_machines}"
 
-
-class OpenShopSetup(JobShopSetup):
-    """
-    Open Shop Scheduling Setup.
-
-    This setup is used for scheduling tasks in an open shop environment where each task can be
-    processed on any machine, and the order of operations is not fixed.
-    """
-
-    def __init__(
-        self,
-        processing_times: str = "processing_time",
-        machine_feature: str = "machine",
-        disjunctive: bool = True,
-    ):
-        super().__init__(
-            processing_times=processing_times,
-            operation_order="",  # Open shop does not have a fixed operation order
-            machine_feature=machine_feature,
-            disjunctive=disjunctive,
-        )
-
-    def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
-        task_disjunction = NonOverlapConstraint(state.instance.job_tasks)
-
-        return (
-            (MachineConstraint(), task_disjunction)
-            if self.disjunctive
-            else (task_disjunction,)
-        )
-
-    def get_entry(self) -> str:
-        return f"O{self.n_machines}"
