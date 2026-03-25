@@ -4,7 +4,7 @@ from typing_extensions import NamedTuple
 
 from copy import deepcopy
 
-from cpscheduler.environment.instructions import SingleAction
+from cpscheduler.environment.des import SingleAction
 
 from cpscheduler.environment import SchedulingEnv, HorizonConstraint
 from cpscheduler.common import unwrap_env
@@ -79,12 +79,12 @@ class SchedulingSolver(Generic[F]):
 
         objective_value = self.formulation.get_objective_value()
 
-        actions: list[tuple[str, int, int, int]] = []
+        actions: list[tuple[int, str, int, int]] = []
         for task_id in self.env.state.runtime_state.awaiting_tasks:
             machine_id, start_time = self.formulation.get_assignment(task_id)
-            actions.append(("execute", task_id, machine_id, start_time))
+            actions.append((start_time, "execute", task_id, machine_id))
 
-        actions.sort(key=lambda x: (x[-1], x[1]))
+        actions.sort(key=lambda x: (x[0], x[2]))
 
         return SolverResult(
             action=actions, objective_value=objective_value, status=status

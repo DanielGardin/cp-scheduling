@@ -5,13 +5,15 @@ from collections.abc import Sequence
 
 import gc
 
+from math import exp
+
 from time import perf_counter
 from prettytable import PrettyTable, TableStyle
 
 import tyro
 from tyro.conf import arg
 
-from cpscheduler import SchedulingEnv, JobShopSetup, __compiled__, __version__
+from cpscheduler import SchedulingEnv, JobShopSetup, Makespan, __compiled__, __version__
 from cpscheduler.instances import read_jsp_instance
 from cpscheduler.heuristics import (
     PriorityDispatchingRule,
@@ -113,7 +115,8 @@ benchmark_times = {
     "ta60": 0.88,
     "ta70": 1.2,
     "ta80": 4.6,
-    # "lta_j1000_m10_10": 90.0
+    # "lta_j100_m100_10" : 90.0,
+    # "lta_j1000_m10_10": 90.0,
 }
 
 RESET = "\033[0m"
@@ -142,6 +145,10 @@ COLORMAP = [
     [251, 227, 136],
     [252, 254, 164],
 ]
+
+def get_gray_ansi(percentage: float) -> str:
+    gray_value = int(128 + 127 * percentage)
+    return f"\033[38;2;{gray_value};{gray_value};{gray_value}m"
 
 def to_ansi_color(rgb: Sequence[int]) -> str:
     r, g, b = rgb
@@ -173,7 +180,7 @@ def format_big_number(num: list[float]) -> str:
 
     if std_value == 0:
         if mean_value.is_integer():
-            return f"{int(mean_value)}{unit}"
+            return f"{mean_value:>3.0f}{unit}"
     
         return f"{mean_value:.2f}{unit}"
 
@@ -195,7 +202,7 @@ def format_time(seconds: list[float]) -> str:
     mean_value = mean(seconds)
     std_val = std(seconds) if len(seconds) > 1 else 0.0
 
-    for unit in ("s", "ms", "µs"):
+    for unit in ("s ", "ms", "µs"):
         if mean_value >= 1:
             break
         
@@ -208,7 +215,7 @@ def format_time(seconds: list[float]) -> str:
     if std_val > 0:
         return f"{mean_value:.2f} ± {std_val:.2f} {unit}"
 
-    return f"{mean_value:.2f} {unit}"
+    return f"{mean_value:6.2f} {unit}"
 
 
 def format_percentage(value: list[float]) -> str:
@@ -297,6 +304,35 @@ def test_memory(
     print(table, flush=True)
 
 
+
+def format_stage_time(
+    stage_times: list[float],
+    total_time: float,
+) -> str:
+    stage_statistics = format_time(stage_times)
+
+    pct = mean(stage_times) / total_time if total_time > 0 else 0.0
+
+    percentage = format_percentage([pct])
+
+    str_size = len(stage_statistics)
+
+    if str_size < 10:
+        spacing = " " * (10 - str_size)
+    
+    else:
+        spacing = " " * (18 - len(stage_statistics))
+
+    min_val = 0.3
+    max_val = 0.7
+    idx = int(len(COLORMAP) * (pct - min_val) / (max_val - min_val))
+    idx = max(0, min(len(COLORMAP) - 1, idx))
+
+    # gray_value = min_val + (max_val - min_val) * pct
+
+    return stage_statistics + to_ansi_color(COLORMAP[idx]) + f"{spacing}({percentage})" + RESET
+
+
 class RunResult:
     MIN_SPEEDUP = 4
     "Speedup required to be considered a significant improvement. Maps to colormap[0]."
@@ -304,31 +340,45 @@ class RunResult:
     MAX_SPEEDUP = 20
     "Speedup considered a very significant improvement. Maps to colormap[-1]."
 
+    # Static values
+    instance_names: list[str]
+    entries: dict[str, str]
+    n_tasks: dict[str, int]
+    n_events: dict[str, int]
+
+    # Dynamic values
+    initialization_times: dict[str, list[float]]
+    reset_times: dict[str, list[float]]
+    pdr_times: dict[str, list[float]]
+    step_times: dict[str, list[float]]
+    simulation_times: dict[str, list[float]]
+
     def __init__(self) -> None:
         self.current_instance: str | None = None
         self.current_run = 0
 
         self.instance_names: list[str] = []
 
-        self.n_tasks: dict[str, int] = {}
-        self.n_events: dict[str, int] = {}
+        self.entries = {}
+        self.n_tasks = {}
+        self.n_events = {}
 
-        self.initialization_times: dict[str, list[float]] = {}
-        self.reset_times: dict[str, list[float]] = {}
-        self.pdr_times: dict[str, list[float]] = {}
-        self.step_times: dict[str, list[float]] = {}
-        self.simulation_times: dict[str, list[float]] = {}
+        self.initialization_times = {}
+        self.reset_times = {}
+        self.pdr_times = {}
+        self.step_times = {}
+        self.simulation_times = {}
 
     def start_instance(
         self,
         instance_name: str,
-        n_tasks: int,
-        n_events: int,
+        env: SchedulingEnv,
     ) -> None:
         self.current_instance = instance_name
         self.instance_names.append(instance_name)
-        self.n_tasks[instance_name] = n_tasks
-        self.n_events[instance_name] = n_events
+        self.n_tasks[instance_name] = env.state.n_tasks
+        self.n_events[instance_name] = env.event_count
+        self.entries[instance_name] = env.get_entry().replace("|", "/")
 
         self.current_run = 0
         self.initialization_times[instance_name] = []
@@ -361,32 +411,40 @@ class RunResult:
     def print_results(self, full: bool) -> None:
         table = PrettyTable([
             "Instance",
+            "Entry",
+            "Tasks",
+            "Simulation time",
         ] + ([
             "Initialization time",
             "Reset time",
             "PDR time",
             "Step time",
         ] if full else []) + [
-            "Simulation time",
-            "Tasks",
             "Time per task",
             "Events",
+            "Events/task",
             "Events/sec",
             "Speedup"
         ])
         table.set_style(TableStyle.MARKDOWN)
 
         for instance_name in self.instance_names:
-            self.initialization_time = format_time(self.initialization_times[instance_name])
-            reset_time = format_time(self.reset_times[instance_name])
-            pdr_time = format_time(self.pdr_times[instance_name])
-            step_time = format_time(self.step_times[instance_name])
-            simulation_time = format_time(self.simulation_times[instance_name])
+            entry = self.entries[instance_name]
             tasks = format_big_number([self.n_tasks[instance_name]])
+            simulation_time = format_time(self.simulation_times[instance_name])
+
+            total_time = mean(self.simulation_times[instance_name])
+    
+            initialization_time = format_stage_time(self.initialization_times[instance_name], total_time)
+            reset_time = format_stage_time(self.reset_times[instance_name], total_time)
+            pdr_time = format_stage_time(self.pdr_times[instance_name], total_time)
+            step_time = format_stage_time(self.step_times[instance_name], total_time)
+
             time_per_task = format_time(
                 [t / self.n_tasks[instance_name] for t in self.simulation_times[instance_name]]
             )
             events = format_big_number([self.n_events[instance_name]])
+            events_per_task = format_big_number([self.n_events[instance_name] / self.n_tasks[instance_name]])
             events_per_sec = format_big_number(
                 [self.n_events[instance_name] / t for t in self.simulation_times[instance_name]]
             )
@@ -403,16 +461,18 @@ class RunResult:
 
             table.add_row([
                 instance_name,
+                entry,
+                tasks,
+                simulation_time,
             ] + ([
-                self.initialization_time,
+                initialization_time,
                 reset_time,
                 pdr_time,
                 step_time,
             ] if full else []) + [
-                simulation_time,
-                tasks,
                 time_per_task,
                 events,
+                events_per_task,
                 events_per_sec,
                 speedup
             ])
@@ -491,7 +551,7 @@ class RunResult:
         task_numbers = [self.n_tasks[instance] for instance in self.instance_names]
         perf = [mean(self.simulation_times[instance]) for instance in self.instance_names]
 
-        slope, intercept, _, p_value, std_err = stats.linregress(
+        slope, intercept, _, _, std_err = stats.linregress(
             np.log(task_numbers), np.log(perf)
         )
 
@@ -505,9 +565,11 @@ class RunResult:
             100,
         )
 
+        assert isinstance(intercept, float)
+
         ax[1].plot(
             x,
-            np.exp(intercept) * x**slope,
+            exp(intercept) * x**slope,
             color=fit_color,
             label=f"Linear Fit (k={slope:.2f} ± {exp_conf_interval:.2f})",
             zorder=1,
@@ -515,8 +577,8 @@ class RunResult:
 
         ax[1].fill_between(
             x,
-            np.exp(intercept) * x ** (slope - exp_conf_interval),
-            np.exp(intercept) * x ** (slope + exp_conf_interval),
+            exp(intercept) * x ** (slope - exp_conf_interval),
+            exp(intercept) * x ** (slope + exp_conf_interval),
             color=fit_color,
             alpha=0.15,
             label="95% Confidence Interval",
@@ -657,10 +719,10 @@ def run_cli(
 
             global_tick = perf_counter()
             if gym:
-                env = SchedulingEnvGym(JobShopSetup(), instance=instance)
+                env = SchedulingEnvGym(JobShopSetup(), objective=Makespan(), instance=instance)
             
             else:
-                env = SchedulingEnv(JobShopSetup(), instance=instance)
+                env = SchedulingEnv(JobShopSetup(), objective=Makespan(), instance=instance)
 
             initialization_times = perf_counter() - global_tick
 
@@ -695,11 +757,9 @@ def run_cli(
             simulation_time = perf_counter() - global_tick
 
             if i == 0:
-                result.start_instance(
-                    instance_name,
-                    n_tasks=env.state.n_tasks,
-                    n_events=env.event_count,
-                )
+                _env = env.core if isinstance(env, SchedulingEnvGym) else env
+
+                result.start_instance(instance_name, _env)
 
 
             result.log_run(

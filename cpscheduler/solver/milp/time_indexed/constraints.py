@@ -22,24 +22,24 @@ from cpscheduler.solver.milp.pulp_utils import (
     implication_pulp,
 )
 
-from cpscheduler.solver.milp.disjunctive.formulation import (
-    DisjunctiveMILPFormulation,
+from cpscheduler.solver.milp.time_indexed.formulation import (
+    TimeIndexedMILPFormulation,
 )
 
-DisjunctiveMILPFormulation.mark_constraint_as_handled(
+TimeIndexedMILPFormulation.mark_constraint_as_handled(
     ReleaseDateConstraint,
     DeadlineConstraint,
     HorizonConstraint,
 )
 
 
-@DisjunctiveMILPFormulation.register_constraint(PrecedenceConstraint)
+@TimeIndexedMILPFormulation.register_constraint(PrecedenceConstraint)
 def prec_constraint(
-    formulation: DisjunctiveMILPFormulation,
+    formulation: TimeIndexedMILPFormulation,
     state: ScheduleState,
     constraint: PrecedenceConstraint,
 ) -> None:
-    for task_id, children in constraint.children.items():
+    for task_id, children in constraint.precedence.items():
         for child_id in children:
             pulp_add_constraint(
                 formulation.model,
@@ -51,13 +51,13 @@ def prec_constraint(
             formulation.set_order(task_id, child_id)
 
 
-@DisjunctiveMILPFormulation.register_constraint(NoWaitConstraint)
+@TimeIndexedMILPFormulation.register_constraint(NoWaitConstraint)
 def no_wait_constraint(
-    formulation: DisjunctiveMILPFormulation,
+    formulation: TimeIndexedMILPFormulation,
     state: ScheduleState,
     constraint: NoWaitConstraint,
 ) -> None:
-    for task_id, children in constraint.children.items():
+    for task_id, children in constraint.precedence.items():
         for child_id in children:
             pulp_add_constraint(
                 formulation.model,
@@ -69,9 +69,9 @@ def no_wait_constraint(
             formulation.set_order(task_id, child_id)
 
 
-@DisjunctiveMILPFormulation.register_constraint(NonOverlapConstraint)
+@TimeIndexedMILPFormulation.register_constraint(NonOverlapConstraint)
 def non_overlap_constraint(
-    formulation: DisjunctiveMILPFormulation,
+    formulation: TimeIndexedMILPFormulation,
     state: ScheduleState,
     constraint: NonOverlapConstraint,
 ) -> None:
@@ -112,9 +112,9 @@ def non_overlap_constraint(
             )
 
 
-@DisjunctiveMILPFormulation.register_constraint(MachineConstraint)
+@TimeIndexedMILPFormulation.register_constraint(MachineConstraint)
 def machine_constraint(
-    formulation: DisjunctiveMILPFormulation,
+    formulation: TimeIndexedMILPFormulation,
     state: ScheduleState,
     constraint: MachineConstraint,
 ) -> None:
@@ -155,9 +155,9 @@ def machine_constraint(
             )
 
 
-@DisjunctiveMILPFormulation.register_constraint(ResourceConstraint)
+@TimeIndexedMILPFormulation.register_constraint(ResourceConstraint)
 def resource_constraint(
-    formulation: DisjunctiveMILPFormulation,
+    formulation: TimeIndexedMILPFormulation,
     state: ScheduleState,
     constraint: ResourceConstraint,
 ) -> None:
@@ -168,9 +168,9 @@ def resource_constraint(
     )
 
 
-@DisjunctiveMILPFormulation.register_constraint(NonRenewableResourceConstraint)
+@TimeIndexedMILPFormulation.register_constraint(NonRenewableResourceConstraint)
 def non_renewable_resource_constraint(
-    formulation: DisjunctiveMILPFormulation,
+    formulation: TimeIndexedMILPFormulation,
     state: ScheduleState,
     constraint: NonRenewableResourceConstraint,
 ) -> None:
@@ -188,13 +188,13 @@ def non_renewable_resource_constraint(
         )
 
 
-@DisjunctiveMILPFormulation.register_constraint(SetupConstraint)
+@TimeIndexedMILPFormulation.register_constraint(SetupConstraint)
 def setup_constraint(
-    formulation: DisjunctiveMILPFormulation,
+    formulation: TimeIndexedMILPFormulation,
     state: ScheduleState,
     constraint: SetupConstraint,
 ) -> None:
-    for task_id, setup_times in constraint.current_setup_times.items():
+    for task_id, setup_times in constraint.setup_times.items():
         for other_task_id, setup_time in setup_times.items():
             time = int(setup_time)
 

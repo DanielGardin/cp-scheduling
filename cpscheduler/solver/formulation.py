@@ -81,7 +81,7 @@ class SymmetryBreaking(Generic[F]):
 
 
 class Formulation(ABC):
-    _name: ClassVar[str]
+    formulation_name: ClassVar[str | None] = None
 
     _setup_registry: ClassVar[dict[type[ScheduleSetup], Exporter[Any, Any]]]
     _constraint_registry: ClassVar[dict[type[Constraint], Exporter[Any, Any]]]
@@ -90,9 +90,13 @@ class Formulation(ABC):
     ]
     _symmetry_breaking_registry: ClassVar[list[SymmetryBreaking[Self]]]
 
-    def __init_subclass__(cls, formulation_name: str) -> None:
-        cls._name = formulation_name
-        formulations[formulation_name] = cls
+    def __init_subclass__(cls) -> None:
+        if cls.formulation_name is None:
+            raise ValueError(
+                f"Formulation subclasses must define a 'formulation_name' class variable."
+            )
+
+        formulations[cls.formulation_name] = cls
 
         cls._setup_registry = {}
         cls._constraint_registry = {}
@@ -200,6 +204,15 @@ class Formulation(ABC):
         initialize the variables based on the environment's setup.
         """
 
+    def finalize_model(self, env: SchedulingEnv) -> None:
+        """
+        Finalize the model after all constraints and objective have been added.
+
+        This can be used to add any necessary constraints or modifications to the
+        model that depend on the complete set of constraints and objective being
+        defined.
+        """
+
     @abstractmethod
     def solve(self, *args: Any, **kwargs: Any) -> Any:
         """
@@ -260,4 +273,4 @@ class Formulation(ABC):
         self._objective_registry[type(objective)](self, state, objective)
 
     def __repr__(self) -> str:
-        return f"Formulation(name={self._name})"
+        return f"Formulation(name={self.formulation_name})"

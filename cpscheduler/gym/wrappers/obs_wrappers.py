@@ -230,7 +230,7 @@ class CPStateWrapper(SchedulingObservationWrapper[ObsType, _Act]):
 
         state: ScheduleState = self.env.get_wrapper_attr("state")
 
-        task_data["lower_bound"] = state.variables_.start.global_lbs.copy()
-        task_data["upper_bound"] = state.variables_.start.global_ubs.copy()
+        task_data["lower_bound"] = state._variables.start.global_lbs.copy()
+        task_data["upper_bound"] = state._variables.start.global_ubs.copy()
 
         return task_data, job_data

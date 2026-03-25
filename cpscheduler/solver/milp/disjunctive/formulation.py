@@ -24,11 +24,13 @@ from cpscheduler.solver.milp.pulp_utils import (
     get_value,
     set_initial_value,
     get_ub,
-    set_ub,
+    set_ub
 )
 
 
-class DisjunctiveMILPFormulation(Formulation, formulation_name="disjunctive"):
+class DisjunctiveMILPFormulation(Formulation):
+    formulation_name = "disjunctive"
+
     start_times: list[PULP_PARAM]
     end_times: list[PULP_PARAM]
     assignments: list[list[PULP_PARAM]]
@@ -49,8 +51,9 @@ class DisjunctiveMILPFormulation(Formulation, formulation_name="disjunctive"):
         self.start_times = []
         self.end_times = []
         self.assignments = []
-        self.orders = {}
         self.present = []
+
+        self.orders = {}
 
         self.relaxed = relaxed
 
@@ -215,54 +218,36 @@ class DisjunctiveMILPFormulation(Formulation, formulation_name="disjunctive"):
     # Helper methods for building the model
     def has_order(self, i: int, j: int) -> bool:
         "Check if an order i < j, or j < i exists between two tasks."
-        return (i, j) in self.orders or (j, i) in self.orders
+        return (i, j) in self.orders
 
     def get_order(self, i: int, j: int) -> PULP_PARAM:
         if i == j:
             return 1
 
-        if i < j:
-            if (i, j) not in self.orders:
-                self.orders[(i, j)] = LpVariable(
-                    f"order_{i}_{j}",
-                    lowBound=0,
-                    upBound=1,
-                    cat=LpContinuous if self.relaxed else LpBinary,
-                )
-
+        if (i, j) in self.orders:
             return self.orders[(i, j)]
 
-        if (j, i) not in self.orders:
-            self.orders[(j, i)] = LpVariable(
-                f"order_{j}_{i}",
-                lowBound=0,
-                upBound=1,
-                cat=LpContinuous if self.relaxed else LpBinary,
-            )
+        order_var = LpVariable(
+            f"order_{i}_{j}",
+            lowBound=0,
+            upBound=1,
+            cat=LpContinuous if self.relaxed else LpBinary,
+        )
 
-        return 1 - self.orders[(j, i)]
+        self.orders[(i, j)] = order_var
+
+        return order_var
 
     def set_order(self, i: int, j: int) -> None:
         if i == j:
             return
 
-        if i < j:
-            if (i, j) not in self.orders:
-                self.orders[(i, j)] = 1
-
-            else:
-                pulp_add_constraint(
-                    self.model,
-                    self.orders[(i, j)] == 1,
-                    f"order_{i}_prec_{j}",
-                )
-
-        if (j, i) not in self.orders:
-            self.orders[(j, i)] = 0
+        if (i, j) not in self.orders:
+            self.orders[(i, j)] = 1
 
         else:
             pulp_add_constraint(
                 self.model,
-                self.orders[(j, i)] == 0,
-                f"order_{j}_succ_{i}",
+                self.orders[(i, j)] == 1,
+                f"order_{i}_prec_{j}",
             )

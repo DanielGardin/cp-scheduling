@@ -20,6 +20,7 @@ from pulp import (
 PULP_EXPRESSION: TypeAlias = LpVariable | LpAffineExpression
 PULP_PARAM: TypeAlias = PULP_EXPRESSION | int | float
 
+
 def create_binary_var(name: str, relaxed: bool) -> LpVariable:
     """
     Create a binary variable, or a continuous variable in [0, 1] if relaxed.
@@ -33,10 +34,7 @@ def create_binary_var(name: str, relaxed: bool) -> LpVariable:
         The created variable.
     """
     return LpVariable(
-        name,
-        lowBound=0,
-        upBound=1,
-        cat=LpContinuous if relaxed else LpBinary
+        name, lowBound=0, upBound=1, cat=LpContinuous if relaxed else LpBinary
     )
 
 
@@ -203,6 +201,7 @@ def set_ub(param: PULP_PARAM, ub: float | int) -> None:
             f"type {type(param)} to {ub}."
         )
 
+
 def set_lb(param: PULP_PARAM, lb: float | int) -> None:
     """
     Set the lower bound of a PULP parameter.
@@ -226,6 +225,7 @@ def set_lb(param: PULP_PARAM, lb: float | int) -> None:
             f"Cannot set lower bound of a constant parameter {param} of "
             f"type {type(param)} to {lb}."
         )
+
 
 @overload
 def get_values(params: PULP_PARAM) -> float | int: ...
@@ -325,6 +325,40 @@ def max_pulp(
 
     return max_var
 
+def min_pulp(
+    model: LpProblem,
+    decision_vars: Iterable[PULP_PARAM],
+    min_var: LpVariable | None = None,
+    cat: str = LpContinuous,
+    name: str | None = None,
+) -> LpVariable:
+    """
+    Adds constraints to the model to ensure min_var is at most as large as each decision variable.
+    Equivalent to: min_var <= min(decision_vars)
+
+    Parameters:
+        model (LpProblem): The PuLP problem instance.
+        min_var (LpVariable, optional): The variable to represent the minimum value.
+        decision_vars (list[LpVariable | LpAffineExpression | int | float]): The list of variables or expressions.
+        name (str, optional): A prefix for constraint names.
+
+    Returns:
+        LpVariable: The variable representing the minimum value.
+    """
+    global global_max_id
+
+    if name is None:
+        global_max_id += 1
+        name = f"min_var_{global_max_id}"
+
+    if min_var is None:
+        min_var = LpVariable(name, lowBound=None, cat=cat)
+
+    for i, var in enumerate(decision_vars):
+        model.addConstraint(var >= min_var, f"{name}_le_var_{i}")
+
+    return min_var
+
 
 global_and_id = 0
 
@@ -423,7 +457,7 @@ def implication_pulp(
         premises.append(var)
 
     if and_formulation:
-        premise = and_pulp(model,premises)
+        premise = and_pulp(model, premises)
         n_vars = 1
 
     else:

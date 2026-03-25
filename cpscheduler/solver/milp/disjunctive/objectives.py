@@ -81,12 +81,7 @@ def composed_objective(
         for sub_objective in objective.objectives
     ]
 
-    coefficients = (
-        scale_to_int(objective.coefficients)
-        if formulation.relaxed
-        else objective.coefficients
-    )
-
+    coefficients = objective.coefficients
     objective_value = lpDot(coefficients, sub_objectives)
 
     formulation.model.setObjective(objective_value)
