@@ -2,13 +2,58 @@ from typing import Any
 from collections.abc import Iterable, Mapping, Sequence
 from typing_extensions import Self
 
-from cpscheduler.utils.general_algo import topological_sort
-
 from cpscheduler.environment.constants import TaskID, Int
 from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import Constraint
-from cpscheduler.utils.list_utils import convert_to_list
+from cpscheduler.environment.utils import convert_to_list
+
+
+def topological_sort(
+    precedence_map: dict[TaskID, list[TaskID]], n_tasks: int
+) -> list[TaskID]:
+    """
+    Perform a topological sort on a directed acyclic graph.
+
+    Parameters
+    ----------
+    precedence_map: dict
+        A dictionary containing the precedence relationships between the tasks.
+
+    in_degree: list
+        A list containing the in-degree of each task.
+
+    Returns
+    -------
+    list
+        A list containing the tasks in topological order
+    """
+    in_degree = [0] * n_tasks
+    for children in precedence_map.values():
+        for child in children:
+            in_degree[child] += 1
+
+    queue = [task for task, degree in enumerate(in_degree) if degree == 0]
+
+    topological_order: list[int] = []
+
+    idx = 0
+    while idx < len(queue):
+        vertex = queue[idx]
+        idx += 1
+
+        if vertex not in precedence_map or not precedence_map[vertex]:
+            continue
+
+        topological_order.append(vertex)
+
+        for child in precedence_map[vertex]:
+            in_degree[child] -= 1
+
+            if in_degree[child] == 0:
+                queue.append(child)
+
+    return topological_order
 
 
 class PrecedenceConstraint(Constraint):

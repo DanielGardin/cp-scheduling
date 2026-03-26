@@ -10,7 +10,7 @@ from collections.abc import Iterable
 
 from mypy_extensions import mypyc_attr
 
-from cpscheduler.utils.list_utils import convert_to_list
+from cpscheduler.environment.utils import convert_to_list
 
 from cpscheduler.environment.constants import MachineID, Time, Int
 from cpscheduler.environment.state import ScheduleState
@@ -226,7 +226,6 @@ class OpenShopSetup(ScheduleSetup):
 
         self.n_machines = n_machines
 
-
     def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
         task_disjunction = NonOverlapConstraint(state.instance.job_tasks)
 
@@ -383,4 +382,3 @@ class FlowShopSetup(JobShopSetup):
 
     def get_entry(self) -> str:
         return f"F{self.n_machines}"
-

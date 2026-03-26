@@ -15,8 +15,6 @@ from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import Constraint
 
-# from cpscheduler.utils.list_utils import convert_to_list
-
 
 class MachineEligibilityConstraint(Constraint):
     """

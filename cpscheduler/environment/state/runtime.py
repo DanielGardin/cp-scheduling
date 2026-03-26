@@ -7,12 +7,13 @@ from cpscheduler.environment.constants import (
     Time,
     Status,
     StatusType,
-    MIN_TIME
+    MIN_TIME,
 )
 
 from cpscheduler.environment.state.instance import ProblemInstance
 
 DUMMY_INSTANCE = ProblemInstance({})
+
 
 class TaskHistory(NamedTuple):
     "A record of a task execution, (machine_id, start_time, end_time)"
@@ -113,9 +114,7 @@ class RuntimeState:
 
         assignment, start_time, prev_end = self.history[task_id].pop()
 
-        self.history[task_id].append(
-            TaskHistory(assignment, start_time, time)
-        )
+        self.history[task_id].append(TaskHistory(assignment, start_time, time))
 
         self.status[task_id] = Status.PAUSED
 

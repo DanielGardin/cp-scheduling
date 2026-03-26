@@ -3,12 +3,14 @@ from typing_extensions import NamedTuple
 
 from cpscheduler.environment.constants import Time
 
+
 class ViolationRecord(NamedTuple):
     "A record of a constraint violation"
 
     time: Time
     penalty: float
     constraint: str
+
 
 class ViolationState:
     """
@@ -28,7 +30,9 @@ class ViolationState:
         self.violations = {}
         self.total_penalty = 0.0
 
-    def record_violation(self, time: Time, penalty: float, constraint: str) -> None:
+    def record_violation(
+        self, time: Time, penalty: float, constraint: str
+    ) -> None:
         "Record a constraint violation with the given time, penalty, and constraint name."
         if constraint not in self.violations:
             self.violations[constraint] = []
@@ -42,14 +46,13 @@ class ViolationState:
         "Clear all recorded violations and reset the total penalty."
         self.violations.clear()
         self.total_penalty = 0.0
-    
+
     def __reduce__(self) -> tuple[Any, ...]:
         return (self.__class__, (), (self.violations, self.total_penalty))
-    
+
     def __setstate__(self, state: tuple[Any, ...]) -> None:
         self.violations, self.total_penalty = state
-    
+
     def get_violations(self, constraint: str) -> list[ViolationRecord]:
         "Get the list of violations for a specific constraint."
         return self.violations.get(constraint, [])
-

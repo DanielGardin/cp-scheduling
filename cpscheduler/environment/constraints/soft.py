@@ -1,4 +1,4 @@
-from cpscheduler.utils.list_utils import convert_to_list
+from cpscheduler.environment.utils import convert_to_list
 
 from cpscheduler.environment.constants import Time
 from cpscheduler.environment.state import ScheduleState

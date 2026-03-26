@@ -10,7 +10,7 @@ from collections.abc import Iterable, Mapping
 
 from gymnasium import Env, Space
 
-from cpscheduler.utils._protocols import Metric
+from cpscheduler.environment._protocols import Metric
 
 from cpscheduler.environment import (
     SchedulingEnv,
@@ -18,7 +18,7 @@ from cpscheduler.environment import (
     Constraint,
     Objective,
 )
-from cpscheduler.utils._protocols import InstanceTypes, Options
+from cpscheduler.environment._protocols import InstanceTypes, Options
 
 from cpscheduler.environment.state import ObsType
 from cpscheduler.environment.des import ActionType

@@ -1,13 +1,72 @@
-from typing import Any
+from typing import Any, TypeVar, TYPE_CHECKING
 from collections.abc import Iterable
 
-from cpscheduler.utils.list_utils import convert_to_list
-from cpscheduler.utils.general_algo import binary_search
+from cpscheduler.environment.utils import convert_to_list
 
 from cpscheduler.environment.constants import Time, Float, MAX_TIME
 from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import Constraint
+
+if TYPE_CHECKING:
+    from _typeshed import SupportsDunderLT
+
+_SupportsLT = TypeVar("_SupportsLT", bound="SupportsDunderLT[Any]")
+
+
+def binary_search(
+    array: list[_SupportsLT],
+    target: _SupportsLT,
+    left: int = 0,
+    right: int = -1,
+    decreasing: bool = False,
+) -> int:
+    """
+    Perform a binary search on a sorted array.
+
+    Parameters
+    ----------
+    array: list
+        The sorted array to be searched.
+
+    target: Any
+        The target value to be searched for.
+
+    left: int, optional
+        The left index of the search interval.
+
+    right: int, optional
+        The right index of the search interval.
+
+    Returns
+    -------
+    int
+        The index of the inclusion (to the right) of the target value in the array.
+    """
+    if right < 0:
+        right = len(array) + right
+
+    while left <= right:
+        mid = (left + right) // 2
+
+        if array[mid] == target:
+            return mid + 1
+
+        if array[mid] < target:
+            if decreasing:
+                right = mid - 1
+
+            else:
+                left = mid + 1
+
+        else:
+            if decreasing:
+                left = mid + 1
+
+            else:
+                right = mid - 1
+
+    return left
 
 
 class ResourceConstraint(Constraint):

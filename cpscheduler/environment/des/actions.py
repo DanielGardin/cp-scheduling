@@ -7,14 +7,16 @@ from cpscheduler.environment.constants import Int, Time
 from cpscheduler.environment.des.base import (
     SimulationEvent,
     PriorityValue,
-    instructions
+    instructions,
 )
 
 Instruction = SimulationEvent
 
+
 class InstructionKwargs(TypedDict):
     time: NotRequired[Int]
     priority: NotRequired[Int]
+
 
 InstructionArgs = Int | InstructionKwargs
 
@@ -55,7 +57,7 @@ def parse_instruction(
     instruction_args: SingleAction,
 ) -> tuple[Instruction, Time | None, PriorityValue | None]:
     """Parse raw instruction arguments into (Instruction, time, priority).
-    
+
     Priority defaults to None, allowing Schedule.add_event to apply its default (0).
     """
     if isinstance(instruction_args, SimulationEvent):
@@ -70,7 +72,9 @@ def parse_instruction(
     if isinstance(instruction_args[0], dict):
         kwargs: InstructionKwargs = instruction_args[0]
         time = Time(kwargs["time"]) if "time" in kwargs else None
-        priority = PriorityValue(kwargs["priority"]) if "priority" in kwargs else None
+        priority = (
+            PriorityValue(kwargs["priority"]) if "priority" in kwargs else None
+        )
 
     else:
         time = Time(instruction_args[0])

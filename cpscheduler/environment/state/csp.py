@@ -63,6 +63,7 @@ class Presence:
     UNDEFINED: Final[PresenceType] = 0b11
     "Task presence has not been determined yet. Initial value for optional tasks."
 
+
 INFEASIBLE = Presence.INFEASIBLE
 PRESENT = Presence.PRESENT
 ABSENT = Presence.ABSENT
@@ -70,23 +71,25 @@ UNDEFINED = Presence.UNDEFINED
 
 
 def presence_to_str(presence: PresenceType) -> str:
-        if presence == INFEASIBLE:
-            return "INFEASIBLE"
+    if presence == INFEASIBLE:
+        return "INFEASIBLE"
 
-        elif presence == PRESENT:
-            return "PRESENT"
+    elif presence == PRESENT:
+        return "PRESENT"
 
-        elif presence == ABSENT:
-            return "ABSENT"
+    elif presence == ABSENT:
+        return "ABSENT"
 
-        elif presence == UNDEFINED:
-            return "UNDEFINED"
+    elif presence == UNDEFINED:
+        return "UNDEFINED"
 
-        else:
-            raise ValueError(f"Invalid presence value: {presence}.")
+    else:
+        raise ValueError(f"Invalid presence value: {presence}.")
+
 
 def can_be_present(presence: PresenceType) -> bool:
     return (presence & PRESENT) != 0
+
 
 def can_be_absent(presence: PresenceType) -> bool:
     return (presence & ABSENT) != 0
@@ -244,7 +247,7 @@ class ScheduleVariables:
         "fixed",
         "start",
         "end",
-        "infeasible"
+        "infeasible",
     ]
 
     remaining_times: list[Time]
@@ -307,13 +310,15 @@ class ScheduleVariables:
         if new_presence == old_presence:
             return None
 
-        assert new_presence != UNDEFINED, "Impossible to loosen presence constraints."
+        assert (
+            new_presence != UNDEFINED
+        ), "Impossible to loosen presence constraints."
         if new_presence == PRESENT:
             field = PRESENCE
-        
+
         elif new_presence == ABSENT:
             field = ABSENCE
-        
+
         elif new_presence == INFEASIBLE:
             # The task cannot be present nor absent, it is infeasible based on
             # the current propagation.
@@ -323,12 +328,14 @@ class ScheduleVariables:
         else:
             raise ValueError("Invalid presence mask, cannot be applied.")
 
+        self.presence[task_id] = new_presence
+
         return DomainEvent(task_id, field)
 
     def require_task(self, task_id: TaskID) -> DomainEvent | None:
         "Require a task to be present in the schedule."
         return self.restrict_presence(task_id, PRESENT)
-    
+
     def forbid_task(self, task_id: TaskID) -> DomainEvent | None:
         "Forbid a task from being present in the schedule."
         return self.restrict_presence(task_id, ABSENT)
@@ -626,7 +633,7 @@ class ScheduleVariables:
             raise ValueError(
                 f"Cannot assign task {task_id} to machine {machine_id} at time {time}, "
                 f"it violates the bounds for that machine: "
-                f"start interval = [{self.start.lbs[idx]}, {self.start.ubs[idx]}]."
+                f"start interval = [{start.lbs[idx]}, {start.ubs[idx]}]."
             )
 
         elif not can_be_present(presence[task_id]):

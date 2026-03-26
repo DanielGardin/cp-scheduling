@@ -2,7 +2,7 @@ import pytest
 
 from common import  env_setup
 
-from cpscheduler.heuristics import (
+from cpscheduler.heuristics.pdrs import (
     ShortestProcessingTime,
     MostOperationsRemaining,
     MostWorkRemaining,
@@ -53,7 +53,7 @@ def test_pdr(instance_name: str, heuristic: str) -> None:
 
     obs, info = env.reset()
 
-    action = pdr(obs)
+    action = pdr.ranking(obs)
     obs, _, terminated, _, info = env.step(action)
 
     assert terminated
@@ -64,7 +64,7 @@ def test_pdr(instance_name: str, heuristic: str) -> None:
 @pytest.mark.parametrize("heuristic", heuristics)
 def test_dynamic(instance_name: str, heuristic: str) -> None:
     env = envs[instance_name]
-    pdr = heuristics[heuristic](available=True, strict=True)
+    pdr = heuristics[heuristic]()
 
     obs, info = env.reset()
 
@@ -72,7 +72,7 @@ def test_dynamic(instance_name: str, heuristic: str) -> None:
     while not done:
         assert any(obs[0]["available"])
 
-        single_action = pdr(obs)[0]
+        single_action = pdr(obs)
         obs, _, done, _, info = env.step(single_action)
 
     assert info["current_time"] == pdr_expected_results[instance_name][heuristic]

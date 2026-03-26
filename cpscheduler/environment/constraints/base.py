@@ -1,4 +1,4 @@
-from typing import ClassVar, NoReturn, final
+from typing import Any, ClassVar, NoReturn, final
 from mypy_extensions import mypyc_attr
 
 from cpscheduler.environment.state.events import DomainEvent, VarField
@@ -30,14 +30,19 @@ class Constraint:
         constraints[cls.__name__] = cls
 
     def initialize(self, state: ScheduleState) -> None:
-        "Initialize the constraint with the scheduling state."
+        """
+        Initialize the constraint with the scheduling state.
+
+        This operation is meant to initialize the internal state of the constraint given the
+        observed state at the constraint's inclusion time.
+        """
+
+    def get_observation(self) -> dict[str, list[Any]]:
+        "Export"
+        return {}
 
     def reset(self, state: ScheduleState) -> None:
         "Reset the constraint to its initial state."
-
-    def get_entry(self) -> str:
-        "Produce the β entry for the constraint."
-        return ""
 
     @final
     def propagate(self, event: DomainEvent, state: ScheduleState) -> None:
@@ -49,28 +54,28 @@ class Constraint:
 
         if field == START_LB:
             self.on_start_lb(task_id, machine_id, state)
-        
+
         elif field == START_UB:
             self.on_start_ub(task_id, machine_id, state)
-        
+
         elif field == END_LB:
             self.on_end_lb(task_id, machine_id, state)
-        
+
         elif field == END_UB:
             self.on_end_ub(task_id, machine_id, state)
-        
+
         elif field == ASSIGNMENT:
             self.on_assignment(task_id, machine_id, state)
-        
+
         elif field == PRESENCE:
             self.on_presence(task_id, state)
-        
+
         elif field == ABSENCE:
             self.on_absence(task_id, state)
-        
+
         elif field == INFEASIBILITY:
             self.on_infeasibility(task_id, machine_id, state)
-        
+
         else:
             raise ValueError(f"Unknown event field: {field}")
 
@@ -112,6 +117,10 @@ class Constraint:
 
     def on_time_update(self, time: Time, state: ScheduleState) -> None:
         "Handle the event of the current time being updated."
+
+    def get_entry(self) -> str:
+        "Produce the β entry for the constraint."
+        return ""
 
 
 class PassiveConstraint(Constraint):

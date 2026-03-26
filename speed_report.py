@@ -15,22 +15,13 @@ from tyro.conf import arg
 
 from cpscheduler import SchedulingEnv, JobShopSetup, Makespan, __compiled__, __version__
 from cpscheduler.instances import read_jsp_instance
-from cpscheduler.heuristics import (
+from cpscheduler.heuristics.pdrs import (
     PriorityDispatchingRule,
+    RandomPriority,
     ShortestProcessingTime,
     MostOperationsRemaining,
     MostWorkRemaining,
-    EarliestDueDate,
-    ModifiedDueDate,
-    WeightedShortestProcessingTime,
-    MinimumSlackTime,
-    FirstInFirstOut,
-    CostOverTime,
-    CriticalRatio,
-    ApparentTardinessCost,
-    TrafficPriority,
 )
-from cpscheduler.utils.array_utils import disable_numpy
 
 from cpscheduler.gym import SchedulingEnvGym
 
@@ -45,33 +36,17 @@ def ok_fail(condition: bool) -> str:
 
 
 PDR_NAMES = Literal[
+    "rng",
     "spt",
     "mor",
     "mwr",
-    "edd",
-    "mdd",
-    "wspt",
-    "mst",
-    "fifo",
-    "cot",
-    "cr",
-    "atc",
-    "tp",
 ]
 
 pdrs: dict[str, type[PriorityDispatchingRule]] = {
+    "rng": RandomPriority,
     "spt": ShortestProcessingTime,
     "mor": MostOperationsRemaining,
     "mwr": MostWorkRemaining,
-    "edd": EarliestDueDate,
-    "mdd": ModifiedDueDate,
-    "wspt": WeightedShortestProcessingTime,
-    "mst": MinimumSlackTime,
-    "fifo": FirstInFirstOut,
-    "cot": CostOverTime,
-    "cr": CriticalRatio,
-    "atc": ApparentTardinessCost,
-    "tp": TrafficPriority,
 }
 
 assert set(pdrs.keys()) == set(get_args(PDR_NAMES)), "PDR_NAMES must match keys of pdrs dictionary"
@@ -323,9 +298,7 @@ def format_stage_time(
     else:
         spacing = " " * (18 - len(stage_statistics))
 
-    min_val = 0.3
-    max_val = 0.7
-    idx = int(len(COLORMAP) * (pct - min_val) / (max_val - min_val))
+    idx = int(len(COLORMAP) * pct)
     idx = max(0, min(len(COLORMAP) - 1, idx))
 
     # gray_value = min_val + (max_val - min_val) * pct
@@ -357,7 +330,7 @@ class RunResult:
         self.current_instance: str | None = None
         self.current_run = 0
 
-        self.instance_names: list[str] = []
+        self.instance_names = []
 
         self.entries = {}
         self.n_tasks = {}
@@ -684,7 +657,7 @@ def run_cli(
     print("Running bechmark: time")
     result = RunResult()
 
-    agent = pdrs[pdr](available=dynamic)
+    agent = pdrs[pdr]()
 
     dots = 0
     if not quiet:
@@ -730,29 +703,30 @@ def run_cli(
             obs, _ = env.reset()
             reset_time = perf_counter() - tick
 
-            if not dynamic:
-                with disable_numpy(disable=not numpy):
-                    tick = perf_counter()
-                    action = agent(obs)
-                    pdr_time = perf_counter() - tick
-            
-                tick = perf_counter()
-                env.step(action)
-                step_time = perf_counter() - tick
-
-            else:
+            if dynamic:
                 pdr_time = 0.
                 step_time = 0.
 
                 done = False
                 while not done:
                     tick = perf_counter()
-                    single_action = agent(obs)[0]
+                    single_action = agent(obs)
                     pdr_time += perf_counter() - tick
+
+                    assert single_action is not None
 
                     tick = perf_counter()
                     obs, _, done, *_ = env.step(single_action)
                     step_time += perf_counter() - tick
+            
+            else:
+                tick = perf_counter()
+                action = agent.ranking(obs)
+                pdr_time = perf_counter() - tick
+
+                tick = perf_counter()
+                env.step(action)
+                step_time = perf_counter() - tick
 
             simulation_time = perf_counter() - global_tick
 

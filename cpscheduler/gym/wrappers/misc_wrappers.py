@@ -5,7 +5,7 @@ from abc import ABC
 
 from gymnasium import Env, Wrapper, Space
 
-from cpscheduler.utils._protocols import (
+from cpscheduler.environment._protocols import (
     Options,
     InstanceTypes,
     InstanceConfig,

@@ -320,7 +320,6 @@ class Schedule:
             if event.blocking:
                 self._next_rank += 1
 
-
             time = state.time
             if self._tail is not None and time < self._tail:
                 time = self._tail

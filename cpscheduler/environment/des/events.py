@@ -126,6 +126,7 @@ class CheckpointEvent(SimulationEvent):
     def args(self) -> tuple[()]:
         return ()
 
+
 register_instruction(CheckpointEvent, "noop")
 
 

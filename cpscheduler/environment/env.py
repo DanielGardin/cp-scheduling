@@ -15,8 +15,8 @@ from typing import Any
 from collections.abc import Iterable, Mapping
 from typing_extensions import TypeIs
 
-from cpscheduler.utils.list_utils import convert_to_list
-from cpscheduler.utils._protocols import (
+from cpscheduler.environment.utils import convert_to_list
+from cpscheduler.environment._protocols import (
     Metric,
     InstanceTypes,
     InfoType,
@@ -57,6 +57,7 @@ def prepare_instance(instance: InstanceTypes) -> dict[str, list[Any]]:
 def is_info_dict(value: Any) -> TypeIs[Mapping[Any, Any]]:
     "Type guard to check if a value is an info dictionary."
     return isinstance(value, Mapping)
+
 
 class SchedulingEnv:
     """
@@ -310,27 +311,27 @@ class SchedulingEnv:
             elif field == START_LB:
                 for constraint in combined:
                     constraint.on_start_lb(task_id, machine_id, state)
-            
+
             elif field == START_UB:
                 for constraint in combined:
                     constraint.on_start_ub(task_id, machine_id, state)
-            
+
             elif field == END_LB:
                 for constraint in combined:
                     constraint.on_end_lb(task_id, machine_id, state)
-            
+
             elif field == END_UB:
                 for constraint in combined:
                     constraint.on_end_ub(task_id, machine_id, state)
-            
+
             elif field == PRESENCE:
                 for constraint in combined:
                     constraint.on_presence(task_id, state)
-            
+
             elif field == ABSENCE:
                 for constraint in combined:
                     constraint.on_absence(task_id, state)
-            
+
             elif field == INFEASIBILITY:
                 for constraint in combined:
                     constraint.on_infeasibility(task_id, machine_id, state)
@@ -342,7 +343,6 @@ class SchedulingEnv:
 
         self.event_count += idx
         state.event_queue.clear()
-
 
     def advance_clock(self) -> bool:
         schedule = self.schedule
@@ -359,7 +359,6 @@ class SchedulingEnv:
 
             else:
                 next_time = state.get_last_completion_time()
-
 
         self.state.advance_time(next_time)
 
@@ -444,7 +443,7 @@ class SchedulingEnv:
             reward = -reward
 
         truncated = False
-        terminal = self.state.is_terminal()
+        terminal = state.is_terminal()
         info = self.get_info()
 
         return obs, reward, terminal, truncated, info

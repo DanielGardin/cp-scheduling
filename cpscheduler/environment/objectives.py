@@ -14,7 +14,7 @@ from mypy_extensions import mypyc_attr
 
 from math import expm1
 
-from cpscheduler.utils.list_utils import convert_to_list
+from cpscheduler.environment.utils import convert_to_list
 from cpscheduler.environment.constants import TaskID, Float
 from cpscheduler.environment.state import ScheduleState
 

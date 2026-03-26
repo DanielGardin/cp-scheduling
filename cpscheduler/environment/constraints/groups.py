@@ -1,7 +1,7 @@
 from typing import Any
 from collections.abc import Iterable
 
-from cpscheduler.utils.list_utils import convert_to_list
+from cpscheduler.environment.utils import convert_to_list
 
 from cpscheduler.environment.constants import TaskID, MachineID, Int
 from cpscheduler.environment.state import ScheduleState

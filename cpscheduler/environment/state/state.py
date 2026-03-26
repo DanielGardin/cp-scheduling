@@ -19,6 +19,7 @@ PRESENT = Presence.PRESENT
 ABSENT = Presence.ABSENT
 INFEASIBLE = Presence.INFEASIBLE
 
+
 class ScheduleState:
     """
     ScheduleState represents the current state of the scheduling environment,
@@ -158,10 +159,16 @@ class ScheduleState:
     def is_feasible(
         self, task_id: TaskID, machine_id: MachineID = GLOBAL_MACHINE_ID
     ) -> bool:
+
+        if self._variables.presence[task_id] == INFEASIBLE:
+            return False
+
+        machines = self._variables.feasible_machines[task_id]
+
         if machine_id == GLOBAL_MACHINE_ID:
-            return self._variables.presence[task_id] != INFEASIBLE
-        
-        return machine_id in self._variables.feasible_machines[task_id]
+            return bool(machines)
+
+        return machine_id in machines
 
     ## Setter methods for variable values, triggering constraint propagation through events
     def require_task(self, task_id: TaskID) -> None:
@@ -230,6 +237,8 @@ class ScheduleState:
                 self.forbid_machine(task_id, other_machine)
 
     # Discrete event simulation API methods
+
+    ## Getter methods for variable values
     def is_awaiting(self, task_id: TaskID) -> bool:
         return task_id in self.runtime_state.awaiting_tasks
 
@@ -266,6 +275,7 @@ class ScheduleState:
 
         return t < ub
 
+    ## Setter methods for variable values, triggering constraint propagation through events
     def execute_task(self, task_id: TaskID, machine_id: MachineID) -> None:
         start_time = self.time
 
@@ -315,6 +325,8 @@ class ScheduleState:
             constraint,
         )
 
+    # Runtime utils
+
     def get_next_start_lb(self) -> Time:
         min_lb = MAX_TIME
 
@@ -330,7 +342,6 @@ class ScheduleState:
 
             if lb < min_lb:
                 min_lb = global_lbs[task_id]
-
 
         return min_lb
 

@@ -1,6 +1,6 @@
 from typing import Any
 
-from cpscheduler.utils.list_utils import convert_to_list
+from cpscheduler.environment.utils import convert_to_list
 
 from cpscheduler.environment.constants import TaskID, Time, Int
 from cpscheduler.environment.state import ScheduleState

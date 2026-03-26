@@ -1,6 +1,8 @@
 from typing import Any
 from copy import deepcopy
 
+from math import sqrt
+
 from cpscheduler.environment.constants import TaskID, Time, MachineID
 from cpscheduler.environment.env import SchedulingEnv
 from cpscheduler.environment.des import ActionType
@@ -283,7 +285,7 @@ class ReferenceScheduleMetrics:
 
         concordant = total_pairs - inversions
         discordant = inversions
-        denominator = (total_pairs * (total_pairs - ties)) ** 0.5
+        denominator = sqrt(total_pairs * (total_pairs - ties))
 
         return (
             (concordant - discordant) / denominator if denominator > 0 else 1.0

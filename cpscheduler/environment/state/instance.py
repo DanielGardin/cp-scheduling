@@ -3,7 +3,7 @@ from collections.abc import KeysView
 
 from cpscheduler.environment.constants import MachineID, TaskID, Time, MAX_TIME
 
-from cpscheduler.utils.list_utils import convert_to_list
+from cpscheduler.environment.utils import convert_to_list
 
 
 def check_instance_consistency(instance: dict[str, list[Any]]) -> int:

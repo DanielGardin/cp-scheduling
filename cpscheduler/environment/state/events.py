@@ -35,6 +35,7 @@ class VarField:
     INFEASIBILITY: Final[VarFieldType] = 7
     "A task has been determined to be infeasible."
 
+
 ASSIGNMENT = VarField.ASSIGNMENT
 START_LB = VarField.START_LB
 START_UB = VarField.START_UB
@@ -80,8 +81,7 @@ class DomainEvent:
 
     def is_infeasibility(self) -> bool:
         return (
-            self.field == INFEASIBILITY
-            and self.machine_id == GLOBAL_MACHINE_ID
+            self.field == INFEASIBILITY and self.machine_id == GLOBAL_MACHINE_ID
         )
 
     def is_start_field(self) -> bool:
