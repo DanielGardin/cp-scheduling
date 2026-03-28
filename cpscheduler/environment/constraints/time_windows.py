@@ -2,7 +2,7 @@ from typing import Any
 
 from cpscheduler.environment.utils import convert_to_list
 
-from cpscheduler.environment.constants import TaskID, Time, Int
+from cpscheduler.environment.constants import Time, Int
 from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import Constraint
@@ -79,15 +79,6 @@ class ReleaseDateConstraint(Constraint):
             state.tight_start_lb(task_id, release_time)
 
     def get_entry(self) -> str:
-        if self.release_dates:
-            release_time = self.release_dates[TaskID(0)]
-
-            for rt in self.release_dates:
-                if rt != release_time:
-                    return "r_j"
-
-            return f"r_j={release_time}"
-
         return "r_j"
 
 

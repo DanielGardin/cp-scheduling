@@ -13,6 +13,8 @@ END_UB = VarField.END_UB
 PRESENCE = VarField.PRESENCE
 ABSENCE = VarField.ABSENCE
 INFEASIBILITY = VarField.INFEASIBILITY
+PAUSE = VarField.PAUSE
+BOUNDS_RESET = VarField.BOUNDS_RESET
 
 constraints: dict[str, type["Constraint"]] = {}
 
@@ -76,6 +78,12 @@ class Constraint:
         elif field == INFEASIBILITY:
             self.on_infeasibility(task_id, machine_id, state)
 
+        elif field == PAUSE:
+            self.on_pause(task_id, machine_id, state)
+
+        elif field == BOUNDS_RESET:
+            self.on_bound_reset(task_id, state)
+
         else:
             raise ValueError(f"Unknown event field: {field}")
 
@@ -114,6 +122,14 @@ class Constraint:
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:
         "Handle the event of a task being marked as infeasible on a machine."
+
+    def on_pause(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        "Handle the invalidation of bounds of a task that was paused."
+    
+    def on_bound_reset(self, task_id: TaskID, state: ScheduleState) -> None:
+        "Handle the bound invalidation of a given task."
 
     def on_time_update(self, time: Time, state: ScheduleState) -> None:
         "Handle the event of the current time being updated."
@@ -200,6 +216,17 @@ class PassiveConstraint(Constraint):
         raise RuntimeError(
             "Passive constraint does not handle infeasibility events."
         )
+
+    @final
+    def on_pause(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        "Handle the invalidation of bounds of a task that was paused."
+
+    @final
+    def on_bound_reset(self, task_id: TaskID, state: ScheduleState) -> None:
+        "Handle the bound invalidation of a given task."
+
 
 
 class SoftConstraint(Constraint):

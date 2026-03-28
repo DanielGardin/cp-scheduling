@@ -53,9 +53,21 @@ class MachineEligibilityConstraint(Constraint):
 
     def reset(self, state: ScheduleState) -> None:
         for task_id, machines in self.eligibility.items():
-            for other_machine in state.instance.processing_times[task_id]:
+            for other_machine in state.get_machines(task_id):
                 if other_machine not in machines:
                     state.forbid_machine(task_id, other_machine)
+
+    def on_bound_reset(self, task_id: TaskID, state: ScheduleState) -> None:
+        machines = self.eligibility[task_id]
+
+        for other_machine in state.get_machines(task_id):
+            if other_machine not in machines:
+                state.forbid_machine(task_id, other_machine)
+
+    def on_pause(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        return self.on_bound_reset(task_id, state)
 
     def get_entry(self) -> str:
         return "M_j"
@@ -108,9 +120,15 @@ class MachineConstraint(Constraint):
 
         end_time = state.get_end_lb(task_id)
 
-        for other_task in self.machine_map[machine_id]:
-            state.tight_start_lb(other_task, end_time, machine_id)
+        for other_task_id in self.machine_map[machine_id]:
+            state.tight_start_lb(other_task_id, end_time, machine_id)
 
+    def on_pause(self, task_id: TaskID, machine_id: MachineID, state: ScheduleState) -> None:
+        for other_task_id in self.machine_map[machine_id]:
+            state.reset_bounds(other_task_id)
+
+        for machine in state.instance.get_machines(task_id):
+            self.machine_map[machine].add(task_id)
 
 class MachineBreakdownConstraint(Constraint):
     """

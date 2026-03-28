@@ -7,8 +7,8 @@ from cpscheduler.environment.constants import (
     Time,
     GLOBAL_MACHINE_ID,
 )
-from cpscheduler.environment.state.events import DomainEvent
 from cpscheduler.environment.state.csp import ScheduleVariables, Presence
+from cpscheduler.environment.state.events import DomainEvent
 from cpscheduler.environment.state.instance import ProblemInstance
 from cpscheduler.environment.state.runtime import RuntimeState
 from cpscheduler.environment.state.violations import ViolationState
@@ -38,7 +38,6 @@ class ScheduleState:
         "_variables",
         "runtime_state",
         "violation_state",
-        "event_queue",
         "loaded",
     )
 
@@ -55,14 +54,10 @@ class ScheduleState:
 
     violation_state: ViolationState
 
-    event_queue: list[DomainEvent]
-    "Queue of events to be processed for constraint propagation."
-
     loaded: bool
 
     def __init__(self) -> None:
         self.time = 0
-        self.event_queue = []
         self.violation_state = ViolationState()
 
         self.loaded = False
@@ -96,16 +91,21 @@ class ScheduleState:
 
         self.time = 0
 
-        self.event_queue.clear()
         self.violation_state.clear_violations()
 
         self._variables = ScheduleVariables(self.instance)
         self.runtime_state = RuntimeState(self.instance)
 
+    def get_event_queue(self) -> list[DomainEvent]:
+        return self._variables.event_queue
+
+    def clear_event_queue(self) -> None:
+        self._variables.event_queue.clear()
+
     def is_terminal(self) -> bool:
         return self._variables.infeasible or self.runtime_state.is_terminal()
 
-    def advance_time(self, new_time: Time) -> None:
+    def advance_time_(self, new_time: Time) -> None:
         assert new_time >= self.time, "Cannot go back in time."
 
         self.time = new_time
@@ -172,14 +172,10 @@ class ScheduleState:
 
     ## Setter methods for variable values, triggering constraint propagation through events
     def require_task(self, task_id: TaskID) -> None:
-        event = self._variables.restrict_presence(task_id, PRESENT)
-        if event:
-            self.event_queue.append(event)
+        self._variables.require_task(task_id)
 
     def forbid_task(self, task_id: TaskID) -> None:
-        event = self._variables.restrict_presence(task_id, ABSENT)
-        if event:
-            self.event_queue.append(event)
+        self._variables.forbid_task(task_id)
 
     def tight_start_lb(
         self,
@@ -187,10 +183,16 @@ class ScheduleState:
         value: Time,
         machine_id: MachineID = GLOBAL_MACHINE_ID,
     ) -> None:
-        event = self._variables.set_start_lb(task_id, value, machine_id)
+        variables = self._variables
 
-        if event:
-            self.event_queue.append(event)
+        if value <= variables.start.get_lb(task_id, machine_id):
+            return
+
+        if machine_id == GLOBAL_MACHINE_ID:
+            variables.set_start_lb(task_id, value)
+        
+        else:
+            variables.set_machine_start_lb(task_id, value, machine_id)
 
     def tight_start_ub(
         self,
@@ -198,10 +200,17 @@ class ScheduleState:
         value: Time,
         machine_id: MachineID = GLOBAL_MACHINE_ID,
     ) -> None:
-        event = self._variables.set_start_ub(task_id, value, machine_id)
+        variables = self._variables
 
-        if event:
-            self.event_queue.append(event)
+        if value >= variables.start.get_ub(task_id, machine_id):
+            return
+
+        if machine_id == GLOBAL_MACHINE_ID:
+            variables.set_start_ub(task_id, value)
+        
+        else:
+            variables.set_machine_start_ub(task_id, value, machine_id)
+
 
     def tight_end_lb(
         self,
@@ -209,10 +218,17 @@ class ScheduleState:
         value: Time,
         machine_id: MachineID = GLOBAL_MACHINE_ID,
     ) -> None:
-        event = self._variables.set_end_lb(task_id, value, machine_id)
+        variables = self._variables
 
-        if event:
-            self.event_queue.append(event)
+        if value <= variables.end.get_lb(task_id, machine_id):
+            return
+
+        if machine_id == GLOBAL_MACHINE_ID:
+            variables.set_end_lb(task_id, value)
+        
+        else:
+            variables.set_machine_end_lb(task_id, value, machine_id)
+
 
     def tight_end_ub(
         self,
@@ -220,21 +236,30 @@ class ScheduleState:
         value: Time,
         machine_id: MachineID = GLOBAL_MACHINE_ID,
     ) -> None:
-        event = self._variables.set_end_ub(task_id, value, machine_id)
+        variables = self._variables
 
-        if event:
-            self.event_queue.append(event)
+        if value >= variables.end.get_ub(task_id, machine_id):
+            return
+
+        if machine_id == GLOBAL_MACHINE_ID:
+            variables.set_end_ub(task_id, value)
+        
+        else:
+            variables.set_machine_end_ub(task_id, value, machine_id)
+
 
     def forbid_machine(self, task_id: TaskID, machine_id: MachineID) -> None:
-        event = self._variables.restrict_machine(task_id, machine_id)
-
-        if event:
-            self.event_queue.append(event)
+        self._variables.restrict_machine(task_id, machine_id)
 
     def require_machine(self, task_id: TaskID, machine_id: MachineID) -> None:
         for other_machine in self.instance.processing_times[task_id]:
             if other_machine != machine_id:
                 self.forbid_machine(task_id, other_machine)
+
+    def reset_bounds(
+        self, task_id: TaskID, machine_id: MachineID = GLOBAL_MACHINE_ID
+    ) -> None:
+        self._variables.reset_bounds(task_id, self.time, machine_id)
 
     # Discrete event simulation API methods
 
@@ -279,39 +304,14 @@ class ScheduleState:
     def execute_task(self, task_id: TaskID, machine_id: MachineID) -> None:
         start_time = self.time
 
-        event = self._variables.assign(task_id, start_time, machine_id)
-        self.event_queue.append(event)
+        self._variables.assign(task_id, start_time, machine_id)
 
         end_time = start_time + self.get_remaining_time(task_id, machine_id)
         self.runtime_state.start_task(task_id, machine_id, start_time, end_time)
 
     def pause_task(self, task_id: TaskID) -> None:
-        last_start = self._variables.start.global_lbs[task_id]
-        expected_end = self._variables.end.global_ubs[task_id]
+        self._variables.pause(task_id, self.time)
 
-        if self.time >= expected_end:
-            return
-
-        expected_duration = expected_end - last_start
-        actual_duration = self.time - last_start
-        remaining_times = self._variables.remaining_times
-
-        start_idx = task_id * self.instance.n_machines
-        for machine in self.instance.processing_times[task_id]:
-            idx = start_idx + machine
-
-            work_done = ((actual_duration) * remaining_times[idx]) // (
-                expected_duration
-            )
-            remaining_times[idx] -= work_done
-
-            self._variables.start.lbs[idx] = self.time
-            self._variables.start.ubs[idx] = MAX_TIME
-
-        self._variables.start.global_lbs[task_id] = self.time
-        self._variables.start.global_ubs[task_id] = MAX_TIME
-
-        self._variables.assignment[task_id] = GLOBAL_MACHINE_ID
         self.runtime_state.pause_task(task_id, self.time)
 
     def record_violation(
@@ -378,7 +378,6 @@ class ScheduleState:
             self._variables,
             self.runtime_state,
             self.violation_state,
-            self.event_queue,
             self.loaded,
         )
         return (self.__class__, (), state)
@@ -390,7 +389,6 @@ class ScheduleState:
             self._variables,
             self.runtime_state,
             self.violation_state,
-            self.event_queue,
             self.loaded,
         ) = state
 

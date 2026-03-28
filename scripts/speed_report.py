@@ -14,7 +14,10 @@ import tyro
 from tyro.conf import arg
 
 from cpscheduler import SchedulingEnv, JobShopSetup, Makespan, __compiled__, __version__
+from cpscheduler.gym import SchedulingEnvGym
+
 from cpscheduler.instances import read_jsp_instance
+
 from cpscheduler.heuristics.pdrs import (
     PriorityDispatchingRule,
     RandomPriority,
@@ -23,18 +26,6 @@ from cpscheduler.heuristics.pdrs import (
     MostWorkRemaining,
 )
 
-from cpscheduler.gym import SchedulingEnvGym
-
-root = Path(__file__).parent
-
-OK = "\033[92m"
-FAIL = "\033[91m"
-WARNING = "\033[93m"
-
-def ok_fail(condition: bool) -> str:
-    return (OK + "[PASS]" if condition else FAIL + "[FAIL]") + RESET
-
-
 PDR_NAMES = Literal[
     "rng",
     "spt",
@@ -42,14 +33,57 @@ PDR_NAMES = Literal[
     "mwr",
 ]
 
-pdrs: dict[str, type[PriorityDispatchingRule]] = {
+PDRS: dict[str, type[PriorityDispatchingRule]] = {
     "rng": RandomPriority,
     "spt": ShortestProcessingTime,
     "mor": MostOperationsRemaining,
     "mwr": MostWorkRemaining,
 }
 
-assert set(pdrs.keys()) == set(get_args(PDR_NAMES)), "PDR_NAMES must match keys of pdrs dictionary"
+assert set(PDRS.keys()) == set(get_args(PDR_NAMES)), "PDR_NAMES must match keys of pdrs dictionary"
+
+SCRIPT_PATH = Path(__file__).parent
+ROOT = SCRIPT_PATH.parent
+
+OK = "\033[92m"
+FAIL = "\033[91m"
+WARNING = "\033[93m"
+RESET = "\033[0m"
+
+COLORMAP = [
+    [5, 19, 40],
+    [22, 15, 51],
+    [40, 11, 62],
+    [58, 7, 73],
+    [76, 3, 84],
+    [94, 0, 95],
+    [114, 6, 90],
+    [134, 13, 85],
+    [155, 19, 81],
+    [175, 26, 76],
+    [196, 33, 72],
+    [206, 51, 63],
+    [217, 69, 54],
+    [227, 87, 45],
+    [238, 105, 36],
+    [249, 123, 28],
+    [249, 149, 55],
+    [250, 175, 82],
+    [250, 201, 109],
+    [251, 227, 136],
+    [252, 254, 164],
+]
+
+def ok_fail(condition: bool) -> str:
+    return (OK + "[PASS]" if condition else FAIL + "[FAIL]") + RESET
+
+def get_gray_ansi(percentage: float) -> str:
+    gray_value = int(128 + 127 * percentage)
+    return f"\033[38;2;{gray_value};{gray_value};{gray_value}m"
+
+def to_ansi_color(rgb: Sequence[int]) -> str:
+    r, g, b = rgb
+    return f"\033[38;2;{r};{g};{b}m"
 
 # These times are based on the results of the CPEnv implementation by Tassel, Pierre
 # Environment compiled: https://github.com/ingambe/JobShopCPEnv
@@ -90,44 +124,9 @@ benchmark_times = {
     "ta60": 0.88,
     "ta70": 1.2,
     "ta80": 4.6,
-    # "lta_j100_m100_10" : 90.0,
-    # "lta_j1000_m10_10": 90.0,
+    "lta_j100_m100_10" : 90.0,
+    "lta_j1000_m10_10": 90.0,
 }
-
-RESET = "\033[0m"
-
-
-COLORMAP = [
-    [5, 19, 40],
-    [22, 15, 51],
-    [40, 11, 62],
-    [58, 7, 73],
-    [76, 3, 84],
-    [94, 0, 95],
-    [114, 6, 90],
-    [134, 13, 85],
-    [155, 19, 81],
-    [175, 26, 76],
-    [196, 33, 72],
-    [206, 51, 63],
-    [217, 69, 54],
-    [227, 87, 45],
-    [238, 105, 36],
-    [249, 123, 28],
-    [249, 149, 55],
-    [250, 175, 82],
-    [250, 201, 109],
-    [251, 227, 136],
-    [252, 254, 164],
-]
-
-def get_gray_ansi(percentage: float) -> str:
-    gray_value = int(128 + 127 * percentage)
-    return f"\033[38;2;{gray_value};{gray_value};{gray_value}m"
-
-def to_ansi_color(rgb: Sequence[int]) -> str:
-    r, g, b = rgb
-    return f"\033[38;2;{r};{g};{b}m"
 
 def mean(data: list[float]) -> float:
     return sum(data) / len(data) if data else 0.0
@@ -156,7 +155,7 @@ def format_big_number(num: list[float]) -> str:
     if std_value == 0:
         if mean_value.is_integer():
             return f"{mean_value:>3.0f}{unit}"
-    
+
         return f"{mean_value:.2f}{unit}"
 
     if mean_value.is_integer():
@@ -202,84 +201,6 @@ def format_percentage(value: list[float]) -> str:
 
     return f"{100*mean_value:.2f}%"
 
-def test_memory(
-    dynamic: bool,
-    numpy: bool,
-    quiet: bool,
-) -> None:
-    """Run a single iteration per instance with tracemalloc to measure peak memory usage."""
-    import tracemalloc
-
-    spt_agent = ShortestProcessingTime(available=dynamic)
-
-    columns = ["Instance", "Tasks", "Peak Memory", "Memory/Task"]
-    table = PrettyTable(columns)
-    table.set_style(TableStyle.MARKDOWN)
-
-    if not quiet:
-        print(
-            f"Running memory benchmark",
-            end="",
-        )
-
-    dots = 0
-    for instance_name in benchmark_times:
-        if not quiet:
-            if dots < 3:
-                print(".", end="", flush=True)
-                dots += 1
-
-            else:
-                print(
-                    f"\r{' ' * 100}",
-                    end=f"\rRunning memory benchmark",
-                    flush=True,
-                )
-                dots = 0
-
-        instance_path = root / "instances/jobshop" / f"{instance_name}.txt"
-
-        instance, _ = read_jsp_instance(instance_path)
-        env = SchedulingEnv(JobShopSetup())
-        env.set_instance(instance)
-
-        tracemalloc.start()
-
-        obs, _ = env.reset()
-
-        if dynamic:
-            done = False
-            while not done:
-                single_action = spt_agent(obs)[0]
-                obs, _, done, _, _ = env.step(single_action)
-        else:
-            if numpy:
-                action = spt_agent(obs)
-            else:
-                with disable_numpy():
-                    action = spt_agent(obs)
-            env.step(action)
-
-        _, peak_mem = tracemalloc.get_traced_memory()
-        tracemalloc.stop()
-
-        n_tasks = env.state.n_tasks
-        per_task = peak_mem / n_tasks if n_tasks > 0 else 0
-
-        table.add_row([
-            instance_name,
-            n_tasks,
-            format_memory(peak_mem),
-            format_memory(per_task),
-        ])
-
-        del env
-
-    print("\n")
-    print(table, flush=True)
-
-
-
 def format_stage_time(
     stage_times: list[float],
     total_time: float,
@@ -301,10 +222,7 @@ def format_stage_time(
     idx = int(len(COLORMAP) * pct)
     idx = max(0, min(len(COLORMAP) - 1, idx))
 
-    # gray_value = min_val + (max_val - min_val) * pct
-
     return stage_statistics + to_ansi_color(COLORMAP[idx]) + f"{spacing}({percentage})" + RESET
-
 
 class RunResult:
     MIN_SPEEDUP = 4
@@ -584,15 +502,80 @@ class RunResult:
 
         fig.suptitle("Speed Benchmark Report", fontweight="bold")
 
-        fig.savefig(root / "report.pdf", dpi=300)
+        fig.savefig(ROOT / "report.pdf", dpi=300)
         plt.show()
 
+
+def test_memory(pdr: PDR_NAMES, dynamic: bool, quiet: bool) -> None:
+    """Run a single iteration per instance with tracemalloc to measure peak memory usage."""
+    import tracemalloc
+
+    spt_agent = PDRS[pdr]()
+
+    columns = ["Instance", "Tasks", "Peak Memory", "Memory/Task"]
+    table = PrettyTable(columns)
+    table.set_style(TableStyle.MARKDOWN)
+
+    if not quiet:
+        print(f"Running memory benchmark", end="")
+
+    dots = 0
+    for instance_name in benchmark_times:
+        if not quiet:
+            if dots < 3:
+                print(".", end="", flush=True)
+                dots += 1
+
+            else:
+                print(
+                    f"\r{' ' * 100}",
+                    end=f"\rRunning memory benchmark",
+                    flush=True,
+                )
+                dots = 0
+
+        instance_path = ROOT / "instances/jobshop" / f"{instance_name}.txt"
+
+        instance, _ = read_jsp_instance(instance_path)
+
+        tracemalloc.start()
+        env = SchedulingEnv(JobShopSetup())
+        env.set_instance(instance)
+
+        obs, _ = env.reset()
+
+        if dynamic:
+            done = False
+            while not done:
+                single_action = spt_agent(obs)
+                obs, _, done, _, _ = env.step(single_action)
+        else:
+            action = spt_agent.ranking(obs)
+            env.step(action)
+
+        _, peak_mem = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+
+        n_tasks = env.state.n_tasks
+        per_task = peak_mem / n_tasks if n_tasks > 0 else 0
+
+        table.add_row([
+            instance_name,
+            format_big_number([n_tasks]),
+            format_memory(peak_mem),
+            format_memory(per_task),
+        ])
+
+        del env
+
+    print("\n")
+    print(table, flush=True)
 
 def print_header() -> None:
     print(f"cpscheduler v{__version__}")
     print(f"{ok_fail(__compiled__)} compiled")
     
-    instance_present = (Path(__file__).parent / "instances/jobshop").exists()
+    instance_present = (ROOT / "instances/jobshop").exists()
     print(f"{ok_fail(instance_present)} instance directory")
 
     if not instance_present:
@@ -607,10 +590,9 @@ def run_cli(
     n_runs: Annotated[int, arg(aliases=("-n",))] = 1,
     full: bool = False,
     gym: Annotated[bool, arg(aliases=("-g",))] = False,
-    pdr: PDR_NAMES = "spt",
+    pdr: Annotated[PDR_NAMES, arg(aliases=("-p",))] = "spt",
     quiet: Annotated[bool, arg(aliases=("-q",))] = False,
     plot: bool = False,
-    numpy: bool = True,
     dynamic: bool = False,
     memory: bool = False,
 ) -> None:
@@ -650,14 +632,14 @@ def run_cli(
     if memory:
         print("Running bechmark: memory usage")
 
-        test_memory(dynamic=dynamic, numpy=numpy, quiet=quiet)
+        test_memory(pdr, dynamic, quiet)
         return
 
 
     print("Running bechmark: time")
     result = RunResult()
 
-    agent = pdrs[pdr]()
+    agent = PDRS[pdr]()
 
     dots = 0
     if not quiet:
@@ -681,7 +663,7 @@ def run_cli(
                 dots = 0
 
 
-        instance_path = root / "instances/jobshop" / f"{instance_name}.txt"
+        instance_path = ROOT / "instances/jobshop" / f"{instance_name}.txt"
         instance, _ = read_jsp_instance(instance_path)
         gc.collect()
         gc.freeze()
@@ -746,6 +728,7 @@ def run_cli(
 
             del env
             gc.enable()
+            gc.collect()
 
         gc.collect()
         gc.unfreeze()

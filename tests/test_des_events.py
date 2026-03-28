@@ -183,7 +183,7 @@ def test_pause_readiness_and_process() -> None:
 
     assert pause.is_ready(state)
 
-    state.advance_time(3)
+    state.advance_time_(3)
     pause.process(state, env.schedule)
 
     assert state.is_paused(0)
@@ -207,7 +207,7 @@ def test_resume_readiness_and_process() -> None:
     execute.resolve(state)
     execute.process(state, env.schedule)
 
-    state.advance_time(4)
+    state.advance_time_(4)
     PauseEvent(task_id=0).process(state, env.schedule)
 
     event = ResumeEvent(task_id=0)
@@ -268,7 +268,7 @@ def test_advance_process_schedules_checkpoint_after_time_delta() -> None:
     state = env.state
     schedule = Schedule()
 
-    state.advance_time(2)
+    state.advance_time_(2)
 
     event = AdvanceTimeEvent(5)
     event.process(state, schedule)
@@ -296,7 +296,7 @@ def test_schedule_add_event_rejects_past_time() -> None:
     env = _single_task_env_single_machine()
     schedule = Schedule()
 
-    env.state.advance_time(3)
+    env.state.advance_time_(3)
 
     with pytest.raises(ValueError, match="Cannot schedule event in the past"):
         schedule.add_event(AdvanceTimeEvent(1), env.state, time=2)

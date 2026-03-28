@@ -1,8 +1,6 @@
 from typing import Any
 from collections.abc import Iterable
 
-from cpscheduler.environment.utils import convert_to_list
-
 from cpscheduler.environment.constants import TaskID, MachineID, Int
 from cpscheduler.environment.state import ScheduleState
 
@@ -16,7 +14,7 @@ class NonOverlapConstraint(Constraint):
 
     def __init__(self, task_groups: Iterable[Iterable[Int]]):
         self.groups_map = [
-            set(convert_to_list(task_group, TaskID))
+            set(TaskID(task_id) for task_id in task_group)
             for task_group in task_groups
         ]
 
@@ -43,3 +41,15 @@ class NonOverlapConstraint(Constraint):
 
             for other_task_id in group_tasks:
                 state.tight_start_lb(other_task_id, end_time)
+
+    def on_pause(self, task_id: TaskID, machine_id: MachineID, state: ScheduleState) -> None:
+        for i, group_tasks in enumerate(self.groups_map):
+            if task_id not in group_tasks:
+                continue
+
+            cur_group_tasks = self.current_groups[i]
+            for other_task_id in cur_group_tasks:
+                state.reset_bounds(other_task_id)
+
+            self.current_groups[i].add(task_id)
+

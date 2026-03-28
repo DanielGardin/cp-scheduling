@@ -1,6 +1,4 @@
-from typing import Any, TypeAlias, Final
-
-from mypy_extensions import u8
+from typing import Any, Literal, Final
 
 from cpscheduler.environment.constants import (
     MachineID,
@@ -27,9 +25,11 @@ END_UB = VarField.END_UB
 PRESENCE = VarField.PRESENCE
 ABSENCE = VarField.ABSENCE
 INFEASIBILITY = VarField.INFEASIBILITY
+PAUSE = VarField.PAUSE
+BOUNDS_RESET = VarField.BOUNDS_RESET
 
-PresenceType: TypeAlias = u8
 
+PresenceType = Literal[0b00, 0b01, 0b10, 0b11]
 
 class Presence:
     """
@@ -51,16 +51,16 @@ class Presence:
 
     __slots__ = ()
 
-    INFEASIBLE: Final[PresenceType] = 0b00
+    INFEASIBLE: Final[Literal[0b00]] = 0b00
     "Task is not consistent with the constraints and cannot be scheduled."
 
-    PRESENT: Final[PresenceType] = 0b01
+    PRESENT: Final[Literal[0b01]] = 0b01
     "Task has to be present in the schedule to satisfy the constraints."
 
-    ABSENT: Final[PresenceType] = 0b10
+    ABSENT: Final[Literal[0b10]] = 0b10
     "Task has to be absent from the schedule to satisfy the constraints."
 
-    UNDEFINED: Final[PresenceType] = 0b11
+    UNDEFINED: Final[Literal[0b11]] = 0b11
     "Task presence has not been determined yet. Initial value for optional tasks."
 
 
@@ -83,8 +83,7 @@ def presence_to_str(presence: PresenceType) -> str:
     elif presence == UNDEFINED:
         return "UNDEFINED"
 
-    else:
-        raise ValueError(f"Invalid presence value: {presence}.")
+    raise ValueError(f"Invalid presence value: {presence}.")
 
 
 def can_be_present(presence: PresenceType) -> bool:
@@ -170,34 +169,6 @@ class Bounds:
 
         return self.ubs[task_id * self.n_machines + machine_id]
 
-    def recompute_global_lb(
-        self, task_id: TaskID, feasible_machines: list[MachineID]
-    ) -> None:
-        row = task_id * self.n_machines
-
-        min_value = MAX_TIME
-        for m_id in feasible_machines:
-            idx = row + m_id
-
-            if self.lbs[idx] < min_value:
-                min_value = self.lbs[idx]
-
-        self.global_lbs[task_id] = min_value
-
-    def recompute_global_ub(
-        self, task_id: TaskID, feasible_machines: list[MachineID]
-    ) -> None:
-        row = task_id * self.n_machines
-
-        max_value = MIN_TIME
-        for m_id in feasible_machines:
-            idx = row + m_id
-
-            if self.ubs[idx] > max_value:
-                max_value = self.ubs[idx]
-
-        self.global_ubs[task_id] = max_value
-
     def __eq__(self, value: object) -> bool:
         if not isinstance(value, Bounds):
             return NotImplemented
@@ -229,6 +200,13 @@ class Bounds:
             self.global_ubs,
         ) = state
 
+IntervalEnd = bool
+START: IntervalEnd = True
+END: IntervalEnd = False
+
+Bound = bool
+LB: Bound = True
+UB: Bound = False
 
 class ScheduleVariables:
     """
@@ -241,6 +219,7 @@ class ScheduleVariables:
 
     __slots__ = [
         "remaining_times",
+        "original_machines",
         "feasible_machines",
         "assignment",
         "presence",
@@ -248,10 +227,12 @@ class ScheduleVariables:
         "start",
         "end",
         "infeasible",
+        "event_queue"
     ]
 
     remaining_times: list[Time]
     feasible_machines: list[list[MachineID]]
+    original_machines: list[tuple[MachineID, ...]]
 
     assignment: list[MachineID]
     presence: list[PresenceType]
@@ -262,20 +243,25 @@ class ScheduleVariables:
     fixed: list[bool]
     infeasible: bool
 
+    event_queue: list[DomainEvent]
+
     def __init__(self, instance: ProblemInstance) -> None:
         n_tasks = instance.n_tasks
         n_machines = instance.n_machines
 
-        remaining_times = [MAX_TIME] * (n_tasks * n_machines)
+        remaining_times = [0] * (n_tasks * n_machines)
 
-        presence = [
+        presence: list[PresenceType] = [
             UNDEFINED if optional else PRESENT for optional in instance.optional
         ]
 
         feasible_machines: list[list[MachineID]] = [[] for _ in range(n_tasks)]
-
         start = Bounds(instance)
         end = Bounds(instance)
+
+        self.feasible_machines = feasible_machines
+        self.start = start
+        self.end = end
 
         for task_id, p_times in enumerate(instance.processing_times):
             feasible_machines[task_id] = list(p_times.keys())
@@ -288,31 +274,61 @@ class ScheduleVariables:
                 start.ubs[idx] = end.ubs[idx] - processing_time
                 end.lbs[idx] = start.lbs[idx] + processing_time
 
-            start.recompute_global_ub(task_id, feasible_machines[task_id])
-            end.recompute_global_lb(task_id, feasible_machines[task_id])
+            self._recompute_global_bound(task_id, START, LB)
+            self._recompute_global_bound(task_id, END, LB)
+
+        self.original_machines = [
+            tuple(p_times)
+            for p_times in instance.processing_times
+        ]
 
         self.remaining_times = remaining_times
-        self.feasible_machines = feasible_machines
         self.presence = presence
-        self.start = start
-        self.end = end
 
         self.assignment = [GLOBAL_MACHINE_ID] * n_tasks
         self.fixed = [False] * n_tasks
         self.infeasible = False
 
-    def restrict_presence(
+        self.event_queue = []
+
+    def _recompute_global_bound(
+        self, task_id: TaskID, var: IntervalEnd, bound: Bound 
+    ) -> None:
+        variable = self.start if var else self.end
+        row = task_id * variable.n_machines
+
+        feasible_machines = self.feasible_machines[task_id]
+
+        best = MAX_TIME if bound else MIN_TIME
+        if bound: # bound == LB:
+            for m_id in feasible_machines:
+                idx = row + m_id
+
+                value = variable.lbs[idx]
+                if value < best:
+                    best = value
+            
+            variable.global_lbs[task_id] = best
+
+        else: # bound == UB:
+            for m_id in feasible_machines:
+                idx = row + m_id
+
+                value = variable.ubs[idx]
+                if value > best:
+                    best = value
+
+            variable.global_ubs[task_id] = best
+
+    def _restrict_presence(
         self, task_id: TaskID, mask: PresenceType
-    ) -> DomainEvent | None:
+    ) -> None:
         old_presence = self.presence[task_id]
         new_presence = old_presence & mask
 
         if new_presence == old_presence:
-            return None
+            return
 
-        assert (
-            new_presence != UNDEFINED
-        ), "Impossible to loosen presence constraints."
         if new_presence == PRESENT:
             field = PRESENCE
 
@@ -326,39 +342,78 @@ class ScheduleVariables:
             field = INFEASIBILITY
 
         else:
-            raise ValueError("Invalid presence mask, cannot be applied.")
+            raise RuntimeError(
+                f"Unreachable: unexpected presence value {new_presence!r}"
+            )
 
         self.presence[task_id] = new_presence
 
-        return DomainEvent(task_id, field)
+        self.event_queue.append(DomainEvent(task_id, field))
 
-    def require_task(self, task_id: TaskID) -> DomainEvent | None:
+    def require_task(self, task_id: TaskID) -> None:
         "Require a task to be present in the schedule."
-        return self.restrict_presence(task_id, PRESENT)
+        self._restrict_presence(task_id, PRESENT)
 
-    def forbid_task(self, task_id: TaskID) -> DomainEvent | None:
+    def forbid_task(self, task_id: TaskID) -> None:
         "Forbid a task from being present in the schedule."
-        return self.restrict_presence(task_id, ABSENT)
+        self._restrict_presence(task_id, ABSENT)
 
     def restrict_machine(
-        self, task_id: TaskID, machine_id: MachineID
-    ) -> DomainEvent | None:
-        if machine_id in self.feasible_machines[task_id]:
-            self.set_start_lb(task_id, MAX_TIME, machine_id)
-            return DomainEvent(task_id, INFEASIBILITY, machine_id)
+        self, task_id: TaskID, machine_id: MachineID 
+    ) -> None:
+        feasible_machines = self.feasible_machines[task_id]
 
-        return None
+        if machine_id not in feasible_machines:
+            return
+
+        feasible_machines.remove(machine_id)
+
+        if not feasible_machines:
+            self._restrict_presence(task_id, ABSENT)
+            return
+
+        for var in (START, END):
+            for bound in (LB, UB):
+                self._recompute_global_bound(task_id, var, bound)
+
+        self.event_queue.append(
+            DomainEvent(task_id, INFEASIBILITY, machine_id)
+        )
+
+    def set_machine_start_lb(
+        self, task_id: TaskID, lb: Time, machine_id: MachineID
+    ) -> None:
+        idx = task_id * self.start.n_machines + machine_id
+        start_lbs = self.start.lbs
+        start_ubs = self.start.ubs
+        end_lbs = self.end.lbs
+        end_ubs = self.end.ubs
+
+        old_lb = start_lbs[idx]
+        end_lb = lb + self.remaining_times[idx]
+
+        start_lbs[idx] = lb
+        end_lbs[idx] = end_lb
+
+        if lb > start_ubs[idx] or end_lb > end_ubs[idx]:
+            self.restrict_machine(task_id, machine_id)
+            return
+
+        if old_lb == self.start.global_lbs[task_id]:
+            self._recompute_global_bound(task_id, START, LB)
+            self._recompute_global_bound(task_id, END, LB)
+
+        self.event_queue.append(
+            DomainEvent(task_id, START_LB, machine_id)
+        )
 
     def set_start_lb(
         self,
         task_id: TaskID,
-        lb: Time,
-        machine_id: MachineID,
-    ) -> DomainEvent | None:
-        if lb <= self.start.get_lb(task_id, machine_id):
-            return None
-
+        lb: Time
+    ) -> None:
         row = task_id * self.start.n_machines
+        
         feasible_machines = self.feasible_machines[task_id]
 
         start_lbs = self.start.lbs
@@ -366,34 +421,6 @@ class ScheduleVariables:
         end_lbs = self.end.lbs
         end_ubs = self.end.ubs
         remaining_times = self.remaining_times
-
-        start_global_lbs = self.start.global_lbs
-
-        if machine_id != GLOBAL_MACHINE_ID:
-            idx = row + machine_id
-
-            old_lb = start_lbs[idx]
-            end_lb = lb + remaining_times[idx]
-
-            start_lbs[idx] = lb
-            end_lbs[idx] = end_lb
-
-            if lb > start_ubs[idx] or end_lb > end_ubs[idx]:
-                feasible_machines.remove(machine_id)
-
-                self.start.recompute_global_lb(task_id, feasible_machines)
-                self.end.recompute_global_lb(task_id, feasible_machines)
-
-                if not feasible_machines:
-                    return self.restrict_presence(task_id, ABSENT)
-
-                return DomainEvent(task_id, INFEASIBILITY, machine_id)
-
-            if old_lb == start_global_lbs[task_id]:
-                self.start.recompute_global_lb(task_id, feasible_machines)
-                self.end.recompute_global_lb(task_id, feasible_machines)
-
-            return DomainEvent(task_id, START_LB, machine_id)
 
         for m_id in feasible_machines[:]:
             idx = row + m_id
@@ -403,25 +430,80 @@ class ScheduleVariables:
                 end_lbs[idx] = lb + remaining_times[idx]
 
                 if lb > start_ubs[idx] or end_lbs[idx] > end_ubs[idx]:
-                    feasible_machines.remove(m_id)
+                    self.restrict_machine(task_id, m_id)
 
-        self.start.recompute_global_lb(task_id, feasible_machines)
-        self.end.recompute_global_lb(task_id, feasible_machines)
+        self._recompute_global_bound(task_id, START, LB)
+        self._recompute_global_bound(task_id, END, LB)
 
-        if not feasible_machines:
-            return self.restrict_presence(task_id, ABSENT)
+        if feasible_machines:
+            self.event_queue.append(DomainEvent(task_id, START_LB))
 
-        return DomainEvent(task_id, START_LB)
+    def set_machine_start_ub(
+        self, task_id: TaskID, ub: Time, machine_id: MachineID
+    ) -> None:
+        idx = task_id * self.start.n_machines + machine_id
+        
+        old_ub = self.start.ubs[idx]
+        self.start.ubs[idx] = ub
 
-    def set_start_ub(
-        self,
-        task_id: TaskID,
-        ub: Time,
-        machine_id: MachineID,
-    ) -> DomainEvent | None:
-        if ub >= self.start.get_ub(task_id, machine_id):
-            return None
+        if ub < self.start.lbs[idx] or self.end.ubs[idx] < self.end.lbs[idx]:
+            self.restrict_machine(task_id, machine_id)
+            return
 
+        if old_ub == self.start.global_ubs[task_id]:
+            self._recompute_global_bound(task_id, START, UB)
+            self._recompute_global_bound(task_id, END, UB)
+
+        self.event_queue.append(DomainEvent(task_id, START_UB, machine_id))
+
+    def set_start_ub(self, task_id: TaskID, ub: Time) -> None:
+        row = task_id * self.start.n_machines
+        feasible_machines = self.feasible_machines[task_id]
+
+        start_lbs = self.start.lbs
+        start_ubs = self.start.ubs
+        end_ubs = self.end.ubs
+        remaining_times = self.remaining_times
+
+        for m_id in feasible_machines[:]:
+            idx = row + m_id
+
+            if start_ubs[idx] > ub:
+                start_ubs[idx] = ub
+                end_ubs[idx] = ub + remaining_times[idx]
+
+                if ub < start_lbs[idx] or end_ubs[idx] < self.end.lbs[idx]:
+                    self.restrict_machine(task_id, m_id)
+
+        self._recompute_global_bound(task_id, START, UB)
+        self._recompute_global_bound(task_id, END, UB)
+
+        if feasible_machines:
+            self.event_queue.append(DomainEvent(task_id, START_UB))
+
+
+    def set_machine_end_lb(
+        self, task_id: TaskID, lb: Time, machine_id: MachineID
+    ) -> None:
+        idx = task_id * self.start.n_machines + machine_id
+
+        old_lb = self.end.lbs[idx]
+        start_lb = lb - self.remaining_times[idx]
+
+        self.end.lbs[idx] = lb
+        self.start.lbs[idx] = start_lb
+
+        if lb > self.end.ubs[idx] or self.start.lbs[idx] > self.start.ubs[idx]:
+            self.restrict_machine(task_id, machine_id)
+            return
+
+        if old_lb == self.end.global_lbs[task_id]:
+            self._recompute_global_bound(task_id, END, LB)
+            self._recompute_global_bound(task_id, START, LB)
+
+        self.event_queue.append(DomainEvent(task_id, END_LB, machine_id))
+
+    def set_end_lb(self, task_id: TaskID, lb: Time) -> None:
         row = task_id * self.start.n_machines
         feasible_machines = self.feasible_machines[task_id]
 
@@ -431,130 +513,48 @@ class ScheduleVariables:
         end_ubs = self.end.ubs
         remaining_times = self.remaining_times
 
-        if machine_id != GLOBAL_MACHINE_ID:
-            idx = row + machine_id
-
-            start_lb = start_lbs[idx]
-            end_ub = ub + remaining_times[idx]
-
-            if ub < start_lb or end_ub < end_lbs[idx]:
-                feasible_machines.remove(machine_id)
-
-                self.start.recompute_global_ub(task_id, feasible_machines)
-                self.end.recompute_global_ub(task_id, feasible_machines)
-
-                if not feasible_machines:
-                    return self.restrict_presence(task_id, ABSENT)
-
-                return DomainEvent(task_id, INFEASIBILITY, machine_id)
-
-            old_ub = start_ubs[idx]
-
-            start_ubs[idx] = ub
-            end_ubs[idx] = end_ub
-
-            if old_ub == self.start.global_ubs[task_id]:
-                self.start.recompute_global_ub(task_id, feasible_machines)
-                self.end.recompute_global_ub(task_id, feasible_machines)
-
-            return DomainEvent(task_id, START_UB, machine_id)
-
-        for m_id in feasible_machines[:]:
-            idx = row + m_id
-
-            if start_ubs[idx] > ub:
-                new_end_ub = ub + remaining_times[idx]
-
-                if ub < start_lbs[idx] or new_end_ub < end_lbs[idx]:
-                    feasible_machines.remove(m_id)
-                else:
-                    start_ubs[idx] = ub
-                    end_ubs[idx] = new_end_ub
-
-        self.start.recompute_global_ub(task_id, feasible_machines)
-        self.end.recompute_global_ub(task_id, feasible_machines)
-
-        if not feasible_machines:
-            return self.restrict_presence(task_id, ABSENT)
-
-        return DomainEvent(task_id, START_UB)
-
-    def set_end_lb(
-        self,
-        task_id: TaskID,
-        lb: Time,
-        machine_id: MachineID,
-    ) -> DomainEvent | None:
-        if lb <= self.end.get_lb(task_id, machine_id):
-            return None
-
-        row = task_id * self.end.n_machines
-        feasible_machines = self.feasible_machines[task_id]
-
-        start_lbs = self.start.lbs
-        start_ubs = self.start.ubs
-        end_lbs = self.end.lbs
-        end_ubs = self.end.ubs
-        remaining_times = self.remaining_times
-
-        if machine_id != GLOBAL_MACHINE_ID:
-            idx = row + machine_id
-
-            start_lb = lb - remaining_times[idx]
-
-            if lb > end_ubs[idx] or start_lb > start_ubs[idx]:
-                feasible_machines.remove(machine_id)
-
-                self.start.recompute_global_lb(task_id, feasible_machines)
-                self.end.recompute_global_lb(task_id, feasible_machines)
-
-                if not feasible_machines:
-                    return self.restrict_presence(task_id, ABSENT)
-
-                return DomainEvent(task_id, INFEASIBILITY, machine_id)
-
-            old_lb = end_lbs[idx]
-
-            end_lbs[idx] = lb
-            start_lbs[idx] = start_lb
-
-            if old_lb == self.end.global_lbs[task_id]:
-                self.start.recompute_global_lb(task_id, feasible_machines)
-                self.end.recompute_global_lb(task_id, feasible_machines)
-
-            return DomainEvent(task_id, END_LB, machine_id)
-
         for m_id in feasible_machines[:]:
             idx = row + m_id
 
             if end_lbs[idx] < lb:
-                new_start_lb = lb - remaining_times[idx]
+                end_lbs[idx] = lb
+                derived_start_lb = lb - remaining_times[idx]
+                if start_lbs[idx] < derived_start_lb:
+                    start_lbs[idx] = derived_start_lb
 
-                if lb > end_ubs[idx] or new_start_lb > start_ubs[idx]:
-                    feasible_machines.remove(m_id)
+                if lb > end_ubs[idx] or start_lbs[idx] > start_ubs[idx]:
+                    self.restrict_machine(task_id, m_id)
 
-                else:
-                    end_lbs[idx] = lb
-                    start_lbs[idx] = new_start_lb
+        self._recompute_global_bound(task_id, END, LB)
+        self._recompute_global_bound(task_id, START, LB)
 
-        self.start.recompute_global_lb(task_id, feasible_machines)
-        self.end.recompute_global_lb(task_id, feasible_machines)
+        if feasible_machines:
+            self.event_queue.append(DomainEvent(task_id, END_LB))
 
-        if not feasible_machines:
-            return self.restrict_presence(task_id, ABSENT)
 
-        return DomainEvent(task_id, END_LB)
+    def set_machine_end_ub(
+        self, task_id: TaskID, ub: Time, machine_id: MachineID
+    ) -> None:
+        idx = task_id * self.start.n_machines + machine_id
 
-    def set_end_ub(
-        self,
-        task_id: TaskID,
-        ub: Time,
-        machine_id: MachineID,
-    ) -> DomainEvent | None:
-        if ub >= self.end.get_ub(task_id, machine_id):
-            return None
+        old_ub = self.end.ubs[idx]
+        start_ub = ub - self.remaining_times[idx]
 
-        row = task_id * self.end.n_machines
+        self.end.ubs[idx] = ub
+        self.start.ubs[idx] = min(self.start.ubs[idx], start_ub)
+
+        if ub < self.end.lbs[idx] or self.start.ubs[idx] < self.start.lbs[idx]:
+            self.restrict_machine(task_id, machine_id)
+            return
+
+        if old_ub == self.end.global_ubs[task_id]:
+            self._recompute_global_bound(task_id, END, UB)
+            self._recompute_global_bound(task_id, START, UB)
+
+        self.event_queue.append(DomainEvent(task_id, END_UB, machine_id))
+
+    def set_end_ub(self, task_id: TaskID, ub: Time) -> None:
+        row = task_id * self.start.n_machines
         feasible_machines = self.feasible_machines[task_id]
 
         start_lbs = self.start.lbs
@@ -562,58 +562,28 @@ class ScheduleVariables:
         end_lbs = self.end.lbs
         end_ubs = self.end.ubs
         remaining_times = self.remaining_times
-
-        if machine_id != GLOBAL_MACHINE_ID:
-            idx = row + machine_id
-
-            start_ub = ub - remaining_times[idx]
-
-            if ub < end_lbs[idx] or start_ub < start_lbs[idx]:
-                feasible_machines.remove(machine_id)
-
-                self.start.recompute_global_ub(task_id, feasible_machines)
-                self.end.recompute_global_ub(task_id, feasible_machines)
-
-                if not feasible_machines:
-                    return self.restrict_presence(task_id, ABSENT)
-
-                return DomainEvent(task_id, INFEASIBILITY, machine_id)
-
-            old_ub = end_ubs[idx]
-
-            end_ubs[idx] = ub
-            start_ubs[idx] = start_ub
-
-            if old_ub == self.end.global_ubs[task_id]:
-                self.start.recompute_global_ub(task_id, feasible_machines)
-                self.end.recompute_global_ub(task_id, feasible_machines)
-
-            return DomainEvent(task_id, END_UB, machine_id)
 
         for m_id in feasible_machines[:]:
             idx = row + m_id
 
             if end_ubs[idx] > ub:
-                new_start_ub = ub - remaining_times[idx]
+                end_ubs[idx] = ub
+                derived_start_ub = ub - remaining_times[idx]
+                if start_ubs[idx] > derived_start_ub:
+                    start_ubs[idx] = derived_start_ub
 
-                if ub < end_lbs[idx] or new_start_ub < start_lbs[idx]:
-                    feasible_machines.remove(m_id)
+                if ub < end_lbs[idx] or start_ubs[idx] < start_lbs[idx]:
+                    self.restrict_machine(task_id, m_id)
 
-                else:
-                    end_ubs[idx] = ub
-                    start_ubs[idx] = new_start_ub
+        self._recompute_global_bound(task_id, END, UB)
+        self._recompute_global_bound(task_id, START, UB)
 
-        self.start.recompute_global_ub(task_id, feasible_machines)
-        self.end.recompute_global_ub(task_id, feasible_machines)
-
-        if not feasible_machines:
-            return self.restrict_presence(task_id, ABSENT)
-
-        return DomainEvent(task_id, END_UB)
+        if feasible_machines:
+            self.event_queue.append(DomainEvent(task_id, END_UB))
 
     def assign(
         self, task_id: TaskID, time: Time, machine_id: MachineID
-    ) -> DomainEvent:
+    ) -> None:
         row = task_id * self.start.n_machines
         idx = row + machine_id
         duration = self.remaining_times[idx]
@@ -630,14 +600,14 @@ class ScheduleVariables:
             or end_time < end.lbs[idx]
             or end_time > end.ubs[idx]
         ):
-            raise ValueError(
+            raise RuntimeError(
                 f"Cannot assign task {task_id} to machine {machine_id} at time {time}, "
                 f"it violates the bounds for that machine: "
                 f"start interval = [{start.lbs[idx]}, {start.ubs[idx]}]."
             )
 
         elif not can_be_present(presence[task_id]):
-            raise ValueError(
+            raise RuntimeError(
                 f"Cannot assign task {task_id} to machine {machine_id} at time {time}, "
                 f"it violates the presence constraints for that task: "
                 f"presence = {presence_to_str(self.presence[task_id])}."
@@ -645,6 +615,7 @@ class ScheduleVariables:
 
         self.assignment[task_id] = machine_id
         self.fixed[task_id] = True
+        self.feasible_machines[task_id].clear()
 
         start.lbs[idx] = time
         start.ubs[idx] = time
@@ -657,9 +628,118 @@ class ScheduleVariables:
         end.global_lbs[task_id] = end_time
         end.global_ubs[task_id] = end_time
 
-        self.feasible_machines[task_id] = [machine_id]
+        self.event_queue.append(
+            DomainEvent(task_id, ASSIGNMENT, machine_id)
+        )
 
-        return DomainEvent(task_id, ASSIGNMENT, machine_id)
+    def pause(self, task_id: TaskID, time: Time) -> None:
+        if not self.fixed[task_id]:
+            raise RuntimeError(
+                f"Cannot pause task {task_id} at {time}, the task was never "
+                f"assigned to a machine."
+            )
+
+        start = self.start
+        end = self.end
+
+        expected_end = end.global_ubs[task_id]
+        if time >= expected_end:
+            raise RuntimeError(
+                f"Cannot pause task {task_id} at {time}, the task has already"
+                f"finished"
+            )
+
+        task_start = start.global_lbs[task_id]
+        expected_duration = expected_end - task_start
+        actual_duration = time - task_start
+
+        remaining_times = self.remaining_times
+        prev_assignment = self.assignment[task_id]
+
+        n_machines = self.end.n_machines
+        row = task_id * n_machines
+        original_machines = self.original_machines[task_id]
+        for m_id in original_machines:
+            idx = row + m_id
+
+            work_done = ((actual_duration) * remaining_times[idx]) // (
+                expected_duration
+            )
+            remaining_times[idx] -= work_done
+
+            start.lbs[idx] = time
+            start.ubs[idx] = MAX_TIME - remaining_times[idx]
+            end.lbs[idx] = time + remaining_times[idx]
+            end.ubs[idx] = MAX_TIME
+
+        start.global_lbs[task_id] = time
+        self._recompute_global_bound(task_id, START, UB)
+
+        self._recompute_global_bound(task_id, END, LB)
+        end.global_ubs[task_id] = MAX_TIME
+
+        self.assignment[task_id] = GLOBAL_MACHINE_ID
+        self.fixed[task_id] = False
+        self.feasible_machines[task_id].extend(original_machines)
+
+        self.event_queue.append(
+            DomainEvent(task_id, PAUSE, prev_assignment)
+        )
+
+    def reset_bounds(
+        self, task_id: TaskID, time: Time, machine_id: MachineID
+    ) -> None:
+        if (
+            self.fixed[task_id]
+            or not can_be_present(self.presence[task_id])
+        ):
+            return None
+
+        start = self.start
+        end = self.end
+
+        n_machines = self.end.n_machines
+        row = task_id * n_machines
+
+        if machine_id != GLOBAL_MACHINE_ID:
+            idx = row + machine_id
+            remaining_time = self.remaining_times[idx]
+
+            start.lbs[idx] = time
+            start.ubs[idx] = MAX_TIME - remaining_time
+            end.lbs[idx] = time + remaining_time
+            end.ubs[idx] = MAX_TIME
+
+            start.global_lbs[task_id] = time
+            self._recompute_global_bound(task_id, START, UB)
+
+            end.global_ubs[task_id]
+
+
+        original_machines = self.original_machines[task_id]
+        remaining_times = self.remaining_times
+
+        for m_id in original_machines:
+            idx = row + m_id
+    
+            start.lbs[idx] = time
+            start.ubs[idx] = MAX_TIME - remaining_times[idx]
+            end.lbs[idx] = time + remaining_times[idx]
+            end.ubs[idx] = MAX_TIME
+
+        start.global_lbs[task_id] = time
+        self._recompute_global_bound(task_id, START, UB)
+
+        self._recompute_global_bound(task_id, END, LB)
+        end.global_ubs[task_id] = MAX_TIME
+
+        self.feasible_machines[task_id].clear()
+        self.feasible_machines[task_id].extend(original_machines)
+
+        self.event_queue.append(
+            DomainEvent(task_id, BOUNDS_RESET)
+        )
+
 
     def __repr__(self) -> str:
         return (
@@ -689,6 +769,7 @@ class ScheduleVariables:
             self.end,
             self.feasible_machines,
             self.fixed,
+            self.event_queue,
         )
         return (self.__class__, (DUMMY_INSTANCE,), state)
 
@@ -701,4 +782,5 @@ class ScheduleVariables:
             self.end,
             self.feasible_machines,
             self.fixed,
+            self.event_queue,
         ) = state

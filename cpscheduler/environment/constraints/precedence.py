@@ -171,6 +171,7 @@ class PrecedenceConstraint(Constraint):
     ) -> None:
         self.on_start_ub(task_id, machine_id, state)
 
+
     def get_entry(self) -> str:
         intree = self.is_intree()
         outtree = self.is_outtree()

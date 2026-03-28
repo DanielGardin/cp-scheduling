@@ -45,6 +45,8 @@ END_UB = VarField.END_UB
 PRESENCE = VarField.PRESENCE
 ABSENCE = VarField.ABSENCE
 INFEASIBILITY = VarField.INFEASIBILITY
+PAUSE = VarField.PAUSE
+BOUNDS_RESET = VarField.BOUNDS_RESET
 
 
 def prepare_instance(instance: InstanceTypes) -> dict[str, list[Any]]:
@@ -294,7 +296,7 @@ class SchedulingEnv:
     def propagate(self) -> None:
         "Propagate the new bounds through the constraints until a fixed-point is reached."
         state = self.state
-        event_queue = state.event_queue
+        event_queue = state.get_event_queue()
         combined = self.combined_constraints
 
         idx = 0
@@ -336,13 +338,21 @@ class SchedulingEnv:
                 for constraint in combined:
                     constraint.on_infeasibility(task_id, machine_id, state)
 
+            elif field == PAUSE:
+                for constraint in combined:
+                    constraint.on_pause(task_id, machine_id, state)
+
+            elif field == BOUNDS_RESET:
+                for constraint in combined:
+                    constraint.on_bound_reset(task_id, state)
+
             else:
                 raise ValueError(f"Unknown event field: {field}")
 
             idx += 1
 
         self.event_count += idx
-        state.event_queue.clear()
+        state.clear_event_queue()
 
     def advance_clock(self) -> bool:
         schedule = self.schedule
@@ -360,7 +370,7 @@ class SchedulingEnv:
             else:
                 next_time = state.get_last_completion_time()
 
-        self.state.advance_time(next_time)
+        self.state.advance_time_(next_time)
 
         # TODO: The only way a infeasible action can currently be detected
         # is if it causes the schedule to indefinitely postpone events

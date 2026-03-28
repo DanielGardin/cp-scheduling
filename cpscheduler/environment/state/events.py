@@ -35,14 +35,18 @@ class VarField:
     INFEASIBILITY: Final[VarFieldType] = 7
     "A task has been determined to be infeasible."
 
+    PAUSE: Final[VarFieldType] = 8
+    "A task have been paused and its bounds reset."
+
+    BOUNDS_RESET: Final[VarFieldType] = 9
+    "A task have its start interval set to [current_time, MAX_INT]."
+
 
 ASSIGNMENT = VarField.ASSIGNMENT
 START_LB = VarField.START_LB
 START_UB = VarField.START_UB
 END_LB = VarField.END_LB
 END_UB = VarField.END_UB
-PRESENCE = VarField.PRESENCE
-ABSENCE = VarField.ABSENCE
 INFEASIBILITY = VarField.INFEASIBILITY
 
 
