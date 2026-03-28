@@ -370,23 +370,24 @@ class SchedulingEnv:
             else:
                 next_time = state.get_last_completion_time()
 
-        self.state.advance_time_(next_time)
+        if next_time > state.time:
+            self.state.advance_time_(next_time)
 
-        # TODO: The only way a infeasible action can currently be detected
-        # is if it causes the schedule to indefinitely postpone events
-        # Locked semantics can help, we don't need to worry about
-        # tighetning bounds at each time step because no events can be
-        # wrongly processed at an intermediate time.
-        # for task_id in state.runtime_state.awaiting_tasks:
-        #     start_lb = state.get_start_lb(task_id)
+            # TODO: The only way a infeasible action can currently be detected
+            # is if it causes the schedule to indefinitely postpone events
+            # Locked semantics can help, we don't need to worry about
+            # tighetning bounds at each time step because no events can be
+            # wrongly processed at an intermediate time.
+            # for task_id in state.runtime_state.awaiting_tasks:
+            #     start_lb = state.get_start_lb(task_id)
 
-        #     if start_lb <= state.time:
-        #         state.tight_start_lb(task_id, state.time)
+            #     if start_lb <= state.time:
+            #         state.tight_start_lb(task_id, state.time)
 
-        for constraint in self.combined_constraints:
-            constraint.on_time_update(next_time, self.state)
+            for constraint in self.combined_constraints:
+                constraint.on_time_update(next_time, self.state)
 
-        self.propagate()
+            self.propagate()
 
         return not empty_schedule
 

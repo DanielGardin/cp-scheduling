@@ -106,7 +106,7 @@ class ScheduleState:
         return self._variables.infeasible or self.runtime_state.is_terminal()
 
     def advance_time_(self, new_time: Time) -> None:
-        assert new_time >= self.time, "Cannot go back in time."
+        assert new_time > self.time, "Advance time must be monotonic increasing."
 
         self.time = new_time
         self.runtime_state.update(self.time)

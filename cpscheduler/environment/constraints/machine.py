@@ -12,6 +12,7 @@ from cpscheduler.environment.constants import (
 )
 
 from cpscheduler.environment.state import ScheduleState
+from cpscheduler.environment.utils import convert_to_list
 
 from cpscheduler.environment.constraints.base import Constraint
 
@@ -254,38 +255,100 @@ class MachineBreakdownConstraint(Constraint):
         return "brkdwn"
 
 
-# class BatchConstraint(MachineConstraint):
-#     """
-#     Parallel batch machine constraint with capacity b.
+class BatchConstraint(Constraint):
+    """
+    Parallel batch machine constraint with capacity b.
 
-#     Generalization of MachineConstraint (which corresponds to b = 1).
-#     Each machine can process up to `capacity[m]` tasks simultaneously,
-#     """
+    Generalization of MachineConstraint (which corresponds to b = 1).
+    Each machine can process up to `capacity[m]` tasks simultaneously,
+    """
+    constant_capacity: int | None
 
-#     capacity: list[int]
+    machine_map: list[set[TaskID]]
 
-#     def __init__(self, capacity: Iterable[Int] | Int):
-#         super().__init__()
+    capacity: list[int]
+    running_tasks: list[int]
+    next_free_time: list[Time]
 
-#         if isinstance(capacity, int):
-#             self.capacity = [int(capacity)] * len(self.machine_map)
+    def __init__(self, capacity: Iterable[Int] | Int):
+        super().__init__()
 
-#         else:
-#             self.capacity = convert_to_list(capacity, int)
+        if isinstance(capacity, int):
+            if capacity < 1:
+                raise ValueError(f"Cannot set capacity any lower than 1.")
 
+            self.constant_capacity = capacity
+            self.capacity = []
 
-#     def __reduce__(self) -> Any:
-#         return (
-#             self.__class__,
-#             (self.capacity,),
-#             (self.machine_map,),
-#         )
+        else:
+            self.constant_capacity = None
+            self.capacity = convert_to_list(capacity, int)
 
-#     def propagate(self, event: DomainEvent, state: ScheduleState) -> None:
-#         task_id = event.task_id
+        self.running_tasks = []
+        self.next_free_time = []
 
-#         if not event.is_assignment():
-#             return
+    def __reduce__(self) -> Any:
+        return (
+            self.__class__,
+            (self.capacity,),
+            (self.machine_map, self.running_tasks, self.next_free_time),
+        )
 
-#         machine_id = state.get_assignment(task_id)
-#         assert machine_id != GLOBAL_MACHINE_ID
+    def initialize(self, state: ScheduleState) -> None:
+        if self.constant_capacity is not None:
+            self.capacity = [self.constant_capacity] * state.n_machines
+
+    def reset(self, state: ScheduleState) -> None:
+        self.machine_map = [set() for _ in range(state.n_machines)]
+
+        for task_id in range(state.n_tasks):
+            for machine in state.get_machines(task_id):
+                self.machine_map[machine].add(TaskID(task_id))
+
+        n_machines = state.n_machines
+
+        self.running_tasks = [0] * n_machines
+        self.next_free_time = [0] * n_machines
+
+    def on_infeasibility(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        if machine_id == GLOBAL_MACHINE_ID:
+            for machine in state.instance.get_machines(task_id):
+                self.machine_map[machine].discard(task_id)
+
+        else:
+            self.machine_map[machine_id].discard(task_id)
+
+    def on_assignment(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        for machine in state.instance.get_machines(task_id):
+            self.machine_map[machine].discard(task_id)
+
+        end_time = state.get_end_lb(task_id)
+
+        if end_time > self.next_free_time[machine_id]:
+            self.next_free_time[machine_id] = end_time
+
+        self.running_tasks[machine_id] += 1
+
+        if self.running_tasks[machine_id] == self.capacity[machine_id]:
+            for other_task_id in self.machine_map[machine_id]:
+                state.tight_start_lb(other_task_id, end_time, machine_id)
+
+    def on_pause(self, task_id: TaskID, machine_id: MachineID, state: ScheduleState) -> None:
+        raise NotImplementedError()
+
+    def on_time_update(self, time: Time, state: ScheduleState) -> None:
+        for machine_id, free_time in enumerate(self.next_free_time):
+            if free_time < time:
+                continue
+
+            if free_time == time:
+                self.running_tasks[machine_id] = 0
+                continue
+
+            if self.running_tasks[machine_id] < self.capacity[machine_id]:
+                for other_task_id in self.machine_map[machine_id]:
+                    state.tight_start_lb(other_task_id, free_time, machine_id)

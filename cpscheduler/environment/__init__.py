@@ -47,6 +47,7 @@ __all__ = [
     "NonRenewableResourceConstraint",
     "SetupConstraint",
     "MachineBreakdownConstraint",
+    "BatchConstraint",
     # Gamma objectives
     "Objective",
     "ComposedObjective",

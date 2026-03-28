@@ -15,6 +15,7 @@ __all__ = [
     "PassiveConstraint",
     "SoftConstraint",
     "MachineConstraint",
+    "BatchConstraint",
     "PreemptionConstraint",
     "OptionalityConstraint",
     "MachineEligibilityConstraint",
@@ -43,6 +44,7 @@ from .machine import (
     MachineConstraint,
     MachineEligibilityConstraint,
     MachineBreakdownConstraint,
+    BatchConstraint,
 )
 
 from .passive import (

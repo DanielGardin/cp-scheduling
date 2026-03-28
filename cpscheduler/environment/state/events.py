@@ -47,7 +47,45 @@ START_LB = VarField.START_LB
 START_UB = VarField.START_UB
 END_LB = VarField.END_LB
 END_UB = VarField.END_UB
+PRESENCE = VarField.PRESENCE
+ABSENCE = VarField.ABSENCE
 INFEASIBILITY = VarField.INFEASIBILITY
+PAUSE = VarField.PAUSE
+BOUNDS_RESET = VarField.BOUNDS_RESET
+
+def field_to_str(field: VarFieldType) -> str:
+    if field == START_LB:
+        return "START_LB"
+
+    elif field == START_UB:
+        return "START_UB"
+
+    elif field == END_LB:
+        return "END_LB"
+
+    elif field == END_UB:
+        return "END_UB"
+
+    elif field == ASSIGNMENT:
+        return "ASSIGNMENT"
+
+    elif field == PRESENCE:
+        return "PRESENCE"
+
+    elif field == ABSENCE:
+        return "ABSENCE"
+
+    elif field == INFEASIBILITY:
+        return "INFEASIBILITY"
+
+    elif field == PAUSE:
+        return "PAUSE"
+
+    elif field == BOUNDS_RESET:
+        return "BOUNDS_RESET"
+
+    else:
+        raise ValueError(f"Unknown event field: {field}")
 
 
 class DomainEvent:
@@ -76,6 +114,14 @@ class DomainEvent:
             self.__class__,
             (self.task_id, self.field, self.machine_id),
         )
+
+    def __repr__(self) -> str:
+        string = f"DomainEvent(task_id={self.task_id}, field={field_to_str(self.field)}"
+
+        if self.machine_id != GLOBAL_MACHINE_ID:
+            string += f", machine_id={self.machine_id}"
+
+        return string + ")"
 
     def is_assignment(self) -> bool:
         return self.field == ASSIGNMENT
