@@ -132,7 +132,9 @@ class RuntimeState:
         history = self.history
 
         for task_id in list(self.executing_tasks):
-            if history[task_id][-1][2] <= time:
+            _, _, end_time = history[task_id][-1]
+
+            if end_time <= time:
                 self.executing_tasks.remove(task_id)
                 self.completed_tasks.add(task_id)
 

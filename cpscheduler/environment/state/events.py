@@ -1,5 +1,4 @@
-from typing import Any, TypeAlias, Final
-from mypy_extensions import u8
+from typing import Any, Final, Literal
 
 from cpscheduler.environment.constants import (
     TaskID,
@@ -7,38 +6,38 @@ from cpscheduler.environment.constants import (
     GLOBAL_MACHINE_ID,
 )
 
-VarFieldType: TypeAlias = u8
+VarFieldType = Literal[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 
 
 class VarField:
-    ASSIGNMENT: Final[VarFieldType] = 0
+    ASSIGNMENT: Final[Literal[0]] = 0
     "A task have its domain colapsed to a single machine and l = u = start time."
 
-    START_LB: Final[VarFieldType] = 1
+    START_LB: Final[Literal[1]] = 1
     "A task have its start interval changed from [l, u) to [l', u), where l' > l."
 
-    START_UB: Final[VarFieldType] = 2
+    START_UB: Final[Literal[2]] = 2
     "A task have its start interval changed from [l, u) to [l, u'), where u' < u."
 
-    END_LB: Final[VarFieldType] = 3
+    END_LB: Final[Literal[3]] = 3
     "A task have its end interval changed from [l, u) to [l', u), where l' > l."
 
-    END_UB: Final[VarFieldType] = 4
+    END_UB: Final[Literal[4]] = 4
     "A task have its end interval changed from [l, u) to [l, u'), where u' < u."
 
-    PRESENCE: Final[VarFieldType] = 5
+    PRESENCE: Final[Literal[5]] = 5
     "A task have its presence changed from absent to mandatory."
 
-    ABSENCE: Final[VarFieldType] = 6
+    ABSENCE: Final[Literal[6]] = 6
     "A task have its presence changed from mandatory to absent."
 
-    INFEASIBILITY: Final[VarFieldType] = 7
+    INFEASIBILITY: Final[Literal[7]] = 7
     "A task has been determined to be infeasible."
 
-    PAUSE: Final[VarFieldType] = 8
+    PAUSE: Final[Literal[8]] = 8
     "A task have been paused and its bounds reset."
 
-    BOUNDS_RESET: Final[VarFieldType] = 9
+    BOUNDS_RESET: Final[Literal[9]] = 9
     "A task have its start interval set to [current_time, MAX_INT]."
 
 
@@ -52,6 +51,7 @@ ABSENCE = VarField.ABSENCE
 INFEASIBILITY = VarField.INFEASIBILITY
 PAUSE = VarField.PAUSE
 BOUNDS_RESET = VarField.BOUNDS_RESET
+
 
 def field_to_str(field: VarFieldType) -> str:
     if field == START_LB:
@@ -122,34 +122,3 @@ class DomainEvent:
             string += f", machine_id={self.machine_id}"
 
         return string + ")"
-
-    def is_assignment(self) -> bool:
-        return self.field == ASSIGNMENT
-
-    def is_global(self) -> bool:
-        return self.machine_id == GLOBAL_MACHINE_ID
-
-    def is_infeasibility(self) -> bool:
-        return (
-            self.field == INFEASIBILITY and self.machine_id == GLOBAL_MACHINE_ID
-        )
-
-    def is_start_field(self) -> bool:
-        field = self.field
-
-        return field == START_LB or field == START_UB
-
-    def is_end_field(self) -> bool:
-        field = self.field
-
-        return field == END_LB or field == END_UB
-
-    def is_lower_bound(self) -> bool:
-        field = self.field
-
-        return field == START_LB or field == END_LB
-
-    def is_upper_bound(self) -> bool:
-        field = self.field
-
-        return field == START_UB or field == END_UB

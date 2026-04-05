@@ -4,11 +4,7 @@ from cpscheduler.environment.constants import (
     Time,
     GLOBAL_MACHINE_ID,
 )
-from cpscheduler.environment.des.base import (
-    SimulationEvent,
-    Schedule,
-    register_instruction,
-)
+from cpscheduler.environment.des.base import SimulationEvent, Schedule
 from cpscheduler.environment.state import ScheduleState
 
 
@@ -63,14 +59,8 @@ class ExecuteEvent(SimulationEvent):
         state.execute_task(self.task_id, machine)
 
 
-register_instruction(ExecuteEvent, "execute")
-
-
 class SubmitEvent(ExecuteEvent):
     blocking = False
-
-
-register_instruction(SubmitEvent, "submit")
 
 
 class PauseEvent(SimulationEvent):
@@ -88,9 +78,6 @@ class PauseEvent(SimulationEvent):
 
     def process(self, state: ScheduleState, schedule: Schedule) -> None:
         state.pause_task(self.task_id)
-
-
-register_instruction(PauseEvent, "pause")
 
 
 class ResumeEvent(SimulationEvent):
@@ -116,18 +103,12 @@ class ResumeEvent(SimulationEvent):
         state.execute_task(self.task_id, last_assignment)
 
 
-register_instruction(ResumeEvent, "resume")
-
-
 class CheckpointEvent(SimulationEvent):
     blocking = False
 
     @property
     def args(self) -> tuple[()]:
         return ()
-
-
-register_instruction(CheckpointEvent, "noop")
 
 
 class InterruptEvent(SimulationEvent):
@@ -157,9 +138,6 @@ class CompleteEvent(SimulationEvent):
         )
 
 
-register_instruction(CompleteEvent, "complete")
-
-
 class AdvanceTimeEvent(SimulationEvent):
     blocking = True
 
@@ -173,6 +151,3 @@ class AdvanceTimeEvent(SimulationEvent):
     def process(self, state: ScheduleState, schedule: Schedule) -> None:
         # Advance time by adding a no-op event at the target time
         schedule.add_event(CheckpointEvent(), state, state.time + self.time)
-
-
-register_instruction(AdvanceTimeEvent, "advance")

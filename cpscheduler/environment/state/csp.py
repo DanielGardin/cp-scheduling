@@ -9,7 +9,11 @@ from cpscheduler.environment.constants import (
     MIN_TIME,
 )
 
-from cpscheduler.environment.state.events import DomainEvent, VarField
+from cpscheduler.environment.state.events import (
+    DomainEvent,
+    VarField,
+    VarFieldType,
+)
 from cpscheduler.environment.state.instance import ProblemInstance
 
 
@@ -30,6 +34,7 @@ BOUNDS_RESET = VarField.BOUNDS_RESET
 
 
 PresenceType = Literal[0b00, 0b01, 0b10, 0b11]
+
 
 class Presence:
     """
@@ -200,6 +205,7 @@ class Bounds:
             self.global_ubs,
         ) = state
 
+
 IntervalEnd = bool
 START: IntervalEnd = True
 END: IntervalEnd = False
@@ -207,6 +213,7 @@ END: IntervalEnd = False
 Bound = bool
 LB: Bound = True
 UB: Bound = False
+
 
 class ScheduleVariables:
     """
@@ -227,7 +234,7 @@ class ScheduleVariables:
         "start",
         "end",
         "infeasible",
-        "event_queue"
+        "event_queue",
     ]
 
     remaining_times: list[Time]
@@ -278,8 +285,7 @@ class ScheduleVariables:
             self._recompute_global_bound(task_id, END, LB)
 
         self.original_machines = [
-            tuple(p_times)
-            for p_times in instance.processing_times
+            tuple(p_times) for p_times in instance.processing_times
         ]
 
         self.remaining_times = remaining_times
@@ -292,7 +298,7 @@ class ScheduleVariables:
         self.event_queue = []
 
     def _recompute_global_bound(
-        self, task_id: TaskID, var: IntervalEnd, bound: Bound 
+        self, task_id: TaskID, var: IntervalEnd, bound: Bound
     ) -> None:
         variable = self.start if var else self.end
         row = task_id * variable.n_machines
@@ -300,32 +306,35 @@ class ScheduleVariables:
         feasible_machines = self.feasible_machines[task_id]
 
         best = MAX_TIME if bound else MIN_TIME
-        if bound: # bound == LB:
+        if bound:  # bound == LB:
+            lbs = variable.lbs
+
             for m_id in feasible_machines:
                 idx = row + m_id
 
-                value = variable.lbs[idx]
+                value = lbs[idx]
                 if value < best:
                     best = value
-            
+
             variable.global_lbs[task_id] = best
 
-        else: # bound == UB:
+        else:  # bound == UB:
+            ubs = variable.ubs
+
             for m_id in feasible_machines:
                 idx = row + m_id
 
-                value = variable.ubs[idx]
+                value = ubs[idx]
                 if value > best:
                     best = value
 
             variable.global_ubs[task_id] = best
 
-    def _restrict_presence(
-        self, task_id: TaskID, mask: PresenceType
-    ) -> None:
+    def _restrict_presence(self, task_id: TaskID, mask: PresenceType) -> None:
         old_presence = self.presence[task_id]
         new_presence = old_presence & mask
 
+        field: VarFieldType
         if new_presence == old_presence:
             return
 
@@ -358,9 +367,7 @@ class ScheduleVariables:
         "Forbid a task from being present in the schedule."
         self._restrict_presence(task_id, ABSENT)
 
-    def restrict_machine(
-        self, task_id: TaskID, machine_id: MachineID 
-    ) -> None:
+    def restrict_machine(self, task_id: TaskID, machine_id: MachineID) -> None:
         feasible_machines = self.feasible_machines[task_id]
 
         if machine_id not in feasible_machines:
@@ -376,9 +383,7 @@ class ScheduleVariables:
             for bound in (LB, UB):
                 self._recompute_global_bound(task_id, var, bound)
 
-        self.event_queue.append(
-            DomainEvent(task_id, INFEASIBILITY, machine_id)
-        )
+        self.event_queue.append(DomainEvent(task_id, INFEASIBILITY, machine_id))
 
     def set_machine_start_lb(
         self, task_id: TaskID, lb: Time, machine_id: MachineID
@@ -403,17 +408,11 @@ class ScheduleVariables:
             self._recompute_global_bound(task_id, START, LB)
             self._recompute_global_bound(task_id, END, LB)
 
-        self.event_queue.append(
-            DomainEvent(task_id, START_LB, machine_id)
-        )
+        self.event_queue.append(DomainEvent(task_id, START_LB, machine_id))
 
-    def set_start_lb(
-        self,
-        task_id: TaskID,
-        lb: Time
-    ) -> None:
+    def set_start_lb(self, task_id: TaskID, lb: Time) -> None:
         row = task_id * self.start.n_machines
-        
+
         feasible_machines = self.feasible_machines[task_id]
 
         start_lbs = self.start.lbs
@@ -442,7 +441,7 @@ class ScheduleVariables:
         self, task_id: TaskID, ub: Time, machine_id: MachineID
     ) -> None:
         idx = task_id * self.start.n_machines + machine_id
-        
+
         old_ub = self.start.ubs[idx]
         self.start.ubs[idx] = ub
 
@@ -480,7 +479,6 @@ class ScheduleVariables:
 
         if feasible_machines:
             self.event_queue.append(DomainEvent(task_id, START_UB))
-
 
     def set_machine_end_lb(
         self, task_id: TaskID, lb: Time, machine_id: MachineID
@@ -530,7 +528,6 @@ class ScheduleVariables:
 
         if feasible_machines:
             self.event_queue.append(DomainEvent(task_id, END_LB))
-
 
     def set_machine_end_ub(
         self, task_id: TaskID, ub: Time, machine_id: MachineID
@@ -628,9 +625,7 @@ class ScheduleVariables:
         end.global_lbs[task_id] = end_time
         end.global_ubs[task_id] = end_time
 
-        self.event_queue.append(
-            DomainEvent(task_id, ASSIGNMENT, machine_id)
-        )
+        self.event_queue.append(DomainEvent(task_id, ASSIGNMENT, machine_id))
 
     def pause(self, task_id: TaskID, time: Time) -> None:
         if not self.fixed[task_id]:
@@ -682,17 +677,12 @@ class ScheduleVariables:
         self.fixed[task_id] = False
         self.feasible_machines[task_id].extend(original_machines)
 
-        self.event_queue.append(
-            DomainEvent(task_id, PAUSE, prev_assignment)
-        )
+        self.event_queue.append(DomainEvent(task_id, PAUSE, prev_assignment))
 
     def reset_bounds(
         self, task_id: TaskID, time: Time, machine_id: MachineID
     ) -> None:
-        if (
-            self.fixed[task_id]
-            or not can_be_present(self.presence[task_id])
-        ):
+        if self.fixed[task_id] or not can_be_present(self.presence[task_id]):
             return None
 
         start = self.start
@@ -715,13 +705,12 @@ class ScheduleVariables:
 
             end.global_ubs[task_id]
 
-
         original_machines = self.original_machines[task_id]
         remaining_times = self.remaining_times
 
         for m_id in original_machines:
             idx = row + m_id
-    
+
             start.lbs[idx] = time
             start.ubs[idx] = MAX_TIME - remaining_times[idx]
             end.lbs[idx] = time + remaining_times[idx]
@@ -736,10 +725,7 @@ class ScheduleVariables:
         self.feasible_machines[task_id].clear()
         self.feasible_machines[task_id].extend(original_machines)
 
-        self.event_queue.append(
-            DomainEvent(task_id, BOUNDS_RESET)
-        )
-
+        self.event_queue.append(DomainEvent(task_id, BOUNDS_RESET))
 
     def __repr__(self) -> str:
         return (

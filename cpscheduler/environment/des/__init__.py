@@ -40,4 +40,13 @@ from cpscheduler.environment.des.base import (
     SimulationEvent,
     Schedule,
     instructions,
+    register_instruction,
 )
+
+register_instruction(ExecuteEvent, "execute")
+register_instruction(SubmitEvent, "submit")
+register_instruction(PauseEvent, "pause")
+register_instruction(ResumeEvent, "resume")
+register_instruction(CheckpointEvent, "noop")
+register_instruction(CompleteEvent, "complete")
+register_instruction(AdvanceTimeEvent, "advance")
