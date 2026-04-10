@@ -187,7 +187,7 @@ class ResourceConstraint(Constraint):
             next_available_time = self.next_available_time[i]
             available_resources = self.available_resources[i]
 
-            for other_task in list(state.runtime_state.awaiting_tasks):
+            for other_task in state.get_awaiting_tasks():
                 resource_usage = task_resources[other_task]
 
                 if resource_usage <= 0:
@@ -274,7 +274,7 @@ class NonRenewableResourceConstraint(Constraint):
 
             self.current_capacities[i] -= resource_usage
 
-            for other_task in list(state.runtime_state.awaiting_tasks):
+            for other_task in state.get_awaiting_tasks():
                 other_usage = task_resources[other_task]
 
                 if other_usage <= 0:

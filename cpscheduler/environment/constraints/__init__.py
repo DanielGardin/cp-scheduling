@@ -13,7 +13,6 @@ __all__ = [
     "constraints",
     "Constraint",
     "PassiveConstraint",
-    "SoftConstraint",
     "MachineConstraint",
     "BatchConstraint",
     "PreemptionConstraint",
@@ -37,7 +36,6 @@ from .base import (
     constraints,
     Constraint,
     PassiveConstraint,
-    SoftConstraint,
 )
 
 from .machine import (

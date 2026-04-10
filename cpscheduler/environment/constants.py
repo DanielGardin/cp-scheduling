@@ -1,6 +1,6 @@
 "Common types and constants used in the environment module."
 
-from typing import TypeAlias, Final, SupportsInt, SupportsFloat
+from typing import TypeAlias, Final, SupportsInt, SupportsFloat, Literal
 
 from mypy_extensions import i64, i32, i16, u8
 
@@ -31,7 +31,7 @@ GLOBAL_MACHINE_ID: MachineID = -1
 # ------------------------------------------------------------------------------
 # Enums
 
-StatusType: TypeAlias = u8
+StatusType: TypeAlias = Literal[0, 1, 2, 3]
 
 
 class Status:
@@ -39,17 +39,14 @@ class Status:
 
     __slots__ = ()
 
-    AWAITING: Final[StatusType] = 0
+    AWAITING: Final[Literal[0]] = 0
     "Task is awaiting execution, typically when time <= start_lb."
 
-    PAUSED: Final[StatusType] = 1
+    PAUSED: Final[Literal[1]] = 1
     "Task has been started, but has been paused and now is waiting to be resumed."
 
-    EXECUTING: Final[StatusType] = 2
+    EXECUTING: Final[Literal[2]] = 2
     "Task is currently executing on a machine."
 
-    COMPLETED: Final[StatusType] = 3
+    COMPLETED: Final[Literal[3]] = 3
     "Task has been completed and is no longer active in the schedule."
-
-    INFEASIBLE: Final[StatusType] = 255
-    "Task is not consistent with the constraints and cannot be scheduled."

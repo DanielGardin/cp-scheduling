@@ -1,4 +1,4 @@
-from typing import Any, Final, Literal
+from typing import Any, Final, Literal, assert_never
 
 from cpscheduler.environment.constants import (
     TaskID,
@@ -6,10 +6,12 @@ from cpscheduler.environment.constants import (
     GLOBAL_MACHINE_ID,
 )
 
-VarFieldType = Literal[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+VarFieldType = Literal[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
 
 class VarField:
+    __slots__ = ()
+
     ASSIGNMENT: Final[Literal[0]] = 0
     "A task have its domain colapsed to a single machine and l = u = start time."
 
@@ -31,8 +33,8 @@ class VarField:
     ABSENCE: Final[Literal[6]] = 6
     "A task have its presence changed from mandatory to absent."
 
-    INFEASIBILITY: Final[Literal[7]] = 7
-    "A task has been determined to be infeasible."
+    MACHINE_INFEASIBLE: Final[Literal[7]] = 7
+    "A task has been  in some machine."
 
     PAUSE: Final[Literal[8]] = 8
     "A task have been paused and its bounds reset."
@@ -40,6 +42,8 @@ class VarField:
     BOUNDS_RESET: Final[Literal[9]] = 9
     "A task have its start interval set to [current_time, MAX_INT]."
 
+    STATE_INFEASIBLE: Final[Literal[10]] = 10
+    "Flag indicating global infeasibility, it is not handled by constraints."
 
 ASSIGNMENT = VarField.ASSIGNMENT
 START_LB = VarField.START_LB
@@ -48,49 +52,52 @@ END_LB = VarField.END_LB
 END_UB = VarField.END_UB
 PRESENCE = VarField.PRESENCE
 ABSENCE = VarField.ABSENCE
-INFEASIBILITY = VarField.INFEASIBILITY
+MACHINE_INFEASIBLE = VarField.MACHINE_INFEASIBLE
 PAUSE = VarField.PAUSE
 BOUNDS_RESET = VarField.BOUNDS_RESET
+STATE_INFEASIBLE = VarField.STATE_INFEASIBLE
 
 
 def field_to_str(field: VarFieldType) -> str:
     if field == START_LB:
         return "START_LB"
 
-    elif field == START_UB:
+    if field == START_UB:
         return "START_UB"
 
-    elif field == END_LB:
+    if field == END_LB:
         return "END_LB"
 
-    elif field == END_UB:
+    if field == END_UB:
         return "END_UB"
 
-    elif field == ASSIGNMENT:
+    if field == ASSIGNMENT:
         return "ASSIGNMENT"
 
-    elif field == PRESENCE:
+    if field == PRESENCE:
         return "PRESENCE"
 
-    elif field == ABSENCE:
+    if field == ABSENCE:
         return "ABSENCE"
 
-    elif field == INFEASIBILITY:
-        return "INFEASIBILITY"
+    if field == MACHINE_INFEASIBLE:
+        return "MACHINE_INFEASIBLE"
 
-    elif field == PAUSE:
+    if field == PAUSE:
         return "PAUSE"
 
-    elif field == BOUNDS_RESET:
+    if field == BOUNDS_RESET:
         return "BOUNDS_RESET"
 
-    else:
-        raise ValueError(f"Unknown event field: {field}")
+    if field == STATE_INFEASIBLE:
+        return "STATE_INFEASIBLE"
+
+    assert_never(field)
 
 
 class DomainEvent:
     """
-    Base class for CP events in the scheduling environment.
+    Container for CP events in the scheduling environment.
     """
 
     __slots__ = ("task_id", "field", "machine_id")

@@ -1,4 +1,4 @@
-from typing import Any, ClassVar, NoReturn, final
+from typing import Any, NoReturn, final
 from mypy_extensions import mypyc_attr
 
 from cpscheduler.environment.state.events import DomainEvent, VarField
@@ -12,9 +12,10 @@ END_LB = VarField.END_LB
 END_UB = VarField.END_UB
 PRESENCE = VarField.PRESENCE
 ABSENCE = VarField.ABSENCE
-INFEASIBILITY = VarField.INFEASIBILITY
+MACHINE_INFEASIBLE = VarField.MACHINE_INFEASIBLE
 PAUSE = VarField.PAUSE
 BOUNDS_RESET = VarField.BOUNDS_RESET
+STATE_INFEASIBLE = VarField.STATE_INFEASIBLE
 
 constraints: dict[str, type["Constraint"]] = {}
 
@@ -75,7 +76,7 @@ class Constraint:
         elif field == ABSENCE:
             self.on_absence(task_id, state)
 
-        elif field == INFEASIBILITY:
+        elif field == MACHINE_INFEASIBLE:
             self.on_infeasibility(task_id, machine_id, state)
 
         elif field == PAUSE:
@@ -83,6 +84,9 @@ class Constraint:
 
         elif field == BOUNDS_RESET:
             self.on_bound_reset(task_id, state)
+
+        elif field == STATE_INFEASIBLE:
+            raise RuntimeError("Cannot propagate in a stale state.")
 
         else:
             raise ValueError(f"Unknown event field: {field}")
@@ -138,7 +142,7 @@ class Constraint:
         "Produce the β entry for the constraint."
         return ""
 
-
+@mypyc_attr(allow_interpreted_subclasses=True)
 class PassiveConstraint(Constraint):
     """
     Passive constraints are compile-time constraints on the instance and do not interact with
@@ -226,25 +230,3 @@ class PassiveConstraint(Constraint):
     @final
     def on_bound_reset(self, task_id: TaskID, state: ScheduleState) -> None:
         "Handle the bound invalidation of a given task."
-
-
-
-class SoftConstraint(Constraint):
-    """
-    Soft constraints are constraints that can be violated at a cost.
-    They are used to model preferences and to provide a more flexible scheduling
-    environment.
-
-    They cannot reduce the feasible space of the scheduling problem, only
-    record violations to the state via the `record_violation` method.
-    """
-
-    violation_name: ClassVar[str]
-
-    def __init_subclass__(cls, violation_name: str | None = None) -> None:
-        super().__init_subclass__()
-
-        if violation_name is None:
-            violation_name = cls.__name__.lower()
-
-        cls.violation_name = violation_name

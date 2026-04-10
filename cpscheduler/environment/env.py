@@ -11,7 +11,7 @@ reinforcement learning libraries. It provides methods for resetting the environm
 steps, rendering the environment, and exporting the scheduling model.
 """
 
-from typing import Any
+from typing import Any, assert_never
 from collections.abc import Iterable, Mapping
 from typing_extensions import TypeIs
 
@@ -25,6 +25,7 @@ from cpscheduler.environment._protocols import (
 
 from cpscheduler.environment.state import ScheduleState, ObsType
 from cpscheduler.environment.state.events import VarField
+from cpscheduler.environment.state.runtime import RuntimeEventKind
 from cpscheduler.environment.des import (
     ActionType,
     Schedule,
@@ -37,6 +38,8 @@ from cpscheduler.environment.objectives import Objective
 
 from cpscheduler.environment._render import Renderer
 
+# Event fields and kinds
+
 ASSIGNMENT = VarField.ASSIGNMENT
 START_LB = VarField.START_LB
 START_UB = VarField.START_UB
@@ -44,9 +47,14 @@ END_LB = VarField.END_LB
 END_UB = VarField.END_UB
 PRESENCE = VarField.PRESENCE
 ABSENCE = VarField.ABSENCE
-INFEASIBILITY = VarField.INFEASIBILITY
+MACHINE_INFEASIBLE = VarField.MACHINE_INFEASIBLE
 PAUSE = VarField.PAUSE
 BOUNDS_RESET = VarField.BOUNDS_RESET
+STATE_INFEASIBLE = VarField.STATE_INFEASIBLE
+
+TASK_STARTED = RuntimeEventKind.TASK_STARTED
+TASK_PAUSED = RuntimeEventKind.TASK_PAUSED
+TASK_COMPLETED = RuntimeEventKind.TASK_COMPLETED
 
 
 def prepare_instance(instance: InstanceTypes) -> dict[str, list[Any]]:
@@ -140,13 +148,19 @@ class SchedulingEnv:
     def __repr__(self) -> str:
         state = self.state
 
+        entry = self.get_entry()
+
         if state.loaded:
+            obj_value = self.objective.get_current(state)
+            n_tasks = state.n_tasks
+            time = state.time
+
             return (
-                f"SchedulingEnv({self.get_entry()}, n_tasks={state.n_tasks}, "
-                f"current_time={state.time}, objective={self.get_objective()})"
+                f"SchedulingEnv({entry}, n_tasks={n_tasks}, "
+                f"current_time={time}, objective={obj_value})"
             )
 
-        return f"SchedulingEnv({self.get_entry()}, n_tasks=0)"
+        return f"SchedulingEnv({entry}, n_tasks=0)"
 
     # Environment configuration public methods
     def add_constraint(self, constraint: Constraint) -> None:
@@ -334,7 +348,7 @@ class SchedulingEnv:
                 for constraint in combined:
                     constraint.on_absence(task_id, state)
 
-            elif field == INFEASIBILITY:
+            elif field == MACHINE_INFEASIBLE:
                 for constraint in combined:
                     constraint.on_infeasibility(task_id, machine_id, state)
 
@@ -346,8 +360,16 @@ class SchedulingEnv:
                 for constraint in combined:
                     constraint.on_bound_reset(task_id, state)
 
+            # FUTURE: This should be resolved when the event is created to allow
+            # discovering the causal effect that lead to infeasibility.
+            # In the current version, the event queue is not cleared to make
+            # discovery easier, but it must not be the final behavior.
+            elif field == STATE_INFEASIBLE:
+                assert state.is_terminal(), "STATE_INFEASIBLE event produced erroneously."
+                return False
+
             else:
-                raise ValueError(f"Unknown event field: {field}")
+                assert_never(field)
 
             idx += 1
 
@@ -410,11 +432,17 @@ class SchedulingEnv:
         for constraint in self.combined_constraints:
             constraint.reset(state)
 
-        self._prev_obj_value = self.get_objective()
+        self._prev_obj_value = self.objective.get_current(state) # Cold start
         self.event_count = 0
         self.force_reset = False
 
-        self.propagate()
+        consistent = self.propagate()
+
+        if not consistent:
+            raise RuntimeError(
+                "A stale state was produced after reset. Perhaps produced by "
+                "contraditory constraints included in your schedule problem."
+            )
 
         return self.get_state(), self.get_info()
 
@@ -433,15 +461,15 @@ class SchedulingEnv:
 
         schedule = self.schedule
 
-        while self.advance_clock() and not state.is_terminal():
-            # Invariant: Each iteration has the time static during instruction processing
+        while not state.is_terminal() and self.advance_clock():
             for event in schedule.instruction_queue(state):
-                # After each instruction is processed, ensure domains are updated until a fixed point
-                # is reached before processing the next instruction.
-                # control = instruction_result.queue_control
+                # After each instruction is processed, domains are updated until a fixed point.
                 event.process(state, schedule)
 
-                self.propagate()
+                consistent = self.propagate()
+
+                if not consistent:
+                    break
 
         # Gymnasium-like step return
         obs = self.get_state()

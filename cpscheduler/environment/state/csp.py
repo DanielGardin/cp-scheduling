@@ -28,10 +28,10 @@ END_LB = VarField.END_LB
 END_UB = VarField.END_UB
 PRESENCE = VarField.PRESENCE
 ABSENCE = VarField.ABSENCE
-INFEASIBILITY = VarField.INFEASIBILITY
+MACHINE_INFEASIBLE = VarField.MACHINE_INFEASIBLE
 PAUSE = VarField.PAUSE
 BOUNDS_RESET = VarField.BOUNDS_RESET
-
+STATE_INFEASIBLE = VarField.STATE_INFEASIBLE
 
 PresenceType = Literal[0b00, 0b01, 0b10, 0b11]
 
@@ -235,6 +235,7 @@ class ScheduleVariables:
         "end",
         "infeasible",
         "event_queue",
+        "awaiting_tasks"
     ]
 
     remaining_times: list[Time]
@@ -251,6 +252,9 @@ class ScheduleVariables:
     infeasible: bool
 
     event_queue: list[DomainEvent]
+
+    # Cached containers
+    awaiting_tasks: set[TaskID]
 
     def __init__(self, instance: ProblemInstance) -> None:
         n_tasks = instance.n_tasks
@@ -297,6 +301,14 @@ class ScheduleVariables:
 
         self.event_queue = []
 
+        self.awaiting_tasks = set(range(n_tasks))
+
+    def set_infeasible_state(self) -> None:
+        self.infeasible = True
+
+        # Task -1 indicates that the infeasibility cause cannot be determined
+        self.event_queue.append(DomainEvent(-1, STATE_INFEASIBLE))
+
     def _recompute_global_bound(
         self, task_id: TaskID, var: IntervalEnd, bound: Bound
     ) -> None:
@@ -330,7 +342,7 @@ class ScheduleVariables:
 
             variable.global_ubs[task_id] = best
 
-    def _restrict_presence(self, task_id: TaskID, mask: PresenceType) -> None:
+    def _restrict_presence(self, task_id: TaskID, mask: Literal[0b01, 0b10]) -> None:
         old_presence = self.presence[task_id]
         new_presence = old_presence & mask
 
@@ -342,13 +354,14 @@ class ScheduleVariables:
             field = PRESENCE
 
         elif new_presence == ABSENT:
+            self.awaiting_tasks.remove(task_id)
             field = ABSENCE
 
         elif new_presence == INFEASIBLE:
             # The task cannot be present nor absent, it is infeasible based on
             # the current propagation.
             self.infeasible = True
-            field = INFEASIBILITY
+            field = STATE_INFEASIBLE
 
         else:
             raise RuntimeError(
@@ -383,7 +396,9 @@ class ScheduleVariables:
             for bound in (LB, UB):
                 self._recompute_global_bound(task_id, var, bound)
 
-        self.event_queue.append(DomainEvent(task_id, INFEASIBILITY, machine_id))
+        self.event_queue.append(
+            DomainEvent(task_id, MACHINE_INFEASIBLE, machine_id)
+        )
 
     def set_machine_start_lb(
         self, task_id: TaskID, lb: Time, machine_id: MachineID
@@ -627,6 +642,8 @@ class ScheduleVariables:
 
         self.event_queue.append(DomainEvent(task_id, ASSIGNMENT, machine_id))
 
+        self.awaiting_tasks.remove(task_id)
+
     def pause(self, task_id: TaskID, time: Time) -> None:
         if not self.fixed[task_id]:
             raise RuntimeError(
@@ -756,6 +773,7 @@ class ScheduleVariables:
             self.feasible_machines,
             self.fixed,
             self.event_queue,
+            self.awaiting_tasks
         )
         return (self.__class__, (DUMMY_INSTANCE,), state)
 
@@ -769,4 +787,5 @@ class ScheduleVariables:
             self.feasible_machines,
             self.fixed,
             self.event_queue,
+            self.awaiting_tasks
         ) = state
