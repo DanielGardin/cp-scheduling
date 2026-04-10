@@ -307,8 +307,52 @@ class SchedulingEnv:
             instruction, time, priority = parse_instruction(intruction_args)
             self.schedule.add_event(instruction, state, time, priority)
 
-    def propagate(self) -> None:
-        "Propagate the new bounds through the constraints until a fixed-point is reached."
+    def advance_clock(self) -> bool:
+        schedule = self.schedule
+        state = self.state
+
+        empty_schedule = schedule.is_empty()
+
+        if not empty_schedule:
+            next_time = schedule.next_time()
+
+        elif state._variables.awaiting_tasks:
+            next_time = state.get_next_start_lb()
+
+        else:
+            next_time = state.get_last_completion_time()
+
+        if next_time > state.time:
+            self.state.advance_time_(next_time)
+
+            # TODO: The only way a infeasible action can currently be detected
+            # is if it causes the schedule to indefinitely postpone events
+            # Locked semantics can help, we don't need to worry about
+            # tighetning bounds at each time step because no events can be
+            # wrongly processed at an intermediate time.
+            # for task_id in state.runtime_state.awaiting_tasks:
+            #     start_lb = state.get_start_lb(task_id)
+            # 
+            #     if start_lb <= state.time:
+            #         state.tight_start_lb(task_id, state.time)
+
+            for constraint in self.combined_constraints:
+                constraint.on_time_update(next_time, self.state)
+
+            consistent = self.propagate()
+
+            if not consistent:
+                return False
+
+        return not empty_schedule
+
+    def propagate(self) -> bool:
+        """
+        Propagate the new bounds through the constraints until a fixed-point is reached.
+
+        Returns whether the propagation has run without producing an infeasible state.
+        """
+
         state = self.state
         event_queue = state.get_event_queue()
         combined = self.combined_constraints
@@ -376,42 +420,34 @@ class SchedulingEnv:
         self.event_count += idx
         state.clear_event_queue()
 
-    def advance_clock(self) -> bool:
-        schedule = self.schedule
+        return True
+
+    def get_objective(self) -> float:
+        "Update the objective value."
         state = self.state
+        runtime_event_queue = state.get_runtime_event_queue()
 
-        empty_schedule = schedule.is_empty()
+        objective = self.objective
+        for event in runtime_event_queue:
+            task_id = event.task_id
+            kind = event.kind
+            machine_id = event.machine_id
 
-        if not empty_schedule:
-            next_time = schedule.next_time()
-
-        else:
-            if state.runtime_state.awaiting_tasks:
-                next_time = state.get_next_start_lb()
+            if kind == TASK_STARTED:
+                objective.on_task_started(task_id, machine_id, state)
+            
+            elif kind == TASK_PAUSED:
+                objective.on_task_paused(task_id, machine_id, state)
+            
+            elif kind == TASK_COMPLETED:
+                objective.on_task_completed(task_id, machine_id, state)
 
             else:
-                next_time = state.get_last_completion_time()
+                assert_never(kind)
 
-        if next_time > state.time:
-            self.state.advance_time_(next_time)
+        state.clear_runtime_event_queue()
 
-            # TODO: The only way a infeasible action can currently be detected
-            # is if it causes the schedule to indefinitely postpone events
-            # Locked semantics can help, we don't need to worry about
-            # tighetning bounds at each time step because no events can be
-            # wrongly processed at an intermediate time.
-            # for task_id in state.runtime_state.awaiting_tasks:
-            #     start_lb = state.get_start_lb(task_id)
-
-            #     if start_lb <= state.time:
-            #         state.tight_start_lb(task_id, state.time)
-
-            for constraint in self.combined_constraints:
-                constraint.on_time_update(next_time, self.state)
-
-            self.propagate()
-
-        return not empty_schedule
+        return self.objective.get_current(state)
 
     # Environment API methods
     def reset(self, *, options: Options = None) -> tuple[ObsType, InfoType]:
@@ -429,6 +465,7 @@ class SchedulingEnv:
         self.schedule.reset()
         state.reset()
 
+        self.objective.reset(state)
         for constraint in self.combined_constraints:
             constraint.reset(state)
 
@@ -489,10 +526,6 @@ class SchedulingEnv:
 
     def render(self) -> None:
         self.renderer.render(self.state)
-
-    def get_objective(self) -> float:
-        "Get the current value of the objective function."
-        return self.objective.get_current(self.state)
 
     # Custom serialization methods for pickling and deep copying
     def __reduce__(self) -> Any:

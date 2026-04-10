@@ -30,7 +30,6 @@ __all__ = [
     # Beta constraints
     "Constraint",
     "PassiveConstraint",
-    "SoftConstraint",
     "MachineConstraint",
     "PreemptionConstraint",
     "OptionalityConstraint",
@@ -50,6 +49,7 @@ __all__ = [
     "BatchConstraint",
     # Gamma objectives
     "Objective",
+    "RegularObjective",
     "ComposedObjective",
     "Makespan",
     "TotalCompletionTime",
@@ -62,8 +62,7 @@ __all__ = [
     "TotalTardyJobs",
     "WeightedTardyJobs",
     "TotalFlowTime",
-    "DiscountedCompletionTime",
-    "RejectionCost",
+    "DiscountedTotalCompletionTime",
 ]
 
 from .env import SchedulingEnv
