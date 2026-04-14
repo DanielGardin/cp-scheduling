@@ -1,7 +1,5 @@
 from itertools import combinations
 
-from pulp import lpSum
-
 from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.constraints import (
     PrecedenceConstraint,
@@ -15,11 +13,6 @@ from cpscheduler.environment.constraints import (
     ReleaseDateConstraint,
     DeadlineConstraint,
     HorizonConstraint,
-)
-
-from cpscheduler.solver.milp.pulp_utils import (
-    pulp_add_constraint,
-    implication_pulp,
 )
 
 from cpscheduler.solver.milp.disjunctive.formulation import (
@@ -41,14 +34,13 @@ def prec_constraint(
 ) -> None:
     for task_id, children in constraint.children.items():
         for child_id in children:
-            pulp_add_constraint(
-                formulation.model,
+            formulation.add_constraint(
                 formulation.end_times[task_id]
                 <= formulation.start_times[child_id],
                 f"precedence_{task_id}_{child_id}",
             )
 
-            formulation.set_order(task_id, child_id)
+            formulation.set_global_order(task_id, child_id)
 
 
 @DisjunctiveMILPFormulation.register_constraint(NoWaitConstraint)
@@ -59,14 +51,13 @@ def no_wait_constraint(
 ) -> None:
     for task_id, children in constraint.children.items():
         for child_id in children:
-            pulp_add_constraint(
-                formulation.model,
+            formulation.add_constraint(
                 formulation.end_times[task_id]
                 == formulation.start_times[child_id],
                 f"no_wait_{task_id}_{child_id}",
             )
 
-            formulation.set_order(task_id, child_id)
+            formulation.set_global_order(task_id, child_id)
 
 
 @DisjunctiveMILPFormulation.register_constraint(NonOverlapConstraint)
@@ -81,8 +72,7 @@ def non_overlap_constraint(
             presence_i = formulation.present[i]
             presence_j = formulation.present[j]
 
-            implication_pulp(
-                formulation.model,
+            formulation.implication(
                 antecedent=(
                     order_var,
                     presence_i,
@@ -96,8 +86,7 @@ def non_overlap_constraint(
                 name=f"disjunctive_{i}_{j}_order",
             )
 
-            implication_pulp(
-                formulation.model,
+            formulation.implication(
                 antecedent=(
                     1 - order_var,
                     presence_i,
@@ -124,8 +113,7 @@ def machine_constraint(
             assignments_i = formulation.assignments[i]
             assignments_j = formulation.assignments[j]
 
-            implication_pulp(
-                formulation.model,
+            formulation.implication(
                 antecedent=(
                     order_var,
                     assignments_i[machine_id],
@@ -139,8 +127,7 @@ def machine_constraint(
                 name=f"machine_{machine_id}_order_{i}_{j}",
             )
 
-            implication_pulp(
-                formulation.model,
+            formulation.implication(
                 antecedent=(
                     1 - order_var,
                     assignments_i[machine_id],
@@ -175,14 +162,13 @@ def non_renewable_resource_constraint(
     constraint: NonRenewableResourceConstraint,
 ) -> None:
     for resource_id, capacity in enumerate(constraint.capacities):
-        resource_demand = lpSum(
+        resource_demand = sum(
             demand * formulation.present[task_id]
             for task_id, demand in enumerate(constraint.resources[resource_id])
             if demand > 0
         )
 
-        pulp_add_constraint(
-            formulation.model,
+        formulation.add_constraint(
             resource_demand <= capacity,
             f"non_renewable_resource_{resource_id}",
         )
@@ -201,8 +187,7 @@ def setup_constraint(
             if time > 0:
                 order_var = formulation.get_order(task_id, other_task_id)
 
-                implication_pulp(
-                    formulation.model,
+                formulation.implication(
                     antecedent=(
                         order_var,
                         formulation.present[task_id],

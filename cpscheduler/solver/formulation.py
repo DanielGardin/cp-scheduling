@@ -1,5 +1,5 @@
-from typing import Any, TypeVar, ClassVar, Generic, get_args, get_origin
-from typing_extensions import Self, get_original_bases
+from typing import Any, TypeVar, ClassVar
+from typing_extensions import Self
 from collections.abc import Callable
 from abc import ABC, abstractmethod
 
@@ -26,92 +26,19 @@ Register = dict[type[E], Exporter[F, E]]
 
 _Constraint = TypeVar("_Constraint", bound=Constraint)
 _Objective = TypeVar("_Objective", bound=Objective)
-_Setup = TypeVar("_Setup", bound=ScheduleSetup)
-
-
-class SymmetryBreaking(Generic[F]):
-    """
-    Base class for symmetry breaking constraints.
-
-    Symmetry breaking constraints are used to reduce the search space of the
-    solver by eliminating symmetric solutions.
-    For example, in parallel machine scheduling, if two machines are identical,
-    we can add a constraint that forces the first task to be assigned to the
-    first machine, which breaks the initial symmetry between the machines.
-    """
-
-    def __init_subclass__(
-        cls: type["SymmetryBreaking[F]"],
-        register: bool = True,
-    ) -> None:
-        if not register:
-            return
-
-        for base in get_original_bases(cls):
-            if get_origin(base) is not SymmetryBreaking:
-                continue
-
-            args = get_args(base)
-            if len(args) != 1:
-                raise TypeError(
-                    f"SymmetryBreaking subclasses must specify a single type  "
-                    f"argument representing the formulation type. Got {args}."
-                )
-
-            formulation_type = args[0]
-            if not issubclass(formulation_type, Formulation):
-                raise TypeError(
-                    f"SymmetryBreaking type argument must be a subclass of "
-                    f"Formulation. Got {formulation_type}."
-                )
-
-            formulation_type.register_symmetry_breaking(cls)
-
-    def is_appliable(self, env: SchedulingEnv) -> bool:
-        """
-        Check if the symmetry breaking constraint is appliable to the given environment.
-        """
-        raise NotImplementedError
-
-    def apply(self, formulation: F, env: SchedulingEnv) -> None:
-        """
-        Apply the symmetry breaking constraint to the given environment.
-        """
-        raise NotImplementedError
 
 
 class Formulation(ABC):
     formulation_name: ClassVar[str | None] = None
 
-    _setup_registry: ClassVar[dict[type[ScheduleSetup], Exporter[Any, Any]]]
     _constraint_registry: ClassVar[dict[type[Constraint], Exporter[Any, Any]]]
     _objective_registry: ClassVar[
         dict[type[Objective], VariableExporter[Any, Any]]
     ]
-    _symmetry_breaking_registry: ClassVar[list[SymmetryBreaking[Self]]]
 
     def __init_subclass__(cls) -> None:
-        if cls.formulation_name is None:
-            raise ValueError(
-                f"Formulation subclasses must define a 'formulation_name' class variable."
-            )
-
-        formulations[cls.formulation_name] = cls
-
-        cls._setup_registry = {}
         cls._constraint_registry = {}
         cls._objective_registry = {}
-        cls._symmetry_breaking_registry = []
-
-    @classmethod
-    def register_setup(
-        cls: type[F], setup: type[_Setup]
-    ) -> Decorator[Exporter[F, _Setup]]:
-        def decorator(fn: Exporter[F, _Setup]) -> Exporter[F, _Setup]:
-            cls._setup_registry[setup] = fn
-            return fn
-
-        return decorator
 
     @classmethod
     def register_constraint(
@@ -169,12 +96,6 @@ class Formulation(ABC):
             return fn
 
         return decorator
-
-    @classmethod
-    def register_symmetry_breaking(
-        cls: type[F], symmetry_breaking: type[SymmetryBreaking[F]]
-    ) -> None:
-        cls._symmetry_breaking_registry.append(symmetry_breaking())
 
     @abstractmethod
     def get_assignment(self, task_id: int) -> tuple[int, int]:
@@ -240,20 +161,6 @@ class Formulation(ABC):
         """
         state = env.state
 
-        if symmetry_break:
-            for symmetry_breaking in self._symmetry_breaking_registry:
-                if symmetry_breaking.is_appliable(env):
-                    symmetry_breaking.apply(self, env)
-
-        setup = env.setup
-        if type(setup) not in self._setup_registry:
-            raise ValueError(
-                f"Setup type '{type(setup).__name__}' is not registered for "
-                f"formulation '{type(self).__name__}'."
-            )
-
-        self._setup_registry[type(setup)](self, state, setup)
-
         for constraint in env.setup_constraints + env.constraints:
             if type(constraint) not in self._constraint_registry:
                 raise ValueError(
@@ -274,3 +181,21 @@ class Formulation(ABC):
 
     def __repr__(self) -> str:
         return f"Formulation(name={self.formulation_name})"
+
+
+def register_formulation(cls: type[F], name: str) -> type[F]:
+    if name in formulations:
+        raise ValueError(
+            f"A formulation with name '{name}' is already registered: "
+            f"{formulations[name]}"
+        )
+
+    if cls.formulation_name is not None and cls.formulation_name != name:
+        raise ValueError(
+            f"Formulation class '{cls.__name__}' has a different formulation_name "
+            f"('{cls.formulation_name}') than the provided name ('{name}')."
+        )
+
+    cls.formulation_name = name
+    formulations[name] = cls
+    return cls

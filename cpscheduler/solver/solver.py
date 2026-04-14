@@ -1,4 +1,4 @@
-from typing import Any, TypeVar, Generic
+from typing import Any
 from collections.abc import Sequence
 from typing_extensions import NamedTuple
 
@@ -6,10 +6,10 @@ from copy import deepcopy
 
 from cpscheduler.environment.des import SingleAction
 
-from cpscheduler.environment import SchedulingEnv, HorizonConstraint
+from cpscheduler.environment import SchedulingEnv
 from cpscheduler.common import unwrap_env
 
-from cpscheduler.solver.formulation import Formulation
+from cpscheduler.solver.formulation import Formulation, formulations
 
 
 class SolverResult(NamedTuple):
@@ -18,12 +18,9 @@ class SolverResult(NamedTuple):
     status: str
 
 
-F = TypeVar("F", bound=Formulation)
-
-
-class SchedulingSolver(Generic[F]):
+class SchedulingSolver:
     env: SchedulingEnv
-    formulation: F
+    formulation: Formulation
     config: dict[str, Any]
 
     _built: bool = False
@@ -31,13 +28,13 @@ class SchedulingSolver(Generic[F]):
     def __init__(
         self,
         env: Any | SchedulingEnv,
-        formulation: F,
-        horizon: int | None = None,
-        **solver_config: Any,
+        formulation: Formulation | str,
+        **formulation_kwargs: Any,
     ):
         self.env = unwrap_env(env)
-        if horizon is not None:
-            self.env.add_constraint(HorizonConstraint(horizon))
+
+        if isinstance(formulation, str):
+            formulation = formulations[formulation](**formulation_kwargs)
 
         self.formulation = formulation
 
@@ -80,7 +77,7 @@ class SchedulingSolver(Generic[F]):
         objective_value = self.formulation.get_objective_value()
 
         actions: list[tuple[int, str, int, int]] = []
-        for task_id in self.env.state.runtime_state.awaiting_tasks:
+        for task_id in self.env.state.runtime.awaiting_tasks:
             machine_id, start_time = self.formulation.get_assignment(task_id)
             actions.append((start_time, "execute", task_id, machine_id))
 
