@@ -220,7 +220,7 @@ class MachineBreakdownConstraint(Constraint):
         for machine in self.breakdowns:
             self.next_breakdown[machine] = 0
 
-            for task_id in state.get_awaiting_tasks():
+            for task_id in state.runtime.get_awaiting_tasks():
                 start_lb = state.get_start_lb(task_id, machine)
 
                 for _, end in self.breakdowns[machine]:
@@ -243,7 +243,7 @@ class MachineBreakdownConstraint(Constraint):
                     continue
 
                 if start <= time < end:
-                    for task_id in state.get_awaiting_tasks():
+                    for task_id in state.runtime.get_awaiting_tasks():
                         start_lb = state.get_start_lb(task_id, machine)
 
                         if start_lb < end:

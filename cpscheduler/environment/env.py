@@ -24,8 +24,7 @@ from cpscheduler.environment._protocols import (
 )
 
 from cpscheduler.environment.state import ScheduleState, ObsType
-from cpscheduler.environment.state.events import VarField
-from cpscheduler.environment.state.runtime import RuntimeEventKind
+from cpscheduler.environment.state.events import VarField, RuntimeEventKind
 from cpscheduler.environment.des import (
     ActionType,
     Schedule,
@@ -316,7 +315,7 @@ class SchedulingEnv:
         if not empty_schedule:
             next_time = schedule.next_time()
 
-        elif state._variables.awaiting_tasks:
+        elif state.runtime.awaiting_tasks:
             next_time = state.get_next_start_lb()
 
         else:
@@ -354,7 +353,7 @@ class SchedulingEnv:
         """
 
         state = self.state
-        event_queue = state.get_event_queue()
+        event_queue = state.domain_event_queue
         combined = self.combined_constraints
 
         idx = 0
@@ -418,14 +417,14 @@ class SchedulingEnv:
             idx += 1
 
         self.event_count += idx
-        state.clear_event_queue()
+        event_queue.clear()
 
         return True
 
     def get_objective(self) -> float:
         "Update the objective value."
         state = self.state
-        runtime_event_queue = state.get_runtime_event_queue()
+        runtime_event_queue = state.runtime_event_queue
 
         objective = self.objective
         for event in runtime_event_queue:
@@ -445,7 +444,7 @@ class SchedulingEnv:
             else:
                 assert_never(kind)
 
-        state.clear_runtime_event_queue()
+        runtime_event_queue.clear()
 
         return self.objective.get_current(state)
 

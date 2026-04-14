@@ -92,14 +92,14 @@ class ResumeEvent(SimulationEvent):
 
     def is_ready(self, state: ScheduleState) -> bool:
         if state.is_paused(self.task_id):
-            last_assignment = state.runtime_state.get_assignment(self.task_id)
+            last_assignment = state.runtime.get_assignment(self.task_id)
 
             return state.is_available(self.task_id, last_assignment)
 
         return False
 
     def process(self, state: ScheduleState, schedule: Schedule) -> None:
-        last_assignment = state.runtime_state.get_assignment(self.task_id)
+        last_assignment = state.runtime.get_assignment(self.task_id)
         state.execute_task(self.task_id, last_assignment)
 
 

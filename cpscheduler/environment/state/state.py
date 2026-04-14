@@ -1,4 +1,4 @@
-from typing import Any, TypeAlias
+from typing import Any, TypeAlias, Literal, cast
 
 from cpscheduler.environment.constants import (
     MAX_TIME,
@@ -7,12 +7,25 @@ from cpscheduler.environment.constants import (
     Time,
     GLOBAL_MACHINE_ID,
 )
-from cpscheduler.environment.constants import Status
+from cpscheduler.environment.constants import Status, MIN_TIME, PickleState
 
-from cpscheduler.environment.state.csp import ScheduleVariables, Presence
-from cpscheduler.environment.state.events import DomainEvent
+from cpscheduler.environment.state.csp import (
+    TaskDomains,
+    Presence,
+    PresenceType,
+    presence_to_str
+)
+
+from cpscheduler.environment.state.events import (
+    DomainEvent,
+    RuntimeEvent,
+    VarField,
+    VarFieldType,
+    RuntimeEventKind
+)
+
 from cpscheduler.environment.state.instance import ProblemInstance
-from cpscheduler.environment.state.runtime import RuntimeState, RuntimeEvent
+from cpscheduler.environment.state.runtime import RuntimeState, TaskHistory
 
 ObsType: TypeAlias = tuple[dict[str, list[Any]], dict[str, list[Any]]]
 
@@ -20,11 +33,49 @@ PRESENT = Presence.PRESENT
 ABSENT = Presence.ABSENT
 INFEASIBLE = Presence.INFEASIBLE
 
+def can_be_present(presence: PresenceType) -> bool:
+    return (presence & PRESENT) != 0
+
+def can_be_absent(presence: PresenceType) -> bool:
+    return (presence & ABSENT) != 0
+
 AWAITING = Status.AWAITING
 PAUSED = Status.PAUSED
 EXECUTING = Status.EXECUTING
 COMPLETED = Status.COMPLETED
 
+ASSIGNMENT = VarField.ASSIGNMENT
+START_LB = VarField.START_LB
+START_UB = VarField.START_UB
+END_LB = VarField.END_LB
+END_UB = VarField.END_UB
+PRESENCE = VarField.PRESENCE
+ABSENCE = VarField.ABSENCE
+MACHINE_INFEASIBLE = VarField.MACHINE_INFEASIBLE
+PAUSE = VarField.PAUSE
+BOUNDS_RESET = VarField.BOUNDS_RESET
+STATE_INFEASIBLE = VarField.STATE_INFEASIBLE
+
+TASK_STARTED = RuntimeEventKind.TASK_STARTED
+TASK_PAUSED = RuntimeEventKind.TASK_PAUSED
+TASK_COMPLETED = RuntimeEventKind.TASK_COMPLETED
+
+
+DUMMY_INSTANCE = ProblemInstance({})
+
+IntervalEnd = bool
+START: IntervalEnd = True
+END: IntervalEnd = False
+
+Bound = bool
+LB: Bound = True
+UB: Bound = False
+
+UNKNOWN_TASK: TaskID = -1
+
+# from line_profiler import profile
+
+# @profile
 class ScheduleState:
     """
     ScheduleState represents the current state of the scheduling environment,
@@ -40,27 +91,35 @@ class ScheduleState:
     __slots__ = (
         "instance",
         "time",
-        "_variables",
-        "runtime_state",
-        "loaded",
+        "infeasible",
+        "domains",
+        "runtime",
+        "domain_event_queue",
+        "runtime_event_queue",
     )
 
     instance: ProblemInstance
 
     time: Time
-    "Current simulation time."
 
-    _variables: ScheduleVariables
-    "Encapsulates all the variable data for the tasks"
+    infeasible: bool
 
-    runtime_state: RuntimeState
-    "Encapsulates the runtime state of the tasks, such as their history and current status"
+    domains: TaskDomains
 
-    loaded: bool
+    runtime: RuntimeState
+
+    domain_event_queue: list[DomainEvent]
+    runtime_event_queue: list[RuntimeEvent]
 
     def __init__(self) -> None:
+        self.instance = ProblemInstance({}) # Dummy instance
+
         self.time = 0
-        self.loaded = False
+
+        self.infeasible = False
+
+        self.domain_event_queue = []
+        self.runtime_event_queue = []
 
     # Properties
     @property
@@ -75,13 +134,16 @@ class ScheduleState:
     def n_jobs(self) -> int:
         return self.instance.n_jobs
 
+    @property
+    def loaded(self) -> bool:
+        return self.instance.loaded
+
     # Instance control methods
     def read_instance(
         self,
         task_data: dict[str, list[Any]],
     ) -> None:
         self.instance = ProblemInstance(task_data)
-        self.loaded = True
 
     # Flow control methods
     def reset(self) -> None:
@@ -90,27 +152,26 @@ class ScheduleState:
         ), "No instance loaded. Please load an instance before resetting the state."
 
         self.time = 0
+        self.infeasible = False
 
-        self._variables = ScheduleVariables(self.instance)
-        self.runtime_state = RuntimeState(self.instance)
+        self.domains = TaskDomains(self.instance)
+        self.runtime = RuntimeState(self.instance)
 
-    def get_event_queue(self) -> list[DomainEvent]:
-        return self._variables.event_queue
+        for task_id in range(self.n_tasks):
+            self._recompute_global_bound(task_id, END, LB)
+            self._recompute_global_bound(task_id, START, UB)
 
-    def clear_event_queue(self) -> None:
-        self._variables.event_queue.clear()
-
-    def get_runtime_event_queue(self) -> list[RuntimeEvent]:
-        return self.runtime_state.event_queue
-
-    def clear_runtime_event_queue(self) -> None:
-        self.runtime_state.event_queue.clear()
+        self.domain_event_queue.clear()
+        self.runtime_event_queue.clear()
 
     def is_terminal(self) -> bool:
-        return self._variables.infeasible or (
-            not self._variables.awaiting_tasks and
-            not self.runtime_state.executing_tasks
-        )
+        if self.infeasible:
+            return True
+
+        awaiting = self.runtime.awaiting_tasks
+        executing = self.runtime.executing_tasks
+
+        return not awaiting and not executing
 
     def advance_time_(self, new_time: Time) -> None:
         assert (
@@ -118,7 +179,21 @@ class ScheduleState:
         ), "Advance time must be monotonic increasing."
 
         self.time = new_time
-        self.runtime_state.update(self.time)
+
+        runtime = self.runtime
+        executing_tasks = runtime.get_executing_tasks()
+        for task_id in executing_tasks:
+            assignment = runtime.get_assignment(task_id)
+            end_time = runtime.get_end(task_id)
+
+            if end_time <= new_time:
+                runtime.executing_tasks.remove(task_id)
+                runtime.completed_tasks.add(task_id)
+
+                runtime.status[task_id] = COMPLETED
+                self.runtime_event_queue.append(
+                    RuntimeEvent(task_id, TASK_COMPLETED, assignment)
+                )
 
     # Constraint propagation API methods
 
@@ -126,53 +201,53 @@ class ScheduleState:
     def get_start_lb(
         self, task_id: TaskID, machine_id: MachineID = GLOBAL_MACHINE_ID
     ) -> Time:
-        return self._variables.start.get_lb(task_id, machine_id)
+        return self.domains.start.get_lb(task_id, machine_id)
 
     def get_start_ub(
         self, task_id: TaskID, machine_id: MachineID = GLOBAL_MACHINE_ID
     ) -> Time:
-        return self._variables.start.get_ub(task_id, machine_id)
+        return self.domains.start.get_ub(task_id, machine_id)
 
     def get_end_lb(
         self, task_id: TaskID, machine_id: MachineID = GLOBAL_MACHINE_ID
     ) -> Time:
-        return self._variables.end.get_lb(task_id, machine_id)
+        return self.domains.end.get_lb(task_id, machine_id)
 
     def get_end_ub(
         self, task_id: TaskID, machine_id: MachineID = GLOBAL_MACHINE_ID
     ) -> Time:
-        return self._variables.end.get_ub(task_id, machine_id)
+        return self.domains.end.get_ub(task_id, machine_id)
 
     def get_remaining_time(
         self, task_id: TaskID, machine_id: MachineID
     ) -> Time:
-        return self._variables.remaining_times[
-            task_id * self.instance.n_machines + machine_id
-        ]
+        idx = task_id * self.instance.n_machines + machine_id
+
+        return self.domains.remaining_times[idx]
 
     def get_assignment(self, task_id: TaskID) -> MachineID:
-        return self._variables.assignment[task_id]
+        return self.domains.assignment[task_id]
 
     def get_machines(self, task_id: TaskID) -> list[MachineID]:
-        return self._variables.feasible_machines[task_id]
+        return self.domains.get_feasible_machines(task_id)
 
     def is_fixed(self, task_id: TaskID) -> bool:
-        return self._variables.fixed[task_id]
+        return self.domains.assignment[task_id] != GLOBAL_MACHINE_ID
 
     def is_present(self, task_id: TaskID) -> bool:
-        return self._variables.presence[task_id] == PRESENT
+        return self.domains.presence[task_id] == PRESENT
 
     def is_absent(self, task_id: TaskID) -> bool:
-        return self._variables.presence[task_id] == ABSENT
+        return self.domains.presence[task_id] == ABSENT
 
     def is_feasible(
         self, task_id: TaskID, machine_id: MachineID = GLOBAL_MACHINE_ID
     ) -> bool:
 
-        if self._variables.presence[task_id] == INFEASIBLE:
+        if self.domains.presence[task_id] == INFEASIBLE:
             return False
 
-        machines = self._variables.feasible_machines[task_id]
+        machines = self.domains.feasible_machines[task_id]
 
         if machine_id == GLOBAL_MACHINE_ID:
             return bool(machines)
@@ -180,11 +255,106 @@ class ScheduleState:
         return machine_id in machines
 
     ## Setter methods for variable values, triggering constraint propagation through events
+    def _recompute_global_bound(
+        self, task_id: TaskID, var: IntervalEnd, bound: Bound
+    ) -> None:
+        domains = self.domains
+
+        variable = domains.start if var else domains.end
+        row = task_id * variable.n_machines
+
+        feasible_machines = domains.feasible_machines[task_id]
+
+        best = MAX_TIME if bound else MIN_TIME
+        if bound:  # bound == LB:
+            lbs = variable.lbs
+
+            for m_id in feasible_machines:
+                idx = row + m_id
+
+                value = lbs[idx]
+                if value < best:
+                    best = value
+
+            variable.global_lbs[task_id] = best
+
+        else:  # bound == UB:
+            ubs = variable.ubs
+
+            for m_id in feasible_machines:
+                idx = row + m_id
+
+                value = ubs[idx]
+                if value > best:
+                    best = value
+
+            variable.global_ubs[task_id] = best
+
+    def _recompute_all_bounds(self, task_id: TaskID) -> None:
+        self._recompute_global_bound(task_id, START, LB)
+        self._recompute_global_bound(task_id, START, UB)
+        self._recompute_global_bound(task_id, END, LB)
+        self._recompute_global_bound(task_id, END, UB)
+
+    def _restrict_presence(self, task_id: TaskID, mask: Literal[0b01, 0b10]) -> None:
+        domains = self.domains
+        runtime = self.runtime
+
+        old_presence = domains.presence[task_id]
+        # Bitwise operations on Literal unions are inferred as int by type checkers.
+        # Explicitly narrow back to PresenceType.
+        new_presence = cast(PresenceType, old_presence & mask)
+
+        field: VarFieldType
+        if new_presence == old_presence:
+            return
+
+        if new_presence == INFEASIBLE:
+            domains.presence[task_id] = INFEASIBLE
+            self.fail(task_id)
+            return
+
+        if new_presence == PRESENT:
+            field = PRESENCE
+
+        elif new_presence == ABSENT:
+            runtime.awaiting_tasks.discard(task_id)
+            field = ABSENCE
+
+        else:
+            raise RuntimeError(
+                f"Unreachable: unexpected presence value {new_presence!r}"
+            )
+
+        domains.presence[task_id] = new_presence
+
+        self.domain_event_queue.append(DomainEvent(task_id, field))
+
     def require_task(self, task_id: TaskID) -> None:
-        self._variables.require_task(task_id)
+        self._restrict_presence(task_id, PRESENT)
 
     def forbid_task(self, task_id: TaskID) -> None:
-        self._variables.forbid_task(task_id)
+        self._restrict_presence(task_id, ABSENT)
+
+    def restrict_machine(self, task_id: TaskID, machine_id: MachineID) -> None:
+        domains = self.domains
+
+        feasible_machines = domains.feasible_machines[task_id]
+
+        if machine_id not in feasible_machines:
+            return
+
+        feasible_machines.remove(machine_id)
+
+        if not feasible_machines:
+            self._restrict_presence(task_id, ABSENT)
+            return
+
+        self._recompute_all_bounds(task_id)
+
+        self.domain_event_queue.append(
+            DomainEvent(task_id, MACHINE_INFEASIBLE, machine_id)
+        )
 
     def tight_start_lb(
         self,
@@ -192,16 +362,61 @@ class ScheduleState:
         value: Time,
         machine_id: MachineID = GLOBAL_MACHINE_ID,
     ) -> None:
-        variables = self._variables
+        domains = self.domains
 
-        if value <= variables.start.get_lb(task_id, machine_id):
+        if value <= domains.start.get_lb(task_id, machine_id):
             return
 
-        if machine_id == GLOBAL_MACHINE_ID:
-            variables.set_start_lb(task_id, value)
+        start_lbs = domains.start.lbs
+        start_ubs = domains.start.ubs
+        end_lbs = domains.end.lbs
+        end_ubs = domains.end.ubs
+        remaining_times = domains.remaining_times
 
-        else:
-            variables.set_machine_start_lb(task_id, value, machine_id)
+        if machine_id == GLOBAL_MACHINE_ID:
+            row = task_id * self.n_machines
+
+            feasible_machines = domains.get_feasible_machines(task_id)
+            for m_id in feasible_machines:
+                idx = row + m_id
+
+                if start_lbs[idx] < value:
+                    start_lbs[idx] = value
+                    end_lbs[idx] = value + remaining_times[idx]
+
+                    if value > start_ubs[idx] or end_lbs[idx] > end_ubs[idx]:
+                        self.restrict_machine(task_id, m_id)
+
+            self._recompute_global_bound(task_id, START, LB)
+            self._recompute_global_bound(task_id, END, LB)
+
+            if feasible_machines:
+                self.domain_event_queue.append(
+                    DomainEvent(task_id, START_LB)
+                )
+
+            return
+
+        idx = task_id * self.n_machines + machine_id
+
+        old_lb = start_lbs[idx]
+        end_lb = value + remaining_times[idx]
+
+        start_lbs[idx] = value
+        end_lbs[idx] = end_lb
+
+        if value > start_ubs[idx] or end_lb > end_ubs[idx]:
+            self.restrict_machine(task_id, machine_id)
+            return
+
+        if old_lb == domains.start.global_lbs[task_id]:
+            self._recompute_global_bound(task_id, START, LB)
+            self._recompute_global_bound(task_id, END, LB)
+
+
+        self.domain_event_queue.append(
+            DomainEvent(task_id, START_LB, machine_id)
+        )
 
     def tight_start_ub(
         self,
@@ -209,16 +424,60 @@ class ScheduleState:
         value: Time,
         machine_id: MachineID = GLOBAL_MACHINE_ID,
     ) -> None:
-        variables = self._variables
+        domains = self.domains
 
-        if value >= variables.start.get_ub(task_id, machine_id):
+        if value >= domains.start.get_ub(task_id, machine_id):
             return
 
-        if machine_id == GLOBAL_MACHINE_ID:
-            variables.set_start_ub(task_id, value)
+        start_lbs = domains.start.lbs
+        start_ubs = domains.start.ubs
+        end_ubs = domains.end.ubs
+        remaining_times = domains.remaining_times
 
-        else:
-            variables.set_machine_start_ub(task_id, value, machine_id)
+        if machine_id == GLOBAL_MACHINE_ID:
+            row = task_id * self.n_machines
+
+            feasible_machines = domains.get_feasible_machines(task_id)
+            for m_id in feasible_machines:
+                idx = row + m_id
+
+                if start_ubs[idx] > value:
+                    start_ubs[idx] = value
+                    end_ubs[idx] = value + remaining_times[idx]
+
+                    if value < start_lbs[idx] or end_ubs[idx] < domains.end.lbs[idx]:
+                        self.restrict_machine(task_id, m_id)
+
+            self._recompute_global_bound(task_id, START, UB)
+            self._recompute_global_bound(task_id, END, UB)
+
+
+
+            if feasible_machines:
+                self.domain_event_queue.append(
+                    DomainEvent(task_id, START_UB)
+                )
+
+            return
+
+        idx = task_id * self.n_machines + machine_id
+
+        old_ub = start_ubs[idx]
+        start_ubs[idx] = value
+        end_ubs[idx] = value + remaining_times[idx]
+
+        if value < start_lbs[idx] or end_ubs[idx] < domains.end.lbs[idx]:
+            self.restrict_machine(task_id, machine_id)
+            return
+
+        if old_ub == domains.start.global_ubs[task_id]:
+            self._recompute_global_bound(task_id, START, UB)
+            self._recompute_global_bound(task_id, END, UB)
+
+        self.domain_event_queue.append(
+            DomainEvent(task_id, START_UB, machine_id)
+        )
+
 
     def tight_end_lb(
         self,
@@ -226,16 +485,67 @@ class ScheduleState:
         value: Time,
         machine_id: MachineID = GLOBAL_MACHINE_ID,
     ) -> None:
-        variables = self._variables
+        domains = self.domains
 
-        if value <= variables.end.get_lb(task_id, machine_id):
+        if value <= domains.end.get_lb(task_id, machine_id):
             return
 
-        if machine_id == GLOBAL_MACHINE_ID:
-            variables.set_end_lb(task_id, value)
+        start_lbs = domains.start.lbs
+        start_ubs = domains.start.ubs
+        end_lbs = domains.end.lbs
+        end_ubs = domains.end.ubs
+        remaining_times = domains.remaining_times
 
-        else:
-            variables.set_machine_end_lb(task_id, value, machine_id)
+        if machine_id == GLOBAL_MACHINE_ID:
+            row = task_id * self.n_machines
+
+            feasible_machines = domains.get_feasible_machines(task_id)
+            for m_id in feasible_machines:
+                idx = row + m_id
+
+                if end_lbs[idx] < value:
+                    end_lbs[idx] = value
+                    derived_start_lb = value - remaining_times[idx]
+                    if start_lbs[idx] < derived_start_lb:
+                        start_lbs[idx] = derived_start_lb
+
+                    if value > end_ubs[idx] or start_lbs[idx] > start_ubs[idx]:
+                        self.restrict_machine(task_id, m_id)
+
+            self._recompute_global_bound(task_id, END, LB)
+            self._recompute_global_bound(task_id, START, LB)
+
+
+
+            if feasible_machines:
+                self.domain_event_queue.append(
+                    DomainEvent(task_id, END_LB)
+                )
+
+            return
+
+        idx = task_id * self.n_machines + machine_id
+
+        old_lb = end_lbs[idx]
+        start_lb = value - remaining_times[idx]
+
+        end_lbs[idx] = value
+        start_lbs[idx] = start_lb
+
+        if value > end_ubs[idx] or start_lb > start_ubs[idx]:
+            self.restrict_machine(task_id, machine_id)
+            return
+
+        if old_lb == domains.end.global_lbs[task_id]:
+            self._recompute_global_bound(task_id, END, LB)
+            self._recompute_global_bound(task_id, START, LB)
+
+
+
+        self.domain_event_queue.append(
+            DomainEvent(task_id, END_LB, machine_id)
+        )
+
 
     def tight_end_ub(
         self,
@@ -243,31 +553,133 @@ class ScheduleState:
         value: Time,
         machine_id: MachineID = GLOBAL_MACHINE_ID,
     ) -> None:
-        variables = self._variables
+        domains = self.domains
 
-        if value >= variables.end.get_ub(task_id, machine_id):
+        if value >= domains.end.get_ub(task_id, machine_id):
             return
 
-        if machine_id == GLOBAL_MACHINE_ID:
-            variables.set_end_ub(task_id, value)
+        start_ubs = domains.start.ubs
+        end_lbs = domains.end.lbs
+        end_ubs = domains.end.ubs
+        remaining_times = domains.remaining_times
 
-        else:
-            variables.set_machine_end_ub(task_id, value, machine_id)
+        if machine_id == GLOBAL_MACHINE_ID:
+            row = task_id * self.n_machines
+
+            feasible_machines = domains.get_feasible_machines(task_id)
+            for m_id in feasible_machines:
+                idx = row + m_id
+
+                if end_ubs[idx] > value:
+                    end_ubs[idx] = value
+                    derived_start_ub = value - remaining_times[idx]
+                    if start_ubs[idx] > derived_start_ub:
+                        start_ubs[idx] = derived_start_ub
+
+                    if value < end_lbs[idx] or start_ubs[idx] < domains.start.lbs[idx]:
+                        self.restrict_machine(task_id, m_id)
+
+            self._recompute_global_bound(task_id, END, UB)
+            self._recompute_global_bound(task_id, START, UB)
+
+            if feasible_machines:
+                self.domain_event_queue.append(
+                    DomainEvent(task_id, END_UB)
+                )
+
+            return
+
+        idx = task_id * self.n_machines + machine_id
+
+        old_ub = end_ubs[idx]
+        derived_start_ub = value - remaining_times[idx]
+
+        end_ubs[idx] = value
+        if start_ubs[idx] > derived_start_ub:
+            start_ubs[idx] = derived_start_ub
+
+        if value < end_lbs[idx] or start_ubs[idx] < domains.start.lbs[idx]:
+            self.restrict_machine(task_id, machine_id)
+            return
+
+        if old_ub == domains.end.global_ubs[task_id]:
+            self._recompute_global_bound(task_id, END, UB)
+            self._recompute_global_bound(task_id, START, UB)
+
+        self.domain_event_queue.append(
+            DomainEvent(task_id, END_UB, machine_id)
+        )
 
     def forbid_machine(self, task_id: TaskID, machine_id: MachineID) -> None:
-        self._variables.restrict_machine(task_id, machine_id)
+        self.restrict_machine(task_id, machine_id)
+
 
     def require_machine(self, task_id: TaskID, machine_id: MachineID) -> None:
         for other_machine in self.instance.processing_times[task_id]:
             if other_machine != machine_id:
                 self.forbid_machine(task_id, other_machine)
 
+
     def reset_bounds(
         self, task_id: TaskID, machine_id: MachineID = GLOBAL_MACHINE_ID
     ) -> None:
-        self._variables.reset_bounds(task_id, self.time, machine_id)
+        domains = self.domains
+        time = self.time
 
-    def fail(self) -> None:
+        if (
+            self.is_fixed(task_id)
+            or not can_be_present(domains.presence[task_id])
+        ):
+            return
+
+        start = domains.start
+        end = domains.end
+
+        remaining_times = domains.remaining_times
+        feasible_machines = domains.feasible_machines[task_id]
+
+        row = task_id * self.n_machines
+        if machine_id != GLOBAL_MACHINE_ID:
+            idx = row + machine_id
+            remaining_time = remaining_times[idx]
+
+            start.lbs[idx] = time
+            start.ubs[idx] = MAX_TIME - remaining_time
+            end.lbs[idx] = time + remaining_time
+            end.ubs[idx] = MAX_TIME
+
+            feasible_machines.add(machine_id)
+
+            start.global_lbs[task_id] = time
+            self._recompute_global_bound(task_id, START, UB)
+
+            self._recompute_global_bound(task_id, END, LB)
+            end.global_ubs[task_id] = MAX_TIME
+
+            return
+
+        original_machines = domains.original_machines[task_id]
+        for m_id in original_machines:
+            idx = row + m_id
+
+            start.lbs[idx] = time
+            start.ubs[idx] = MAX_TIME - remaining_times[idx]
+            end.lbs[idx] = time + remaining_times[idx]
+            end.ubs[idx] = MAX_TIME
+
+            feasible_machines.add(m_id)
+
+        start.global_lbs[task_id] = time
+        self._recompute_global_bound(task_id, START, UB)
+
+        self._recompute_global_bound(task_id, END, LB)
+        end.global_ubs[task_id] = MAX_TIME
+
+        self.domain_event_queue.append(
+            DomainEvent(task_id, BOUNDS_RESET)
+        )
+
+    def fail(self, task_id: TaskID = UNKNOWN_TASK) -> None:
         """
         Marks the current state as infeasible.
 
@@ -284,96 +696,226 @@ class ScheduleState:
         that cannot be reduced to any single task's domain under the current
         propagation model, or as a defensive safeguard during development.
         """
-        self._variables.set_infeasible_state()
+        self.infeasible = True
+        self.runtime.awaiting_tasks.clear()
+
+        self.domain_event_queue.append(
+            DomainEvent(task_id, STATE_INFEASIBLE)
+        )
 
     # Discrete event simulation API methods
 
     ## Getter methods for variable values
     def is_awaiting(self, task_id: TaskID) -> bool:
-        return self.runtime_state.status[task_id] == AWAITING
-
-    def is_paused(self, task_id: TaskID) -> bool:
-        return self.runtime_state.status[task_id] == PAUSED
-
-    def is_executing(self, task_id: TaskID) -> bool:
-        return self.runtime_state.status[task_id] == EXECUTING
-
-    def is_completed(self, task_id: TaskID) -> bool:
-        return self.runtime_state.status[task_id] == COMPLETED
+        return task_id in self.runtime.awaiting_tasks
 
     def is_available(
         self, task_id: TaskID, machine_id: MachineID = GLOBAL_MACHINE_ID
     ) -> bool:
-        return (
-            self.is_awaiting(task_id) and
-            self._is_available(task_id, machine_id)
-        )
+        if task_id not in self.runtime.awaiting_tasks:
+            return False
 
-    def _is_available(
-        self, task_id: TaskID, machine_id: MachineID = GLOBAL_MACHINE_ID
-    ) -> bool:
-        start_var = self._variables.start
         t = self.time
+        start = self.domains.start
 
-        lb = start_var.get_lb(task_id, machine_id)
+        if machine_id == GLOBAL_MACHINE_ID:
+            lb = start.global_lbs[task_id]
+            if t < lb:
+                return False
+
+            return t < start.global_ubs[task_id]
+
+        if machine_id not in self.domains.feasible_machines[task_id]:
+            return False
+
+        idx = task_id * self.n_machines + machine_id
+        lb = start.lbs[idx]
         if t < lb:
             return False
 
-        ub = start_var.get_ub(task_id, machine_id)
+        return t < start.ubs[idx]
 
-        return t < ub
+    def is_paused(self, task_id: TaskID) -> bool:
+        return self.runtime.status[task_id] == PAUSED
+
+    def is_executing(self, task_id: TaskID) -> bool:
+        return self.runtime.status[task_id] == EXECUTING
+
+    def is_completed(self, task_id: TaskID) -> bool:
+        return self.runtime.status[task_id] == COMPLETED
 
     def get_end(self, task_id: TaskID) -> Time:
         if not self.is_fixed(task_id):
             raise RuntimeError(f"Task {task_id} has not been commited yet.")
 
-        return self.runtime_state.get_end(task_id)
-    
+        return self.runtime.get_end(task_id)
+
     def get_start(self, task_id: TaskID) -> Time:
         if not self.is_fixed(task_id):
             raise RuntimeError(f"Task {task_id} has not been commited yet.")
 
-        return self.runtime_state.get_start(task_id)
+        return self.runtime.get_start(task_id)
 
     ## Setter methods for variable values, triggering constraint propagation through events
     def execute_task(self, task_id: TaskID, machine_id: MachineID) -> None:
+        if machine_id == GLOBAL_MACHINE_ID:
+            raise ValueError(f"Cannot assign to the global machine {GLOBAL_MACHINE_ID}.")
+
         start_time = self.time
+        domains = self.domains
+        runtime = self.runtime
 
-        self._variables.assign(task_id, start_time, machine_id)
+        if not self.is_available(task_id, machine_id):
+            raise RuntimeError(
+                f"Cannot assign task {task_id} to machine {machine_id} at time "
+                f"{start_time}, the task is not available at the current time."
+            )
 
-        end_time = start_time + self.get_remaining_time(task_id, machine_id)
-        self.runtime_state.start_task(task_id, machine_id, start_time, end_time)
+        feasible_machines = domains.feasible_machines[task_id]
+        if machine_id not in feasible_machines:
+            lb = domains.start.get_lb(task_id, machine_id)
+            ub = domains.start.get_ub(task_id, machine_id)
+
+            raise RuntimeError(
+                f"Cannot assign task {task_id} to machine {machine_id} at time "
+                f"{start_time}, because this machine is not feasible. "
+                f"Start Interval = [{lb}, {ub}]."
+            )
+
+        presence = domains.presence[task_id]
+        if not can_be_present(presence):
+            raise RuntimeError(
+                f"Cannot assign task {task_id} to machine {machine_id} at time "
+                f"{start_time}, it violates the presence constraints for that "
+                f"task: presence = {presence_to_str(presence)}."
+            )
+
+        row = task_id * self.n_machines
+        idx = row + machine_id
+        duration = domains.remaining_times[idx]
+
+        end_time = start_time + duration
+
+        start = domains.start
+        end = domains.end
+
+        domains.assignment[task_id] = machine_id
+        domains.feasible_machines[task_id].clear()
+        domains.presence[task_id] = PRESENT
+
+        start.lbs[idx] = start_time
+        start.ubs[idx] = start_time
+        end.lbs[idx] = end_time
+        end.ubs[idx] = end_time
+
+        start.global_lbs[task_id] = start_time
+        start.global_ubs[task_id] = start_time
+        end.global_lbs[task_id] = end_time
+        end.global_ubs[task_id] = end_time
+
+        self.domain_event_queue.append(
+            DomainEvent(task_id, ASSIGNMENT, machine_id)
+        )
+        self.runtime_event_queue.append(
+            RuntimeEvent(task_id, TASK_STARTED, machine_id)
+        )
+
+        if end_time > runtime.last_completion_time:
+            runtime.last_completion_time = end_time
+
+        runtime.awaiting_tasks.remove(task_id)
+        runtime.executing_tasks.add(task_id)
+        runtime.status[task_id] = EXECUTING
+
+        runtime.history[task_id].append(
+            TaskHistory(machine_id, start_time, end_time)
+        )
 
     def pause_task(self, task_id: TaskID) -> None:
-        self._variables.pause(task_id, self.time)
+        pause_time = self.time
 
-        self.runtime_state.pause_task(task_id, self.time)
+        if not self.is_executing(task_id):
+            raise RuntimeError(
+                f"Cannot pause task {task_id} at {pause_time}, the task is not "
+                f"currently executing."
+            )
+        
+        domains = self.domains
+        runtime = self.runtime
+
+        start = domains.start
+        end = domains.end
+
+        expected_end = end.global_ubs[task_id]
+        task_start = start.global_lbs[task_id]
+
+        expected_duration = expected_end - task_start
+        actual_duration = pause_time - task_start
+
+        remaining_times = domains.remaining_times
+        prev_assignment = domains.assignment[task_id]
+
+        row = task_id * self.n_machines
+        original_machines = domains.original_machines[task_id]
+        feasible_machines = domains.feasible_machines[task_id]
+
+        if expected_duration == 0:
+            expected_duration = 1
+
+        for m_id in original_machines:
+            idx = row + m_id
+
+            work_done = ((actual_duration) * remaining_times[idx]) // (
+                expected_duration
+            )
+            remaining_times[idx] -= work_done
+
+            start.lbs[idx] = pause_time
+            start.ubs[idx] = MAX_TIME - remaining_times[idx]
+            end.lbs[idx] = pause_time + remaining_times[idx]
+            end.ubs[idx] = MAX_TIME
+
+            feasible_machines.add(m_id)
+
+        start.global_lbs[task_id] = pause_time
+        self._recompute_global_bound(task_id, START, UB)
+
+        self._recompute_global_bound(task_id, END, LB)
+        end.global_ubs[task_id] = MAX_TIME
+
+        domains.assignment[task_id] = GLOBAL_MACHINE_ID
+
+        self.domain_event_queue.append(
+            DomainEvent(task_id, PAUSE, prev_assignment)
+        )
+
+        runtime.executing_tasks.remove(task_id)
+        runtime.awaiting_tasks.add(task_id)
+
+        history = runtime.history[task_id]
+
+        prev_entry = history.pop()
+        history.append(
+            TaskHistory(
+                prev_entry.machine_id, prev_entry.start_time, pause_time
+            )
+        )
+
+        runtime.status[task_id] = PAUSED
+        self.runtime_event_queue.append(
+            RuntimeEvent(task_id, TASK_PAUSED, prev_entry.machine_id)
+        )
+
+        if prev_entry.end_time == runtime.last_completion_time:
+            runtime.recompute_last_completion_time()
 
     # Runtime utils
-
-    #$ :---:
-    # These have a weird aftertaste: They are often used for iterating over
-    # them, but the set can change between elements. This makes a situation,
-    # where a posterior element is not in the set anymore, due to a change
-    # triggered by a previous element, possible.
-    def get_awaiting_tasks(self) -> list[TaskID]:
-        return list(self._variables.awaiting_tasks)
-    
-    def get_executing_tasks(self) -> list[TaskID]:
-        return list(self.runtime_state.executing_tasks)
-
-    def get_completed_tasks(self) -> list[TaskID]:
-        return list(self.runtime_state.completed_tasks)
-    # A solution would be having an generator that builds the list, and check
-    # ownership for each element before yielding it, but I think that is too
-    # much of a worry for a small issue that may be handled by CSP guardrails.
-    #$ :---:
 
     def get_next_start_lb(self) -> Time:
         min_lb = MAX_TIME
 
-        global_lbs = self._variables.start.global_lbs
-        awaiting_tasks = self._variables.awaiting_tasks
+        global_lbs = self.domains.start.global_lbs
+        awaiting_tasks = self.runtime.awaiting_tasks
         current_time = self.time
 
         for task_id in awaiting_tasks:
@@ -388,65 +930,70 @@ class ScheduleState:
         return min_lb
 
     def get_last_completion_time(self) -> Time:
-        return self.runtime_state.last_completion_time
+        return self.runtime.last_completion_time
 
     def get_machine_execution(self) -> dict[MachineID, list[TaskID]]:
         assignments: dict[MachineID, list[TaskID]] = {
             machine_id: [] for machine_id in range(self.instance.n_machines)
         }
 
-        for task_id in self.runtime_state.executing_tasks:
-            machine_id = self.runtime_state.get_assignment(task_id)
+        runtime = self.runtime
+        for task_id in runtime.executing_tasks:
+            machine_id = runtime.get_assignment(task_id)
             assignments[machine_id].append(task_id)
 
         return assignments
 
     def get_observation(self) -> ObsType:
         task_obs = self.instance.task_instance.copy()
-        available = [False] * self.n_tasks
+        task_obs["status"] = self.runtime.status.copy()
 
-        task_obs["status"] = self.runtime_state.status.copy()
-        for task_id in self._variables.awaiting_tasks:
-            available[task_id] = self._is_available(task_id)
+        available = [False] * self.n_tasks
+        for task_id in self.runtime.awaiting_tasks:
+            available[task_id] = self.is_available(task_id)
 
         task_obs["available"] = available
 
         return task_obs, {}
 
-    def __reduce__(self) -> str | tuple[Any, ...]:
+    def __reduce__(self) -> PickleState:
         state = (
             self.instance,
             self.time,
-            self._variables,
-            self.runtime_state,
-            self.loaded,
+            self.infeasible,
+            self.domains,
+            self.runtime,
+            self.domain_event_queue,
+            self.runtime_event_queue,
         )
         return (self.__class__, (), state)
 
-    def __setstate__(self, state: tuple[Any, ...]) -> None:
+    def __setstate__(self, state: PickleState) -> None:
         (
             self.instance,
             self.time,
-            self._variables,
-            self.runtime_state,
-            self.loaded,
+            self.infeasible,
+            self.domains,
+            self.runtime,
+            self.domain_event_queue,
+            self.runtime_event_queue,
         ) = state
 
-    def __eq__(self, other: object) -> bool:
+    def __eq__(self, other: Any) -> bool:
         if not isinstance(other, ScheduleState):
-            return NotImplemented
+            return False
 
         return (
             self.instance == other.instance
-            and self._variables == other._variables
-            and self.runtime_state == other.runtime_state
             and self.time == other.time
+            and self.domains == other.domains
+            and self.runtime == other.runtime
         )
 
     def __repr__(self) -> str:
         return (
             f"ScheduleState(time={self.time}, "
             f"instance={self.instance}, "
-            f"variables={self._variables}, "
-            f"runtime_state={self.runtime_state})"
+            f"domains={self.domains}, "
+            f"runtime={self.runtime})"
         )

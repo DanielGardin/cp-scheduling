@@ -4,13 +4,12 @@ from cpscheduler.environment.constants import (
     TaskID,
     MachineID,
     GLOBAL_MACHINE_ID,
+    Enum
 )
 
 VarFieldType = Literal[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
-
-class VarField:
-    __slots__ = ()
+class VarField(Enum):
 
     ASSIGNMENT: Final[Literal[0]] = 0
     "A task have its domain colapsed to a single machine and l = u = start time."
@@ -120,10 +119,73 @@ class DomainEvent:
         return (
             self.__class__,
             (self.task_id, self.field, self.machine_id),
+            ()
         )
 
     def __repr__(self) -> str:
         string = f"DomainEvent(task_id={self.task_id}, field={field_to_str(self.field)}"
+
+        if self.machine_id != GLOBAL_MACHINE_ID:
+            string += f", machine_id={self.machine_id}"
+
+        return string + ")"
+
+
+EventKindType = Literal[0, 1, 2]
+
+class RuntimeEventKind(Enum):
+
+    TASK_STARTED: Final[Literal[0]] = 0
+    TASK_PAUSED: Final[Literal[1]] = 1
+    TASK_COMPLETED: Final[Literal[2]] = 2
+
+
+TASK_STARTED = RuntimeEventKind.TASK_STARTED
+TASK_PAUSED = RuntimeEventKind.TASK_PAUSED
+TASK_COMPLETED = RuntimeEventKind.TASK_COMPLETED
+
+def kind_to_str(kind: EventKindType) -> str:
+    if kind == TASK_STARTED:
+        return "TASK_STARTED"
+
+    if kind == TASK_PAUSED:
+        return "TASK_PAUSED"
+    
+    if kind == TASK_COMPLETED:
+        return "TASK_COMPLETED"
+    
+    assert_never(kind)
+
+class RuntimeEvent:
+    """
+    Container for runtime events in the scheduling environment.
+    """
+
+    __slots__ = ("task_id", "kind", "machine_id")
+
+    task_id: TaskID
+    kind: EventKindType
+    machine_id: MachineID
+
+    def __init__(
+        self,
+        task_id: TaskID,
+        kind: EventKindType,
+        machine_id: MachineID = GLOBAL_MACHINE_ID,
+    ) -> None:
+        self.task_id = task_id
+        self.kind = kind
+        self.machine_id = machine_id
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        return (
+            self.__class__,
+            (self.task_id, self.kind, self.machine_id),
+            ()
+        )
+
+    def __repr__(self) -> str:
+        string = f"DomainEvent(task_id={self.task_id}, kind={kind_to_str(self.kind)}"
 
         if self.machine_id != GLOBAL_MACHINE_ID:
             string += f", machine_id={self.machine_id}"

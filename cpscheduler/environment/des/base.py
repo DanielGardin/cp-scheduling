@@ -26,8 +26,7 @@ class SimulationEvent:
     blocking: ClassVar[bool] = False
     "Whether this event blocks the processing of subsequent events."
 
-    def __init__(self, *args: Any) -> None:
-        pass
+    def __init__(self, *args: Any) -> None: ...
 
     @property
     def args(self) -> tuple[int, ...]:

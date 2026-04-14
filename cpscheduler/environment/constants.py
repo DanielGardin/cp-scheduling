@@ -1,6 +1,6 @@
 "Common types and constants used in the environment module."
 
-from typing import TypeAlias, Final, SupportsInt, SupportsFloat, Literal
+from typing import Any, TypeAlias, Final, SupportsInt, SupportsFloat, Literal
 
 from mypy_extensions import i64, i32, i16, u8
 
@@ -31,13 +31,18 @@ GLOBAL_MACHINE_ID: MachineID = -1
 # ------------------------------------------------------------------------------
 # Enums
 
+class Enum:
+    __slots__ = ()
+
+    def __init__(self) -> None:
+        raise ValueError(f"Cannot instantiate enum class {self.__class__}")
+
+
 StatusType: TypeAlias = Literal[0, 1, 2, 3]
 
 
-class Status:
+class Status(Enum):
     "Possible statuses of a task at a given time."
-
-    __slots__ = ()
 
     AWAITING: Final[Literal[0]] = 0
     "Task is awaiting execution, typically when time <= start_lb."
@@ -50,3 +55,8 @@ class Status:
 
     COMPLETED: Final[Literal[3]] = 3
     "Task has been completed and is no longer active in the schedule."
+
+# ------------------------------------------------------------------------------
+# Pickling utils
+
+PickleState: TypeAlias  = tuple[Any, ...]

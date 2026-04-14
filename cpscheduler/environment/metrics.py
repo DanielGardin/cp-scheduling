@@ -19,8 +19,11 @@ def machine_utilization(state: ScheduleState) -> float:
 
     total_time = float(time * state.n_machines)
     busy_time: Time = 0
-    for history in state.runtime_state.history:
-        for _, start_time, end_time in history:
+    for history in state.runtime.history:
+        for entry in history:
+            end_time = entry.end_time
+            start_time = entry.start_time
+
             busy_time += (
                 end_time - start_time if end_time <= time else time - start_time
             )
@@ -31,7 +34,7 @@ def machine_utilization(state: ScheduleState) -> float:
 def num_preemptions(state: ScheduleState) -> int:
     "Calculate the total number of preemption switches that occurred during the scheduling period."
     total_switches = 0
-    for history in state.runtime_state.history:
+    for history in state.runtime.history:
         total_switches += len(history) - 1
 
     return total_switches
@@ -40,7 +43,7 @@ def num_preemptions(state: ScheduleState) -> int:
 def max_preemptions(state: ScheduleState) -> int:
     "Calculate the maximum number of preemption switches that occurred during the scheduling period."
     max_switches = 0
-    for history in state.runtime_state.history:
+    for history in state.runtime.history:
         n_switches = len(history) - 1
 
         if n_switches > max_switches:
@@ -112,7 +115,7 @@ class ReferenceScheduleMetrics:
         cpy_env = deepcopy(env)
         cpy_env.step(reference_schedule)
 
-        runtime = cpy_env.state.runtime_state
+        runtime = cpy_env.state.runtime
 
         for task_id in runtime.completed_tasks:
             self.assignments[task_id] = runtime.get_assignment(task_id)
@@ -148,7 +151,7 @@ class ReferenceScheduleMetrics:
         distance = 0
         count = 0
 
-        runtime = state.runtime_state
+        runtime = state.runtime
         for task_id in runtime.completed_tasks:
             if task_id not in self.start_times:
                 continue
@@ -174,8 +177,8 @@ class ReferenceScheduleMetrics:
         early_count = 0
         count = 0
 
-        runtime = state.runtime_state
-        for task_id in state.runtime_state.completed_tasks:
+        runtime = state.runtime
+        for task_id in state.runtime.completed_tasks:
             if task_id not in self.start_times:
                 continue
 
@@ -198,7 +201,7 @@ class ReferenceScheduleMetrics:
         late_count = 0
         count = 0
 
-        runtime = state.runtime_state
+        runtime = state.runtime
         for task_id in runtime.completed_tasks:
             if task_id not in self.start_times:
                 continue
@@ -222,7 +225,7 @@ class ReferenceScheduleMetrics:
         in the reference schedule to the total number of tasks.
         """
 
-        runtime = state.runtime_state
+        runtime = state.runtime
         actual_times = [
             runtime.get_start(task_id)
             for task_id, _ in self.sorted_start_times
@@ -242,12 +245,12 @@ class ReferenceScheduleMetrics:
         ref_order = [
             task_id
             for task_id, _ in self.sorted_start_times
-            if task_id in state.runtime_state.completed_tasks
+            if task_id in state.runtime.completed_tasks
         ]
 
         actual_order = sorted(
             ref_order,
-            key=lambda task_id: state.runtime_state.get_start(task_id),
+            key=lambda task_id: state.runtime.get_start(task_id),
         )
         # reference order is just the task_ids in sorted_start_times order
         matches = 0
@@ -258,7 +261,7 @@ class ReferenceScheduleMetrics:
         return matches / len(actual_order) if actual_order else 1.0
 
     def kendall_tau(self, state: ScheduleState) -> float:
-        runtime = state.runtime_state
+        runtime = state.runtime
 
         actual_times = [
             runtime.get_start(task_id)
@@ -297,8 +300,8 @@ class ReferenceScheduleMetrics:
         matches = 0
         count = 0
 
-        runtime = state.runtime_state
-        for task_id in state.runtime_state.completed_tasks:
+        runtime = state.runtime
+        for task_id in state.runtime.completed_tasks:
             if task_id not in self.assignments:
                 continue
 

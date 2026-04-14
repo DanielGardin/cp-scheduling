@@ -1,7 +1,13 @@
 from typing import Any
 from collections.abc import KeysView
 
-from cpscheduler.environment.constants import MachineID, TaskID, Time, MAX_TIME
+from cpscheduler.environment.constants import (
+    MachineID,
+    TaskID,
+    Time,
+    MAX_TIME,
+    PickleState
+)
 
 from cpscheduler.environment.utils import convert_to_list
 
@@ -89,6 +95,10 @@ class ProblemInstance:
         self.n_jobs = n_jobs
         self.n_machines = 0
 
+    @property
+    def loaded(self) -> bool:
+        return self.n_tasks > 0
+
     def is_preemptive(self, task_id: TaskID) -> bool:
         "Check if a task allows preemption."
         return self.preemptive[task_id]
@@ -135,13 +145,13 @@ class ProblemInstance:
             del self.processing_times[task_id][machine_id]
 
     # Dunder methods
-    def __eq__(self, value: object) -> bool:
-        if not isinstance(value, ProblemInstance):
+    def __eq__(self, other: object, /) -> bool:
+        if not isinstance(other, ProblemInstance):
             return False
 
-        return self.task_instance == value.task_instance
+        return self.task_instance == other.task_instance
 
-    def __reduce__(self) -> tuple[Any, ...]:
+    def __reduce__(self) -> PickleState:
         state = (
             self.task_instance,
             self.n_tasks,
@@ -155,7 +165,7 @@ class ProblemInstance:
         )
         return (self.__class__, ({},), state)
 
-    def __setstate__(self, state: tuple[Any, ...]) -> None:
+    def __setstate__(self, state: PickleState) -> None:
         (
             self.task_instance,
             self.n_tasks,
