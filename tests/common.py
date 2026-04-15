@@ -37,4 +37,6 @@ def env_setup(instance_name: str, allow_preemption: bool = False) -> SchedulingE
         instance=instance
     )
 
+    env.set_debug_checks(True)
+
     return env

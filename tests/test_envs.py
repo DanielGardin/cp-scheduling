@@ -6,37 +6,6 @@ from common import env_setup, TEST_INSTANCES
 
 from cpscheduler.environment.constants import Status
 
-# @pytest.mark.env
-# @pytest.mark.parametrize("instance_name", TEST_INSTANCES)
-# def test_reset(instance_name: str) -> None:
-#     env = env_setup(instance_name)
-
-#     (obs, _), info = env.reset()
-
-#     assert not all(obs["available"])
-
-#     assert info["current_time"] == 0
-#     assert obs["status"][0] == Status.AWAITING
-#     assert obs["available"][0]
-#     assert obs["status"][1] == Status.AWAITING
-#     assert not obs["available"][1]
-
-#     env.step(
-#         [
-#             ("execute", 0),
-#             ("submit", 1),
-#             ("advance", 12),
-#             ("submit", 13),
-#         ]
-#     )
-
-#     (new_obs, _), new_info = env.reset()
-
-#     assert new_info["current_time"] == 0
-#     assert new_obs["status"][0] == Status.AWAITING
-#     assert new_obs["available"][0]
-#     assert new_obs["status"][1] == Status.AWAITING
-#     assert not new_obs["available"][1]
 
 
 @pytest.mark.env
@@ -67,6 +36,19 @@ def test_execute(instance_name: str) -> None:
 
 @pytest.mark.env
 @pytest.mark.parametrize("instance_name", TEST_INSTANCES)
+def test_reward(instance_name: str) -> None:
+    env = env_setup(instance_name)
+
+    env.reset()
+
+    action = [("submit", i) for i in range(env.state.n_tasks)]
+    _, reward, terminated, _, info = env.step(action)
+
+    assert terminated
+    assert info['current_time'] == -reward
+
+@pytest.mark.env
+@pytest.mark.parametrize("instance_name", TEST_INSTANCES)
 def test_submit(instance_name: str) -> None:
     env = env_setup(instance_name)
 
@@ -78,22 +60,22 @@ def test_submit(instance_name: str) -> None:
         ("submit", 0),
     ]
 
-    (obs, _), *_, info = env.step(actions)
+    (tasks_obs, _), *_, info = env.step(actions)
 
-    assert obs["status"][0] == Status.COMPLETED
-    assert obs["status"][1] == Status.COMPLETED
+    assert tasks_obs["status"][0] == Status.COMPLETED
+    assert tasks_obs["status"][1] == Status.COMPLETED
 
-    assert obs["status"][2] == Status.EXECUTING
+    assert tasks_obs["status"][2] == Status.EXECUTING
 
-    assert info["current_time"] == env.state.runtime_state.get_end(1)
+    assert info["current_time"] == env.state.runtime.get_end(1)
 
-    (new_obs, _), *_, info = env.step([("complete", 2)])
+    (new_tasks_obs, _), *_, info = env.step([("complete", 2)])
 
-    assert new_obs["status"][0] == Status.COMPLETED
-    assert new_obs["status"][1] == Status.COMPLETED
-    assert new_obs["status"][2] == Status.COMPLETED
+    assert new_tasks_obs["status"][0] == Status.COMPLETED
+    assert new_tasks_obs["status"][1] == Status.COMPLETED
+    assert new_tasks_obs["status"][2] == Status.COMPLETED
 
-    assert info["current_time"] == env.state.runtime_state.get_end(2)
+    assert info["current_time"] == env.state.runtime.get_end(2)
 
 
 @pytest.mark.env
@@ -125,22 +107,21 @@ def test_submit2(instance_name: str) -> None:
     assert obs["status"] == [Status.COMPLETED] * env.state.n_tasks
     assert terminated
 
-# @pytest.mark.env
-# @pytest.mark.parametrize("instance_name", TEST_INSTANCES)
-# def test_blocking_instruction(instance_name: str) -> None:
-#     env = env_setup(instance_name)
+@pytest.mark.env
+@pytest.mark.parametrize("instance_name", TEST_INSTANCES)
+def test_blocking_instruction(instance_name: str) -> None:
+    env = env_setup(instance_name)
 
-#     env.reset()
+    env.reset()
 
-#     # Test when the action cannot be done, limit the execution to 1 second and failt after that
+    # Inverse order of execution (1 requires 0 to be completed first
+    deadlock_action = [("execute", 1), ("execute", 0)]
 
-#     (obs, _), reward, *_ = env.step(
-#         [("execute", 1), ("execute", 0)] # Inverse order of execution (1 requires 0 to be completed first)
-#     )
-
-#     assert obs["status"][0] == Status.AWAITING
-#     assert obs["status"][1] == Status.AWAITING
-#     assert reward == 0
+    with pytest.raises(
+        RuntimeError,
+        match=r"is potentially deadlocking the event queue due to an action-dependent prerequisite that may never happen."
+    ):
+        env.step(deadlock_action)
 
 def test_copy() -> None:
     env = env_setup("ta01")

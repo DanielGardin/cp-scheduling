@@ -1,7 +1,7 @@
 import pytest
 
 from cpscheduler.environment.constants import GLOBAL_MACHINE_ID
-from cpscheduler.environment.des import parse_instruction
+from cpscheduler.environment.des import SimulationEvent, parse_instruction, SingleAction
 from cpscheduler.environment.des.base import Schedule, instructions
 from cpscheduler.environment.des.events import (
     AdvanceTimeEvent,
@@ -53,7 +53,7 @@ def test_instruction_registry_contains_all_des_instructions() -> None:
 
 
 def test_parse_instruction_builds_every_instruction_event() -> None:
-    cases  = [
+    cases: list[tuple[SingleAction, type[SimulationEvent], tuple[int, ...], int| None]]  = [
         (("execute", 0), ExecuteEvent, (0, GLOBAL_MACHINE_ID), None),
         (("submit", 0, 1), SubmitEvent, (0, 1), None),
         (("pause", 0), PauseEvent, (0,), None),
@@ -122,7 +122,7 @@ def test_execute_earliest_ready_and_process() -> None:
     event.process(state, env.schedule)
 
     assert state.is_executing(0)
-    assert state.runtime_state.get_assignment(0) == 0
+    assert state.runtime.get_assignment(0) == 0
 
 
 def test_execute_not_ready_before_start_lb() -> None:
@@ -188,7 +188,7 @@ def test_pause_readiness_and_process() -> None:
 
     assert state.is_paused(0)
     assert not state.is_executing(0)
-    assert state.runtime_state.get_end(0) == 3
+    assert state.runtime.get_end(0) == 3
 
 
 def test_pause_not_ready_when_task_not_executing() -> None:
@@ -214,14 +214,14 @@ def test_resume_readiness_and_process() -> None:
 
     assert event.is_ready(state)
 
-    last_machine_before_resume = state.runtime_state.get_assignment(0)
-    history_len_before = len(state.runtime_state.history[0])
+    last_machine_before_resume = state.runtime.get_assignment(0)
+    history_len_before = len(state.runtime.history[0])
 
     event.process(state, env.schedule)
 
     assert state.is_executing(0)
-    assert state.runtime_state.get_assignment(0) == last_machine_before_resume
-    assert len(state.runtime_state.history[0]) == history_len_before + 1
+    assert state.runtime.get_assignment(0) == last_machine_before_resume
+    assert len(state.runtime.history[0]) == history_len_before + 1
 
 
 def test_resume_not_ready_when_task_not_paused() -> None:
