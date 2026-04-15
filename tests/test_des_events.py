@@ -300,3 +300,56 @@ def test_schedule_add_event_rejects_past_time() -> None:
 
     with pytest.raises(ValueError, match="Cannot schedule event in the past"):
         schedule.add_event(AdvanceTimeEvent(1), env.state, time=2)
+
+
+def test_advance_clock_prefers_schedule_time_over_unlocked_bounds() -> None:
+    env = SchedulingEnv(
+        SingleMachineSetup(disjunctive=False),
+        constraints=[ReleaseDateConstraint("release_time")],
+        instance={"processing_time": [2], "release_time": [10]},
+    )
+    env.reset()
+
+    env.schedule.add_event(CheckpointEvent(), env.state, time=3)
+
+    advanced_with_events = env.advance_clock()
+
+    assert advanced_with_events is True
+    assert env.state.time == 3
+
+
+def test_advance_clock_uses_next_start_lb_when_schedule_empty() -> None:
+    env = SchedulingEnv(
+        SingleMachineSetup(disjunctive=False),
+        constraints=[ReleaseDateConstraint("release_time")],
+        instance={"processing_time": [2], "release_time": [4]},
+    )
+    env.reset()
+
+    advanced_with_events = env.advance_clock()
+
+    assert advanced_with_events is False
+    assert env.state.time == 4
+
+
+def test_non_blocking_not_ready_event_is_deferred() -> None:
+    env = SchedulingEnv(
+        SingleMachineSetup(disjunctive=False),
+        constraints=[ReleaseDateConstraint("release_time")],
+        instance={"processing_time": [2, 2], "release_time": [3, 0]},
+    )
+    env.reset()
+
+    schedule = Schedule()
+    schedule.add_event(SubmitEvent(0), env.state)
+    schedule.add_event(ExecuteEvent(1), env.state)
+
+    queued = list(schedule.instruction_queue(env.state))
+
+    assert len(queued) == 1
+    assert isinstance(queued[0], ExecuteEvent)
+
+    assert schedule.next_time() == 3
+    deferred = schedule._non_timed_events[3]
+    assert len(deferred) == 1
+    assert isinstance(deferred[0][3], SubmitEvent)

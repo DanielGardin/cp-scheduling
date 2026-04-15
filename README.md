@@ -36,6 +36,24 @@ pip install -e .[solver]   # Pyomo MILP + MiniZinc CP backends
 pip install -e .[all]      # Gym + solver extras
 ```
 
+## Testing
+
+Install development dependencies and run tests:
+
+```bash
+pip install -e .[dev]
+pytest
+```
+
+Run test coverage:
+
+```bash
+DISABLE_MYPYC=1 pytest --cov --cov-report=term-missing --cov-report=xml
+```
+
+`DISABLE_MYPYC=1` keeps the environment in interpreted Python mode, which makes
+line-level coverage reporting reliable for the `cpscheduler` source files.
+
 ## Project Structure
 
 ```text

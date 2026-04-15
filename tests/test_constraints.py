@@ -1,4 +1,5 @@
 import random
+from typing import Any
 
 from cpscheduler.environment.env import SchedulingEnv
 from cpscheduler.environment.constraints import (
@@ -151,7 +152,7 @@ def test_nonrenewable_resource_constraint() -> None:
 
 def test_setup_constraint() -> None:
     instance = {"processing_time": [3, 2]}
-    setup_times = {0: {1: 4}, 1: {0: 1}}
+    setup_times: Any = {0: {1: 4}, 1: {0: 1}}
     env = SchedulingEnv(
         SingleMachineSetup(disjunctive=False),
         constraints=[SetupConstraint(setup_times)],

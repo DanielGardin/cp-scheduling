@@ -4,8 +4,11 @@ from copy import deepcopy
 
 from common import env_setup, TEST_INSTANCES
 
-from cpscheduler.environment.constants import Status
-
+from cpscheduler.environment.constants import GLOBAL_MACHINE_ID, Status
+from cpscheduler.environment.des import Schedule
+from cpscheduler.environment.des.events import CheckpointEvent, SubmitEvent
+from cpscheduler import SchedulingEnv
+from cpscheduler.environment.schedule_setup import IdenticalParallelMachineSetup
 
 
 @pytest.mark.env
@@ -135,3 +138,28 @@ def test_copy() -> None:
     env.step(("execute", 0))
 
     assert env.state != env_copy.state
+
+
+def test_pickle_roundtrip() -> None:
+    env = SchedulingEnv(
+        IdenticalParallelMachineSetup(n_machines=2, disjunctive=False),
+        instance={"processing_time": [2]},
+    )
+    env.reset()
+
+    schedule = Schedule()
+    schedule.add_event(SubmitEvent(0), env.state)
+    schedule.add_event(CheckpointEvent(), env.state, time=3)
+
+    roundtrip_schedule = deepcopy(schedule)
+
+    assert roundtrip_schedule.next_time() == 0
+
+    start_events = list(roundtrip_schedule.peek_events_at_time(0))
+    checkpoint_events = list(roundtrip_schedule.peek_events_at_time(3))
+
+    assert len(start_events) == 1
+    assert len(checkpoint_events) == 1
+    assert isinstance(start_events[0], SubmitEvent)
+    assert start_events[0].args == (0, GLOBAL_MACHINE_ID)
+    assert isinstance(checkpoint_events[0], CheckpointEvent)
