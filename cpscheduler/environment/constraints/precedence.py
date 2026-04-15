@@ -2,7 +2,7 @@ from typing import Any
 from collections.abc import Iterable, Mapping, Sequence
 from typing_extensions import Self
 
-from cpscheduler.environment.constants import TaskID, Int
+from cpscheduler.environment.constants import TaskID, MachineID, Int
 from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import Constraint
@@ -142,6 +142,21 @@ class PrecedenceConstraint(Constraint):
 
             for child_id in self.children[task_id]:
                 state.tight_start_lb(child_id, end_time)
+                state.add_prerequisite(child_id)
+
+    def on_assignment(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        if task_id in self.children:
+            for child_id in self.children[task_id]:
+                state.satisfy_prerequisite(child_id)
+
+    def on_pause(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        if task_id in self.children:
+            for child_id in self.children[task_id]:
+                state.add_prerequisite(child_id)
 
     def on_start_lb(
         self, task_id: TaskID, machine_id: TaskID, state: ScheduleState

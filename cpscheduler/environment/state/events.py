@@ -185,7 +185,7 @@ class RuntimeEvent:
         )
 
     def __repr__(self) -> str:
-        string = f"DomainEvent(task_id={self.task_id}, kind={kind_to_str(self.kind)}"
+        string = f"RuntimeEvent(task_id={self.task_id}, kind={kind_to_str(self.kind)}"
 
         if self.machine_id != GLOBAL_MACHINE_ID:
             string += f", machine_id={self.machine_id}"

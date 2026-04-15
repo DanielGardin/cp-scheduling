@@ -67,7 +67,6 @@ def is_info_dict(value: Any) -> TypeIs[Mapping[Any, Any]]:
     "Type guard to check if a value is an info dictionary."
     return isinstance(value, Mapping)
 
-
 class SchedulingEnv:
     """
     SchedulingEnv is a custom environment for generic scheduling problems. It is designed to be
@@ -223,6 +222,10 @@ class SchedulingEnv:
         "Add a metric to the environment."
         self.metrics[name] = metric
 
+    def set_debug_checks(self, enabled: bool = True) -> None:
+        "Enable or disable debug guardrails in the underlying schedule state."
+        self.state.set_debug_checks(enabled)
+
     def _rebuild_combined_constraints(self) -> None:
         "Rebuild the combined constraint list for the propagation loop."
         self.combined_constraints = self.setup_constraints + self.constraints
@@ -297,10 +300,13 @@ class SchedulingEnv:
         if action is None:
             return
 
-        if is_single_action(action):
-            action = [action]
-
         state = self.state
+
+        if is_single_action(action):
+            instruction, time, priority = parse_instruction(action)
+            self.schedule.add_event(instruction, state, time, priority)
+
+            return
 
         for intruction_args in action:
             instruction, time, priority = parse_instruction(intruction_args)
@@ -315,7 +321,7 @@ class SchedulingEnv:
         if not empty_schedule:
             next_time = schedule.next_time()
 
-        elif state.runtime.awaiting_tasks:
+        elif state.runtime.unlocked_tasks:
             next_time = state.get_next_start_lb()
 
         else:
@@ -323,17 +329,6 @@ class SchedulingEnv:
 
         if next_time > state.time:
             self.state.advance_time_(next_time)
-
-            # TODO: The only way a infeasible action can currently be detected
-            # is if it causes the schedule to indefinitely postpone events
-            # Locked semantics can help, we don't need to worry about
-            # tighetning bounds at each time step because no events can be
-            # wrongly processed at an intermediate time.
-            # for task_id in state.runtime_state.awaiting_tasks:
-            #     start_lb = state.get_start_lb(task_id)
-            # 
-            #     if start_lb <= state.time:
-            #         state.tight_start_lb(task_id, state.time)
 
             for constraint in self.combined_constraints:
                 constraint.on_time_update(next_time, self.state)

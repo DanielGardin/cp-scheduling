@@ -214,10 +214,20 @@ class Schedule:
         *_, first_event = entries[0]
         time = first_event.earliest_time(state)
 
-        if time <= state.time:
+        if time == state.time:
+            if not first_event.is_ready(state):
+                # This guardrail is stronger than we need, it will block 
+                # feasible paths that use non-timed and timed events together
+                raise RuntimeError(
+                    f"Event {first_event} is potentially deadlocking the event "
+                    "queue due to an action-dependent prerequisite that may "
+                    "never happen."
+                )
+
+        elif time < state.time:
             raise ValueError(
                 f"Cannot reschedule events triggered by {first_event} to the past: "
-                f"{time} <= {state.time}."
+                f"{time} < {state.time}."
             )
 
         self._create_time_slot(time)

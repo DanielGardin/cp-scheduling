@@ -263,8 +263,8 @@ class TaskDomains:
         self.end = end
 
 
-    def get_feasible_machines(self, task_id: TaskID) -> list[MachineID]:
-        return list(self.feasible_machines[task_id])
+    def get_feasible_machines(self, task_id: TaskID) -> tuple[MachineID, ...]:
+        return tuple(self.feasible_machines[task_id])
 
 
     def __eq__(self, other: object, /) -> bool:

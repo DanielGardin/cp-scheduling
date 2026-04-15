@@ -38,17 +38,22 @@ class RuntimeState:
 
     __slots__ = (
         "history",
+        "prerequisites",
         "status",
         "awaiting_tasks",
+        "unlocked_tasks",
         "executing_tasks",
         "completed_tasks",
         "last_completion_time"
     )
 
     history: list[list[TaskHistory]]
+
+    prerequisites: list[int]
     status: list[StatusType]
 
     awaiting_tasks: set[TaskID]
+    unlocked_tasks: set[TaskID]
     executing_tasks: set[TaskID]
     completed_tasks: set[TaskID]
 
@@ -59,11 +64,14 @@ class RuntimeState:
 
         self.history = [[] for _ in range(n_tasks)]
 
+        self.prerequisites = [0] * n_tasks
+        self.status = [AWAITING] * n_tasks
+
         self.awaiting_tasks = set(range(n_tasks))
+        self.unlocked_tasks = set(range(n_tasks))
         self.executing_tasks = set()
         self.completed_tasks = set()
 
-        self.status = [AWAITING] * instance.n_tasks
         self.last_completion_time = MIN_TIME
 
     def __repr__(self) -> str:
@@ -92,6 +100,9 @@ class RuntimeState:
     def get_awaiting_tasks(self) -> list[TaskID]:
         return list(self.awaiting_tasks)
 
+    def get_unlocked_tasks(self) -> list[TaskID]:
+        return list(self.unlocked_tasks)
+
     def get_executing_tasks(self) -> list[TaskID]:
         return list(self.executing_tasks)
 
@@ -115,14 +126,17 @@ class RuntimeState:
 
         return (
             self.history == other.history
+            and self.prerequisites == other.prerequisites
             and self.status == other.status
         )
 
     def __reduce__(self) -> PickleState:
         state = (
             self.history,
+            self.prerequisites,
             self.status,
             self.awaiting_tasks,
+            self.unlocked_tasks,
             self.executing_tasks,
             self.completed_tasks,
             self.last_completion_time
@@ -132,8 +146,10 @@ class RuntimeState:
     def __setstate__(self, state: PickleState) -> None:
         (
             self.history,
+            self.prerequisites,
             self.status,
             self.awaiting_tasks,
+            self.unlocked_tasks,
             self.executing_tasks,
             self.completed_tasks,
             self.last_completion_time
