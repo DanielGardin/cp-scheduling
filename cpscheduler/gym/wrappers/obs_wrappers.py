@@ -197,7 +197,8 @@ class ArrayObservationWrapper(
 
         return obs
 
-
+# TODO: Rework observation to expose CP-related information in the original
+# environment, instead of adding a wrapper that depends on the internal state of the environment.
 class CPStateWrapper(SchedulingObservationWrapper[ObsType, _Act]):
     """
     A wrapper that adds Constraint Programming (CP) state information
@@ -230,7 +231,7 @@ class CPStateWrapper(SchedulingObservationWrapper[ObsType, _Act]):
 
         state: ScheduleState = self.env.get_wrapper_attr("state")
 
-        task_data["lower_bound"] = state._variables.start.global_lbs.copy()
-        task_data["upper_bound"] = state._variables.start.global_ubs.copy()
+        task_data["lower_bound"] = state.domains.start.global_lbs.copy()
+        task_data["upper_bound"] = state.domains.start.global_ubs.copy()
 
         return task_data, job_data

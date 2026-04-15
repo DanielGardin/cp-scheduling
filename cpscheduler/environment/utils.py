@@ -5,12 +5,9 @@ _T = TypeVar("_T")
 
 
 @overload
-def convert_to_list(array: Any, dtype: type[_T]) -> list[_T]: ...
+def convert_to_list(array: Iterable[Any], dtype: type[_T]) -> list[_T]: ...
 @overload
 def convert_to_list(array: Iterable[_T], dtype: None = ...) -> list[_T]: ...
-@overload
-def convert_to_list(array: Any, dtype: None = ...) -> list[Any]: ...
-
 
 def convert_to_list(
     array: Iterable[Any], dtype: type[Any] | None = None

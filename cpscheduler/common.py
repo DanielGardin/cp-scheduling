@@ -1,12 +1,12 @@
 from typing import Any
 
 from cpscheduler.environment.env import SchedulingEnv
-
+from importlib.machinery import EXTENSION_SUFFIXES
 
 def is_compiled() -> bool:
-    import cpscheduler.environment.env as _
+    import cpscheduler.environment.env as env
 
-    return _.__file__.endswith(".so") or _.__file__.endswith(".pyd")
+    return any(env.__file__.endswith(suffix) for suffix in EXTENSION_SUFFIXES)
 
 
 def unwrap_env(env: Any | SchedulingEnv, max_depth: int = 10) -> SchedulingEnv:

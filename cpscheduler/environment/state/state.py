@@ -829,7 +829,7 @@ class ScheduleState:
         return self.runtime.status[task_id] == COMPLETED
 
     def is_locked(self, task_id: TaskID) -> bool:
-        return self.runtime.prerequisites[task_id] > 0
+        return bool(self.runtime.prerequisites[task_id])
 
     def get_end(self, task_id: TaskID) -> Time:
         if not self.is_fixed(task_id):
@@ -844,23 +844,16 @@ class ScheduleState:
         return self.runtime.get_start(task_id)
 
     ## Setter methods for variable values, triggering constraint propagation through events
-    def add_prerequisite(self, task_id: TaskID) -> None:
-        self.runtime.prerequisites[task_id] += 1
+    def add_prerequisite(self, task_id: TaskID, name: str) -> None:
+        self.runtime.prerequisites[task_id].add(name)
         self.runtime.unlocked_tasks.discard(task_id)
 
-    def satisfy_prerequisite(self, task_id: TaskID) -> None:
-        prereqs = self.runtime.prerequisites[task_id] - 1
+    def satisfy_prerequisite(self, task_id: TaskID, name: str) -> None:
+        prerequisites = self.runtime.prerequisites[task_id]
 
-        if prereqs < 0:
-            raise RuntimeError(
-                f"Cannot satisfy prerequisite for task {task_id}, it has no "
-                f"unsatisfied prerequisites."
-            )
-    
-        elif prereqs == 0:
+        prerequisites.discard(name)
+        if not prerequisites:
             self.runtime.unlocked_tasks.add(task_id)
-        
-        self.runtime.prerequisites[task_id] = prereqs
 
     def execute_task(self, task_id: TaskID, machine_id: MachineID) -> None:
         if machine_id == GLOBAL_MACHINE_ID:

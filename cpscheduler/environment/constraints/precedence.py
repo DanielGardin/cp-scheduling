@@ -142,21 +142,21 @@ class PrecedenceConstraint(Constraint):
 
             for child_id in self.children[task_id]:
                 state.tight_start_lb(child_id, end_time)
-                state.add_prerequisite(child_id)
+                state.add_prerequisite(child_id, f"precedence:{task_id}")
 
     def on_assignment(
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:
         if task_id in self.children:
             for child_id in self.children[task_id]:
-                state.satisfy_prerequisite(child_id)
+                state.satisfy_prerequisite(child_id, f"precedence:{task_id}")
 
     def on_pause(
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:
         if task_id in self.children:
             for child_id in self.children[task_id]:
-                state.add_prerequisite(child_id)
+                state.add_prerequisite(child_id, f"precedence:{task_id}")
 
     def on_start_lb(
         self, task_id: TaskID, machine_id: TaskID, state: ScheduleState

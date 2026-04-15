@@ -442,7 +442,7 @@ class RunResult:
         task_numbers = [self.n_tasks[instance] for instance in self.instance_names]
         perf = [mean(self.simulation_times[instance]) for instance in self.instance_names]
 
-        slope, intercept, _, _, std_err = stats.linregress(
+        slope, intercept, *_, std_err = stats.linregress(
             np.log(task_numbers), np.log(perf)
         )
 

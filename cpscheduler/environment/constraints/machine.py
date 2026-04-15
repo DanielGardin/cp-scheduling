@@ -273,7 +273,9 @@ class BatchConstraint(Constraint):
     def __init__(self, capacity: Iterable[Int] | Int):
         super().__init__()
 
-        if isinstance(capacity, int):
+        if isinstance(capacity, Int):
+            capacity = int(capacity)
+
             if capacity < 1:
                 raise ValueError(f"Cannot set capacity any lower than 1.")
 

@@ -49,7 +49,7 @@ class RuntimeState:
 
     history: list[list[TaskHistory]]
 
-    prerequisites: list[int]
+    prerequisites: list[set[str]]
     status: list[StatusType]
 
     awaiting_tasks: set[TaskID]
@@ -64,7 +64,7 @@ class RuntimeState:
 
         self.history = [[] for _ in range(n_tasks)]
 
-        self.prerequisites = [0] * n_tasks
+        self.prerequisites = [set() for _ in range(n_tasks)]
         self.status = [AWAITING] * n_tasks
 
         self.awaiting_tasks = set(range(n_tasks))

@@ -82,9 +82,9 @@ class DisjunctiveCPFormulation(MiniZincFormulation):
             if not state.is_fixed(task_id):
                 continue
 
-            start_time = state.runtime_state.get_start(task_id)
-            end_time = state.runtime_state.get_end(task_id)
-            machine_id = state.runtime_state.get_assignment(task_id)
+            start_time = state.runtime.get_start(task_id)
+            end_time = state.runtime.get_end(task_id)
+            machine_id = state.runtime.get_assignment(task_id)
 
             add_int(self.start_times[task_id], start_time)
             add_int(self.end_times[task_id], end_time)
@@ -98,8 +98,8 @@ class DisjunctiveCPFormulation(MiniZincFormulation):
             if not (state.is_fixed(i) and state.is_fixed(j)):
                 continue
 
-            end_i = state.runtime_state.get_end(i)
-            start_j = state.runtime_state.get_start(j)
+            end_i = state.runtime.get_end(i)
+            start_j = state.runtime.get_start(j)
             add_bool(order_var, end_i <= start_j)
 
         annotations: list[str] = []
@@ -153,9 +153,9 @@ class DisjunctiveCPFormulation(MiniZincFormulation):
             optional = state.instance.is_optional(task_id)
 
             if state.is_fixed(task_id):
-                start_time = state.runtime_state.get_start(task_id)
-                end_time = state.runtime_state.get_end(task_id)
-                machine_id = state.runtime_state.get_assignment(task_id)
+                start_time = state.runtime.get_start(task_id)
+                end_time = state.runtime.get_end(task_id)
+                machine_id = state.runtime.get_assignment(task_id)
 
                 self.start_times.append(start_time)
                 self.end_times.append(end_time)
