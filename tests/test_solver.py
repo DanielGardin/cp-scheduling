@@ -15,7 +15,6 @@ logger = logging.getLogger(__name__)
 @pytest.mark.parametrize("instance_name", TEST_INSTANCES)
 @pytest.mark.parametrize("formulation", get_formulations())
 def test_solve(instance_name: str, formulation: str) -> None:
-    pytest.importorskip("pulp")
     from cpscheduler.solver import SchedulingSolver
 
     env = env_setup(instance_name)

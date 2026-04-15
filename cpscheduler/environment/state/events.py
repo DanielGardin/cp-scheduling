@@ -1,4 +1,5 @@
-from typing import Any, Final, Literal, assert_never
+from typing import Any, Final, Literal
+from typing_extensions import assert_never
 
 from cpscheduler.environment.constants import (
     TaskID,

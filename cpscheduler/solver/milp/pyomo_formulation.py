@@ -1,5 +1,6 @@
 import logging
-from typing import Final, TypeAlias, Literal, assert_never
+from typing import Final, TypeAlias, Literal
+from typing_extensions import assert_never
 
 import pyomo.environ as pyo                                       # type: ignore[import-untyped]
 from pyomo.core.base.objective import ObjectiveSense              # type: ignore[import-untyped]

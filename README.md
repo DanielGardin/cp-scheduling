@@ -32,8 +32,8 @@ Other submodules require further third-party dependencies that are installed wit
 
 ```bash
 pip install -e .[gym]      # Gymnasium wrapper, Plotly rendering
-pip install -e .[solver]   # PuLP MILP solver backend
-pip install -e .[all]      # Everything (includes rl dependencies)
+pip install -e .[solver]   # Pyomo MILP + MiniZinc CP backends
+pip install -e .[all]      # Gym + solver extras
 ```
 
 ## Project Structure
@@ -44,7 +44,7 @@ cpscheduler/
 ├── gym/               Gymnasium-compatible wrapper and observation/action adapters
 ├── heuristics/        Priority dispatching rules
 ├── instances/         Instance readers & generators (JSP, RCPSP, SMTWT)
-└── solver/            MILP solver via PuLP
+└── solver/            Mathematical programming backends (MILP/CP formulations)
 ```
 
 ---
@@ -58,7 +58,7 @@ cpscheduler/
 ```python
 from cpscheduler.environment import SchedulingEnv, JobShopSetup, Makespan
 from cpscheduler.instances import read_jsp_instance
-from cpscheduler.heuristics import ShortestProcessingTime
+from cpscheduler.heuristics.pdrs import ShortestProcessingTime
 
 instance, _ = read_jsp_instance("instances/jobshop/ta01.txt")
 
@@ -84,6 +84,8 @@ A setup defines the machine environment and how processing times are assigned to
 | `UniformParallelMachineSetup` | $Q_m$ | $m$ machines with different speeds. |
 | `UnrelatedParallelMachineSetup` | $R_m$ | $m$ machines with task-dependent processing times. |
 | `JobShopSetup` | $J_m$ | Each task is pre-assigned to a machine with a fixed operation order per job. |
+| `FlexibleJobShopSetup` | $FJ_m$ | Job-shop precedence with machine alternatives per task. |
+| `FlowShopSetup` | $F_m$ | Job-shop style precedence with shared machine order across jobs. |
 | `OpenShopSetup` | $O_m$ | Each task can run on any machine; no fixed operation order. |
 
 ### Constraints ($\beta$)
@@ -93,17 +95,23 @@ Constraints are split into **active** constraints (propagated during simulation)
 | Constraint | Notation | Type | Description |
 |---|---|---|---|
 | `PrecedenceConstraint` | $prec$ | Active | Enforces ordering between tasks. |
+| `NoWaitConstraint` | $nwt$ | Active | Enforces zero waiting time across precedence-linked tasks. |
+| `ORPrecedenceConstraint` | $or\text{-}prec$ | Active | Enforces disjunctive (OR) predecessor requirements. |
 | `NonOverlapConstraint` | — | Active | Prevents overlapping execution within groups. |
 | `ResourceConstraint` | — | Active | Limits concurrent resource usage. |
 | `NonRenewableResourceConstraint` | — | Active | Tracks cumulative consumption of a depletable resource. |
 | `SetupConstraint` | $s_{jk}$ | Active | Adds sequence-dependent setup times between tasks. |
 | `MachineBreakdownConstraint` | $brkdwn$ | Active | Models machine unavailability windows. |
+| `BatchConstraint` | $batch$ | Active | Couples tasks that must be processed together on machines. |
 | `ReleaseDateConstraint` | $r_j$ | Active | Tasks cannot start before a release time. |
 | `DeadlineConstraint` | $\bar{d}_j$ | Active | Tasks must finish before a deadline. |
-| `PreemptionConstraint` | $prmp$ | Passive | Allows tasks to be interrupted and resumed. |
+| `HorizonConstraint` | — | Active | Restricts task completion to a finite horizon. |
+| `PreemptionConstraint`* | $prmp$ | Passive | Allows tasks to be interrupted and resumed. |
 | `OptionalityConstraint` | $opt$ | Passive | Marks tasks as optional (can be left unscheduled). |
 | `MachineEligibilityConstraint` | $M_j$ | Passive | Restricts tasks to a subset of machines. |
 | `ConstantProcessingTime` | $p_j = p$ | Passive | Forces all tasks to have the same processing time. |
+
+**Preemption is partially covered at the moment, we are working for its full functionality.*
 
 ### Objectives ($\gamma$)
 
@@ -112,6 +120,7 @@ Constraints are split into **active** constraints (propagated during simulation)
 | `Makespan` | $C_{\max}$ | Time at which the last task finishes. |
 | `TotalCompletionTime` | $\sum C_j$ | Sum of all job completion times. |
 | `WeightedCompletionTime` | $\sum w_j C_j$ | Weighted sum of completion times. |
+| `DiscountedTotalCompletionTime` | $\sum \rho^{C_j} C_j$ | Discounted completion-time objective. |
 | `TotalFlowTime` | $\sum F_j$ | Sum of flow times (completion − release). |
 | `MaximumLateness` | $L_{\max}$ | Worst-case lateness w.r.t. due dates. |
 | `TotalTardiness` | $\sum T_j$ | Sum of positive lateness values. |
@@ -153,6 +162,7 @@ The `gym` module wraps `SchedulingEnv` into a [Gymnasium](https://gymnasium.fara
 
 ```python
 import gymnasium as gym
+from cpscheduler.environment import JobShopSetup
 
 # Generic scheduling environment
 env = gym.make("Scheduling-v0", machine_setup=JobShopSetup(), instance=instance)
@@ -168,7 +178,7 @@ env = gym.make("Jobshop-v0", instance=instance)
 | `TabularObservationWrapper` | Merges task and job features into a single flat dict. |
 | `CPStateWrapper` | Exposes the underlying constraint-propagation state. |
 | `ArrayObservationWrapper` | Converts observations to NumPy arrays. |
-| `PermutationActionWrapper` | Accepts a permutation of task/job IDs as the action. |
+| `PermutationActionWrapper` | Accepts an ordered task/job sequence as the action. |
 | `InstancePoolWrapper` | Samples a new instance from a pool on each reset. |
 
 ```python
@@ -181,53 +191,58 @@ gym_env = PermutationActionWrapper(gym_env, strict=True)
 
 ---
 
-## 🛠️ Heuristics
+## Heuristics
 
 Built-in priority dispatching rules that work directly with `SchedulingEnv` observations.
 
 | Heuristic | Description |
 |---|---|
 | `ShortestProcessingTime` | Prioritises tasks with the smallest processing time. |
-| `WeightedShortestProcessingTime` | Ratio of weight to processing time. |
 | `EarliestDueDate` | Prioritises the nearest due date. |
 | `ModifiedDueDate` | Adjusts due dates based on remaining work. |
+| `WeightedModifiedDueDate` | Weighted modified due-date score. |
 | `MinimumSlackTime` | Smallest slack (due date − processing time − current time). |
 | `FirstInFirstOut` | Arrival order. |
-| `CriticalRatio` | Ratio of remaining time to remaining processing time. |
-| `CostOverTime` | Penalty-rate heuristic. |
-| `ApparentTardinessCost` | ATC composite rule combining urgency and slack. |
-| `TrafficPriority` | Based on downstream machine congestion. |
 | `MostOperationsRemaining` | Most remaining operations in the job. |
 | `MostWorkRemaining` | Most remaining processing time in the job. |
+| `CombinedRule` | Weighted combination of multiple PDRs. |
 | `RandomPriority` | Random ordering. |
 
 ```python
-from cpscheduler.heuristics import ShortestProcessingTime
+from cpscheduler.heuristics.pdrs import ShortestProcessingTime
 
-heuristic = ShortestProcessingTime(strict=True)
-action = heuristic(obs)
+heuristic = ShortestProcessingTime()
+action = heuristic(obs)  # single dispatch action, e.g. ("execute", task_id)
 ```
 
 ---
 
-## ⚙️ Solver
+## Solver
 
-The `solver` module automatically formulates the scheduling problem as a Mixed-Integer Linear Program using [PuLP](https://coin-or.github.io/pulp/).
+The `solver` module builds mathematical programming formulations from a `SchedulingEnv` instance.
+The default registered backend is a disjunctive MILP formulation implemented with [Pyomo](https://pyomo.readthedocs.io/).
 
 ```python
-from cpscheduler.solver import PulpSolver
+from cpscheduler.solver import SchedulingSolver, get_formulations
 
-solver = PulpSolver(env, formulation="scheduling", symmetry_breaking=True)
+print(get_formulations())  # ['disjunctive']
+
+solver = SchedulingSolver(env, formulation="disjunctive", horizon=10_000)
+solver.warm_start([("submit", task_id) for task_id in range(env.state.n_tasks)])
 solver.build()
-actions, objective_value, status = solver.solve("GUROBI_CMD", timeLimit=60)
+result = solver.solve(time_limit=60)
+
+actions = result.action
+objective_value = result.objective_value
+status = result.status
 ```
 
 **Key features:**
 
-- **Two formulations**: `"scheduling"` (precedence-based) and `"timetable"` (time-indexed).
-- **Warm starting**: Feed an initial heuristic solution to speed up the solver.
-- **Symmetry breaking**: Automatically adds cuts to reduce the search space.
-- **Solver-agnostic**: Any PuLP-supported backend (Gurobi, CPLEX, CBC, GLPK, …) via `solver.available_solvers()`.
+- **Formulation registry**: List and select registered formulations via `get_formulations()`.
+- **Warm starting**: Feed an initial schedule as action tuples before `build()`.
+- **Automatic solver selection**: Uses the first available Pyomo-compatible MILP backend if none is provided.
+- **CP support in codebase**: MiniZinc-based CP formulations exist under `cpscheduler/solver/cp/` and can be enabled/registered for experimental workflows.
 
 ---
 

@@ -11,9 +11,9 @@ reinforcement learning libraries. It provides methods for resetting the environm
 steps, rendering the environment, and exporting the scheduling model.
 """
 
-from typing import Any, assert_never
+from typing import Any
 from collections.abc import Iterable, Mapping
-from typing_extensions import TypeIs
+from typing_extensions import TypeIs, assert_never
 
 from cpscheduler.environment.utils import convert_to_list
 from cpscheduler.environment._protocols import (
