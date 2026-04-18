@@ -1,11 +1,10 @@
-from typing import Any, Final, Literal
+from typing import Final, Literal
 from typing_extensions import assert_never
 
 from cpscheduler.environment.constants import (
-    TaskID,
-    MachineID,
+    TaskID, MachineID,
     GLOBAL_MACHINE_ID,
-    Enum
+    Enum, CustomDataclass
 )
 
 VarFieldType = Literal[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
@@ -95,7 +94,7 @@ def field_to_str(field: VarFieldType) -> str:
     assert_never(field)
 
 
-class DomainEvent:
+class DomainEvent(CustomDataclass):
     """
     Container for CP events in the scheduling environment.
     """
@@ -108,20 +107,13 @@ class DomainEvent:
 
     def __init__(
         self,
-        task_id: TaskID,
+        task_id: TaskID ,
         field: VarFieldType,
         machine_id: MachineID = GLOBAL_MACHINE_ID,
     ) -> None:
         self.task_id = task_id
         self.field = field
         self.machine_id = machine_id
-
-    def __reduce__(self) -> tuple[Any, ...]:
-        return (
-            self.__class__,
-            (self.task_id, self.field, self.machine_id),
-            ()
-        )
 
     def __repr__(self) -> str:
         string = f"DomainEvent(task_id={self.task_id}, field={field_to_str(self.field)}"
@@ -157,7 +149,7 @@ def kind_to_str(kind: EventKindType) -> str:
     
     assert_never(kind)
 
-class RuntimeEvent:
+class RuntimeEvent(CustomDataclass):
     """
     Container for runtime events in the scheduling environment.
     """
@@ -177,13 +169,6 @@ class RuntimeEvent:
         self.task_id = task_id
         self.kind = kind
         self.machine_id = machine_id
-
-    def __reduce__(self) -> tuple[Any, ...]:
-        return (
-            self.__class__,
-            (self.task_id, self.kind, self.machine_id),
-            ()
-        )
 
     def __repr__(self) -> str:
         string = f"RuntimeEvent(task_id={self.task_id}, kind={kind_to_str(self.kind)}"

@@ -90,8 +90,18 @@ class ResourceConstraint(Constraint):
             An optional name for the constraint.
     """
 
+    __slots__ = (
+        "resource_tags",
+        "capacities",
+        "constant_capacity",
+        "resources",
+        "next_available_time",
+        "available_resources",
+    )
+
     resource_tags: list[str]
     capacities: list[float]
+    constant_capacity: float | None
     resources: list[list[float]]
     ""
 
@@ -109,41 +119,69 @@ class ResourceConstraint(Constraint):
     So, when a task starts at time t, we insert its end time into the next_available_time list,
     and update the available_resources list accordingly.
     """
+
     next_available_time: list[list[Time]]
     available_resources: list[list[float]]
 
     def __init__(
-        self, capacities: Iterable[Float], resource_usage: Iterable[str]
+        self,
+        capacities: Iterable[Float] | Float | None = None,
+        resource_usage: Iterable[str] | None = None,
     ) -> None:
+        if capacities is None:
+            capacities = []
+
+        elif isinstance(capacities, Float):
+            self.constant_capacity = float(capacities)
+            capacities = []
+
+        else:
+            self.constant_capacity = None
+
         self.capacities = convert_to_list(capacities, float)
+
+        if resource_usage is None:
+            resource_usage = []
+
         self.resource_tags = list(resource_usage)
 
-        self.resources = []
+    def add_resource(
+        self,
+        resource_usage: str, 
+        capacity: Float | None = None
+    ) -> None:
+        if self.constant_capacity is not None:
+            if capacity is not None:
+                raise ValueError(
+                    "Cannot add a resource with a specific capacity when a constant capacity is defined."
+                )
+            
+            capacity = self.constant_capacity
 
-        self.next_available_time = [[] for _ in self.resource_tags]
-        self.available_resources = [[] for _ in self.resource_tags]
-
-    def __reduce__(self) -> Any:
-        return (
-            self.__class__,
-            (self.capacities, self.resource_tags),
-            (
-                self.resources,
-                self.next_available_time,
-                self.available_resources,
-            ),
-        )
-
-    def __setstate__(self, state: tuple[Any, ...]) -> None:
-        (self.resources, self.next_available_time, self.available_resources) = (
-            state
-        )
+        elif capacity is None:
+            raise ValueError(
+                "Capacity must be provided when a constant capacity is not defined."
+            )
+    
+        self.resource_tags.append(resource_usage)
+        self.capacities.append(float(capacity))
 
     def initialize(self, state: ScheduleState) -> None:
+        if self.constant_capacity is not None:
+            self.capacities = [self.constant_capacity] * len(self.resource_tags)
+
+        elif len(self.capacities) != len(self.resource_tags):
+            raise ValueError(
+                "The number of capacities must be equal to the number of resource usage columns."
+            )
+
         self.resources = [
             convert_to_list(state.instance.task_instance[resource], float)
             for resource in self.resource_tags
         ]
+
+        self.next_available_time = [[] for _ in self.resource_tags]
+        self.available_resources = [[] for _ in self.resource_tags]
 
     def reset(self, state: ScheduleState) -> None:
         for i, capacity in enumerate(self.capacities):
@@ -226,31 +264,64 @@ class NonRenewableResourceConstraint(Constraint):
             An optional name for the constraint.
     """
 
+    __slots__ = (
+        "resource_tags",
+        "capacities",
+        "constant_capacity",
+        "resources",
+        "current_capacities",
+    )
+
     resource_tags: list[str]
+    constant_capacity: float | None
     capacities: list[float]
     resources: list[list[float]]
 
     current_capacities: list[float]
 
     def __init__(
-        self, capacities: Iterable[Float], resource_usage: Iterable[str]
+        self,
+        capacities: Iterable[Float] | Float | None = None,
+        resource_usage: Iterable[str] | None = None,
     ) -> None:
+        if capacities is None:
+            capacities = []
+
+        elif isinstance(capacities, Float):
+            self.constant_capacity = float(capacities)
+            capacities = []
+
+        else:
+            self.constant_capacity = None
+
         self.capacities = convert_to_list(capacities, float)
+
+        if resource_usage is None:
+            resource_usage = []
+
         self.resource_tags = list(resource_usage)
-
-        self.current_capacities = self.capacities.copy()
-
         self.resources = []
 
-    def __reduce__(self) -> Any:
-        return (
-            self.__class__,
-            (self.capacities, self.resource_tags),
-            (self.resources, self.current_capacities),
-        )
+    def add_resource(
+        self,
+        resource_usage: str, 
+        capacity: Float | None = None
+    ) -> None:
+        if self.constant_capacity is not None:
+            if capacity is not None:
+                raise ValueError(
+                    "Cannot add a resource with a specific capacity when a constant capacity is defined."
+                )
+            
+            capacity = self.constant_capacity
 
-    def __setstate__(self, state: tuple[Any, ...]) -> None:
-        (self.resources, self.current_capacities) = state
+        elif capacity is None:
+            raise ValueError(
+                "Capacity must be provided when a constant capacity is not defined."
+            )
+    
+        self.resource_tags.append(resource_usage)
+        self.capacities.append(float(capacity))
 
     def initialize(self, state: ScheduleState) -> None:
         self.resources.clear()

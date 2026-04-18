@@ -1,11 +1,7 @@
 from cpscheduler.environment.constants import (
-    MachineID,
-    TaskID,
-    Time,
-    Status,
-    StatusType,
+    MachineID, TaskID, Time, Status, StatusType,
     MIN_TIME,
-    PickleState
+    EzPickle, CustomDataclass
 )
 
 from cpscheduler.environment.state.instance import ProblemInstance
@@ -14,7 +10,7 @@ DUMMY_INSTANCE = ProblemInstance({})
 
 AWAITING = Status.AWAITING
 
-class TaskHistory:
+class TaskHistory(CustomDataclass):
     "A record of a task execution, (machine_id, start_time, end_time)"
 
     machine_id: MachineID
@@ -27,7 +23,7 @@ class TaskHistory:
         self.end_time = end_time
 
 
-class RuntimeState:
+class RuntimeState(EzPickle):
     """
     Container for the runtime state of the scheduling environment.
 
@@ -59,7 +55,10 @@ class RuntimeState:
 
     last_completion_time: Time
 
-    def __init__(self, instance: ProblemInstance) -> None:
+    def __init__(self, instance: ProblemInstance | None = None) -> None:
+        if instance is None:
+            instance = DUMMY_INSTANCE
+
         n_tasks = instance.n_tasks
 
         self.history = [[] for _ in range(n_tasks)]
@@ -119,38 +118,3 @@ class RuntimeState:
                 best = completion_time
         
         self.last_completion_time = best
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, RuntimeState):
-            return NotImplemented
-
-        return (
-            self.history == other.history
-            and self.prerequisites == other.prerequisites
-            and self.status == other.status
-        )
-
-    def __reduce__(self) -> PickleState:
-        state = (
-            self.history,
-            self.prerequisites,
-            self.status,
-            self.awaiting_tasks,
-            self.unlocked_tasks,
-            self.executing_tasks,
-            self.completed_tasks,
-            self.last_completion_time
-        )
-        return (self.__class__, (DUMMY_INSTANCE,), state)
-
-    def __setstate__(self, state: PickleState) -> None:
-        (
-            self.history,
-            self.prerequisites,
-            self.status,
-            self.awaiting_tasks,
-            self.unlocked_tasks,
-            self.executing_tasks,
-            self.completed_tasks,
-            self.last_completion_time
-        ) = state

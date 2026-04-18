@@ -1,5 +1,3 @@
-from typing import Any
-
 from math import expm1
 
 from cpscheduler.environment.utils import convert_to_list
@@ -14,21 +12,14 @@ class TotalCompletionTime(RegularObjective):
     The total completion time objective function, which aims to minimize the sum
     of completion times of all tasks.
     """
+
+    __slots__ = ("_job_completion",)
+
     _job_completion: dict[TaskID, Time]
 
     def __init__(self, minimize: bool = True) -> None:
         super().__init__(minimize)
         self._job_completion = {}
-
-    def __reduce__(self) -> Any:
-        return (
-            self.__class__,
-            (self.minimize,),
-            (self._job_completion,),
-        )
-
-    def __setstate__(self, state: tuple[Any, ...]) -> None:
-        (self._job_completion,) = state
 
     def reset(self, state: ScheduleState) -> None:
         self._job_completion.clear()
@@ -60,6 +51,8 @@ class WeightedCompletionTime(Objective):
     sum of the completion times multiplied by their respective weights.
     """
 
+    __slots__ = ("_weighted_job_completion", "weights_tag", "job_weights")
+
     _weighted_job_completion: dict[TaskID, float]
 
     weights_tag: str
@@ -73,16 +66,6 @@ class WeightedCompletionTime(Objective):
         super().__init__(minimize)
         self.weights_tag = job_weights
         self._weighted_job_completion = {}
-
-    def __reduce__(self) -> Any:
-        return (
-            self.__class__,
-            (self.weights_tag, self.minimize,),
-            (self._weighted_job_completion, self.job_weights),
-        )
-
-    def __setstate__(self, state: tuple[Any, ...]) -> None:
-        (self._weighted_job_completion, self.job_weights) = state
 
     @property
     def regular(self) -> bool:
@@ -119,6 +102,8 @@ class WeightedCompletionTime(Objective):
         return "Σw_jC_j"
 
 class DiscountedTotalCompletionTime(RegularObjective):
+    __slots__ = ("_discounted_job_completion", "discount_factor")
+
     _discounted_job_completion: dict[TaskID, float]
     discount_factor: float
 
@@ -130,16 +115,6 @@ class DiscountedTotalCompletionTime(RegularObjective):
         super().__init__(minimize)
         self.discount_factor = discount_factor
         self._discounted_job_completion = {}
-
-    def __reduce__(self) -> Any:
-        return (
-            self.__class__,
-            (self.discount_factor, self.minimize,),
-            (self._discounted_job_completion,),
-        )
-
-    def __setstate__(self, state: tuple[Any, ...]) -> None:
-        (self._discounted_job_completion,) = state
 
     def reset(self, state: ScheduleState) -> None:
         self._discounted_job_completion.clear()
@@ -169,6 +144,8 @@ class TotalFlowTime(RegularObjective):
     tasks. Flow time is defined as the difference between the completion time and the release time.
     """
 
+    __slots__ = ("_job_flow", "release_tag", "release_times")
+
     _job_flow: dict[TaskID, Time]
 
     release_tag: str
@@ -182,16 +159,6 @@ class TotalFlowTime(RegularObjective):
         super().__init__(minimize)
         self.release_tag = release_times
         self._job_flow = {}
-
-    def __reduce__(self) -> Any:
-        return (
-            self.__class__,
-            (self.release_tag, self.minimize,),
-            (self._job_flow,),
-        )
-
-    def __setstate__(self, state: tuple[Any, ...]) -> None:
-        (self._job_flow,) = state
 
     def initialize(self, state: ScheduleState) -> None:
         self.release_dates = convert_to_list(

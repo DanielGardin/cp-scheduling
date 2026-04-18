@@ -9,18 +9,19 @@ interface for rendering tasks.
 from typing import Any, ClassVar
 
 from cpscheduler.environment.state import ScheduleState
+from cpscheduler.environment.constants import EzPickle
 
 renderers: dict[str, "Renderer"] = {}
 
 
-class Renderer:
+class Renderer(EzPickle):
     "Renderer base class for visualizing task schedules."
+
+    __slots__ = ()
 
     render_name: ClassVar[str | None] = None
 
     def __init_subclass__(cls) -> None:
-        super().__init_subclass__()
-
         if cls.render_name is not None:
             if cls.render_name in renderers:
                 raise ValueError(

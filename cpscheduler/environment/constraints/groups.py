@@ -1,4 +1,3 @@
-from typing import Any
 from collections.abc import Iterable
 
 from cpscheduler.environment.constants import TaskID, MachineID, Int
@@ -6,24 +5,40 @@ from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import Constraint
 
+import cpscheduler.environment.debug as debug
 
 class NonOverlapConstraint(Constraint):
+    __slots__ = ("groups_map", "current_groups")
+
     groups_map: list[set[TaskID]]
 
     current_groups: list[set[TaskID]]
 
-    def __init__(self, task_groups: Iterable[Iterable[Int]]):
+    def __init__(self, task_groups: Iterable[Iterable[Int]] | None = None):
+        if task_groups is None:
+            task_groups = []
+
         self.groups_map = [
             set(TaskID(task_id) for task_id in task_group)
             for task_group in task_groups
         ]
 
-    def __reduce__(self) -> Any:
-        return (
-            self.__class__,
-            (self.groups_map,),
-            (),
-        )
+    def add_group(self, task_group: Iterable[Int]) -> None:
+        self.groups_map.append(set(TaskID(task_id) for task_id in task_group))
+
+    def remove_group(self, group_id: int) -> None:
+        if 0 <= group_id < len(self.groups_map):
+            self.groups_map.pop(group_id)
+
+    def initialize(self, state: ScheduleState) -> None:
+        if state.debug_mode:
+            for tasks in self.groups_map:
+                for task in tasks:
+                    debug.task_bounds(
+                        task,
+                        state,
+                        "NonOverlapConstraint"
+                    )
 
     def reset(self, state: ScheduleState) -> None:
         self.current_groups = [group.copy() for group in self.groups_map]
@@ -52,4 +67,3 @@ class NonOverlapConstraint(Constraint):
                 state.reset_bounds(other_task_id)
 
             self.current_groups[i].add(task_id)
-

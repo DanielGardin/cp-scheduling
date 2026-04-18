@@ -1,15 +1,9 @@
-from typing import Any, TypeAlias
-from collections.abc import Mapping, Callable
+from collections.abc import Mapping
 
 from cpscheduler.environment.constants import Time, TaskID, MachineID, Int
 from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import Constraint
-
-SetupTimes: TypeAlias = (
-    Mapping[Int, Mapping[Int, Int]] | Callable[[int, int, ScheduleState], Int]
-)
-
 
 class SetupConstraint(Constraint):
     """
@@ -29,62 +23,51 @@ class SetupConstraint(Constraint):
             An optional name for the constraint.
     """
 
-    original_setup_times: dict[TaskID, dict[TaskID, Time]]
-    setup_fn: Callable[[int, int, ScheduleState], Int] | None = None
+    __slots__ = ("setup_times", "current_setup_times")
 
+    setup_times: dict[TaskID, dict[TaskID, Time]]
     current_setup_times: dict[TaskID, dict[TaskID, Time]]
 
-    def __init__(self, setup_times: SetupTimes) -> None:
-        if callable(setup_times):
-            self.setup_fn = setup_times
-            self.original_setup_times = {}
+    def __init__(
+            self,
+            setup_times: Mapping[Int, Mapping[Int, Int]] | None = None
+        ) -> None:
+        if setup_times is None:
+            setup_times = {}
 
-        else:
-            self.original_setup_times = {
-                TaskID(task): {
-                    TaskID(child): Time(time)
-                    for child, time in children.items()
-                }
-                for task, children in setup_times.items()
+        self.setup_times = {
+            TaskID(task): {
+                TaskID(child): Time(time)
+                for child, time in children.items()
             }
+            for task, children in setup_times.items()
+        }
 
-    def __reduce__(self) -> Any:
-        return (
-            self.__class__,
-            (self.setup_fn or self.original_setup_times,),
-            (self.current_setup_times,),
-        )
+    def add_setup_time(
+        self, task_id: Int, child_id: Int, setup_time: Int
+    ) -> None:
+        task = TaskID(task_id)
+        child = TaskID(child_id)
 
-    def __setstate__(self, state: tuple[Any, ...]) -> None:
-        (self.current_setup_times,) = state
+        if task_id not in self.setup_times:
+            self.setup_times[task] = {}
 
-    def initialize(self, state: ScheduleState) -> None:
-        if self.setup_fn is None:
-            return
+        self.setup_times[task][child] = Time(setup_time)
 
-        setup_times = {}
-        n_tasks = state.n_tasks
+    def remove_setup_time(self, task_id: Int, child_id: Int) -> None:
+        task = TaskID(task_id)
+        child = TaskID(child_id)
 
-        for task_id in range(n_tasks):
-            task_setup_times = {}
+        if task in self.setup_times and child in self.setup_times[task]:
+            del self.setup_times[task][child]
 
-            for child_id in range(n_tasks):
-                if task_id == child_id:
-                    continue
-
-                setup_time = Time(self.setup_fn(task_id, child_id, state))
-
-                if setup_time > 0:
-                    task_setup_times[TaskID(child_id)] = setup_time
-
-            setup_times[TaskID(task_id)] = task_setup_times
-
-        self.original_setup_times = setup_times
+            if not self.setup_times[task]:
+                del self.setup_times[task]
 
     def reset(self, state: ScheduleState) -> None:
         self.current_setup_times = {
             task_id: children.copy()
-            for task_id, children in self.original_setup_times.items()
+            for task_id, children in self.setup_times.items()
         }
 
     def on_assignment(

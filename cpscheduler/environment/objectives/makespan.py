@@ -1,4 +1,3 @@
-from typing import Any
 from collections.abc import Iterable
 
 from cpscheduler.environment.constants import MachineID, TaskID, Time
@@ -28,6 +27,8 @@ class Makespan(RegularObjective):
     which all tasks are completed.
     """
 
+    __slots__ = ("_value",)
+
     _value: Time
 
     def reset(self, state: ScheduleState) -> None:
@@ -40,16 +41,6 @@ class Makespan(RegularObjective):
 
     def get_current(self, state: ScheduleState) -> float:
         return float(self._value)
-
-    def __reduce__(self) -> Any:
-        return (
-            self.__class__,
-            (self.minimize,),
-            (self._value,),
-        )
-
-    def __setstate__(self, state: tuple[Any, ...]) -> None:
-        (self._value,) = state
 
     def __call__(self, state: ScheduleState) -> float:
         return makespan_(state, range(state.n_tasks))

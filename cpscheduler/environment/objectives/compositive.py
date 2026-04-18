@@ -1,4 +1,3 @@
-from typing import Any
 from collections.abc import Iterable
 
 from cpscheduler.environment.utils import convert_to_list
@@ -24,16 +23,22 @@ class ComposedObjective(Objective):
             Whether to minimize or maximize the objective function.
     """
 
+    __slots__ = ("objectives", "coefficients")
+
     objectives: list[Objective]
     coefficients: list[float]
 
     def __init__(
         self,
-        objectives: Iterable[Objective],
+        objectives: Iterable[Objective] | None = None,
         coefficients: Iterable[Float] | None = None,
         minimize: bool = True,
     ):
         super().__init__(minimize)
+
+        if objectives is None:
+            objectives = []
+
         self.objectives = list(objectives)
         self.coefficients = (
             [1.0] * len(self.objectives)
@@ -52,9 +57,6 @@ class ComposedObjective(Objective):
             (coefficient == 0 or objective.regular) and not (coefficient < 0 and objective.regular)
             for objective, coefficient in zip(self.objectives, self.coefficients)
         )
-
-    def __reduce__(self) -> Any:
-        return (self.__class__, (self.objectives, self.coefficients, self.minimize), ())
 
     def reset(self, state: ScheduleState) -> None:
         for objective in self.objectives:

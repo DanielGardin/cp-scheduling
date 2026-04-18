@@ -1,4 +1,3 @@
-from typing import Any
 from collections.abc import Iterable, Mapping, Sequence
 from typing_extensions import Self
 
@@ -72,13 +71,18 @@ class PrecedenceConstraint(Constraint):
             An optional name for the constraint.
     """
 
+    __slots__ = ("parents", "children")
+
     parents: dict[TaskID, list[TaskID]]
     "A mapping of task IDs to their parent task IDs."
 
     children: dict[TaskID, list[TaskID]]
     "A mapping of task IDs to their child task IDs."
 
-    def __init__(self, precedence: Mapping[Int, Sequence[Int]]):
+    def __init__(self, precedence: Mapping[Int, Sequence[Int]] | None = None):
+        if precedence is None:
+            precedence = {}
+
         self.parents = {
             TaskID(child_id): convert_to_list(parent_ids, TaskID)
             for child_id, parent_ids in precedence.items()
@@ -91,13 +95,6 @@ class PrecedenceConstraint(Constraint):
                     self.children[parent_id] = []
 
                 self.children[parent_id].append(child_id)
-
-    def __reduce__(self) -> Any:
-        return (
-            self.__class__,
-            (self.parents,),
-            (),
-        )
 
     @classmethod
     def from_edges(cls, edges: Iterable[tuple[Int, Int]]) -> Self:
@@ -119,6 +116,37 @@ class PrecedenceConstraint(Constraint):
             precedence[parent].append(child)
 
         return cls(precedence)
+
+    def add_precedence(self, parent_id: Int, child_id: Int) -> None:
+        parent, child = TaskID(parent_id), TaskID(child_id)
+
+        if child not in self.parents:
+            self.parents[child] = []
+
+        if parent not in self.children:
+            self.children[parent] = []
+
+        self.parents[child].append(parent)
+        self.children[parent].append(child)
+    
+    def remove_precedence(self, parent_id: Int, child_id: Int) -> None:
+        parent, child = TaskID(parent_id), TaskID(child_id)
+
+        if child in self.parents:
+            self.parents[child] = [
+                pid for pid in self.parents[child] if pid != parent
+            ]
+
+            if not self.parents[child]:
+                del self.parents[child]
+
+        if parent in self.children:
+            self.children[parent] = [
+                cid for cid in self.children[parent] if cid != child
+            ]
+
+            if not self.children[parent]:
+                del self.children[parent]
 
     def is_intree(self) -> bool:
         "Check if the precedence graph is an in-tree."
@@ -222,7 +250,7 @@ class NoWaitConstraint(PrecedenceConstraint):
             An optional name for the constraint.
     """
 
-    def __init__(self, precedence: Mapping[Int, Sequence[Int]]):
+    def __init__(self, precedence: Mapping[Int, Sequence[Int]] | None = None):
         super().__init__(precedence)
 
         if not self.is_intree():
@@ -269,7 +297,7 @@ class ORPrecedenceConstraint(PrecedenceConstraint):
             An optional name for the constraint.
     """
 
-    def __init__(self, precedence: Mapping[Int, Sequence[Int]]):
+    def __init__(self, precedence: Mapping[Int, Sequence[Int]] | None = None):
         super().__init__(precedence)
 
     def reset(self, state: ScheduleState) -> None:

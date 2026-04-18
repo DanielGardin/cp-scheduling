@@ -1,9 +1,9 @@
-from typing import Any, NoReturn, final
+from typing import NoReturn, final
 from mypy_extensions import mypyc_attr
 
 from cpscheduler.environment.state.events import DomainEvent, VarField
 from cpscheduler.environment.state import ScheduleState
-from cpscheduler.environment.constants import TaskID, MachineID, Time
+from cpscheduler.environment.constants import TaskID, MachineID, Time, EzPickle
 
 ASSIGNMENT = VarField.ASSIGNMENT
 START_LB = VarField.START_LB
@@ -21,7 +21,7 @@ constraints: dict[str, type["Constraint"]] = {}
 
 
 @mypyc_attr(allow_interpreted_subclasses=True)
-class Constraint:
+class Constraint(EzPickle):
     """
     Base class for all constraints in the scheduling environment.
     This class provides a common interface for any piece in the scheduling environment that
@@ -37,12 +37,12 @@ class Constraint:
         Initialize the constraint with the scheduling state.
 
         This operation is meant to initialize the internal state of the constraint given the
-        observed state at the constraint's inclusion time.
-        """
+        observed state at the constraint's inclusion time, after the instance
+        have been fixed.
 
-    def get_observation(self) -> dict[str, list[Any]]:
-        "Export"
-        return {}
+        Any changes to the constraint parameters must be done before
+        initialization time.
+        """
 
     def reset(self, state: ScheduleState) -> None:
         "Reset the constraint to its initial state."

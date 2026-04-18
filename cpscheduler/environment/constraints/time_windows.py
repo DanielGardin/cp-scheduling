@@ -1,8 +1,6 @@
-from typing import Any
-
 from cpscheduler.environment.utils import convert_to_list
 
-from cpscheduler.environment.constants import Time, Int
+from cpscheduler.environment.constants import Time, Int, MAX_TIME
 from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import Constraint
@@ -23,16 +21,15 @@ class HorizonConstraint(Constraint):
             The upper bound on the completion time of all tasks.
     """
 
+    __slots__ = ("horizon",)
+
     horizon: Time
 
-    def __init__(self, horizon: Int):
+    def __init__(self, horizon: Int = MAX_TIME):
         self.horizon = Time(horizon)
 
-    def __reduce__(self) -> Any:
-        return (
-            self.__class__,
-            (self.horizon,),
-        )
+    def set_horizon(self, horizon: Int) -> None:
+        self.horizon = Time(horizon)
 
     def reset(self, state: ScheduleState) -> None:
         for task_id in range(state.n_tasks):
@@ -53,21 +50,13 @@ class ReleaseDateConstraint(Constraint):
             it refers to a column in the tasks data that contains the release dates for each task.
     """
 
+    __slots__ = ("release_tag", "release_dates")
+
     release_tag: str
     release_dates: list[Time]
 
     def __init__(self, release_dates: str = "release_time"):
         self.release_tag = release_dates
-
-    def __reduce__(self) -> Any:
-        return (
-            self.__class__,
-            (self.release_tag,),
-            (self.release_dates,),
-        )
-
-    def __setstate__(self, state: tuple[Any, ...]) -> None:
-        (self.release_dates,) = state
 
     def initialize(self, state: ScheduleState) -> None:
         self.release_dates = convert_to_list(
@@ -99,6 +88,8 @@ class DeadlineConstraint(Constraint):
             An optional name for the constraint.
     """
 
+    __slots__ = ("due_tag", "due_dates", "const_due")
+
     due_tag: str
     due_dates: list[Time]
 
@@ -111,16 +102,6 @@ class DeadlineConstraint(Constraint):
         self.const_due = Time(const_due) if const_due is not None else None
 
         self.due_dates = []
-
-    def __reduce__(self) -> Any:
-        return (
-            self.__class__,
-            (self.due_tag, self.const_due),
-            (self.due_dates,),
-        )
-
-    def __setstate__(self, state: tuple[Any, ...]) -> None:
-        (self.due_dates,) = state
 
     def initialize(self, state: ScheduleState) -> None:
         if self.const_due is None:

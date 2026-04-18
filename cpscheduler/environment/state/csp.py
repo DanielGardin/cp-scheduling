@@ -2,13 +2,9 @@ from typing import Literal, Final
 from typing_extensions import assert_never
 
 from cpscheduler.environment.constants import (
-    MachineID,
-    TaskID,
-    Time,
-    GLOBAL_MACHINE_ID,
-    MAX_TIME,
-    MIN_TIME,
-    PickleState,
+    MachineID, TaskID, Time,
+    GLOBAL_MACHINE_ID, MAX_TIME, MIN_TIME,
+    Enum, EzPickle,
 )
 
 from cpscheduler.environment.state.instance import ProblemInstance
@@ -21,7 +17,7 @@ DUMMY_INSTANCE = ProblemInstance({})
 
 PresenceType = Literal[0b00, 0b01, 0b10, 0b11]
 
-class Presence:
+class Presence(Enum):
     """
     Presence is a domain for optional tasks, when they can be either present or
     absent from the schedule.
@@ -38,8 +34,6 @@ class Presence:
     10 = {absent}, the task has to be absent from the schedule to satisfy the constraints.
     11 = {present, absent}, the task can be either present or absent.
     """
-
-    __slots__ = ()
 
     INFEASIBLE: Final[Literal[0b00]] = 0b00
     "Task is not consistent with the constraints and cannot be scheduled."
@@ -77,7 +71,7 @@ def presence_to_str(presence: PresenceType) -> str:
 
 
 
-class Bounds:
+class Bounds(EzPickle):
     """
     Container for integer bounds in the scheduling environment.
 
@@ -113,7 +107,10 @@ class Bounds:
     ubs: list[Time]
     global_ubs: list[Time]
 
-    def __init__(self, instance: ProblemInstance) -> None:
+    def __init__(self, instance: ProblemInstance | None = None) -> None:
+        if instance is None:
+            instance = DUMMY_INSTANCE
+
         n_tasks = instance.n_tasks
         n_machines = instance.n_machines
 
@@ -158,41 +155,8 @@ class Bounds:
 
         return self.ubs[task_id * self.n_machines + machine_id]
 
-    def __eq__(self, other: object, /) -> bool:
-        if not isinstance(other, Bounds):
-            return False
 
-        return (
-            self.n_machines == other.n_machines
-            and self.lbs == other.lbs
-            and self.global_lbs == other.global_lbs
-            and self.ubs == other.ubs
-            and self.global_ubs == other.global_ubs
-        )
-
-    def __reduce__(self) -> PickleState:
-        state = (
-            self.n_machines,
-            self.lbs,
-            self.global_lbs,
-            self.ubs,
-            self.global_ubs,
-        )
-        return (self.__class__, (DUMMY_INSTANCE,), state)
-
-    def __setstate__(self, state: PickleState) -> None:
-        (
-            self.n_machines,
-            self.lbs,
-            self.global_lbs,
-            self.ubs,
-            self.global_ubs,
-        ) = state
-
-
-
-
-class TaskDomains:
+class TaskDomains(EzPickle):
     """
     Container for the task variables in the scheduling environment.
 
@@ -222,7 +186,10 @@ class TaskDomains:
     start: Bounds
     end: Bounds
 
-    def __init__(self, instance: ProblemInstance) -> None:
+    def __init__(self, instance: ProblemInstance | None = None) -> None:
+        if instance is None:
+            instance = DUMMY_INSTANCE
+
         n_tasks = instance.n_tasks
         n_machines = instance.n_machines
 
@@ -266,39 +233,3 @@ class TaskDomains:
 
     def get_feasible_machines(self, task_id: TaskID) -> tuple[MachineID, ...]:
         return tuple(self.feasible_machines[task_id])
-
-
-    def __eq__(self, other: object, /) -> bool:
-        if not isinstance(other, TaskDomains):
-            return False
-        
-        return (
-            self.start == other.start
-            and self.end == other.end
-            and self.presence == other.presence
-            and self.assignment == other.assignment
-        )
-    
-    def __reduce__(self) -> PickleState:
-        state = (
-            self.original_machines,
-            self.feasible_machines,
-            self.remaining_times,
-            self.assignment,
-            self.presence,
-            self.start,
-            self.end,
-        )
-
-        return (self.__class__, (DUMMY_INSTANCE,), state)
-
-    def __setstate__(self, state: PickleState) -> None:
-        (
-            self.original_machines,
-            self.feasible_machines,
-            self.remaining_times,
-            self.assignment,
-            self.presence,
-            self.start,
-            self.end,
-        ) = state

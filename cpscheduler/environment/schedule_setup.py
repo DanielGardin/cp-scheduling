@@ -12,13 +12,12 @@ from mypy_extensions import mypyc_attr
 
 from cpscheduler.environment.utils import convert_to_list
 
-from cpscheduler.environment.constants import MachineID, Time, Int
+from cpscheduler.environment.constants import (
+    MachineID, Time, Int, CustomDataclass
+)
 from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.constraints import (
-    Constraint,
-    NonOverlapConstraint,
-    PrecedenceConstraint,
-    MachineConstraint,
+    Constraint, NonOverlapConstraint, PrecedenceConstraint, MachineConstraint
 )
 
 setups: dict[str, type["ScheduleSetup"]] = {}
@@ -30,13 +29,11 @@ def ceil_div(a: Time, b: Time) -> Time:
 
 
 @mypyc_attr(allow_interpreted_subclasses=True)
-class ScheduleSetup:
+class ScheduleSetup(CustomDataclass):
     """
     Base class for scheduling setups. It defines the common interface for all scheduling setups
     and provides methods to parse process times, set tasks, and setup constraints.
     """
-
-    n_machines: int = 0
 
     def __init_subclass__(cls) -> None:
         super().__init_subclass__()
@@ -63,7 +60,7 @@ class SingleMachineSetup(ScheduleSetup):
     This setup is used for scheduling tasks on a single machine.
     """
 
-    n_machines: int = 1
+    __slots__ = ("processing_times", "disjunctive")
 
     def __init__(
         self,
@@ -87,6 +84,9 @@ class SingleMachineSetup(ScheduleSetup):
 
         return (MachineConstraint(),)
 
+    def get_entry(self) -> str:
+        return "1"
+
 
 class IdenticalParallelMachineSetup(ScheduleSetup):
     """
@@ -94,6 +94,8 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
 
     This setup is used for scheduling tasks on multiple machines using the same processing time.
     """
+
+    __slots__ = ("n_machines", "processing_times", "disjunctive")
 
     def __init__(
         self,
@@ -117,6 +119,9 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
     def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
         return (MachineConstraint(),) if self.disjunctive else ()
 
+    def get_entry(self) -> str:
+        return "Pm"
+
 
 class UniformParallelMachineSetup(ScheduleSetup):
     """
@@ -124,6 +129,8 @@ class UniformParallelMachineSetup(ScheduleSetup):
 
     This setup is used for scheduling tasks on multiple machines with different speeds.
     """
+
+    __slots__ = ("speed", "processing_times", "disjunctive")
 
     def __init__(
         self,
@@ -138,7 +145,6 @@ class UniformParallelMachineSetup(ScheduleSetup):
 
         self.processing_times = processing_times
         self.disjunctive = disjunctive
-        self.n_machines = len(self.speed)
 
     def initialize(self, state: ScheduleState) -> None:
         instance = state.instance
@@ -155,9 +161,13 @@ class UniformParallelMachineSetup(ScheduleSetup):
     def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
         return (MachineConstraint(),) if self.disjunctive else ()
 
+    def get_entry(self) -> str:
+        return "Qm"
+
 
 class UnrelatedParallelMachineSetup(ScheduleSetup):
-    processing_times: list[str]
+
+    __slots__ = ("processing_times", "disjunctive")
 
     def __init__(
         self,
@@ -173,8 +183,6 @@ class UnrelatedParallelMachineSetup(ScheduleSetup):
         self.processing_times = list(processing_times)
         self.disjunctive = disjunctive
 
-        self.n_machines = len(self.processing_times)
-
     def initialize(self, state: ScheduleState) -> None:
         instance = state.instance
 
@@ -187,6 +195,9 @@ class UnrelatedParallelMachineSetup(ScheduleSetup):
     def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
         return (MachineConstraint(),) if self.disjunctive else ()
 
+    def get_entry(self) -> str:
+        return "Rm"
+
 
 class OpenShopSetup(ScheduleSetup):
     """
@@ -196,6 +207,8 @@ class OpenShopSetup(ScheduleSetup):
     processed on any machine, and the order of operations is not fixed.
     """
 
+    __slots__ = ("processing_times", "machine_feature", "disjunctive")
+
     def __init__(
         self,
         processing_times: str = "processing_time",
@@ -204,13 +217,10 @@ class OpenShopSetup(ScheduleSetup):
     ):
         self.processing_times = processing_times
         self.machine_feature = machine_feature
-
         self.disjunctive = disjunctive
 
     def initialize(self, state: ScheduleState) -> None:
         instance = state.instance
-
-        n_machines = 0
 
         machine_ids = instance.task_instance[self.machine_feature]
         processing_times = instance.task_instance[self.processing_times]
@@ -220,11 +230,6 @@ class OpenShopSetup(ScheduleSetup):
             p_time: Time = processing_times[task_id]
 
             instance.set_processing_time(task_id, machine, p_time)
-
-            if machine >= n_machines:
-                n_machines = machine + 1
-
-        self.n_machines = n_machines
 
     def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
         task_disjunction = NonOverlapConstraint(state.instance.job_tasks)
@@ -236,7 +241,7 @@ class OpenShopSetup(ScheduleSetup):
         )
 
     def get_entry(self) -> str:
-        return f"O{self.n_machines}"
+        return f"Om"
 
 
 class JobShopSetup(OpenShopSetup):
@@ -246,6 +251,8 @@ class JobShopSetup(OpenShopSetup):
     This setup is used for scheduling tasks in a job shop environment where each task has a specific
     operation order and is assigned to a specific machine.
     """
+
+    __slots__ = ("operation_order",)
 
     def __init__(
         self,
@@ -297,7 +304,7 @@ class JobShopSetup(OpenShopSetup):
         )
 
     def get_entry(self) -> str:
-        return f"J{self.n_machines}"
+        return f"Jm"
 
 
 class FlexibleJobShopSetup(UnrelatedParallelMachineSetup):
@@ -309,6 +316,8 @@ class FlexibleJobShopSetup(UnrelatedParallelMachineSetup):
     The operation order is still fixed, but the machine assignment is flexible,
     allowing for more scheduling options and potentially better solutions.
     """
+
+    __slots__ = ("operation_order",)
 
     def __init__(
         self,
@@ -357,6 +366,9 @@ class FlexibleJobShopSetup(UnrelatedParallelMachineSetup):
             else (precedence_constraint,)
         )
 
+    def get_entry(self) -> str:
+        return "FJm"
+
 
 class FlowShopSetup(JobShopSetup):
     """
@@ -381,4 +393,4 @@ class FlowShopSetup(JobShopSetup):
         )
 
     def get_entry(self) -> str:
-        return f"F{self.n_machines}"
+        return f"Fm"

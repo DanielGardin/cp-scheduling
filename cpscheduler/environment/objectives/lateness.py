@@ -1,5 +1,3 @@
-from typing import Any
-
 from cpscheduler.environment.utils import convert_to_list
 from cpscheduler.environment.constants import MachineID, TaskID, Time
 from cpscheduler.environment.state import ScheduleState
@@ -15,6 +13,9 @@ class MaximumLateness(RegularObjective):
     Lateness is defined as the difference between the completion time and the
     due date.
     """
+
+    __slots__ = ("_job_lateness", "due_tag", "due_dates")
+
     _job_lateness: dict[TaskID, Time]
 
     due_tag: str
@@ -28,16 +29,6 @@ class MaximumLateness(RegularObjective):
         super().__init__(minimize)
         self.due_tag = due_dates
         self._job_lateness = {}
-
-    def __reduce__(self) -> Any:
-        return (
-            self.__class__,
-            (self.due_tag, self.minimize),
-            (self._job_lateness, self.due_dates,),
-        )
-
-    def __setstate__(self, state: tuple[Any, ...]) -> None:
-        (self._job_lateness, self.due_dates,) = state
 
     def initialize(self, state: ScheduleState) -> None:
         self.due_dates = convert_to_list(
@@ -86,6 +77,8 @@ class TotalTardiness(RegularObjective):
     due date, if the task is completed late.
     """
 
+    __slots__ = ("_job_lateness", "due_tag", "due_dates")
+
     _job_lateness: dict[TaskID, Time]
 
     due_tag: str
@@ -100,15 +93,6 @@ class TotalTardiness(RegularObjective):
         self.due_tag = due_dates
         self._job_lateness = {}
 
-    def __reduce__(self) -> Any:
-        return (
-            self.__class__,
-            (self.due_tag, self.minimize),
-            (self._job_lateness, self.due_dates,),
-        )
-
-    def __setstate__(self, state: tuple[Any, ...]) -> None:
-        (self._job_lateness, self.due_dates,) = state
 
     def initialize(self, state: ScheduleState) -> None:
         self.due_dates = convert_to_list(
@@ -150,9 +134,15 @@ class WeightedTardiness(Objective):
     date, if the task is completed late.
     """
 
+    __slots__ = (
+        "_weighted_job_lateness",
+        "weight_tag", "job_weights",
+        "due_tag", "due_dates"
+    )
+
     _weighted_job_lateness: dict[TaskID, float]
 
-    weights_tag: str
+    weight_tag: str
     job_weights: list[float]
 
     due_tag: str
@@ -168,16 +158,6 @@ class WeightedTardiness(Objective):
         self.due_tag = due_dates
         self.weight_tag = job_weights
         self._weighted_job_lateness = {}
-
-    def __reduce__(self) -> Any:
-        return (
-            self.__class__,
-            (self.due_tag, self.weight_tag, self.minimize),
-            (self._weighted_job_lateness, self.due_dates, self.job_weights),
-        )
-
-    def __setstate__(self, state: tuple[Any, ...]) -> None:
-        (self._weighted_job_lateness, self.due_dates, self.job_weights) = state
 
     def initialize(self, state: ScheduleState) -> None:
         self.due_dates = convert_to_list(

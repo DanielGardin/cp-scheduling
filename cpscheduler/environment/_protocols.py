@@ -1,4 +1,4 @@
-from typing import Any, Protocol, TypeVar, runtime_checkable
+from typing import Any, Protocol, TypeVar, runtime_checkable, overload
 from collections.abc import Iterator, Mapping, Hashable, Iterable
 from typing_extensions import TypedDict, TypeAlias
 
@@ -31,6 +31,20 @@ class DataFrameLike(Protocol):
 
 InstanceTypes: TypeAlias = DataFrameLike | Mapping[Any, Iterable[Any]]
 
+@runtime_checkable
+class InstanceGenerator(Protocol):
+    """Protocol for components that can sample a new random instance from an environment spec."""
+
+    @overload
+    def sample(self, env: Any, *, seed: int | None = None) -> InstanceTypes: ...
+
+    @overload
+    def sample(self, *, seed: int | None = None) -> InstanceTypes: ...
+
+    def sample(
+        self, env: Any = None, *, seed: int | None = None
+    ) -> InstanceTypes: ...
+
 InfoType: TypeAlias = dict[str, Any]
 
 
@@ -38,6 +52,8 @@ class InstanceConfig(TypedDict, total=False):
     "Configuration for loading an instance."
 
     instance: InstanceTypes
+    instance_generator: InstanceGenerator
+    seed: int
 
 
 Options: TypeAlias = dict[str, Any] | InstanceConfig | None

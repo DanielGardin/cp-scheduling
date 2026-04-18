@@ -17,19 +17,16 @@ from typing_extensions import TypeIs, assert_never
 
 from cpscheduler.environment.utils import convert_to_list
 from cpscheduler.environment._protocols import (
-    Metric,
-    InstanceTypes,
-    InfoType,
-    Options,
+    Metric, InstanceTypes, InstanceGenerator, InfoType, Options,
 )
+
+from cpscheduler.environment.constants import EzPickle
 
 from cpscheduler.environment.state import ScheduleState, ObsType
 from cpscheduler.environment.state.events import VarField, RuntimeEventKind
 from cpscheduler.environment.des import (
-    ActionType,
-    Schedule,
-    parse_instruction,
-    is_single_action,
+    ActionType, Schedule,
+    parse_instruction, is_single_action,
 )
 from cpscheduler.environment.schedule_setup import ScheduleSetup
 from cpscheduler.environment.constraints import Constraint, PassiveConstraint
@@ -67,7 +64,7 @@ def is_info_dict(value: Any) -> TypeIs[Mapping[Any, Any]]:
     "Type guard to check if a value is an info dictionary."
     return isinstance(value, Mapping)
 
-class SchedulingEnv:
+class SchedulingEnv(EzPickle):
     """
     SchedulingEnv is a custom environment for generic scheduling problems. It is designed to be
     modular and extensible, allowing users to define their own scheduling problems by specifying
@@ -77,6 +74,23 @@ class SchedulingEnv:
     reinforcement learning libraries.
     """
 
+    __slots__ = (
+        "setup",
+        "constraints",
+        "setup_constraints",
+        "passive_constraints",
+        "combined_constraints",
+        "objective",
+        "instance_generator",
+        "metrics",
+        "renderer",
+        "state",
+        "schedule",
+        "_prev_obj_value",
+        "event_count",
+        "force_reset",
+    )
+
     # Environment static variables
     setup: ScheduleSetup
     constraints: list[Constraint]
@@ -84,6 +98,7 @@ class SchedulingEnv:
     passive_constraints: list[PassiveConstraint]
     combined_constraints: list[Constraint]
     objective: Objective
+    instance_generator: InstanceGenerator | None
 
     metrics: dict[str, Metric[object | Mapping[str, Any]]]
 
@@ -100,13 +115,16 @@ class SchedulingEnv:
 
     def __init__(
         self,
-        machine_setup: ScheduleSetup,
+        machine_setup: ScheduleSetup | None = None,
         constraints: Iterable[Constraint] | None = None,
         objective: Objective | None = None,
-        instance: InstanceTypes | None = None,
+        instance: InstanceTypes | InstanceGenerator | None = None,
         metrics: Mapping[str, Metric[Any]] | None = None,
         render_mode: Renderer | str | None = None,
     ):
+        if machine_setup is None:
+            machine_setup = ScheduleSetup()
+
         self.setup = machine_setup
 
         self.state = ScheduleState()
@@ -130,7 +148,11 @@ class SchedulingEnv:
 
         self.set_objective(objective)
 
-        if instance is not None:
+        self.instance_generator = None
+        if isinstance(instance, InstanceGenerator):
+            self.instance_generator = instance
+
+        elif instance is not None:
             self.set_instance(instance)
 
         self.renderer = (
@@ -445,8 +467,23 @@ class SchedulingEnv:
 
     # Environment API methods
     def reset(self, *, options: Options = None) -> tuple[ObsType, InfoType]:
-        if isinstance(options, dict) and "instance" in options:
-            self.set_instance(options["instance"])
+        if isinstance(options, dict):
+            if "instance" in options:
+                self.set_instance(options["instance"])
+
+            else:
+                generator = (
+                    options["instance_generator"]
+                    if "instance_generator" in options
+                    else self.instance_generator
+                )
+
+                if generator is not None:
+                    seed = options.get("seed", None)
+                    self.set_instance(generator.sample(self, seed=seed))
+
+        elif self.instance_generator is not None:
+            self.set_instance(self.instance_generator.sample(self))
 
         if not self.state.loaded:
             raise ValueError(
@@ -520,57 +557,3 @@ class SchedulingEnv:
 
     def render(self) -> None:
         self.renderer.render(self.state)
-
-    # Custom serialization methods for pickling and deep copying
-    def __reduce__(self) -> Any:
-        """
-        Custom reduce method to ensure the environment can be pickled and deep copied correctly.
-        This is necessary for compatibility with multiprocessing and other serialization
-        mechanisms.
-        """
-        return (
-            self.__class__,
-            (
-                self.setup,
-                None,
-                None,
-                None,  # instance_config will be set later
-                self.metrics,
-                self.renderer,
-            ),
-            (
-                self.constraints,
-                self.setup_constraints,
-                self.passive_constraints,
-                self.combined_constraints,
-                self.objective,
-                self.metrics,
-                self.renderer,
-                self.state,
-                self.schedule,
-                self._prev_obj_value,
-                self.event_count,
-                self.force_reset,
-            ),
-        )
-
-    def __setstate__(self, state: tuple[Any, ...]) -> None:
-        """
-        Custom setstate method to restore the environment's state after unpickling.
-        This is necessary to ensure the environment is correctly initialized with its
-        data and tasks.
-        """
-        (
-            self.constraints,
-            self.setup_constraints,
-            self.passive_constraints,
-            self.combined_constraints,
-            self.objective,
-            self.metrics,
-            self.renderer,
-            self.state,
-            self.schedule,
-            self._prev_obj_value,
-            self.event_count,
-            self.force_reset,
-        ) = state

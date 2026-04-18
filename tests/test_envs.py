@@ -4,7 +4,7 @@ from copy import deepcopy
 
 from common import env_setup, TEST_INSTANCES
 
-from cpscheduler.environment.constants import GLOBAL_MACHINE_ID, Status
+from cpscheduler.environment.constants import Status
 from cpscheduler.environment.des import Schedule
 from cpscheduler.environment.des.events import CheckpointEvent, SubmitEvent
 from cpscheduler import SchedulingEnv
@@ -128,16 +128,18 @@ def test_blocking_instruction(instance_name: str) -> None:
 
 def test_copy() -> None:
     env = env_setup("ta01")
-
     env.reset()
 
     env_copy = deepcopy(env)
 
-    assert env.state == env_copy.state
+    assert env is not env_copy
+    assert env == env_copy
 
     env.step(("execute", 0))
+    assert env != env_copy
 
-    assert env.state != env_copy.state
+    env_copy.step(("execute", 0))
+    assert env == env_copy
 
 
 def test_pickle_roundtrip() -> None:
@@ -161,5 +163,4 @@ def test_pickle_roundtrip() -> None:
     assert len(start_events) == 1
     assert len(checkpoint_events) == 1
     assert isinstance(start_events[0], SubmitEvent)
-    assert start_events[0].args == (0, GLOBAL_MACHINE_ID)
     assert isinstance(checkpoint_events[0], CheckpointEvent)

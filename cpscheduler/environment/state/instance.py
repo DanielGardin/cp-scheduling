@@ -2,11 +2,9 @@ from typing import Any
 from collections.abc import KeysView
 
 from cpscheduler.environment.constants import (
-    MachineID,
-    TaskID,
-    Time,
+    MachineID, TaskID, Time,
     MAX_TIME,
-    PickleState
+    EzPickle
 )
 
 from cpscheduler.environment.utils import convert_to_list
@@ -32,7 +30,7 @@ def check_instance_consistency(instance: dict[str, list[Any]]) -> int:
     return first
 
 
-class ProblemInstance:
+class ProblemInstance(EzPickle):
     __slots__ = (
         "job_ids",
         "job_tasks",
@@ -143,37 +141,3 @@ class ProblemInstance:
         "Remove a machine from processing a given task."
         if machine_id in self.processing_times[task_id]:
             del self.processing_times[task_id][machine_id]
-
-    # Dunder methods
-    def __eq__(self, other: object, /) -> bool:
-        if not isinstance(other, ProblemInstance):
-            return False
-
-        return self.task_instance == other.task_instance
-
-    def __reduce__(self) -> PickleState:
-        state = (
-            self.task_instance,
-            self.n_tasks,
-            self.n_jobs,
-            self.n_machines,
-            self.job_ids,
-            self.job_tasks,
-            self.preemptive,
-            self.optional,
-            self.processing_times,
-        )
-        return (self.__class__, ({},), state)
-
-    def __setstate__(self, state: PickleState) -> None:
-        (
-            self.task_instance,
-            self.n_tasks,
-            self.n_jobs,
-            self.n_machines,
-            self.job_ids,
-            self.job_tasks,
-            self.preemptive,
-            self.optional,
-            self.processing_times,
-        ) = state

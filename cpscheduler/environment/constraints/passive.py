@@ -1,4 +1,3 @@
-from typing import Any
 from collections.abc import Iterable
 
 from cpscheduler.environment.utils import convert_to_list
@@ -28,6 +27,8 @@ class PreemptionConstraint(PassiveConstraint):
         the `allow_preemption` flag in the `SchedulingEnv` initialization.
     """
 
+    __slots__ = ("task_ids", "all_tasks", "preemption_tag")
+
     task_ids: list[TaskID]
     all_tasks: bool
     preemption_tag: str
@@ -45,19 +46,6 @@ class PreemptionConstraint(PassiveConstraint):
 
         else:
             self.task_ids = convert_to_list(task_ids, TaskID)
-
-    def __reduce__(self) -> Any:
-        task_ids = (
-            self.preemption_tag
-            if self.preemption_tag
-            else (self.task_ids if not self.all_tasks else None)
-        )
-
-        return (
-            self.__class__,
-            (task_ids,),
-            (),
-        )
 
     def initialize(self, state: ScheduleState) -> None:
         if self.all_tasks:
@@ -91,8 +79,11 @@ class OptionalityConstraint(PassiveConstraint):
             A list of task IDs to be marked as optional. If None, all tasks are marked as optional.
     """
 
+    __slots__ = ("task_ids", "all_tasks", "optionality_tag")
+
     task_ids: list[TaskID]
     all_tasks: bool
+    optionality_tag: str
 
     def __init__(self, task_ids: Iterable[Int] | str | None = None) -> None:
         self.optionality_tag = ""
@@ -107,19 +98,6 @@ class OptionalityConstraint(PassiveConstraint):
 
         else:
             self.task_ids = convert_to_list(task_ids, TaskID)
-
-    def __reduce__(self) -> Any:
-        task_ids = (
-            self.optionality_tag
-            if self.optionality_tag
-            else (self.task_ids if not self.all_tasks else None)
-        )
-
-        return (
-            self.__class__,
-            (task_ids,),
-            (),
-        )
 
     def initialize(self, state: ScheduleState) -> None:
         if self.all_tasks:
@@ -157,17 +135,12 @@ class ConstantProcessingTime(PassiveConstraint):
             An optional name for the constraint.
     """
 
+    __slots__ = ("processing_time",)
+
     processing_time: Time
 
     def __init__(self, processing_time: Int = 1):
         self.processing_time = Time(processing_time)
-
-    def __reduce__(self) -> Any:
-        return (
-            self.__class__,
-            (self.processing_time,),
-            (),
-        )
 
     def initialize(self, state: ScheduleState) -> None:
         instance = state.instance

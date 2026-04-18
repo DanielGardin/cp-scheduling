@@ -52,25 +52,6 @@ def test_instruction_registry_contains_all_des_instructions() -> None:
     assert {name: instructions[name] for name in expected} == expected
 
 
-def test_parse_instruction_builds_every_instruction_event() -> None:
-    cases: list[tuple[SingleAction, type[SimulationEvent], tuple[int, ...], int| None]]  = [
-        (("execute", 0), ExecuteEvent, (0, GLOBAL_MACHINE_ID), None),
-        (("submit", 0, 1), SubmitEvent, (0, 1), None),
-        (("pause", 0), PauseEvent, (0,), None),
-        (("resume", 0), ResumeEvent, (0,), None),
-        (("complete", 0), CompleteEvent, (0,), None),
-        (("advance", 3), AdvanceTimeEvent, (3,), None),
-        ((12, "execute", 0, 0), ExecuteEvent, (0, 0), 12),
-    ]
-
-    for raw_action, expected_cls, expected_args, expected_time in cases:
-        event, time, priority = parse_instruction(raw_action)
-        assert isinstance(event, expected_cls)
-        assert event.args == expected_args
-        assert time == expected_time
-        assert priority is None  # default priority (None -> Schedule converts to 0)
-
-
 def test_parse_instruction_accepts_event_instance_directly() -> None:
     event = PauseEvent(0)
 

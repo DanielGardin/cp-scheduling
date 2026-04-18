@@ -1,13 +1,10 @@
 from typing import Any, TypeAlias, Literal, cast
 
 from cpscheduler.environment.constants import (
-    MAX_TIME,
-    MachineID,
-    TaskID,
-    Time,
-    GLOBAL_MACHINE_ID,
+    MachineID, TaskID, Time, Status,
+    MIN_TIME, MAX_TIME, GLOBAL_MACHINE_ID,
+    EzPickle
 )
-from cpscheduler.environment.constants import Status, MIN_TIME, PickleState
 
 from cpscheduler.environment.state.csp import (
     TaskDomains,
@@ -26,6 +23,8 @@ from cpscheduler.environment.state.events import (
 
 from cpscheduler.environment.state.instance import ProblemInstance
 from cpscheduler.environment.state.runtime import RuntimeState, TaskHistory
+
+# import cpscheduler.environment.debug as debug
 
 ObsType: TypeAlias = tuple[dict[str, list[Any]], dict[str, list[Any]]]
 
@@ -73,8 +72,7 @@ UB: Bound = False
 
 UNKNOWN_TASK: TaskID = -1
 
-
-class ScheduleState:
+class ScheduleState(EzPickle):
     """
     ScheduleState represents the current state of the scheduling environment,
     working as both a Discrete Event Simulation (DES) state and a Constraint
@@ -217,6 +215,10 @@ class ScheduleState:
     @property
     def loaded(self) -> bool:
         return self.instance.loaded
+
+    @property
+    def debug_mode(self) -> bool:
+        return self._debug_checks
 
     # Instance control methods
     def read_instance(
@@ -703,7 +705,12 @@ class ScheduleState:
         domains = self.domains
         time = self.time
 
-        self._debug_validate_machine_id(task_id, machine_id, allow_global=True)
+        # if self._debug_checks:
+        #     debug.validate_machine_id(
+        #         task_id, machine_id, self,
+        #         allow_global=True,
+        #         origin="reset_bounds"
+        #     )
 
         if (
             self.is_fixed(task_id)
@@ -735,7 +742,12 @@ class ScheduleState:
             self._recompute_global_bound(task_id, END, LB)
             end.global_ubs[task_id] = MAX_TIME
 
-            self._debug_validate_bounds(task_id, machine_id)
+            # if self._debug_checks:
+            #     debug.validate_domain_bounds(
+            #         task_id, self,
+            #         machine_id=machine_id,
+            #         origin="reset_bounds"
+            #     )
 
             return
 
@@ -760,7 +772,11 @@ class ScheduleState:
             DomainEvent(task_id, BOUNDS_RESET)
         )
 
-        self._debug_validate_bounds(task_id)
+        # if self._debug_checks:
+        #     debug.validate_domain_bounds(
+        #         task_id, self,
+        #         origin="reset_bounds"
+        #     )
 
     def fail(self, task_id: TaskID = UNKNOWN_TASK) -> None:
         """
@@ -859,8 +875,6 @@ class ScheduleState:
         if machine_id == GLOBAL_MACHINE_ID:
             raise ValueError(f"Cannot assign to the global machine {GLOBAL_MACHINE_ID}.")
 
-        self._debug_validate_machine_id(task_id, machine_id)
-
         start_time = self.time
         domains = self.domains
         runtime = self.runtime
@@ -933,7 +947,12 @@ class ScheduleState:
             TaskHistory(machine_id, start_time, end_time)
         )
 
-        self._debug_validate_bounds(task_id, machine_id)
+        # if self._debug_checks:
+        #     debug.validate_domain_bounds(
+        #         task_id, self,
+        #         machine_id=machine_id,
+        #         origin="execute_task"
+        #     )
 
     def pause_task(self, task_id: TaskID) -> None:
         pause_time = self.time
@@ -1014,7 +1033,11 @@ class ScheduleState:
         if prev_entry.end_time == runtime.last_completion_time:
             runtime.recompute_last_completion_time()
 
-        self._debug_validate_bounds(task_id)
+        # if self._debug_checks:
+        #     debug.validate_domain_bounds(
+        #         task_id, self,
+        #         origin="pause_task"
+        #     )
 
     # Runtime utils
 
@@ -1062,48 +1085,3 @@ class ScheduleState:
         task_obs["available"] = available
 
         return task_obs, {}
-
-    def __reduce__(self) -> PickleState:
-        state = (
-            self.instance,
-            self.time,
-            self.infeasible,
-            self._debug_checks,
-            self.domains,
-            self.runtime,
-            self.domain_event_queue,
-            self.runtime_event_queue,
-        )
-        return (self.__class__, (), state)
-
-    def __setstate__(self, state: PickleState) -> None:
-        (
-            self.instance,
-            self.time,
-            self.infeasible,
-            self._debug_checks,
-            self.domains,
-            self.runtime,
-            self.domain_event_queue,
-            self.runtime_event_queue,
-        ) = state
-
-    def __eq__(self, other: Any) -> bool:
-        if not isinstance(other, ScheduleState):
-            return False
-
-        return (
-            self.instance == other.instance
-            and self.time == other.time
-            and self.infeasible == other.infeasible
-            and self.domains == other.domains
-            and self.runtime == other.runtime
-        )
-
-    def __repr__(self) -> str:
-        return (
-            f"ScheduleState(time={self.time}, "
-            f"instance={self.instance}, "
-            f"domains={self.domains}, "
-            f"runtime={self.runtime})"
-        )

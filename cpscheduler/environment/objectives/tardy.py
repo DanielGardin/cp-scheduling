@@ -1,5 +1,3 @@
-from typing import Any
-
 from cpscheduler.environment.utils import convert_to_list
 from cpscheduler.environment.constants import MachineID, TaskID, Time
 from cpscheduler.environment.state import ScheduleState
@@ -15,6 +13,9 @@ class TotalTardyJobs(Objective):
     A job is tardy if its completion time exceeds its due date.
     """
 
+    __slots__ = ("_tardy_jobs", "due_tag", "due_dates")
+
+
     _tardy_jobs: set[TaskID]
 
     due_tag: str
@@ -28,16 +29,6 @@ class TotalTardyJobs(Objective):
         super().__init__(minimize)
         self.due_tag = due_dates
         self._tardy_jobs = set()
-
-    def __reduce__(self) -> Any:
-        return (
-            self.__class__,
-            (self.due_tag, self.minimize),
-            (self._tardy_jobs, self.due_dates,),
-        )
-
-    def __setstate__(self, state: tuple[Any, ...]) -> None:
-        (self._tardy_jobs, self.due_dates,) = state
 
     def initialize(self, state: ScheduleState) -> None:
         self.due_dates = convert_to_list(
@@ -81,9 +72,15 @@ class WeightedTardyJobs(Objective):
     A job is tardy if its completion time exceeds its due date.
     """
 
+    __slots__ = (
+        "_weighted_job_tardy",
+        "weight_tag", "job_weights",
+        "due_tag", "due_dates"
+    )
+
     _weighted_job_tardy: dict[TaskID, float]
 
-    weights_tag: str
+    weight_tag: str
     job_weights: list[float]
 
     due_tag: str
@@ -101,16 +98,6 @@ class WeightedTardyJobs(Objective):
         self.weight_tag = job_weights
 
         self._weighted_job_tardy = {}
-
-    def __reduce__(self) -> Any:
-        return (
-            self.__class__,
-            (self.due_tag, self.weight_tag, self.minimize),
-            (self._weighted_job_tardy, self.due_dates, self.job_weights),
-        )
-
-    def __setstate__(self, state: tuple[Any, ...]) -> None:
-        (self._weighted_job_tardy, self.due_dates, self.job_weights) = state
 
     def initialize(self, state: ScheduleState) -> None:
         self.due_dates = convert_to_list(
