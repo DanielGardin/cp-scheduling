@@ -1,11 +1,8 @@
-from mypy_extensions import mypyc_attr
-
 from cpscheduler.environment.constants import MachineID, TaskID, EzPickle
 from cpscheduler.environment.state import ScheduleState
 
 objectives: dict[str, type["Objective"]] = {}
 
-@mypyc_attr(allow_interpreted_subclasses=True)
 class Objective(EzPickle):
     """
     Base class for all objective functions in the scheduling environment.
@@ -15,8 +12,6 @@ class Objective(EzPickle):
     They can be used to guide the search for an optimal schedule by providing a
     numerical value that represents the quality of the schedule.
     """
-
-    __slots__ = ("minimize",)
 
     minimize: bool
 
@@ -40,7 +35,7 @@ class Objective(EzPickle):
     def __repr__(self) -> str:
         sense = "minimize" if self.minimize else "maximize"
 
-        return f"{self.__class__.__name__}(sense={sense})"
+        return f"{type(self).__name__}(sense={sense})"
 
     def initialize(self, state: ScheduleState) -> None:
         "Initialize the objective with the given schedule state."
@@ -79,15 +74,11 @@ class Objective(EzPickle):
         return ""
 
 
-@mypyc_attr(allow_interpreted_subclasses=True)
 class RegularObjective(Objective):
     """
     A regular objective is non-decreasing with respect to completion times.
     Any objective that depends solely on completion times is regular.
     """
-
-    __slots__ = ()
-
 
     def __init__(
         self, minimize: bool = True

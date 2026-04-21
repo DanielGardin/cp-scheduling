@@ -1,5 +1,7 @@
 from typing import Any, TypeAlias, Literal, cast
 
+from mypy_extensions import mypyc_attr
+
 from cpscheduler.environment.constants import (
     MachineID, TaskID, Time, Status,
     MIN_TIME, MAX_TIME, GLOBAL_MACHINE_ID,
@@ -72,6 +74,7 @@ UB: Bound = False
 
 UNKNOWN_TASK: TaskID = -1
 
+@mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
 class ScheduleState(EzPickle):
     """
     ScheduleState represents the current state of the scheduling environment,
@@ -83,17 +86,6 @@ class ScheduleState(EzPickle):
     the SchedulingEnv class, which knows the constraints and how to propagate
     changes through them.
     """
-
-    __slots__ = (
-        "instance",
-        "time",
-        "infeasible",
-        "_debug_checks",
-        "domains",
-        "runtime",
-        "domain_event_queue",
-        "runtime_event_queue",
-    )
 
     instance: ProblemInstance
 
@@ -128,34 +120,29 @@ class ScheduleState(EzPickle):
         self,
         task_id: TaskID,
         machine_id: MachineID,
-        *,
         allow_global: bool = False,
+        origin: str = "_debug_validate_machine_id"
     ) -> None:
-        if not self._debug_checks:
-            return
-
         if allow_global and machine_id == GLOBAL_MACHINE_ID:
             return
 
         if machine_id < 0 or machine_id >= self.n_machines:
             raise RuntimeError(
-                f"Invalid machine_id={machine_id} for task {task_id}. "
+                f"{origin}: Invalid machine_id={machine_id} for task {task_id}. "
                 f"Expected [0, {self.n_machines - 1}]."
             )
 
         if machine_id not in self.instance.processing_times[task_id]:
             raise RuntimeError(
-                f"Machine {machine_id} is not valid for task {task_id}."
+                f"{origin}: Machine {machine_id} is not valid for task {task_id}."
             )
 
     def _debug_validate_bounds(
         self,
         task_id: TaskID,
         machine_id: MachineID = GLOBAL_MACHINE_ID,
+        origin: str = "_debug_validate_bounds"
     ) -> None:
-        if not self._debug_checks:
-            return
-
         domains = self.domains
         row = task_id * self.n_machines
 
@@ -705,12 +692,12 @@ class ScheduleState(EzPickle):
         domains = self.domains
         time = self.time
 
-        # if self._debug_checks:
-        #     debug.validate_machine_id(
-        #         task_id, machine_id, self,
-        #         allow_global=True,
-        #         origin="reset_bounds"
-        #     )
+        if self._debug_checks:
+            self._debug_validate_machine_id(
+                task_id, machine_id,
+                allow_global=True,
+                origin="reset_bounds"
+            )
 
         if (
             self.is_fixed(task_id)
@@ -742,12 +729,11 @@ class ScheduleState(EzPickle):
             self._recompute_global_bound(task_id, END, LB)
             end.global_ubs[task_id] = MAX_TIME
 
-            # if self._debug_checks:
-            #     debug.validate_domain_bounds(
-            #         task_id, self,
-            #         machine_id=machine_id,
-            #         origin="reset_bounds"
-            #     )
+            if self._debug_checks:
+                self._debug_validate_bounds(
+                    task_id, machine_id,
+                    origin="reset_bounds"
+                )
 
             return
 
@@ -772,11 +758,11 @@ class ScheduleState(EzPickle):
             DomainEvent(task_id, BOUNDS_RESET)
         )
 
-        # if self._debug_checks:
-        #     debug.validate_domain_bounds(
-        #         task_id, self,
-        #         origin="reset_bounds"
-        #     )
+        if self._debug_checks:
+            self._debug_validate_bounds(
+                task_id,
+                origin="reset_bounds"
+            )
 
     def fail(self, task_id: TaskID = UNKNOWN_TASK) -> None:
         """
@@ -947,12 +933,11 @@ class ScheduleState(EzPickle):
             TaskHistory(machine_id, start_time, end_time)
         )
 
-        # if self._debug_checks:
-        #     debug.validate_domain_bounds(
-        #         task_id, self,
-        #         machine_id=machine_id,
-        #         origin="execute_task"
-        #     )
+        if self._debug_checks:
+            self._debug_validate_bounds(
+                task_id, machine_id,
+                origin="execute_task"
+            )
 
     def pause_task(self, task_id: TaskID) -> None:
         pause_time = self.time
@@ -1033,11 +1018,11 @@ class ScheduleState(EzPickle):
         if prev_entry.end_time == runtime.last_completion_time:
             runtime.recompute_last_completion_time()
 
-        # if self._debug_checks:
-        #     debug.validate_domain_bounds(
-        #         task_id, self,
-        #         origin="pause_task"
-        #     )
+        if self._debug_checks:
+            self._debug_validate_bounds(
+                task_id,
+                origin="pause_task"
+            )
 
     # Runtime utils
 
@@ -1085,3 +1070,18 @@ class ScheduleState(EzPickle):
         task_obs["available"] = available
 
         return task_obs, {}
+
+    def __eq__(self, value: Any) -> bool:
+        if not isinstance(value, ScheduleState):
+            return False
+
+        return (
+            self.instance == value.instance
+            and self.time == value.time
+            and self.infeasible == value.infeasible
+            and self._debug_checks == value._debug_checks
+            and self.domains == value.domains
+            and self.runtime == value.runtime
+            and self.domain_event_queue == value.domain_event_queue
+            and self.runtime_event_queue == value.runtime_event_queue
+        )

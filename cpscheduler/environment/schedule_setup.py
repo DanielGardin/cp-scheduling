@@ -8,12 +8,10 @@ identical parallel machines, uniform parallel machines, job shop, and open shop 
 
 from collections.abc import Iterable
 
-from mypy_extensions import mypyc_attr
-
 from cpscheduler.environment.utils import convert_to_list
 
 from cpscheduler.environment.constants import (
-    MachineID, Time, Int, CustomDataclass
+    MachineID, Time, Int, EzPickle
 )
 from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.constraints import (
@@ -28,8 +26,7 @@ def ceil_div(a: Time, b: Time) -> Time:
     return -(-a // b)
 
 
-@mypyc_attr(allow_interpreted_subclasses=True)
-class ScheduleSetup(CustomDataclass):
+class ScheduleSetup(EzPickle):
     """
     Base class for scheduling setups. It defines the common interface for all scheduling setups
     and provides methods to parse process times, set tasks, and setup constraints.
@@ -60,7 +57,8 @@ class SingleMachineSetup(ScheduleSetup):
     This setup is used for scheduling tasks on a single machine.
     """
 
-    __slots__ = ("processing_times", "disjunctive")
+    processing_times: str
+    disjunctive: bool
 
     def __init__(
         self,
@@ -95,7 +93,9 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
     This setup is used for scheduling tasks on multiple machines using the same processing time.
     """
 
-    __slots__ = ("n_machines", "processing_times", "disjunctive")
+    n_machines: int
+    processing_times: str 
+    disjunctive: bool
 
     def __init__(
         self,
@@ -130,7 +130,9 @@ class UniformParallelMachineSetup(ScheduleSetup):
     This setup is used for scheduling tasks on multiple machines with different speeds.
     """
 
-    __slots__ = ("speed", "processing_times", "disjunctive")
+    speed: list[int]
+    processing_times: str
+    disjunctive: bool
 
     def __init__(
         self,
@@ -167,7 +169,8 @@ class UniformParallelMachineSetup(ScheduleSetup):
 
 class UnrelatedParallelMachineSetup(ScheduleSetup):
 
-    __slots__ = ("processing_times", "disjunctive")
+    processing_times: list[str]
+    disjunctive: bool
 
     def __init__(
         self,
@@ -207,7 +210,9 @@ class OpenShopSetup(ScheduleSetup):
     processed on any machine, and the order of operations is not fixed.
     """
 
-    __slots__ = ("processing_times", "machine_feature", "disjunctive")
+    processing_times: str
+    machine_feature: str
+    disjunctive: bool
 
     def __init__(
         self,
@@ -252,7 +257,7 @@ class JobShopSetup(OpenShopSetup):
     operation order and is assigned to a specific machine.
     """
 
-    __slots__ = ("operation_order",)
+    operation_order: str
 
     def __init__(
         self,
@@ -317,7 +322,7 @@ class FlexibleJobShopSetup(UnrelatedParallelMachineSetup):
     allowing for more scheduling options and potentially better solutions.
     """
 
-    __slots__ = ("operation_order",)
+    operation_order: str
 
     def __init__(
         self,

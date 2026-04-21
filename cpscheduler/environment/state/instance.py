@@ -1,6 +1,8 @@
 from typing import Any
 from collections.abc import KeysView
 
+from mypy_extensions import mypyc_attr
+
 from cpscheduler.environment.constants import (
     MachineID, TaskID, Time,
     MAX_TIME,
@@ -30,18 +32,9 @@ def check_instance_consistency(instance: dict[str, list[Any]]) -> int:
     return first
 
 
+@mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
 class ProblemInstance(EzPickle):
-    __slots__ = (
-        "job_ids",
-        "job_tasks",
-        "preemptive",
-        "optional",
-        "processing_times",
-        "task_instance",
-        "n_tasks",
-        "n_jobs",
-        "n_machines",
-    )
+    __args__ = ("task_instance",)
 
     job_ids: list[TaskID]
     job_tasks: list[list[TaskID]]
@@ -56,10 +49,7 @@ class ProblemInstance(EzPickle):
     n_jobs: int
     n_machines: int
 
-    def __init__(
-        self,
-        task_instance: dict[str, list[Any]],
-    ) -> None:
+    def __init__(self, task_instance: dict[str, list[Any]]) -> None:
         task_instance = task_instance.copy()
 
         n_tasks = check_instance_consistency(task_instance)
@@ -141,3 +131,19 @@ class ProblemInstance(EzPickle):
         "Remove a machine from processing a given task."
         if machine_id in self.processing_times[task_id]:
             del self.processing_times[task_id][machine_id]
+
+    def __eq__(self, value: object, /) -> bool:
+        if not isinstance(value, ProblemInstance):
+            return False
+
+        return (
+            self.job_ids == value.job_ids
+            and self.job_tasks == value.job_tasks
+            and self.preemptive == value.preemptive
+            and self.optional == value.optional
+            and self.processing_times == value.processing_times
+            and self.task_instance == value.task_instance
+            and self.n_tasks == value.n_tasks
+            and self.n_jobs == value.n_jobs
+            and self.n_machines == value.n_machines
+        )

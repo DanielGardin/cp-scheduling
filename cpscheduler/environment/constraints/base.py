@@ -1,5 +1,4 @@
 from typing import NoReturn, final
-from mypy_extensions import mypyc_attr
 
 from cpscheduler.environment.state.events import DomainEvent, VarField
 from cpscheduler.environment.state import ScheduleState
@@ -19,8 +18,6 @@ STATE_INFEASIBLE = VarField.STATE_INFEASIBLE
 
 constraints: dict[str, type["Constraint"]] = {}
 
-
-@mypyc_attr(allow_interpreted_subclasses=True)
 class Constraint(EzPickle):
     """
     Base class for all constraints in the scheduling environment.
@@ -142,7 +139,6 @@ class Constraint(EzPickle):
         "Produce the β entry for the constraint."
         return ""
 
-@mypyc_attr(allow_interpreted_subclasses=True)
 class PassiveConstraint(Constraint):
     """
     Passive constraints are compile-time constraints on the instance and do not interact with

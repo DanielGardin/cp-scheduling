@@ -1,10 +1,12 @@
 from typing import Final, Literal
 from typing_extensions import assert_never
 
+from mypy_extensions import mypyc_attr
+
 from cpscheduler.environment.constants import (
     TaskID, MachineID,
     GLOBAL_MACHINE_ID,
-    Enum, CustomDataclass
+    Enum, EzPickle
 )
 
 VarFieldType = Literal[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
@@ -94,12 +96,12 @@ def field_to_str(field: VarFieldType) -> str:
     assert_never(field)
 
 
-class DomainEvent(CustomDataclass):
+@mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
+class DomainEvent(EzPickle):
     """
     Container for CP events in the scheduling environment.
     """
-
-    __slots__ = ("task_id", "field", "machine_id")
+    __args__ = ("task_id", "field", "machine_id")
 
     task_id: TaskID
     field: VarFieldType
@@ -115,13 +117,15 @@ class DomainEvent(CustomDataclass):
         self.field = field
         self.machine_id = machine_id
 
-    def __repr__(self) -> str:
-        string = f"DomainEvent(task_id={self.task_id}, field={field_to_str(self.field)}"
-
-        if self.machine_id != GLOBAL_MACHINE_ID:
-            string += f", machine_id={self.machine_id}"
-
-        return string + ")"
+    def __eq__(self, value: object, /) -> bool:
+        if not isinstance(value, DomainEvent):
+            return False
+        
+        return (
+            self.task_id == value.task_id
+            and self.field == value.field
+            and self.machine_id == value.machine_id
+        )
 
 
 EventKindType = Literal[0, 1, 2]
@@ -149,12 +153,12 @@ def kind_to_str(kind: EventKindType) -> str:
     
     assert_never(kind)
 
-class RuntimeEvent(CustomDataclass):
+@mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
+class RuntimeEvent(EzPickle):
     """
     Container for runtime events in the scheduling environment.
     """
-
-    __slots__ = ("task_id", "kind", "machine_id")
+    __args__ = ("task_id", "kind", "machine_id")
 
     task_id: TaskID
     kind: EventKindType
@@ -170,10 +174,12 @@ class RuntimeEvent(CustomDataclass):
         self.kind = kind
         self.machine_id = machine_id
 
-    def __repr__(self) -> str:
-        string = f"RuntimeEvent(task_id={self.task_id}, kind={kind_to_str(self.kind)}"
-
-        if self.machine_id != GLOBAL_MACHINE_ID:
-            string += f", machine_id={self.machine_id}"
-
-        return string + ")"
+    def __eq__(self, value: object, /) -> bool:
+        if not isinstance(value, RuntimeEvent):
+            return False
+        
+        return (
+            self.task_id == value.task_id
+            and self.kind == value.kind
+            and self.machine_id == value.machine_id
+        )

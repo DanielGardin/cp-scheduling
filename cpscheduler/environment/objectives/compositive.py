@@ -23,8 +23,6 @@ class ComposedObjective(Objective):
             Whether to minimize or maximize the objective function.
     """
 
-    __slots__ = ("objectives", "coefficients")
-
     objectives: list[Objective]
     coefficients: list[float]
 

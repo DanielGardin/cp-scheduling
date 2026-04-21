@@ -37,8 +37,6 @@ class MachineEligibilityConstraint(Constraint):
         can be executed on the original set of machines defined by the scheduling setup.
     """
 
-    __slots__ = ("eligibility",)
-
     eligibility: dict[TaskID, set[MachineID]]
 
     def __init__(self, eligibility: Mapping[Int, Iterable[Int]] | None = None):
@@ -102,8 +100,6 @@ class MachineConstraint(Constraint):
     machines they can be assigned to, use the MachineEligibilityConstraint instead.
     """
 
-    __slots__ = ("machine_map",)
-
     machine_map: list[set[TaskID]]
 
     def __init__(self) -> None:
@@ -165,8 +161,6 @@ class MachineBreakdownConstraint(Constraint):
         name: Optional[str] = None
             An optional name for the constraint.
     """
-
-    __slots__ = ("breakdowns", "next_breakdown")
 
     breakdowns: dict[MachineID, list[tuple[Time, Time]]]
     next_breakdown: dict[MachineID, int]
@@ -297,13 +291,6 @@ class BatchConstraint(Constraint):
     Generalization of MachineConstraint (which corresponds to b = 1).
     Each machine can process up to `capacity[m]` tasks simultaneously,
     """
-    __slots__ = (
-        "constant_capacity",
-        "machine_map",
-        "capacity",
-        "running_tasks",
-        "next_free_time"
-    )
 
     constant_capacity: int | None
 

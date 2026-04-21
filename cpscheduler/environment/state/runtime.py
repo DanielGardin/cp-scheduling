@@ -1,7 +1,9 @@
+from mypy_extensions import mypyc_attr
+
 from cpscheduler.environment.constants import (
     MachineID, TaskID, Time, Status, StatusType,
     MIN_TIME,
-    EzPickle, CustomDataclass
+    EzPickle
 )
 
 from cpscheduler.environment.state.instance import ProblemInstance
@@ -10,8 +12,10 @@ DUMMY_INSTANCE = ProblemInstance({})
 
 AWAITING = Status.AWAITING
 
-class TaskHistory(CustomDataclass):
+@mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
+class TaskHistory(EzPickle):
     "A record of a task execution, (machine_id, start_time, end_time)"
+    __args__ = ("machine_id", "start_time", "end_time")
 
     machine_id: MachineID
     start_time: Time
@@ -22,7 +26,17 @@ class TaskHistory(CustomDataclass):
         self.start_time = start_time
         self.end_time = end_time
 
+    def __eq__(self, value: object, /) -> bool:
+        if not isinstance(value, TaskHistory):
+            return False
+        
+        return (
+            self.machine_id == value.machine_id
+            and self.start_time == value.start_time
+            and self.end_time == value.end_time
+        )
 
+@mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
 class RuntimeState(EzPickle):
     """
     Container for the runtime state of the scheduling environment.
@@ -31,17 +45,6 @@ class RuntimeState(EzPickle):
     needed by constraints or other components of the environment. It is designed
     to be flexible and can be extended with additional attributes as needed.
     """
-
-    __slots__ = (
-        "history",
-        "prerequisites",
-        "status",
-        "awaiting_tasks",
-        "unlocked_tasks",
-        "executing_tasks",
-        "completed_tasks",
-        "last_completion_time"
-    )
 
     history: list[list[TaskHistory]]
 
@@ -118,3 +121,18 @@ class RuntimeState(EzPickle):
                 best = completion_time
         
         self.last_completion_time = best
+
+    def __eq__(self, value: object, /) -> bool:
+        if not isinstance(value, RuntimeState):
+            return False
+        
+        return (
+            self.history == value.history
+            and self.prerequisites == value.prerequisites
+            and self.status == value.status
+            and self.awaiting_tasks == value.awaiting_tasks
+            and self.unlocked_tasks == value.unlocked_tasks
+            and self.executing_tasks == value.executing_tasks
+            and self.completed_tasks == value.completed_tasks
+            and self.last_completion_time == value.last_completion_time
+        )

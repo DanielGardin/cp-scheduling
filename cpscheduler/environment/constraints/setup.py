@@ -23,8 +23,6 @@ class SetupConstraint(Constraint):
             An optional name for the constraint.
     """
 
-    __slots__ = ("setup_times", "current_setup_times")
-
     setup_times: dict[TaskID, dict[TaskID, Time]]
     current_setup_times: dict[TaskID, dict[TaskID, Time]]
 

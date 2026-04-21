@@ -1,6 +1,8 @@
 from typing import Literal, Final
 from typing_extensions import assert_never
 
+from mypy_extensions import mypyc_attr
+
 from cpscheduler.environment.constants import (
     MachineID, TaskID, Time,
     GLOBAL_MACHINE_ID, MAX_TIME, MIN_TIME,
@@ -9,11 +11,7 @@ from cpscheduler.environment.constants import (
 
 from cpscheduler.environment.state.instance import ProblemInstance
 
-
 DUMMY_INSTANCE = ProblemInstance({})
-
-# Helper constants to avoid calling getattr on enums
-
 
 PresenceType = Literal[0b00, 0b01, 0b10, 0b11]
 
@@ -70,7 +68,7 @@ def presence_to_str(presence: PresenceType) -> str:
     assert_never(presence)
 
 
-
+@mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
 class Bounds(EzPickle):
     """
     Container for integer bounds in the scheduling environment.
@@ -90,14 +88,6 @@ class Bounds(EzPickle):
     Never acess or modify the bounds directly outside of ScheduleState to ensure
     consistency.
     """
-
-    __slots__ = (
-        "n_machines",
-        "lbs",
-        "global_lbs",
-        "ubs",
-        "global_ubs",
-    )
 
     n_machines: int
 
@@ -155,7 +145,20 @@ class Bounds(EzPickle):
 
         return self.ubs[task_id * self.n_machines + machine_id]
 
+    def __eq__(self, value: object, /) -> bool:
+        if not isinstance(value, Bounds):
+            return False
+        
+        return (
+            self.n_machines ==value.n_machines
+            and self.lbs ==value.lbs
+            and self.global_lbs ==value.global_lbs
+            and self.ubs ==value.ubs
+            and self.global_ubs ==value.global_ubs
+        )
 
+
+@mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
 class TaskDomains(EzPickle):
     """
     Container for the task variables in the scheduling environment.
@@ -164,16 +167,6 @@ class TaskDomains(EzPickle):
     ScheduleState to ensure consistency and proper updates of the bounds and
     feasibility checks.
     """
-
-    __slots__ = (
-        "original_machines",
-        "feasible_machines",
-        "remaining_times",
-        "assignment",
-        "presence",
-        "start",
-        "end",
-    )
 
     original_machines: list[tuple[MachineID, ...]]
 
@@ -233,3 +226,17 @@ class TaskDomains(EzPickle):
 
     def get_feasible_machines(self, task_id: TaskID) -> tuple[MachineID, ...]:
         return tuple(self.feasible_machines[task_id])
+
+    def __eq__(self, value: object, /) -> bool:
+        if not isinstance(value, TaskDomains):
+            return False
+        
+        return (
+            self.original_machines == value.original_machines
+            and self.feasible_machines == value.feasible_machines
+            and self.remaining_times == value.remaining_times
+            and self.assignment == value.assignment
+            and self.presence == value.presence
+            and self.start == value.start
+            and self.end == value.end
+        )

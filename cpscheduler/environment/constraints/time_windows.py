@@ -21,8 +21,6 @@ class HorizonConstraint(Constraint):
             The upper bound on the completion time of all tasks.
     """
 
-    __slots__ = ("horizon",)
-
     horizon: Time
 
     def __init__(self, horizon: Int = MAX_TIME):
@@ -49,8 +47,6 @@ class ReleaseDateConstraint(Constraint):
             A mapping of task IDs to their respective release dates. If a string is provided,
             it refers to a column in the tasks data that contains the release dates for each task.
     """
-
-    __slots__ = ("release_tag", "release_dates")
 
     release_tag: str
     release_dates: list[Time]
@@ -87,8 +83,6 @@ class DeadlineConstraint(Constraint):
         name: Optional[str] = None
             An optional name for the constraint.
     """
-
-    __slots__ = ("due_tag", "due_dates", "const_due")
 
     due_tag: str
     due_dates: list[Time]

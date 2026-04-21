@@ -13,8 +13,6 @@ class TotalTardyJobs(Objective):
     A job is tardy if its completion time exceeds its due date.
     """
 
-    __slots__ = ("_tardy_jobs", "due_tag", "due_dates")
-
 
     _tardy_jobs: set[TaskID]
 
@@ -71,12 +69,6 @@ class WeightedTardyJobs(Objective):
     weighted number of tardy jobs.
     A job is tardy if its completion time exceeds its due date.
     """
-
-    __slots__ = (
-        "_weighted_job_tardy",
-        "weight_tag", "job_weights",
-        "due_tag", "due_dates"
-    )
 
     _weighted_job_tardy: dict[TaskID, float]
 

@@ -1,28 +1,25 @@
 "Common types and constants used in the environment module."
 
 from typing import (
-    Any, TypeAlias, Final, SupportsInt, SupportsFloat, Literal, final
+    Any, Final, SupportsInt, SupportsFloat, Literal, ClassVar, cast, final
 )
 from typing_extensions import Self
-from collections.abc import Iterator
 
-from mypy_extensions import i64, i32, i16, u8
-
-import copy
+from mypy_extensions import i64, i32, i16, u8, mypyc_attr
 
 # ------------------------------------------------------------------------------
 # Type aliases for commonly used types
 
-IndexType: TypeAlias = i32
+IndexType = i32
 
-MachineID: TypeAlias = IndexType
-TaskID: TypeAlias = IndexType
+MachineID = IndexType
+TaskID = IndexType
 
-Time: TypeAlias = i32
+Time = i32
 
 # Generic numeric types
-Int: TypeAlias = SupportsInt | int | i64 | i32 | i16 | u8
-Float: TypeAlias = SupportsFloat | float | i64 | i32 | i16 | u8
+Int = SupportsInt | int | i64 | i32 | i16 | u8
+Float = SupportsFloat | float | i64 | i32 | i16 | u8
 
 # ------------------------------------------------------------------------------
 # Constants
@@ -36,14 +33,15 @@ GLOBAL_MACHINE_ID: MachineID = -1
 # ------------------------------------------------------------------------------
 # Enums
 
+@mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
 class Enum:
-    __slots__ = ()
-
     def __init__(self) -> None:
-        raise ValueError(f"Cannot instantiate enum class {self.__class__}")
+        raise ValueError(
+            f"Cannot instantiate enum class {type(self).__name__}"
+        )
 
 
-StatusType: TypeAlias = Literal[0, 1, 2, 3]
+StatusType = Literal[0, 1, 2, 3]
 
 
 class Status(Enum):
@@ -64,140 +62,104 @@ class Status(Enum):
 # ------------------------------------------------------------------------------
 # Pickling utils
 
-PickleState: TypeAlias = list[tuple[str, Any]]
+PickleState = list[tuple[str, Any]]
 "Internal state of an object when serializing it"
 
-ReduceReturn: TypeAlias = tuple[type, PickleState, PickleState]
+def _collect_fields(cls: type) -> tuple[str, ...]:
+    # explicit always wins
+    fields = getattr(cls, "__ez_fields__", None)
+    if fields is not None:
+        return cast(tuple[str, ...], fields)
 
-def _iter_slots(obj: object) -> Iterator[Any]:
-    return (
-        slot
-        for cls in type(obj).__mro__
-        for slot in getattr(cls, '__slots__', ())
-        if slot != '__weakref__' and hasattr(obj, slot)
+    # mypyc path (authoritative)
+    attrs = getattr(cls, "__mypyc_attrs__", None)
+    if attrs is not None:
+        return tuple(
+            name for name in cast(tuple[str, ...], attrs)
+            if not (name.startswith("__") and name.endswith("__"))
+        )
+
+    # interpreted fallback: __annotations__ only
+    seen: set[str] = set()
+    result: list[str] = []
+
+    for c in reversed(cls.__mro__):
+        annotations = cast(
+            dict[str, type], c.__dict__.get("__annotations__", {})
+        )
+
+        for name in annotations:
+            if (name.startswith("__") and name.endswith("__")):
+                continue
+
+            if name not in seen:
+                seen.add(name)
+                result.append(name)
+
+    return tuple(result)
+
+def _iter_state(obj: object) -> tuple[str, ...]:
+    cls = type(obj)
+    return tuple(
+        name for name in _collect_fields(cls)
+        if hasattr(obj, name)
     )
 
-
+@mypyc_attr(native_class=True, allow_interpreted_subclasses=True)
 class EzPickle:
     """
-    Simplified EzPickle for classes with only optional/keyword parameters.
-    
-    You must implement __slots__ with the class-defined variables in order
-    to correctly pickle/deepcopy the object.
+    mypyc-compatible structural serialization.
+
+    Field source:
+    - compiled: __mypyc_attrs__
+    - interpreted: __annotations__
     """
-
-    __slots__ = ()
-
-    @final
-    def __reduce__(self) -> tuple[type, tuple[()], PickleState]:
-        return (self.__class__, (), self.__getstate__())
+    __args__: ClassVar[tuple[str, ...] | None] = None
 
     @final
     def __getstate__(self) -> PickleState:
-        return [
-            (slot, getattr(self, slot))
-            for slot in _iter_slots(self)
-        ]
+        return [(name, getattr(self, name)) for name in _iter_state(self)]
 
     @final
-    def __setstate__(self, state: PickleState) -> None:
-        for key, value in state:
+    def __setstate__(self, state: PickleState | dict[str, Any]) -> None:
+        items = state.items() if isinstance(state, dict) else state
+        for key, value in items:
             object.__setattr__(self, key, value)
 
     @final
-    def __deepcopy__(self, memo: dict[int, Any]) -> Self:
+    def __reduce__(self) -> tuple[type[Self], tuple[Any, ...], dict[str, Any]] | tuple[type[Self], tuple[()], PickleState]:
         cls = type(self)
-        new_obj = cls.__new__(cls)
+        fields = _collect_fields(cls)
+        args_spec = cls.__args__
 
-        memo[id(self)] = new_obj
-        for slot in _iter_slots(self):
-            object.__setattr__(
-                new_obj, slot, copy.deepcopy(getattr(self, slot), memo)
-            )
+        if args_spec is not None:
+            args = tuple(getattr(self, k) for k in args_spec)
+            state = {
+                k: getattr(self, k)
+                for k in fields
+                if k not in args_spec and hasattr(self, k)
+            }
+            return (cls, args, state)
 
-        return new_obj
-
-    @final
-    def __copy__(self) -> Self:
-        cls = type(self)
-        new_obj = cls.__new__(cls)
-
-        for slot in _iter_slots(self):
-            object.__setattr__(new_obj, slot, getattr(self, slot))
-
-        return new_obj
-
-    def __hash__(self) -> int:
-        return hash(tuple(v for _, v in self.__getstate__()))
-
-    def __eq__(self, value: object, /) -> bool:
-        if not isinstance(value, type(self)):
-            return NotImplemented
-
-        return self.__getstate__() == value.__getstate__()
+        return (cls, (), self.__getstate__())
 
     def __repr__(self) -> str:
-        attributes = [
-            f'{name}={obj!r}'
-            for name, obj in self.__getstate__()
-            if not name.startswith('_')
+        cls = type(self)
+        parts = [
+            f"{name}={getattr(self, name)!r}"
+            for name in _collect_fields(cls)
+            if not name.startswith("_") and hasattr(self, name)
         ]
 
-        return f"{type(self).__name__}({', '.join(attributes)})"
-
-
-
-class CustomDataclass:
-    __slots__ = ()
-
-    @final
-    def __reduce__(self) -> tuple[type, tuple[()], dict[str, Any]]:
-        return (self.__class__, (), dict(self.__getstate__()))
-
-    @final
-    def __getstate__(self) -> PickleState:
-        return [
-            (slot, getattr(self, slot))
-            for slot in _iter_slots(self)
-        ]
-
-    @final
-    def __deepcopy__(self, memo: dict[int, Any]) -> Self:
-        cls = type(self)
-        new_obj = cls.__new__(cls)
-
-        memo[id(self)] = new_obj
-        for slot in _iter_slots(self):
-            object.__setattr__(
-                new_obj, slot, copy.deepcopy(getattr(self, slot), memo)
-            )
-
-        return new_obj
-
-    @final
-    def __copy__(self) -> Self:
-        cls = type(self)
-        new_obj = cls.__new__(cls)
-
-        for slot in _iter_slots(self):
-            object.__setattr__(new_obj, slot, getattr(self, slot))
-
-        return new_obj
+        return f"{cls.__name__}({', '.join(parts)})"
 
     def __hash__(self) -> int:
-        return hash(tuple(v for _, v in self.__getstate__()))
+        return hash(self.__getstate__())
 
-    def __eq__(self, value: object, /) -> bool:
-        if not isinstance(value, type(self)):
-            return NotImplemented
-
-        return self.__getstate__() == value.__getstate__()
-
-    def __repr__(self) -> str:
-        attributes = [
-            f'{name}={obj!r}'
-            for name, obj in self.__getstate__()
-            if not name.startswith('_')
-        ]
-
-        return f"{type(self).__name__}({', '.join(attributes)})"
+    # FUTURE: Not sure why mypyC can't compile EzPickle with __eq__
+    # but when we remove the implementation, everything works fine.
+    # def __eq__(self, value: Any) -> bool:
+    #     if not isinstance(value, EzPickle):
+    #         return NotImplemented
+        
+    #     return self.__getstate__() == value.__getstate__()

@@ -14,8 +14,6 @@ class TotalEarliness(Objective):
     completion time, if the task is completed early.
     """
 
-    __slots__ = ("_job_earliness", "due_tag", "due_dates")
-
     _job_earliness: dict[TaskID, Time]
 
     due_tag: str
@@ -69,12 +67,6 @@ class WeightedEarliness(Objective):
     of all tasks. Earliness is defined as the difference between the due date and the completion time,
     if the task is completed early.
     """
-
-    __slots__ = (
-        "_weighted_job_earliness",
-        "weight_tag", "job_weights",
-        "due_tag", "due_dates"
-    )
 
     _weighted_job_earliness: dict[TaskID, float]
 

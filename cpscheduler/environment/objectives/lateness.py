@@ -14,8 +14,6 @@ class MaximumLateness(RegularObjective):
     due date.
     """
 
-    __slots__ = ("_job_lateness", "due_tag", "due_dates")
-
     _job_lateness: dict[TaskID, Time]
 
     due_tag: str
@@ -77,8 +75,6 @@ class TotalTardiness(RegularObjective):
     due date, if the task is completed late.
     """
 
-    __slots__ = ("_job_lateness", "due_tag", "due_dates")
-
     _job_lateness: dict[TaskID, Time]
 
     due_tag: str
@@ -133,12 +129,6 @@ class WeightedTardiness(Objective):
     of all tasks. Tardiness is defined as the difference between the completion time and the due
     date, if the task is completed late.
     """
-
-    __slots__ = (
-        "_weighted_job_lateness",
-        "weight_tag", "job_weights",
-        "due_tag", "due_dates"
-    )
 
     _weighted_job_lateness: dict[TaskID, float]
 

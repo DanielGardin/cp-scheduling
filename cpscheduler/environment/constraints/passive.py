@@ -27,8 +27,6 @@ class PreemptionConstraint(PassiveConstraint):
         the `allow_preemption` flag in the `SchedulingEnv` initialization.
     """
 
-    __slots__ = ("task_ids", "all_tasks", "preemption_tag")
-
     task_ids: list[TaskID]
     all_tasks: bool
     preemption_tag: str
@@ -78,8 +76,6 @@ class OptionalityConstraint(PassiveConstraint):
         task_ids: Iterable[int] | None
             A list of task IDs to be marked as optional. If None, all tasks are marked as optional.
     """
-
-    __slots__ = ("task_ids", "all_tasks", "optionality_tag")
 
     task_ids: list[TaskID]
     all_tasks: bool
@@ -134,8 +130,6 @@ class ConstantProcessingTime(PassiveConstraint):
         name: Optional[str] = None
             An optional name for the constraint.
     """
-
-    __slots__ = ("processing_time",)
 
     processing_time: Time
 

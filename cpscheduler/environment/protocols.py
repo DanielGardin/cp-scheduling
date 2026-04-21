@@ -1,6 +1,6 @@
 from typing import Any, Protocol, TypeVar, runtime_checkable, overload
 from collections.abc import Iterator, Mapping, Hashable, Iterable
-from typing_extensions import TypedDict, TypeAlias
+from typing_extensions import TypedDict
 
 from cpscheduler.environment.state import ScheduleState
 
@@ -29,7 +29,7 @@ class DataFrameLike(Protocol):
     def __iter__(self) -> Iterator[Hashable]: ...
 
 
-InstanceTypes: TypeAlias = DataFrameLike | Mapping[Any, Iterable[Any]]
+InstanceTypes = DataFrameLike | Mapping[Any, Iterable[Any]]
 
 @runtime_checkable
 class InstanceGenerator(Protocol):
@@ -45,7 +45,7 @@ class InstanceGenerator(Protocol):
         self, env: Any = None, *, seed: int | None = None
     ) -> InstanceTypes: ...
 
-InfoType: TypeAlias = dict[str, Any]
+InfoType = dict[str, Any]
 
 
 class InstanceConfig(TypedDict, total=False):
@@ -56,4 +56,4 @@ class InstanceConfig(TypedDict, total=False):
     seed: int
 
 
-Options: TypeAlias = dict[str, Any] | InstanceConfig | None
+Options = dict[str, Any] | InstanceConfig | None

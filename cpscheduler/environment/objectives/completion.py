@@ -13,8 +13,6 @@ class TotalCompletionTime(RegularObjective):
     of completion times of all tasks.
     """
 
-    __slots__ = ("_job_completion",)
-
     _job_completion: dict[TaskID, Time]
 
     def __init__(self, minimize: bool = True) -> None:
@@ -50,8 +48,6 @@ class WeightedCompletionTime(Objective):
     Each task has a weight associated with it, and the objective function is the
     sum of the completion times multiplied by their respective weights.
     """
-
-    __slots__ = ("_weighted_job_completion", "weights_tag", "job_weights")
 
     _weighted_job_completion: dict[TaskID, float]
 
@@ -102,7 +98,6 @@ class WeightedCompletionTime(Objective):
         return "Σw_jC_j"
 
 class DiscountedTotalCompletionTime(RegularObjective):
-    __slots__ = ("_discounted_job_completion", "discount_factor")
 
     _discounted_job_completion: dict[TaskID, float]
     discount_factor: float
@@ -144,8 +139,6 @@ class TotalFlowTime(RegularObjective):
     tasks. Flow time is defined as the difference between the completion time and the release time.
     """
 
-    __slots__ = ("_job_flow", "release_tag", "release_times")
-
     _job_flow: dict[TaskID, Time]
 
     release_tag: str
@@ -161,7 +154,7 @@ class TotalFlowTime(RegularObjective):
         self._job_flow = {}
 
     def initialize(self, state: ScheduleState) -> None:
-        self.release_dates = convert_to_list(
+        self.release_times = convert_to_list(
             state.instance.task_instance[self.release_tag], Time
         )
 
@@ -182,7 +175,7 @@ class TotalFlowTime(RegularObjective):
     def __call__(self, state: ScheduleState) -> float:
         return sum(
             makespan_(state, tasks) - float(release_time)
-            for release_time, tasks in zip(self.release_dates, state.instance.job_tasks)
+            for release_time, tasks in zip(self.release_times, state.instance.job_tasks)
         )
 
     def get_entry(self) -> str:

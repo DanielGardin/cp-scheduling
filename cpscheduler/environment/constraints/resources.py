@@ -90,15 +90,6 @@ class ResourceConstraint(Constraint):
             An optional name for the constraint.
     """
 
-    __slots__ = (
-        "resource_tags",
-        "capacities",
-        "constant_capacity",
-        "resources",
-        "next_available_time",
-        "available_resources",
-    )
-
     resource_tags: list[str]
     capacities: list[float]
     constant_capacity: float | None
@@ -263,14 +254,6 @@ class NonRenewableResourceConstraint(Constraint):
         name: Optional[str] = None
             An optional name for the constraint.
     """
-
-    __slots__ = (
-        "resource_tags",
-        "capacities",
-        "constant_capacity",
-        "resources",
-        "current_capacities",
-    )
 
     resource_tags: list[str]
     constant_capacity: float | None

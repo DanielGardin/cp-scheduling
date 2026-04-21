@@ -71,8 +71,6 @@ class PrecedenceConstraint(Constraint):
             An optional name for the constraint.
     """
 
-    __slots__ = ("parents", "children")
-
     parents: dict[TaskID, list[TaskID]]
     "A mapping of task IDs to their parent task IDs."
 

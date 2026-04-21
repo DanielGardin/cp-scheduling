@@ -16,7 +16,7 @@ from collections.abc import Iterable, Mapping
 from typing_extensions import TypeIs, assert_never
 
 from cpscheduler.environment.utils import convert_to_list
-from cpscheduler.environment._protocols import (
+from cpscheduler.environment.protocols import (
     Metric, InstanceTypes, InstanceGenerator, InfoType, Options,
 )
 
@@ -32,7 +32,7 @@ from cpscheduler.environment.schedule_setup import ScheduleSetup
 from cpscheduler.environment.constraints import Constraint, PassiveConstraint
 from cpscheduler.environment.objectives import Objective
 
-from cpscheduler.environment._render import Renderer
+from cpscheduler.environment.render import Renderer
 
 # Event fields and kinds
 
@@ -73,23 +73,6 @@ class SchedulingEnv(EzPickle):
     The environment is based on the OpenAI Gym interface, making it compatible with various
     reinforcement learning libraries.
     """
-
-    __slots__ = (
-        "setup",
-        "constraints",
-        "setup_constraints",
-        "passive_constraints",
-        "combined_constraints",
-        "objective",
-        "instance_generator",
-        "metrics",
-        "renderer",
-        "state",
-        "schedule",
-        "_prev_obj_value",
-        "event_count",
-        "force_reset",
-    )
 
     # Environment static variables
     setup: ScheduleSetup

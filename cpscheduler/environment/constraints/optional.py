@@ -31,8 +31,6 @@ class AtMostOneConstraint(Constraint):
     one of the groups.
     """
 
-    __slots__ = ("task_groups", "current_tasks")
-
     task_groups: list[list[TaskID]]
 
     current_tasks: list[set[TaskID]]

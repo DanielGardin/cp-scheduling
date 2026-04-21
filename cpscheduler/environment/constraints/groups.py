@@ -8,7 +8,6 @@ from cpscheduler.environment.constraints.base import Constraint
 import cpscheduler.environment.debug as debug
 
 class NonOverlapConstraint(Constraint):
-    __slots__ = ("groups_map", "current_groups")
 
     groups_map: list[set[TaskID]]
 

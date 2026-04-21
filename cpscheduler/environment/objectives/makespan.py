@@ -27,8 +27,6 @@ class Makespan(RegularObjective):
     which all tasks are completed.
     """
 
-    __slots__ = ("_value",)
-
     _value: Time
 
     def reset(self, state: ScheduleState) -> None:

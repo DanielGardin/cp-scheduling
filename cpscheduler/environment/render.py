@@ -17,8 +17,6 @@ renderers: dict[str, "Renderer"] = {}
 class Renderer(EzPickle):
     "Renderer base class for visualizing task schedules."
 
-    __slots__ = ()
-
     render_name: ClassVar[str | None] = None
 
     def __init_subclass__(cls) -> None:
@@ -304,96 +302,86 @@ GLASBEY_BW_PALETTE: list[str] = [
     "#dbafc8",
 ]
 
-try:
-    from plotly import graph_objects as go
+class PlotlyRenderer(Renderer):
+    "Renderer for visualizing task schedules using the Plotly backend."
 
-    class PlotlyRenderer(Renderer):
-        "Renderer for visualizing task schedules using the Plotly backend."
+    render_name = "plotly"
 
-        name = "plotly"
+    def build_gantt(self, state: ScheduleState) -> Any:
+        from plotly import graph_objects as go
 
-        def build_gantt(self, state: ScheduleState) -> Any:
-            if go is None:
-                raise ImportError(
-                    "Plotly is required for rendering Gantt charts with PlotlyRenderer. "
-                    "Please install them using 'pip install plotly'."
+        fig = go.Figure()
+
+        start_times: list[int] = []
+        durations: list[int] = []
+        machines: list[int] = []
+        task_ids: list[int] = []
+        template = (
+            "Task %{customdata[0]} [Job %{customdata[1]}]:<br>"
+            "Period: %{customdata[2]}-%{customdata[3]}<br>"
+            "Machine: %{y}<extra></extra>"
+        )
+
+        instance = state.instance
+        history = state.runtime.history
+
+        for job_id, job_tasks in enumerate(instance.job_tasks):
+            for task_id in job_tasks:
+                for entry in history[task_id]:
+
+                    start_times.append(entry.start_time)
+                    durations.append(entry.end_time - entry.start_time)
+                    machines.append(entry.machine_id)
+                    task_ids.append(task_id)
+
+            fig.add_trace(
+                go.Bar(
+                    x=durations,
+                    y=machines,
+                    base=start_times,
+                    orientation="h",
+                    name=f"Job {job_id}",
+                    customdata=[
+                        (
+                            task_ids[i],
+                            job_id,
+                            start_times[i],
+                            start_times[i] + durations[i],
+                        )
+                        for i in range(len(start_times))
+                    ],
+                    hovertemplate=template,
+                    marker=dict(
+                        color=GLASBEY_BW_PALETTE[job_id % 256],
+                        line=dict(color="white", width=0.5),
+                    ),
                 )
-
-            fig = go.Figure()
-
-            start_times: list[int] = []
-            durations: list[int] = []
-            machines: list[int] = []
-            task_ids: list[int] = []
-            template = (
-                "Task %{customdata[0]} [Job %{customdata[1]}]:<br>"
-                "Period: %{customdata[2]}-%{customdata[3]}<br>"
-                "Machine: %{y}<extra></extra>"
             )
 
-            instance = state.instance
-            history = state.runtime.history
+        max_time = max(float(state.time) / 0.95, 1.0)
 
-            for job_id, job_tasks in enumerate(instance.job_tasks):
-                for task_id in job_tasks:
-                    for entry in history[task_id]:
+        fig.update_layout(
+            width=1600,
+            height=800,
+            barmode="overlay",
+            yaxis=dict(
+                title="Assignment",
+                tickvals=list(range(state.n_machines)),
+                autorange="reversed",
+            ),
+            xaxis=dict(
+                title="Time",
+                range=(0, max_time),
+                showgrid=True,
+                gridcolor="rgba(0,0,0,0.4)",
+            ),
+        )
 
-                        start_times.append(entry.start_time)
-                        durations.append(entry.end_time - entry.start_time)
-                        machines.append(entry.machine_id)
-                        task_ids.append(task_id)
+        if state.n_jobs <= 30:
+            fig.update_layout(legend_title_text="Task jobs")
 
-                fig.add_trace(
-                    go.Bar(
-                        x=durations,
-                        y=machines,
-                        base=start_times,
-                        orientation="h",
-                        name=f"Job {job_id}",
-                        customdata=[
-                            (
-                                task_ids[i],
-                                job_id,
-                                start_times[i],
-                                start_times[i] + durations[i],
-                            )
-                            for i in range(len(start_times))
-                        ],
-                        hovertemplate=template,
-                        marker=dict(
-                            color=GLASBEY_BW_PALETTE[job_id % 256],
-                            line=dict(color="white", width=0.5),
-                        ),
-                    )
-                )
+        return fig
 
-            max_time = max(float(state.time) / 0.95, 1.0)
-
-            fig.update_layout(
-                width=1600,
-                height=800,
-                barmode="overlay",
-                yaxis=dict(
-                    title="Assignment",
-                    tickvals=list(range(state.n_machines)),
-                    autorange="reversed",
-                ),
-                xaxis=dict(
-                    title="Time",
-                    range=(0, max_time),
-                    showgrid=True,
-                    gridcolor="rgba(0,0,0,0.4)",
-                ),
-            )
-
-            if state.n_jobs <= 30:
-                fig.update_layout(legend_title_text="Task jobs")
-
-            return fig
-
-        def render(self, state: ScheduleState) -> None:
-            fig = self.build_gantt(state)
-            fig.show()
-
-except ImportError:
-    pass
+    def render(self, state: ScheduleState) -> None:
+        fig = self.build_gantt(state)
+        fig.show()
