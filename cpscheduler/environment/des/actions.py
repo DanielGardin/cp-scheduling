@@ -1,4 +1,4 @@
-from typing import Any, TypeAlias
+from typing import Any, cast
 from typing_extensions import Unpack, TypeIs, TypedDict, NotRequired
 from collections.abc import Iterable
 
@@ -10,89 +10,82 @@ from cpscheduler.environment.des.base import (
     instructions,
 )
 
-Instruction = SimulationEvent
-
 
 class InstructionKwargs(TypedDict):
     time: NotRequired[Int]
     priority: NotRequired[Int]
 
 
-InstructionArgs = Int | InstructionKwargs
+SchedulerArgs = Int | InstructionKwargs
+InstructionSpec = str | type[SimulationEvent]
+InstructionArgs = tuple[Int, ...]
+# Mypy does not support Any in Unpack, so we use Int as a placeholder
 
-BAction: TypeAlias = (
-    tuple[InstructionArgs, Instruction]
-    | tuple[InstructionArgs, str, Unpack[tuple[Int, ...]]]
-    # Mypy does not support Any in Unpack, so we use Int as a placeholder
-)
-"Timed instruction action, represented as a tuple of (time, instruction) or (time, instruction_name, *args)."
+BAction = tuple[SchedulerArgs, InstructionSpec, Unpack[InstructionArgs]]
+"Timed instruction action, represented as a tuple of (time, instruction_name, *args)."
 
-CAction: TypeAlias = Instruction | tuple[str, Unpack[tuple[Int, ...]]]
+CAction = tuple[InstructionSpec, Unpack[tuple[Int, ...]]]
 "Instruction action, represented as an Instruction object or a tuple of (instruction_name, *args)."
 
-SingleAction: TypeAlias = BAction | CAction
+SingleInstruction = BAction | CAction
 
-ActionType: TypeAlias = SingleAction | Iterable[SingleAction] | None
+ActionType = SingleInstruction | Iterable[SingleInstruction] | None
 
 
 def is_single_action(
     action: ActionType,
-) -> TypeIs[SingleAction]:
+) -> TypeIs[SingleInstruction]:
     "Check if the action is a single instruction or a iterable of instructions."
     if not isinstance(action, tuple):
         return False
 
     if isinstance(action[0], int) or isinstance(action[0], dict):
-        return isinstance(action[1], (str, Instruction))
+        return isinstance(action[1], str)
 
-    return isinstance(action[0], (str, Instruction))
+    return isinstance(action[0], str)
 
 
-def _parse_args(args: tuple[Any, ...]) -> tuple[Any, ...]:
+def _parse_args(args: list[Any]) -> tuple[Any, ...]:
     "Parse raw instruction arguments, converting Int to int where appropriate."
     return tuple(int(arg) if isinstance(arg, Int) else arg for arg in args)
 
 
 def parse_instruction(
-    instruction_args: SingleAction,
-) -> tuple[Instruction, Time | None, PriorityValue | None]:
-    """Parse raw instruction arguments into (Instruction, time, priority).
+    instruction: SingleInstruction
+) -> tuple[SimulationEvent, Time | None, PriorityValue | None]:
+    time: Time | None = None
+    priority: PriorityValue | None = None
 
-    Priority defaults to None, allowing Schedule.add_event to apply its default (0).
-    """
-    if isinstance(instruction_args, SimulationEvent):
-        return instruction_args, None, None
+    if isinstance(instruction[0], (int, dict)):
+        # instruction = cast(BAction, instruction)
 
-    if isinstance(instruction_args[0], str):
-        instruction_cls = instructions[instruction_args[0]]
-        args = _parse_args(instruction_args[1:])
-        return instruction_cls(*args), None, None
+        s_args, spec, *spec_args = instruction
 
-    # B-event or dict-prefixed: extract time and priority
-    if isinstance(instruction_args[0], dict):
-        kwargs: InstructionKwargs = instruction_args[0]
-        time = Time(kwargs["time"]) if "time" in kwargs else None
-        priority = (
-            PriorityValue(kwargs["priority"]) if "priority" in kwargs else None
-        )
-
-    else:
-        time = Time(instruction_args[0])
-        priority = None
-
-    instruction_dispatch = instruction_args[1]
-    args = _parse_args(instruction_args[2:])
-
-    if isinstance(instruction_dispatch, str):
-        instruction = instructions[instruction_dispatch](*args)
-
-    elif isinstance(instruction_dispatch, SimulationEvent):
-        instruction = instruction_dispatch
+        if isinstance(s_args, Int):
+            time = Time(s_args)
+ 
+        else:
+            time = (
+                Time(s_args["time"])
+                if "time" in s_args
+                else None
+            )
+            priority = (
+                PriorityValue(s_args["priority"])
+                if "priority" in s_args
+                else None
+            )
 
     else:
-        raise ValueError(
-            f"Invalid instruction dispatch: {instruction_dispatch}. "
-            f"Must be either an instruction name or an Instruction object."
-        )
+        instruction = cast(CAction, instruction)
 
-    return instruction, time, priority
+        spec, *spec_args = instruction
+
+    args = _parse_args(spec_args)
+
+    if isinstance(spec, str):
+        cls = instructions[spec]
+
+        return cls(*args), time, priority
+
+    return spec(*args), time, priority

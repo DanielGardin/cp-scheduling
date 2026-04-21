@@ -1,3 +1,5 @@
+from typing_extensions import Self
+
 from cpscheduler.environment.constants import (
     TaskID,
     MachineID,
@@ -22,28 +24,36 @@ def select_machine(
 class ExecuteEvent(SimulationEvent):
     blocking = True
 
+    __args__ =  ("task_id", "machine_id")
+
+    task_id: TaskID
+    machine_id: MachineID
+
     def __init__(
         self, task_id: TaskID, machine_id: MachineID = GLOBAL_MACHINE_ID
     ) -> None:
+        super().__init__()
+
         self.task_id = task_id
         self.machine_id = machine_id
 
-    @property
-    def args(self) -> tuple[int, int]:
-        return (self.task_id, self.machine_id)
+    def resolve(self, state: ScheduleState) -> Self:
+        machine_id = self.machine_id
+        task_id = self.task_id
+        task_machines = state.instance.get_machines(task_id)
 
-    def resolve(self, state: ScheduleState) -> None:
-        task_machines = state.instance.get_machines(self.task_id)
-
-        if self.machine_id != GLOBAL_MACHINE_ID:
-            if self.machine_id not in state.instance.get_machines(self.task_id):
+        if machine_id != GLOBAL_MACHINE_ID:
+            if machine_id not in task_machines:
                 raise ValueError(
-                    f"Machine {self.machine_id} is not available for task {self.task_id}"
+                    f"Machine {machine_id} is not available for task {task_id}"
                 )
 
         elif len(task_machines) == 1:
             # Statically resolve the machine if there is only one option
-            self.machine_id = next(iter(task_machines))
+            resolved_machine = next(iter(task_machines))
+            return type(self)(task_id, resolved_machine)
+
+        return self
 
     def earliest_time(self, state: ScheduleState) -> Time:
         return state.get_start_lb(self.task_id, self.machine_id)
@@ -66,12 +76,14 @@ class SubmitEvent(ExecuteEvent):
 class PauseEvent(SimulationEvent):
     blocking = True
 
-    def __init__(self, task_id: int) -> None:
-        self.task_id = task_id
+    __args__ =  ("task_id",)
 
-    @property
-    def args(self) -> tuple[int]:
-        return (self.task_id,)
+    task_id: TaskID
+
+    def __init__(self, task_id: int) -> None:
+        super().__init__()
+
+        self.task_id = task_id
 
     def is_ready(self, state: ScheduleState) -> bool:
         return state.is_executing(self.task_id)
@@ -83,7 +95,13 @@ class PauseEvent(SimulationEvent):
 class ResumeEvent(SimulationEvent):
     blocking = True
 
+    __args__ =  ("task_id",)
+
+    task_id: TaskID
+
     def __init__(self, task_id: int) -> None:
+        super().__init__()
+
         self.task_id = task_id
 
     @property
@@ -106,28 +124,22 @@ class ResumeEvent(SimulationEvent):
 class CheckpointEvent(SimulationEvent):
     blocking = False
 
-    @property
-    def args(self) -> tuple[()]:
-        return ()
-
 
 class InterruptEvent(SimulationEvent):
     blocking = True
-
-    @property
-    def args(self) -> tuple[()]:
-        return ()
 
 
 class CompleteEvent(SimulationEvent):
     blocking = True
 
-    def __init__(self, task_id: int) -> None:
-        self.task_id = task_id
+    __args__ =  ("task_id",)
 
-    @property
-    def args(self) -> tuple[int]:
-        return (self.task_id,)
+    task_id: TaskID
+
+    def __init__(self, task_id: int) -> None:
+        super().__init__()
+
+        self.task_id = task_id
 
     def is_ready(self, state: ScheduleState) -> bool:
         return state.is_executing(self.task_id)
@@ -141,13 +153,15 @@ class CompleteEvent(SimulationEvent):
 class AdvanceTimeEvent(SimulationEvent):
     blocking = True
 
-    def __init__(self, dt: Time) -> None:
-        self.time = dt
+    __args__ =  ("dt",)
 
-    @property
-    def args(self) -> tuple[int]:
-        return (self.time,)
+    dt: Time
+
+    def __init__(self, dt: Time) -> None:
+        super().__init__()
+
+        self.dt = dt
 
     def process(self, state: ScheduleState, schedule: Schedule) -> None:
         # Advance time by adding a no-op event at the target time
-        schedule.add_event(CheckpointEvent(), state, state.time + self.time)
+        schedule.add_event(CheckpointEvent(), state, state.time + self.dt)

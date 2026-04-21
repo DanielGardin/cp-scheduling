@@ -4,7 +4,7 @@ from typing_extensions import NamedTuple
 
 from copy import deepcopy
 
-from cpscheduler.environment.des import SingleAction
+from cpscheduler.environment.des import SingleInstruction
 
 from cpscheduler.environment import SchedulingEnv
 from cpscheduler.common import unwrap_env
@@ -13,7 +13,7 @@ from cpscheduler.solver.formulation import Formulation, formulations
 
 
 class SolverResult(NamedTuple):
-    action: Sequence[SingleAction]
+    action: Sequence[SingleInstruction]
     objective_value: float
     status: str
 
@@ -52,7 +52,7 @@ class SchedulingSolver:
 
         self._built = True
 
-    def warm_start(self, actions: Sequence[SingleAction]) -> None:
+    def warm_start(self, actions: Sequence[SingleInstruction]) -> None:
         if self._built:
             raise ValueError(
                 "Cannot warm start after the model has been fully built. "

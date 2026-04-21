@@ -5,7 +5,7 @@ from mypy_extensions import mypyc_attr
 
 from cpscheduler.environment.constants import TaskID, Status
 from cpscheduler.environment.state import ObsType
-from cpscheduler.environment.des import SingleAction
+from cpscheduler.environment.des import SingleInstruction
 
 EXECUTING_STATUS = Status.EXECUTING
 
@@ -87,10 +87,10 @@ class PriorityDispatchingRule:
         impossible to schedule.
         """
         raise NotImplementedError(
-            f"The `priority_score` method must be implemented for {self.__class__}."
+            f"The `priority_score` method must be implemented for {type(self)}."
         )
 
-    def __call__(self, obs: ObsType, time: int | None = None) -> SingleAction | None:
+    def __call__(self, obs: ObsType, time: int | None = None) -> SingleInstruction | None:
         priorities = self.priority_score(obs, time)
         available: list[bool] = obs[0]['available']
 
@@ -108,7 +108,7 @@ class PriorityDispatchingRule:
         temperature: float = 1.0,
         target_prob: float | None = None,
         n_iter: int = 5
-    ) -> SingleAction | None:
+    ) -> SingleInstruction | None:
         priorities = self.priority_score(obs, time)
         available: list[bool] = obs[0]['available']
 
@@ -133,7 +133,7 @@ class PriorityDispatchingRule:
 
     def ranking(
         self, obs: ObsType, time: int | None = None, strict: bool = False
-    )-> list[SingleAction]:
+    )-> list[SingleInstruction]:
         priorities = self.priority_score(obs, time)
         status = obs[0]['status']
 

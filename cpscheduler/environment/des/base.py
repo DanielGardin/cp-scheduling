@@ -3,16 +3,18 @@ from collections.abc import Iterator
 
 from mypy_extensions import mypyc_attr
 
-from cpscheduler.environment.constants import Time
+from cpscheduler.environment.constants import Time, EzPickle
 from cpscheduler.environment.state import ScheduleState
 
 from heapq import heappush, heappop, heapify
 
 instructions: dict[str, type["SimulationEvent"]] = {}
 
+EventID = int
 
-@mypyc_attr(allow_interpreted_subclasses=True)
-class SimulationEvent:
+_global_event_id: EventID = 0
+
+class SimulationEvent(EzPickle):
     """
     Base class for all events in the simulation.
 
@@ -26,27 +28,21 @@ class SimulationEvent:
     blocking: ClassVar[bool] = False
     "Whether this event blocks the processing of subsequent events."
 
-    def __init__(self, *args: Any) -> None: ...
+    _event_id: EventID
+
+    def __init__(self, *args: Any) -> None:
+        global _global_event_id
+
+        self._event_id = _global_event_id
+        _global_event_id += 1
 
     @property
-    def args(self) -> tuple[int, ...]:
-        "The arguments of the event, used for logging and instruction generation."
-        raise NotImplementedError(
-            "Subclasses must implement the args property."
-        )
+    def event_id(self) -> EventID:
+        return self._event_id
 
-    def __repr__(self) -> str:
-        args = ", ".join(str(arg) for arg in self.args)
-        return f"{self.__class__.__name__}({args})"
-
-    def __reduce__(self) -> str | tuple[Any, ...]:
-        return (self.__class__, self.args, ())
-
-    def __hash__(self) -> int:
-        return id(self)
-
-    def resolve(self, state: ScheduleState) -> None:
+    def resolve(self, state: ScheduleState) -> "SimulationEvent":
         "Resolve and statically validate the event."
+        return self
 
     # This are only used for C events
     def earliest_time(self, state: ScheduleState) -> Time:
@@ -89,6 +85,18 @@ def register_instruction(cls: type[SimulationEvent], instruction: str) -> None:
     instructions[instruction] = cls
 
 
+def validate_event(
+    event: SimulationEvent, state: ScheduleState
+) -> SimulationEvent:
+    validated_event = SimulationEvent()
+    while True:
+        validated_event = event.resolve(state)
+
+        if event is validated_event:
+            return event
+
+        event = validated_event
+
 Rank: TypeAlias = int
 PriorityValue: TypeAlias = int
 OrderValue: TypeAlias = int
@@ -96,94 +104,47 @@ OrderValue: TypeAlias = int
 _Entry = tuple[Rank, PriorityValue, OrderValue, SimulationEvent]
 _EntryKey = tuple[Rank, PriorityValue, OrderValue]
 
-
-class Schedule:
+@mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
+class Schedule(EzPickle):
     """
     The main kernel of the DES environment, responsible for managing the
     event queue and processing events according to their timing and blocking
     behavior.
     """
 
-    __slots__ = (
-        "_heap",
-        "_timed_events",
-        "_non_timed_events",
-        "_event_keys",
-        "_event_earliest_time_cache",
-        "_tail",
-        "_next_order",
-        "_next_rank",
-    )
+    timed_events: dict[Time, list[SimulationEvent]]
+    non_timed_events: dict[Time, list[_Entry]]
 
     _heap: list[Time]
-    _timed_events: dict[Time, list[SimulationEvent]]
-    _non_timed_events: dict[Time, list[_Entry]]
-
-    _event_keys: dict[SimulationEvent, _EntryKey]
-    _event_earliest_time_cache: dict[SimulationEvent, Time]
+    _event_cache: dict[EventID, SimulationEvent]
+    _non_timed_event_keys: dict[EventID, _EntryKey]
+    _event_time_cache: dict[EventID, Time]
 
     _tail: Time | None
     _next_order: OrderValue
     _next_rank: Rank
 
     def __init__(self) -> None:
-        self._heap = []
-        self._timed_events = {}
-        self._non_timed_events = {}
+        self.timed_events = {}
+        self.non_timed_events = {}
 
-        self._event_keys = {}
-        self._event_earliest_time_cache = {}
+        self._heap = []
+        self._event_cache = {}
+        self._non_timed_event_keys = {}
+        self._event_time_cache = {}
 
         self._tail = None
         self._next_order = 0
         self._next_rank = 0
 
-    def __reduce__(self) -> tuple[Any, ...]:
-        return (
-            self.__class__,
-            (),
-            (
-                self._heap,
-                self._timed_events,
-                self._non_timed_events,
-                self._event_keys,
-                self._event_earliest_time_cache,
-                self._tail,
-                self._next_order,
-                self._next_rank,
-            ),
-        )
-
-    def __setstate__(self, state: tuple[Any, ...]) -> None:
-        (
-            self._heap,
-            self._timed_events,
-            self._non_timed_events,
-            self._event_keys,
-            self._event_earliest_time_cache,
-            self._tail,
-            self._next_order,
-            self._next_rank,
-        ) = state
-
-    def __repr__(self) -> str:
-        return (
-            f"Schedule(heap={self._heap}, "
-            f"timed_events={self._timed_events}, "
-            f"non_timed_events={self._non_timed_events}, "
-            f"tail={self._tail}, "
-            f"next_order={self._next_order}, "
-            f"next_rank={self._next_rank}"
-        )
-
     def reset(self) -> None:
         "Reset the schedule to its initial empty state."
-        self._heap.clear()
-        self._timed_events.clear()
-        self._non_timed_events.clear()
+        self.timed_events.clear()
+        self.non_timed_events.clear()
 
-        self._event_keys.clear()
-        self._event_earliest_time_cache.clear()
+        self._heap.clear()
+        self._non_timed_event_keys.clear()
+        self._event_time_cache.clear()
 
         self._tail = None
         self._next_order = 0
@@ -199,22 +160,54 @@ class Schedule:
 
     def _create_time_slot(self, time: Time) -> None:
         "Create a new time slot for events, ensuring the heap is updated."
-        if time not in self._timed_events:
-            self._timed_events[time] = []
-            self._non_timed_events[time] = []
+        if time not in self.timed_events:
+            self.timed_events[time] = []
+            self.non_timed_events[time] = []
             heappush(self._heap, time)
 
-    def _reschedule_non_timed_events(
-        self, entries: list[_Entry], state: ScheduleState
+
+    def _reschedule_event(self, entry: _Entry, state: ScheduleState) -> None:
+        event = entry[-1]
+
+        time = event.earliest_time(state)
+        current_time = state.time
+
+        if time == current_time:
+            if not event.is_ready(state):
+                # This guardrail is stronger than we need, it will block 
+                # feasible paths that use non-timed and timed events together
+                raise RuntimeError(
+                    f"Event {event} is potentially deadlocking the event "
+                    "queue due to an action-dependent prerequisite that may "
+                    "never happen."
+                )
+        
+        elif time < current_time:
+            raise ValueError(
+                f"Cannot reschedule events triggered by {event} to the past: "
+                f"{time} < {state.time}."
+            )
+
+        self._create_time_slot(time)
+        heappush(self.non_timed_events[time], entry)
+        self._event_time_cache[event.event_id] = time
+
+        if event.blocking and (self._tail is None or time > self._tail):
+            self._tail = time
+
+
+    def _reschedule_blocking_event(
+        self, entries: list[_Entry], idx: int, state: ScheduleState
     ) -> None:
         "Reschedule non-timed events to the next time step, preserving their order."
         if not entries:
             return
 
-        *_, first_event = entries[0]
+        first_event = entries[idx][-1]
         time = first_event.earliest_time(state)
+        current_time = state.time
 
-        if time == state.time:
+        if time == current_time:
             if not first_event.is_ready(state):
                 # This guardrail is stronger than we need, it will block 
                 # feasible paths that use non-timed and timed events together
@@ -224,18 +217,19 @@ class Schedule:
                     "never happen."
                 )
 
-        elif time < state.time:
+        elif time < current_time:
             raise ValueError(
                 f"Cannot reschedule events triggered by {first_event} to the past: "
                 f"{time} < {state.time}."
             )
 
         self._create_time_slot(time)
-        for entry in entries:
-            *_, event = entry
+        for i in range(idx, len(entries)):
+            entry = entries[i]
+            event = entry[-1]
 
-            heappush(self._non_timed_events[time], entry)
-            self._event_earliest_time_cache[event] = time
+            heappush(self.non_timed_events[time], entry)
+            self._event_time_cache[event.event_id] = time
 
         if first_event.blocking:
             if self._tail is None or time > self._tail:
@@ -254,36 +248,48 @@ class Schedule:
             time == state.time
         ), f"Next event time {time} does not match current state time {state.time}"
 
-        timed_events = self._timed_events.pop(time, [])
-        for event in timed_events:
-            if not event.is_ready(state):
-                raise ValueError(
-                    f"Event is not ready to be processed: {event} at time {time}"
-                )
+        if time in self.timed_events:
+            timed_events = self.timed_events.pop(time)
 
-            yield event
+            for event in timed_events:
+                if not event.is_ready(state):
+                    raise ValueError(
+                        f"Event is not ready to be processed: {event} at time {time}"
+                    )
 
-        untimed_events = self._non_timed_events.pop(time, [])
-        deferred_events: list[_Entry] = []
-
-        while untimed_events:
-            entry = untimed_events[0]
-            *_, event = entry
-
-            if event.is_ready(state):
-                heappop(untimed_events)
                 yield event
-                continue
 
-            if event.blocking:
-                self._reschedule_non_timed_events(untimed_events, state)
-                break
+                event_id = event.event_id
+                del self._event_cache[event_id]
+                del self._event_time_cache[event_id]
 
-            heappop(untimed_events)
-            deferred_events.append(entry)
+        if time in self.non_timed_events:
+            non_timed_events = self.non_timed_events.pop(time)
+            non_timed_events.sort()
+            deferred_events: list[_Entry] = []
 
-        for entry in deferred_events:
-            self._reschedule_non_timed_events([entry], state)
+            for idx, entry in enumerate(non_timed_events):
+                event = entry[-1]
+
+                if not event.is_ready(state):
+                    if event.blocking:
+                        self._reschedule_blocking_event(
+                            non_timed_events, idx, state
+                        )
+                        break
+
+                    deferred_events.append(entry)
+                    continue
+
+                yield event
+
+                event_id = event.event_id
+                del self._event_cache[event_id]
+                del self._event_time_cache[event_id]
+                del self._non_timed_event_keys[event_id]
+
+            for entry in deferred_events:
+                self._reschedule_event(entry, state)
 
     # Public API
     # -----------
@@ -313,10 +319,8 @@ class Schedule:
         - ValueError: If the event is already scheduled, if the time is in the
                       past, or if priority is provided for a timed event.
         """
-        event.resolve(state)
-
-        if event in self._event_keys:
-            raise ValueError(f"Event is already scheduled: {event}")
+        event = validate_event(event, state)
+        event_id = event.event_id
 
         if time is None:
             if priority is None:
@@ -333,14 +337,12 @@ class Schedule:
             if self._tail is not None and time < self._tail:
                 time = self._tail
 
-            self._event_earliest_time_cache[event] = time
-            self._event_keys[event] = (rank, -priority, order)
+            self._event_cache[event_id] = event
+            self._event_time_cache[event_id] = time
+            self._non_timed_event_keys[event_id] = (rank, -priority, order)
 
             self._create_time_slot(time)
-            heappush(
-                self._non_timed_events[time],
-                (rank, -priority, order, event),
-            )
+            self.non_timed_events[time].append((rank, -priority, order, event))
             return
 
         if priority is not None:
@@ -353,51 +355,67 @@ class Schedule:
                 f"Cannot schedule event in the past: {time} < {state.time}"
             )
 
-        self._event_earliest_time_cache[event] = time
+        self._event_cache[event_id] = event
+        self._event_time_cache[event_id] = time
 
         self._create_time_slot(time)
-        self._timed_events[time].append(event)
+        self.timed_events[time].append(event)
 
-    def remove_event(self, event: SimulationEvent) -> None:
+    def remove_event(self, event_id: EventID) -> None:
         "Remove an event from the schedule, if it is still scheduled."
-        time = self._event_earliest_time_cache.pop(event)
+        time = self._event_time_cache.pop(event_id)
+        event = self._event_cache.pop(event_id)
 
-        if event in self._event_keys:
-            rank, priority, order = self._event_keys.pop(event)
+        if event_id in self._non_timed_event_keys:
+            rank, priority, order = self._non_timed_event_keys.pop(event_id)
             entry = (rank, priority, order, event)
 
-            self._non_timed_events[time].remove(entry)
-            heapify(self._non_timed_events[time])
+            self.non_timed_events[time].remove(entry)
+            heapify(self.non_timed_events[time])
 
         else:
-            self._timed_events[time].remove(event)
+            self.timed_events[time].remove(event)
 
-    def reschedule_event(self, event: SimulationEvent, new_time: Time) -> None:
+    def reschedule_event(self, event_id: EventID, new_time: Time) -> None:
         "Reschedule an existing event to a new time."
-        self.remove_event(event)
+        time = self._event_time_cache[event_id]
+        event = self._event_cache[event_id]
+
+        self.timed_events[time].remove(event)
 
         self._create_time_slot(new_time)
-        self._event_earliest_time_cache[event] = new_time
-        self._timed_events[new_time].append(event)
+        self._event_time_cache[event_id] = new_time
+        self.timed_events[new_time].append(event)
 
     def change_event_priority(
-        self, event: SimulationEvent, new_priority: PriorityValue
+        self, event_id: EventID, new_priority: PriorityValue
     ) -> None:
         "Change the priority of an existing non-timed event."
-        if event not in self._event_keys:
-            raise ValueError(f"Event is not scheduled: {event}")
+        if event_id not in self._event_cache:
+            raise ValueError(
+                f"change_event_priority: Event {event_id} is not scheduled"
+            )
 
-        time = self._event_earliest_time_cache[event]
-        rank, old_priority, order = self._event_keys[event]
+        elif event_id not in self._non_timed_event_keys:
+            event = self._event_cache[event_id]
+
+            raise ValueError(
+                f"change_event_priority: Timed events do not handle priority."
+            )
+
+
+        time = self._event_time_cache[event_id]
+        rank, old_priority, order = self._non_timed_event_keys[event_id]
+        event = self._event_cache[event_id]
 
         old_entry = (rank, old_priority, order, event)
         new_entry = (rank, -new_priority, order, event)
 
-        entries = self._non_timed_events.get(time, [])
+        entries = self.non_timed_events[time]
         idx = entries.index(old_entry)
 
         entries[idx] = new_entry
-        self._event_keys[event] = (rank, -new_priority, order)
+        self._non_timed_event_keys[event_id] = (rank, -new_priority, order)
         heapify(entries)
 
     def clear_schedule(self) -> None:
@@ -406,20 +424,20 @@ class Schedule:
 
     def peek_events(self) -> Iterator[SimulationEvent]:
         "Peek at all scheduled events in the order they would be processed, without modifying the schedule."
-        for time in sorted(self._timed_events):
-            for event in self._timed_events[time]:
+        for time in sorted(self.timed_events):
+            for event in self.timed_events[time]:
                 yield event
 
-        for time in sorted(self._non_timed_events):
-            entries = sorted(self._non_timed_events[time])
+        for time in sorted(self.non_timed_events):
+            entries = sorted(self.non_timed_events[time])
             for *_, event in entries:
                 yield event
 
     def peek_events_at_time(self, time: Time) -> Iterator[SimulationEvent]:
         "Peek at all scheduled events at a specific time, without modifying the schedule."
-        for event in self._timed_events.get(time, []):
+        for event in self.timed_events.get(time, []):
             yield event
 
-        entries = sorted(self._non_timed_events.get(time, []))
+        entries = sorted(self.non_timed_events.get(time, []))
         for *_, event in entries:
             yield event

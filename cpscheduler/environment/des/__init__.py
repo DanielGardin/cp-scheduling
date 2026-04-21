@@ -1,8 +1,7 @@
 __all__ = [
     "SimulationEvent",
     "Schedule",
-    "Instruction",
-    "SingleAction",
+    "SingleInstruction",
     "ActionType",
     "is_single_action",
     "parse_instruction",
@@ -19,8 +18,7 @@ __all__ = [
 ]
 
 from cpscheduler.environment.des.actions import (
-    Instruction,
-    SingleAction,
+    SingleInstruction,
     ActionType,
     is_single_action,
     parse_instruction,
