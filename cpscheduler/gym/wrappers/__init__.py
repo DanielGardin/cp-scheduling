@@ -5,8 +5,6 @@ __all__ = [
     "ArrayObservationWrapper",
     # Action Wrappers
     "PermutationActionWrapper",
-    # Misc Wrappers
-    "InstancePoolWrapper",
 ]
 
 from .obs_wrappers import (
@@ -16,5 +14,3 @@ from .obs_wrappers import (
 )
 
 from .act_wrappers import PermutationActionWrapper
-
-from .misc_wrappers import InstancePoolWrapper

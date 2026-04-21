@@ -10,7 +10,7 @@ from gymnasium.spaces import Dict, Tuple, Box
 
 from gymnasium import ObservationWrapper, Env, Space
 
-from cpscheduler.environment._protocols import Options
+from cpscheduler.environment.protocols import Options
 from cpscheduler.environment.constants import MAX_TIME
 from cpscheduler.environment.state import ScheduleState, ObsType
 from cpscheduler.gym.gym_utils import is_original_space

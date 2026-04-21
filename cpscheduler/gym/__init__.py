@@ -1,5 +1,15 @@
 from gymnasium import register
 
+__all__ = [
+    "SchedulingEnvGym",
+    "PermutationActionWrapper",
+    "CPStateWrapper",
+    "TabularObservationWrapper",
+]
+
+from .env import SchedulingEnvGym
+from .wrappers import *
+
 register(
     id="Scheduling-v0",
     entry_point="cpscheduler.gym:SchedulingEnvGym",
@@ -15,14 +25,3 @@ register(
     disable_env_checker=True,
     order_enforce=False,
 )
-
-__all__ = [
-    "SchedulingEnvGym",
-    "PermutationActionWrapper",
-    "CPStateWrapper",
-    "TabularObservationWrapper",
-    "InstancePoolWrapper",
-]
-
-from .env import SchedulingEnvGym
-from .wrappers import *
