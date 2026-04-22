@@ -11,7 +11,7 @@ if sys.version_info < (3, 10, 0):
 
 USE_MYPYC = (
     os.environ.get("MYPYC_DISABLE", "0") != "1"
-    or "--no-mypyc" in sys.argv
+    and "--no-mypyc" not in sys.argv
 )
 
 if "--no-mypyc" in sys.argv:

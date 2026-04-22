@@ -24,7 +24,7 @@ pip install -e .
 
 > The `environment` module is compiled to C extensions via [mypyc](https://github.com/mypyc/mypyc) automatically during `pip install`.
 A C compiler and `python-dev` headers are required. 
-> The library also works in interpreted python by setting the environment variable `DISABLE_MYPYC=1`.
+> The library also works in interpreted python by setting the environment variable `MYPYC_DISABLE=1`.
 
 
 The base install has minimal dependencies.
@@ -48,10 +48,10 @@ pytest
 Run test coverage:
 
 ```bash
-DISABLE_MYPYC=1 pytest --cov --cov-report=term-missing --cov-report=xml
+MYPYC_DISABLE=1 pytest --cov --cov-report=term-missing --cov-report=xml
 ```
 
-`DISABLE_MYPYC=1` keeps the environment in interpreted Python mode, which makes
+`MYPYC_DISABLE=1` keeps the environment in interpreted Python mode, which makes
 line-level coverage reporting reliable for the `cpscheduler` source files.
 
 ## Project Structure
