@@ -14,6 +14,7 @@ EventID = int
 
 _global_event_id: EventID = 0
 
+@mypyc_attr(native_class=True, allow_interpreted_subclasses=True)
 class SimulationEvent(EzPickle):
     """
     Base class for all events in the simulation.
@@ -88,7 +89,6 @@ def register_instruction(cls: type[SimulationEvent], instruction: str) -> None:
 def validate_event(
     event: SimulationEvent, state: ScheduleState
 ) -> SimulationEvent:
-    validated_event = SimulationEvent()
     while True:
         validated_event = event.resolve(state)
 
@@ -143,6 +143,7 @@ class Schedule(EzPickle):
         self.non_timed_events.clear()
 
         self._heap.clear()
+        self._event_cache.clear()
         self._non_timed_event_keys.clear()
         self._event_time_cache.clear()
 
@@ -152,7 +153,11 @@ class Schedule(EzPickle):
 
     def is_empty(self) -> bool:
         "Check if there are no scheduled events."
-        return not self._heap
+        for time in self._heap:
+            if self.timed_events.get(time) or self.non_timed_events.get(time):
+                return False
+
+        return True
 
     def next_time(self) -> Time:
         "Get the next scheduled time for events."
@@ -165,6 +170,19 @@ class Schedule(EzPickle):
             self.non_timed_events[time] = []
             heappush(self._heap, time)
 
+    def _may_remove_time_slot(self, time: Time) -> None:
+        "Remove a time slot if it has no more events, ensuring the heap is updated."
+        if time in self.timed_events and self.timed_events[time]: return
+        if time in self.non_timed_events and self.non_timed_events[time]: return
+
+        self.non_timed_events.pop(time, None)
+        self.timed_events.pop(time, None)
+
+        self._heap.remove(time)
+        heapify(self._heap)
+
+        if self._tail == time:
+            self._tail = None
 
     def _reschedule_event(self, entry: _Entry, state: ScheduleState) -> None:
         event = entry[-1]
@@ -376,16 +394,33 @@ class Schedule(EzPickle):
         else:
             self.timed_events[time].remove(event)
 
-    def reschedule_event(self, event_id: EventID, new_time: Time) -> None:
-        "Reschedule an existing event to a new time."
+        self._may_remove_time_slot(time)
+
+    def reschedule_event(
+        self, event_id: EventID, state: ScheduleState, new_time: Time
+    ) -> None:
+        "Reschedule an existing timed event to a new time."
+        if event_id not in self._event_cache:
+            raise ValueError(f"Event {event_id} is not scheduled")
+    
+        if event_id in self._non_timed_event_keys:
+            raise ValueError("Cannot reschedule non-timed events.")
+
+        if new_time < state.time:
+            raise ValueError(
+                f"Cannot reschedule event to the past: {new_time} < {state.time}"
+            )
+
         time = self._event_time_cache[event_id]
+
+        if new_time == time: return
+
         event = self._event_cache[event_id]
 
         self.timed_events[time].remove(event)
-
         self._create_time_slot(new_time)
-        self._event_time_cache[event_id] = new_time
         self.timed_events[new_time].append(event)
+        self._event_time_cache[event_id] = new_time
 
     def change_event_priority(
         self, event_id: EventID, new_priority: PriorityValue
@@ -396,13 +431,12 @@ class Schedule(EzPickle):
                 f"change_event_priority: Event {event_id} is not scheduled"
             )
 
-        elif event_id not in self._non_timed_event_keys:
+        if event_id not in self._non_timed_event_keys:
             event = self._event_cache[event_id]
 
             raise ValueError(
                 f"change_event_priority: Timed events do not handle priority."
             )
-
 
         time = self._event_time_cache[event_id]
         rank, old_priority, order = self._non_timed_event_keys[event_id]

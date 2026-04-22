@@ -215,6 +215,15 @@ class ScheduleState(EzPickle):
         self.instance = ProblemInstance(task_data)
 
     # Flow control methods
+    def clear(self) -> None:
+        self.time = 0
+        self.infeasible = False
+        self.instance = ProblemInstance({})
+        self.domains = TaskDomains(self.instance)
+        self.runtime = RuntimeState(self.instance)
+        self.domain_event_queue.clear()
+        self.runtime_event_queue.clear()
+
     def reset(self) -> None:
         assert (
             self.loaded
@@ -805,11 +814,15 @@ class ScheduleState(EzPickle):
         start = self.domains.start
 
         if machine_id == GLOBAL_MACHINE_ID:
-            lb = start.global_lbs[task_id]
-            if t < lb:
-                return False
+            row = task_id * self.n_machines
 
-            return t < start.global_ubs[task_id]
+            for machine in self.domains.feasible_machines[task_id]:
+                idx = row + machine
+
+                if t >= start.lbs[idx] and t < start.ubs[idx]:
+                    return True
+
+            return False
 
         if machine_id not in self.domains.feasible_machines[task_id]:
             return False

@@ -1,5 +1,7 @@
 from typing import NoReturn, final
 
+from mypy_extensions import mypyc_attr
+
 from cpscheduler.environment.state.events import DomainEvent, VarField
 from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.constants import TaskID, MachineID, Time, EzPickle
@@ -18,6 +20,7 @@ STATE_INFEASIBLE = VarField.STATE_INFEASIBLE
 
 constraints: dict[str, type["Constraint"]] = {}
 
+@mypyc_attr(native_class=True, allow_interpreted_subclasses=True)
 class Constraint(EzPickle):
     """
     Base class for all constraints in the scheduling environment.

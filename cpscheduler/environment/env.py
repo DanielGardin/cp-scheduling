@@ -254,6 +254,10 @@ class SchedulingEnv(EzPickle):
 
         self.set_objective(Objective())
 
+        self.state.clear()
+
+        self.force_reset = True
+
     def get_entry(self) -> str:
         "Get a string representation of the environment's configuration."
         alpha = self.setup.get_entry()

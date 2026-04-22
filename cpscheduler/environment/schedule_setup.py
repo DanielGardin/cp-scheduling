@@ -8,6 +8,8 @@ identical parallel machines, uniform parallel machines, job shop, and open shop 
 
 from collections.abc import Iterable
 
+from mypy_extensions import mypyc_attr
+
 from cpscheduler.environment.utils import convert_to_list
 
 from cpscheduler.environment.constants import (
@@ -26,6 +28,7 @@ def ceil_div(a: Time, b: Time) -> Time:
     return -(-a // b)
 
 
+@mypyc_attr(native_class=True, allow_interpreted_subclasses=True)
 class ScheduleSetup(EzPickle):
     """
     Base class for scheduling setups. It defines the common interface for all scheduling setups

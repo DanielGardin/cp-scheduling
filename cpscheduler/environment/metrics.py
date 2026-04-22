@@ -107,17 +107,18 @@ class ReferenceScheduleMetrics:
 
     sorted_start_times: list[tuple[TaskID, Time]]
 
-    # TODO: Ensure that cpy_env time has all scheduled tasks completed.
-    def __init__(self, reference_schedule: ActionType, env: SchedulingEnv):
+    def __init__(self, env: SchedulingEnv, reference_schedule: ActionType):
         self.start_times = {}
         self.assignments = {}
 
         cpy_env = deepcopy(env)
-        cpy_env.step(reference_schedule)
-
         runtime = cpy_env.state.runtime
 
-        for task_id in runtime.completed_tasks:
+        already_completed = runtime.completed_tasks.copy()
+
+        cpy_env.step(reference_schedule)
+
+        for task_id in runtime.completed_tasks - already_completed:
             self.assignments[task_id] = runtime.get_assignment(task_id)
             self.start_times[task_id] = runtime.get_start(task_id)
 

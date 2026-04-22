@@ -1,8 +1,11 @@
+from mypy_extensions import mypyc_attr
+
 from cpscheduler.environment.constants import MachineID, TaskID, EzPickle
 from cpscheduler.environment.state import ScheduleState
 
 objectives: dict[str, type["Objective"]] = {}
 
+@mypyc_attr(native_class=True, allow_interpreted_subclasses=True)
 class Objective(EzPickle):
     """
     Base class for all objective functions in the scheduling environment.
