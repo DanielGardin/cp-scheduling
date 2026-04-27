@@ -1,3 +1,4 @@
+from collections import Counter
 from typing import Any
 from copy import deepcopy
 
@@ -34,7 +35,9 @@ def machine_utilization(state: ScheduleState) -> float:
 def num_preemptions(state: ScheduleState) -> int:
     "Calculate the total number of preemption switches that occurred during the scheduling period."
     total_switches = 0
-    for history in state.runtime.history:
+
+    for task_id in state.runtime.completed_tasks:
+        history = state.runtime.history[task_id]
         total_switches += len(history) - 1
 
     return total_switches
@@ -43,7 +46,8 @@ def num_preemptions(state: ScheduleState) -> int:
 def max_preemptions(state: ScheduleState) -> int:
     "Calculate the maximum number of preemption switches that occurred during the scheduling period."
     max_switches = 0
-    for history in state.runtime.history:
+    for task_id in state.runtime.completed_tasks:
+        history = state.runtime.history[task_id]
         n_switches = len(history) - 1
 
         if n_switches > max_switches:
@@ -276,18 +280,12 @@ class ReferenceScheduleMetrics:
         inversions = _count_inversions(actual_times)
         total_pairs = n * (n - 1) // 2
 
-        ties = 0
-        if actual_times:
-            elem = actual_times[0]
-            for i in range(1, n):
-                next_elem = actual_times[i]
+        # Count all tied pairs, not just adjacent equal values.
+        ties = sum(
+            count * (count - 1) // 2 for count in Counter(actual_times).values()
+        )
 
-                if elem == next_elem:
-                    ties += 1
-
-                elem = next_elem
-
-        concordant = total_pairs - inversions
+        concordant = total_pairs - inversions - ties
         discordant = inversions
         denominator = sqrt(total_pairs * (total_pairs - ties))
 

@@ -118,7 +118,7 @@ class DisjunctiveMILPFormulation(PyomoFormulation):
                 f"assignment_{task_id}",
             )
 
-            if state.instance.is_preemptive(task_id):
+            if state.is_preemptive(task_id):
                 raise NotImplementedError("Preemptive tasks are not yet supported in the disjunctive formulation.")
 
             processing_time = sum(

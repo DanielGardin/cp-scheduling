@@ -119,15 +119,14 @@ class ResourceConstraint(Constraint):
         capacities: Iterable[Float] | Float | None = None,
         resource_usage: Iterable[str] | None = None,
     ) -> None:
+        self.constant_capacity = None
+
         if capacities is None:
             capacities = []
 
         elif isinstance(capacities, Float):
             self.constant_capacity = float(capacities)
             capacities = []
-
-        else:
-            self.constant_capacity = None
 
         self.capacities = convert_to_list(capacities, float)
 
@@ -267,15 +266,14 @@ class NonRenewableResourceConstraint(Constraint):
         capacities: Iterable[Float] | Float | None = None,
         resource_usage: Iterable[str] | None = None,
     ) -> None:
+        
+        self.constant_capacity = None
         if capacities is None:
             capacities = []
 
         elif isinstance(capacities, Float):
             self.constant_capacity = float(capacities)
             capacities = []
-
-        else:
-            self.constant_capacity = None
 
         self.capacities = convert_to_list(capacities, float)
 
@@ -307,12 +305,21 @@ class NonRenewableResourceConstraint(Constraint):
         self.capacities.append(float(capacity))
 
     def initialize(self, state: ScheduleState) -> None:
-        self.resources.clear()
+        if self.constant_capacity is not None:
+            self.capacities = [self.constant_capacity] * len(self.resource_tags)
 
-        for resource in self.resource_tags:
-            self.resources.append(
-                convert_to_list(state.instance.task_instance[resource], float)
+        elif len(self.capacities) != len(self.resource_tags):
+            raise ValueError(
+                "The number of capacities must be equal to the number of resource usage columns."
             )
+
+        self.resources = [
+            convert_to_list(state.instance.task_instance[resource], float)
+            for resource in self.resource_tags
+        ]
+
+
+
 
     def reset(self, state: ScheduleState) -> None:
         self.current_capacities = self.capacities.copy()

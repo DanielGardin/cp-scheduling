@@ -24,7 +24,7 @@ InstructionArgs = tuple[Int, ...]
 BAction = tuple[SchedulerArgs, InstructionSpec, Unpack[InstructionArgs]]
 "Timed instruction action, represented as a tuple of (time, instruction_name, *args)."
 
-CAction = tuple[InstructionSpec, Unpack[tuple[Int, ...]]]
+CAction = tuple[InstructionSpec, Unpack[InstructionArgs]]
 "Instruction action, represented as an Instruction object or a tuple of (instruction_name, *args)."
 
 SingleInstruction = BAction | CAction
@@ -33,17 +33,22 @@ ActionType = SingleInstruction | Iterable[SingleInstruction] | None
 
 
 def is_single_action(
-    action: ActionType,
+    action: Any,
 ) -> TypeIs[SingleInstruction]:
     "Check if the action is a single instruction or a iterable of instructions."
     if not isinstance(action, tuple):
         return False
 
     if isinstance(action[0], int) or isinstance(action[0], dict):
-        return isinstance(action[1], str)
+        spec = action[1]
 
-    return isinstance(action[0], str)
+    else:
+        spec = action[0]
 
+    if isinstance(spec, str):
+        return True
+
+    return isinstance(spec, type) and issubclass(spec, SimulationEvent)
 
 def _parse_args(args: list[Any]) -> tuple[Any, ...]:
     "Parse raw instruction arguments, converting Int to int where appropriate."

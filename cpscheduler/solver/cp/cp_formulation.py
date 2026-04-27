@@ -150,7 +150,7 @@ class DisjunctiveCPFormulation(MiniZincFormulation):
 
         for task_id in range(state.n_tasks):
             machines = list(state.get_machines(task_id))
-            optional = state.instance.is_optional(task_id)
+            optional = state.is_optional(task_id)
 
             if state.is_fixed(task_id):
                 start_time = state.runtime.get_start(task_id)

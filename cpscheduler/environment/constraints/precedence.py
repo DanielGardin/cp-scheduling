@@ -9,7 +9,8 @@ from cpscheduler.environment.utils import convert_to_list
 
 
 def topological_sort(
-    precedence_map: dict[TaskID, list[TaskID]], n_tasks: int
+    precedence_map: dict[TaskID, list[TaskID]], n_tasks: int,
+    remove_leaves: bool = True
 ) -> list[TaskID]:
     """
     Perform a topological sort on a directed acyclic graph.
@@ -40,17 +41,15 @@ def topological_sort(
     while idx < len(queue):
         vertex = queue[idx]
         idx += 1
+        
+        if not remove_leaves or (vertex in precedence_map and precedence_map[vertex]):
+            topological_order.append(vertex)
 
-        if vertex not in precedence_map or not precedence_map[vertex]:
-            continue
+            for child in precedence_map.get(vertex, []):
+                in_degree[child] -= 1
 
-        topological_order.append(vertex)
-
-        for child in precedence_map[vertex]:
-            in_degree[child] -= 1
-
-            if in_degree[child] == 0:
-                queue.append(child)
+                if in_degree[child] == 0:
+                    queue.append(child)
 
     return topological_order
 
@@ -108,10 +107,10 @@ class PrecedenceConstraint(Constraint):
         precedence: dict[Int, list[Int]] = {}
 
         for parent, child in edges:
-            if parent not in precedence:
-                precedence[parent] = []
+            if child not in precedence:
+                precedence[child] = []
 
-            precedence[parent].append(child)
+            precedence[child].append(parent)
 
         return cls(precedence)
 
@@ -299,7 +298,9 @@ class ORPrecedenceConstraint(PrecedenceConstraint):
         super().__init__(precedence)
 
     def reset(self, state: ScheduleState) -> None:
-        for task_id in topological_sort(self.children, state.n_tasks):
+        tasks = topological_sort(self.children, state.n_tasks, False)
+
+        for task_id in tasks:
             if task_id in self.parents:
                 earliest_start = min(
                     state.get_end_lb(parent_id)

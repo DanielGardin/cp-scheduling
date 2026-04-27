@@ -2,11 +2,7 @@ from typing_extensions import Self
 from collections.abc import Iterable, Mapping
 
 from cpscheduler.environment.constants import (
-    TaskID,
-    MachineID,
-    Time,
-    Int,
-    GLOBAL_MACHINE_ID,
+    TaskID, MachineID, Time, Int,
     MAX_TIME,
 )
 
@@ -75,6 +71,9 @@ class MachineEligibilityConstraint(Constraint):
                     state.forbid_machine(task_id, other_machine)
 
     def on_bound_reset(self, task_id: TaskID, state: ScheduleState) -> None:
+        if task_id not in self.eligibility:
+            return
+
         machines = self.eligibility[task_id]
 
         for other_machine in state.get_machines(task_id):
@@ -119,17 +118,12 @@ class MachineConstraint(Constraint):
     def on_infeasibility(
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:
-        if machine_id == GLOBAL_MACHINE_ID:
-            for machine in state.instance.get_machines(task_id):
-                self.machine_map[machine].discard(task_id)
-
-        else:
-            self.machine_map[machine_id].discard(task_id)
+        self.machine_map[machine_id].discard(task_id)
 
     def on_assignment(
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:
-        for machine in state.instance.get_machines(task_id):
+        for machine in state.get_original_machines(task_id):
             self.machine_map[machine].discard(task_id)
 
         end_time = state.get_end_lb(task_id)
@@ -141,7 +135,7 @@ class MachineConstraint(Constraint):
         for other_task_id in self.machine_map[machine_id]:
             state.reset_bounds(other_task_id)
 
-        for machine in state.instance.get_machines(task_id):
+        for machine in state.get_original_machines(task_id):
             self.machine_map[machine].add(task_id)
 
 class MachineBreakdownConstraint(Constraint):
@@ -178,8 +172,6 @@ class MachineBreakdownConstraint(Constraint):
             ]
             for machine, intervals in breakdowns.items()
         }
-
-        self.next_breakdown = {}
 
     def add_breakdown(self, machine_id: Int, start_time: Int, end_time: Int) -> None:
         machine = MachineID(machine_id)
@@ -234,16 +226,17 @@ class MachineBreakdownConstraint(Constraint):
         return cls(breakdowns)
 
     def initialize(self, state: ScheduleState) -> None:
-        self.next_breakdown = {machine: 0 for machine in self.breakdowns}
-
-        for machine in self.breakdowns:
-            self.breakdowns[machine].sort()
-
         if state.debug_mode:
             for machine in self.breakdowns:
                 debug.machine_bounds(
                     machine, state, "MachineBreakdownConstraint"
                 )
+
+        self.next_breakdown = {machine: 0 for machine in self.breakdowns}
+
+        for machine in self.breakdowns:
+            self.breakdowns[machine].sort()
+
 
     def reset(self, state: ScheduleState) -> None:
         for machine in self.breakdowns:
@@ -252,12 +245,15 @@ class MachineBreakdownConstraint(Constraint):
             for task_id in state.runtime.get_awaiting_tasks():
                 start_lb = state.get_start_lb(task_id, machine)
 
-                for _, end in self.breakdowns[machine]:
-                    if start_lb < end:
+                for start, end in self.breakdowns[machine]:
+                    if start <= start_lb < end:
                         state.tight_start_lb(task_id, end, machine)
 
-                    else:
-                        self.next_breakdown[machine] += 1
+                if state.is_preemptive(task_id):
+                    end_lb = state.get_end_lb(task_id, machine)
+                    for start, end in self.breakdowns[machine]:
+                        if start < end_lb <= end:
+                            state.tight_start_lb(task_id, end, machine)
 
     def on_time_update(self, time: Time, state: ScheduleState) -> None:
         for machine, breakdown_intervals in self.breakdowns.items():
@@ -297,7 +293,7 @@ class BatchConstraint(Constraint):
     machine_map: list[set[TaskID]]
 
     capacity: list[int]
-    running_tasks: list[int]
+    running_tasks: list[set[TaskID]]
     next_free_time: list[Time]
 
     def __init__(self, capacity: Iterable[Int] | Int | None = None):
@@ -341,7 +337,7 @@ class BatchConstraint(Constraint):
         for machine_id, capacity in enumerate(self.capacity):
             if capacity <= 0:
                 for task_id in state.runtime.get_awaiting_tasks():
-                    if machine_id in state.instance.get_machines(task_id):
+                    if machine_id in state.get_machines(task_id):
                         state.forbid_machine(task_id, machine_id)
 
         n_tasks = state.n_tasks
@@ -358,23 +354,18 @@ class BatchConstraint(Constraint):
             for machine in state.get_machines(task_id):
                 self.machine_map[machine].add(TaskID(task_id))
 
-        self.running_tasks = [0] * n_machines
+        self.running_tasks = [set() for _ in range(n_machines)]
         self.next_free_time = [0] * n_machines
 
     def on_infeasibility(
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:
-        if machine_id == GLOBAL_MACHINE_ID:
-            for machine in state.instance.get_machines(task_id):
-                self.machine_map[machine].discard(task_id)
-
-        else:
-            self.machine_map[machine_id].discard(task_id)
+        self.machine_map[machine_id].discard(task_id)
 
     def on_assignment(
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:
-        for machine in state.instance.get_machines(task_id):
+        for machine in state.get_original_machines(task_id):
             self.machine_map[machine].discard(task_id)
 
         end_time = state.get_end_lb(task_id)
@@ -382,14 +373,30 @@ class BatchConstraint(Constraint):
         if end_time > self.next_free_time[machine_id]:
             self.next_free_time[machine_id] = end_time
 
-        self.running_tasks[machine_id] += 1
+        self.running_tasks[machine_id].add(task_id)
 
-        if self.running_tasks[machine_id] == self.capacity[machine_id]:
+        if len(self.running_tasks[machine_id]) == self.capacity[machine_id]:
             for other_task_id in self.machine_map[machine_id]:
                 state.tight_start_lb(other_task_id, end_time, machine_id)
 
     def on_pause(self, task_id: TaskID, machine_id: MachineID, state: ScheduleState) -> None:
-        raise NotImplementedError()
+        # Decrement the running task count on the machine
+        self.running_tasks[machine_id].discard(task_id)
+
+        if self.running_tasks[machine_id]:
+            self.next_free_time[machine_id] = max(
+                state.get_end_lb(running_task_id)
+                for running_task_id in self.running_tasks[machine_id]
+            )
+
+        else:
+            self.next_free_time[machine_id] = state.time
+
+            for other_task_id in self.machine_map[machine_id]:
+                state.reset_bounds(other_task_id)
+
+        for machine in state.get_original_machines(task_id):
+            self.machine_map[machine].add(task_id)
 
     def on_time_update(self, time: Time, state: ScheduleState) -> None:
         for machine_id, free_time in enumerate(self.next_free_time):
@@ -397,9 +404,9 @@ class BatchConstraint(Constraint):
                 continue
 
             if free_time == time:
-                self.running_tasks[machine_id] = 0
+                self.running_tasks[machine_id].clear()
                 continue
 
-            if self.running_tasks[machine_id] < self.capacity[machine_id]:
+            if len(self.running_tasks[machine_id]) < self.capacity[machine_id]:
                 for other_task_id in self.machine_map[machine_id]:
                     state.tight_start_lb(other_task_id, free_time, machine_id)
