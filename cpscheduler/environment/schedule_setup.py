@@ -72,12 +72,12 @@ class SingleMachineSetup(ScheduleSetup):
         self.disjunctive = disjunctive
 
     def initialize(self, state: ScheduleState) -> None:
-        instance = state.instance
+        p_times = convert_to_list(
+            state.get_data(self.processing_times), Time
+        )
 
-        for task_id, p_time in enumerate(
-            instance.task_instance[self.processing_times]
-        ):
-            instance.set_processing_time(task_id, 0, Time(p_time))
+        for task_id, p_time in enumerate(p_times):
+            state.set_processing_time(task_id, 0, p_time)
 
     def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
         if not self.disjunctive:
@@ -96,6 +96,8 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
     This setup is used for scheduling tasks on multiple machines using the same processing time.
     """
 
+    __args__ = ("n_machines",)
+
     n_machines: int
     processing_times: str 
     disjunctive: bool
@@ -111,13 +113,13 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
         self.disjunctive = disjunctive
 
     def initialize(self, state: ScheduleState) -> None:
-        instance = state.instance
+        p_times = convert_to_list(
+            state.get_data(self.processing_times), Time
+        )
 
-        for task_id, p_time in enumerate(
-            instance.task_instance[self.processing_times]
-        ):
+        for task_id, p_time in enumerate(p_times):
             for machine in range(self.n_machines):
-                instance.set_processing_time(task_id, machine, Time(p_time))
+                state.set_processing_time(task_id, machine, p_time)
 
     def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
         return (MachineConstraint(),) if self.disjunctive else ()
@@ -132,6 +134,8 @@ class UniformParallelMachineSetup(ScheduleSetup):
 
     This setup is used for scheduling tasks on multiple machines with different speeds.
     """
+
+    __args__ = ("speed",)
 
     speed: list[int]
     processing_times: str
@@ -152,16 +156,15 @@ class UniformParallelMachineSetup(ScheduleSetup):
         self.disjunctive = disjunctive
 
     def initialize(self, state: ScheduleState) -> None:
-        instance = state.instance
+        p_times = convert_to_list(
+            state.get_data(self.processing_times), Time
+        )
 
-        for task_id, global_p_time in enumerate(
-            instance.task_instance[self.processing_times]
-        ):
-            base_time = Time(global_p_time)
+        for task_id, p_time in enumerate(p_times):
             for machine, speed in enumerate(self.speed):
-                p_time = ceil_div(base_time, speed)
+                machine_p_time = ceil_div(p_time, speed)
 
-                instance.set_processing_time(task_id, machine, p_time)
+                state.set_processing_time(task_id, machine, machine_p_time)
 
     def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
         return (MachineConstraint(),) if self.disjunctive else ()
@@ -171,6 +174,8 @@ class UniformParallelMachineSetup(ScheduleSetup):
 
 
 class UnrelatedParallelMachineSetup(ScheduleSetup):
+
+    __args__ = ("processing_times",)
 
     processing_times: list[str]
     disjunctive: bool
@@ -190,13 +195,13 @@ class UnrelatedParallelMachineSetup(ScheduleSetup):
         self.disjunctive = disjunctive
 
     def initialize(self, state: ScheduleState) -> None:
-        instance = state.instance
-
         for machine, p_time_feature in enumerate(self.processing_times):
-            p_times = instance.task_instance[p_time_feature]
+            p_times = convert_to_list(
+                state.get_data(p_time_feature), Time
+            )
 
             for task_id, p_time in enumerate(p_times):
-                instance.set_processing_time(task_id, machine, Time(p_time))
+                state.set_processing_time(task_id, machine, p_time)
 
     def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
         return (MachineConstraint(),) if self.disjunctive else ()
@@ -228,16 +233,18 @@ class OpenShopSetup(ScheduleSetup):
         self.disjunctive = disjunctive
 
     def initialize(self, state: ScheduleState) -> None:
-        instance = state.instance
+        machine_ids = convert_to_list(
+            state.get_data(self.machine_feature), MachineID
+        )
 
-        machine_ids = instance.task_instance[self.machine_feature]
-        processing_times = instance.task_instance[self.processing_times]
+        p_times = convert_to_list(
+            state.get_data(self.processing_times), Time
+        )
 
-        for task_id in range(instance.n_tasks):
-            machine: MachineID = machine_ids[task_id]
-            p_time: Time = processing_times[task_id]
+        for task_id, p_time in enumerate(p_times):
+            machine_id = machine_ids[task_id]
 
-            instance.set_processing_time(task_id, machine, p_time)
+            state.set_processing_time(task_id, machine_id, p_time)
 
     def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
         task_disjunction = NonOverlapConstraint(state.instance.job_tasks)

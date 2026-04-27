@@ -1,4 +1,5 @@
 from typing import Any, TypeAlias, Literal, cast
+from collections.abc import KeysView
 
 from mypy_extensions import mypyc_attr
 
@@ -201,7 +202,7 @@ class ScheduleState(EzPickle):
 
     @property
     def loaded(self) -> bool:
-        return self.instance.loaded
+        return self.instance.n_tasks > 0
 
     @property
     def debug_mode(self) -> bool:
@@ -272,6 +273,67 @@ class ScheduleState(EzPickle):
                 self.runtime_event_queue.append(
                     RuntimeEvent(task_id, TASK_COMPLETED, assignment)
                 )
+
+    # Problem Instance API methods
+
+    ## Getter methods for instance parameters
+
+    def get_data(self, feature: str) -> list[Any]:
+        return self.instance.task_instance[feature]
+
+    def is_preemptive(self, task_id: TaskID) -> bool:
+        "Check if a task allows preemption."
+        return self.instance.preemptive[task_id]
+
+    def is_optional(self, task_id: TaskID) -> bool:
+        "Check if a task is optional."
+        return self.instance.optional[task_id]
+
+    def get_processing_time(
+        self, task_id: TaskID, machine_id: MachineID
+    ) -> Time:
+        "Get the processing time for a given task and machine."
+        p_time = self.instance.processing_times[task_id].get(machine_id)
+
+        if p_time is None:
+            raise ValueError(
+                f"get_processing_time: Task {task_id} cannot be processed in Machine {machine_id}"
+            )
+
+        return p_time
+
+    def get_original_machines(self, task_id: TaskID) -> KeysView[MachineID]:
+        "Get the set of machines that can process a given task."
+        return self.instance.processing_times[task_id].keys()
+
+    ## Setter methods for instance parameters
+
+    def set_preemption(
+        self, task_id: TaskID, allow_preemption: bool = True
+    ) -> None:
+        "Set whether a task allows preemption."
+        self.instance.preemptive[task_id] = allow_preemption
+
+    def set_optionality(self, task_id: TaskID, optional: bool = True) -> None:
+        "Set whether a task is optional."
+        self.instance.optional[task_id] = optional
+
+    def set_processing_time(
+        self, task_id: TaskID, machine_id: MachineID, time: Time
+    ) -> None:
+        "Set the processing time for a given task and machine."
+        if time < 0:
+            raise ValueError("Processing time cannot be negative.")
+
+        if machine_id + 1 > self.instance.n_machines:
+            self.instance.n_machines = machine_id + 1
+
+        self.instance.processing_times[task_id][machine_id] = time
+
+    def remove_machine(self, task_id: TaskID, machine_id: MachineID) -> None:
+        "Remove a machine from processing a given task."
+        if machine_id in self.instance.processing_times[task_id]:
+            del self.instance.processing_times[task_id][machine_id]
 
     # Constraint propagation API methods
 

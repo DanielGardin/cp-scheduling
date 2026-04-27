@@ -3,6 +3,7 @@
 from typing import (
     Any, Final, SupportsInt, SupportsFloat, Literal, ClassVar, cast, final
 )
+from collections.abc import Iterable, Mapping, Hashable
 from typing_extensions import Self
 
 from mypy_extensions import i64, i32, i16, u8, mypyc_attr
@@ -19,7 +20,7 @@ Time = i32
 
 # Generic numeric types
 Int = SupportsInt | int | i64 | i32 | i16 | u8
-Float = SupportsFloat | float | i64 | i32 | i16 | u8
+Float = SupportsFloat | float
 
 # ------------------------------------------------------------------------------
 # Constants
@@ -65,8 +66,28 @@ class Status(Enum):
 PickleState = list[tuple[str, Any]]
 "Internal state of an object when serializing it"
 
+
+def _to_hashable(value: Any) -> Any:
+    "Convert nested containers into a hashable representation."
+
+    if isinstance(value, Mapping):
+        return frozenset(
+            (_to_hashable(key), _to_hashable(val))
+            for key, val in value.items()
+        )
+
+    if isinstance(value, set | frozenset):
+        return frozenset(_to_hashable(item) for item in value)
+
+    if isinstance(value, Iterable) and not isinstance(value, (str, bytes)):
+        return tuple(_to_hashable(item) for item in value)
+
+    if isinstance(value, Hashable):
+        return value
+
+    raise TypeError(f"Value of type {type(value).__name__} is not hashable")
+
 def _collect_fields(cls: type) -> tuple[str, ...]:
-    # explicit always wins
     fields = getattr(cls, "__ez_fields__", None)
     if fields is not None:
         return cast(tuple[str, ...], fields)
@@ -154,7 +175,7 @@ class EzPickle:
         return f"{cls.__name__}({', '.join(parts)})"
 
     def __hash__(self) -> int:
-        return hash(self.__getstate__())
+        return hash(_to_hashable(self.__getstate__()))
 
     # FUTURE: Not sure why mypyC can't compile EzPickle with __eq__
     # but when we remove the implementation, everything works fine.

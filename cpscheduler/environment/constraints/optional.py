@@ -20,7 +20,7 @@ class RejectableConstraint(PassiveConstraint):
 
     def initialize(self, state: ScheduleState) -> None:
         for task_id in range(state.n_tasks):
-            state.instance.set_optionality(task_id)
+            state.set_optionality(task_id)
 
     def get_entry(self) -> str:
         return "rej"

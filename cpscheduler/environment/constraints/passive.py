@@ -137,11 +137,9 @@ class ConstantProcessingTime(PassiveConstraint):
         self.processing_time = Time(processing_time)
 
     def initialize(self, state: ScheduleState) -> None:
-        instance = state.instance
-
         for task_id in range(state.n_tasks):
-            for machine in state.instance.processing_times[task_id]:
-                instance.set_processing_time(
+            for machine in state.get_original_machines(task_id):
+                state.set_processing_time(
                     task_id, machine, self.processing_time
                 )
 

@@ -13,8 +13,7 @@ from cpscheduler.environment.state import ScheduleState
 def select_machine(
     state: ScheduleState, task_id: TaskID, machine_id: MachineID
 ) -> int:
-    task_machines = state.instance.get_machines(task_id)
-    for machine in task_machines:
+    for machine in state.get_machines(task_id):
         if state.is_available(task_id, machine):
             return machine
 
@@ -40,7 +39,7 @@ class ExecuteEvent(SimulationEvent):
     def resolve(self, state: ScheduleState) -> Self:
         machine_id = self.machine_id
         task_id = self.task_id
-        task_machines = state.instance.get_machines(task_id)
+        task_machines = state.get_machines(task_id)
 
         if machine_id != GLOBAL_MACHINE_ID:
             if machine_id not in task_machines:
