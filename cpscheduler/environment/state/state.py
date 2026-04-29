@@ -10,24 +10,20 @@ from cpscheduler.environment.constants import (
 )
 
 from cpscheduler.environment.state.csp import (
-    TaskDomains,
-    Presence,
-    PresenceType,
-    presence_to_str
+    TaskDomains, Presence, PresenceType, presence_to_str
 )
 
 from cpscheduler.environment.state.events import (
-    DomainEvent,
-    RuntimeEvent,
-    VarField,
-    VarFieldType,
-    RuntimeEventKind
+    DomainEvent, RuntimeEvent, VarField, VarFieldType, RuntimeEventKind
 )
 
-from cpscheduler.environment.state.instance import ProblemInstance
+from cpscheduler.environment.instance import ProblemInstance
 from cpscheduler.environment.state.runtime import RuntimeState, TaskHistory
 
-# import cpscheduler.environment.debug as debug
+from cpscheduler.environment.debug import (
+    validate_machine_id, validate_domain_bounds
+)
+
 
 ObsType: TypeAlias = tuple[dict[str, list[Any]], dict[str, list[Any]]]
 
@@ -88,6 +84,8 @@ class ScheduleState(EzPickle):
     changes through them.
     """
 
+    __args__ = ("instance",)
+
     instance: ProblemInstance
 
     time: Time
@@ -103,13 +101,16 @@ class ScheduleState(EzPickle):
 
     _debug_checks: bool
 
-    def __init__(self) -> None:
-        self.instance = ProblemInstance({}) # Dummy instance
+    def __init__(self, instance: ProblemInstance) -> None:
+        self.instance = instance
 
         self.time = 0
 
         self.infeasible = False
         self._debug_checks = False
+
+        self.domains = TaskDomains(instance)
+        self.runtime = RuntimeState(instance)
 
         self.domain_event_queue = []
         self.runtime_event_queue = []
@@ -117,77 +118,8 @@ class ScheduleState(EzPickle):
     def set_debug_checks(self, enabled: bool = True) -> None:
         self._debug_checks = bool(enabled)
 
-    def _debug_validate_machine_id(
-        self,
-        task_id: TaskID,
-        machine_id: MachineID,
-        allow_global: bool = False,
-        origin: str = "_debug_validate_machine_id"
-    ) -> None:
-        if allow_global and machine_id == GLOBAL_MACHINE_ID:
-            return
-
-        if machine_id < 0 or machine_id >= self.n_machines:
-            raise RuntimeError(
-                f"{origin}: Invalid machine_id={machine_id} for task {task_id}. "
-                f"Expected [0, {self.n_machines - 1}]."
-            )
-
-        if machine_id not in self.instance.processing_times[task_id]:
-            raise RuntimeError(
-                f"{origin}: Machine {machine_id} is not valid for task {task_id}."
-            )
-
-    def _debug_validate_bounds(
-        self,
-        task_id: TaskID,
-        machine_id: MachineID = GLOBAL_MACHINE_ID,
-        origin: str = "_debug_validate_bounds"
-    ) -> None:
-        domains = self.domains
-        row = task_id * self.n_machines
-
-        machines: list[MachineID]
-        if machine_id == GLOBAL_MACHINE_ID:
-            machines = list(domains.feasible_machines[task_id])
-        else:
-            self._debug_validate_machine_id(task_id, machine_id)
-            machines = [machine_id]
-
-        for m_id in machines:
-            idx = row + m_id
-
-            start_lb = domains.start.lbs[idx]
-            start_ub = domains.start.ubs[idx]
-            end_lb = domains.end.lbs[idx]
-            end_ub = domains.end.ubs[idx]
-            remaining = domains.remaining_times[idx]
-
-            if start_lb > start_ub:
-                raise RuntimeError(
-                    f"Invalid start bounds for task {task_id} on machine {m_id}: "
-                    f"[{start_lb}, {start_ub}]."
-                )
-
-            if end_lb > end_ub:
-                raise RuntimeError(
-                    f"Invalid end bounds for task {task_id} on machine {m_id}: "
-                    f"[{end_lb}, {end_ub}]."
-                )
-
-            if start_lb + remaining > end_ub:
-                raise RuntimeError(
-                    f"Inconsistent bounds for task {task_id} on machine {m_id}: "
-                    f"start_lb({start_lb}) + p({remaining}) > end_ub({end_ub})."
-                )
-
-            if end_lb - remaining > start_ub:
-                raise RuntimeError(
-                    f"Inconsistent bounds for task {task_id} on machine {m_id}: "
-                    f"end_lb({end_lb}) - p({remaining}) > start_ub({start_ub})."
-                )
-
     # Properties
+
     @property
     def n_machines(self) -> int:
         return self.instance.n_machines
@@ -201,35 +133,22 @@ class ScheduleState(EzPickle):
         return self.instance.n_jobs
 
     @property
-    def loaded(self) -> bool:
-        return self.instance.n_tasks > 0
-
-    @property
     def debug_mode(self) -> bool:
         return self._debug_checks
-
-    # Instance control methods
-    def read_instance(
-        self,
-        task_data: dict[str, list[Any]],
-    ) -> None:
-        self.instance = ProblemInstance(task_data)
 
     # Flow control methods
     def clear(self) -> None:
         self.time = 0
         self.infeasible = False
-        self.instance = ProblemInstance({})
-        self.domains = TaskDomains(self.instance)
-        self.runtime = RuntimeState(self.instance)
+
+        self.instance = ProblemInstance()
+        self.domains = TaskDomains()
+        self.runtime = RuntimeState()
+
         self.domain_event_queue.clear()
         self.runtime_event_queue.clear()
 
     def reset(self) -> None:
-        assert (
-            self.loaded
-        ), "No instance loaded. Please load an instance before resetting the state."
-
         self.time = 0
         self.infeasible = False
 
@@ -305,35 +224,6 @@ class ScheduleState(EzPickle):
     def get_original_machines(self, task_id: TaskID) -> KeysView[MachineID]:
         "Get the set of machines that can process a given task."
         return self.instance.processing_times[task_id].keys()
-
-    ## Setter methods for instance parameters
-
-    def set_preemption(
-        self, task_id: TaskID, allow_preemption: bool = True
-    ) -> None:
-        "Set whether a task allows preemption."
-        self.instance.preemptive[task_id] = allow_preemption
-
-    def set_optionality(self, task_id: TaskID, optional: bool = True) -> None:
-        "Set whether a task is optional."
-        self.instance.optional[task_id] = optional
-
-    def set_processing_time(
-        self, task_id: TaskID, machine_id: MachineID, time: Time
-    ) -> None:
-        "Set the processing time for a given task and machine."
-        if time < 0:
-            raise ValueError("Processing time cannot be negative.")
-
-        if machine_id + 1 > self.instance.n_machines:
-            self.instance.n_machines = machine_id + 1
-
-        self.instance.processing_times[task_id][machine_id] = time
-
-    def remove_machine(self, task_id: TaskID, machine_id: MachineID) -> None:
-        "Remove a machine from processing a given task."
-        if machine_id in self.instance.processing_times[task_id]:
-            del self.instance.processing_times[task_id][machine_id]
 
     # Constraint propagation API methods
 
@@ -677,8 +567,6 @@ class ScheduleState(EzPickle):
             self._recompute_global_bound(task_id, END, LB)
             self._recompute_global_bound(task_id, START, LB)
 
-
-
         self.domain_event_queue.append(
             DomainEvent(task_id, END_LB, machine_id)
         )
@@ -764,10 +652,11 @@ class ScheduleState(EzPickle):
         time = self.time
 
         if self._debug_checks:
-            self._debug_validate_machine_id(
+            validate_machine_id(
                 task_id, machine_id,
+                self,
+                origin="reset_bounds",
                 allow_global=True,
-                origin="reset_bounds"
             )
 
         if (
@@ -801,8 +690,9 @@ class ScheduleState(EzPickle):
             end.global_ubs[task_id] = MAX_TIME
 
             if self._debug_checks:
-                self._debug_validate_bounds(
-                    task_id, machine_id,
+                validate_domain_bounds(
+                    task_id, self,
+                    machine_id=machine_id,
                     origin="reset_bounds"
                 )
 
@@ -830,8 +720,8 @@ class ScheduleState(EzPickle):
         )
 
         if self._debug_checks:
-            self._debug_validate_bounds(
-                task_id,
+            validate_domain_bounds(
+                task_id, self,
                 origin="reset_bounds"
             )
 
@@ -863,6 +753,22 @@ class ScheduleState(EzPickle):
     # Discrete event simulation API methods
 
     ## Getter methods for variable values
+
+    def get_awaiting_tasks(self) -> list[TaskID]:
+        return list(self.runtime.awaiting_tasks)
+
+    def get_unlocked_tasks(self) -> list[TaskID]:
+        return list(self.runtime.unlocked_tasks)
+
+    def get_executing_tasks(self) -> list[TaskID]:
+        return list(self.runtime.executing_tasks)
+
+    def get_completed_tasks(self) -> list[TaskID]:
+        return list(self.runtime.completed_tasks)
+
+    def get_history(self, task_id: TaskID, segment: int = -1) -> TaskHistory:
+        return self.runtime.history[task_id][segment]
+
     def is_awaiting(self, task_id: TaskID) -> bool:
         return task_id in self.runtime.awaiting_tasks
 
@@ -1009,8 +915,9 @@ class ScheduleState(EzPickle):
         )
 
         if self._debug_checks:
-            self._debug_validate_bounds(
-                task_id, machine_id,
+            validate_domain_bounds(
+                task_id, self,
+                machine_id=machine_id,
                 origin="execute_task"
             )
 
@@ -1094,8 +1001,8 @@ class ScheduleState(EzPickle):
             runtime.recompute_last_completion_time()
 
         if self._debug_checks:
-            self._debug_validate_bounds(
-                task_id,
+            validate_domain_bounds(
+                task_id, self,
                 origin="pause_task"
             )
 

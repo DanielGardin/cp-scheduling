@@ -38,7 +38,7 @@ class SchedulingSolver:
 
         self.formulation = formulation
 
-        if not self.env.state.loaded:
+        if not self.env.loaded:
             raise ValueError(
                 "Environment must be loaded before initializing the solver."
             )
@@ -60,9 +60,6 @@ class SchedulingSolver:
             )
 
         cpy_env = deepcopy(self.env)
-
-        if cpy_env.force_reset:
-            cpy_env.reset()
 
         cpy_env.step(actions)
         self.formulation.warm_start(cpy_env)

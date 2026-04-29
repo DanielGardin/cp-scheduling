@@ -6,7 +6,7 @@ from cpscheduler.environment.constants import (
     EzPickle
 )
 
-from cpscheduler.environment.state.instance import ProblemInstance
+from cpscheduler.environment.instance import ProblemInstance
 
 DUMMY_INSTANCE = ProblemInstance({})
 

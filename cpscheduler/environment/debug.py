@@ -1,20 +1,24 @@
+from typing import TYPE_CHECKING
+
 from cpscheduler.environment.constants import (
     TaskID,
     MachineID,
     GLOBAL_MACHINE_ID
 )
-from cpscheduler.environment.state.state import ScheduleState
 
-def job_bounds(job: TaskID, state: ScheduleState, origin: str) -> None:
+if TYPE_CHECKING:
+    from cpscheduler.environment.state.state import ScheduleState
+
+def job_bounds(job: TaskID, state: "ScheduleState", origin: str) -> None:
     if not (0 <= job < state.n_jobs):
         raise ValueError(f"{origin}: invalid job {job}")
 
-def task_bounds(task: TaskID, state: ScheduleState, origin: str) -> None:
+def task_bounds(task: TaskID, state: "ScheduleState", origin: str) -> None:
     if not (0 <= task < state.n_tasks):
         raise ValueError(f"{origin}: invalid task {task}")
 
 def machine_bounds(
-    machine: MachineID, state: ScheduleState, origin: str
+    machine: MachineID, state: "ScheduleState", origin: str
 ) -> None:
     if not (0 <= machine < state.n_machines):
         raise ValueError(f"{origin}: invalid machine {machine}")
@@ -22,10 +26,10 @@ def machine_bounds(
 def validate_machine_id(
     task_id: TaskID,
     machine_id: MachineID,
-    state: ScheduleState,
+    state: "ScheduleState",
+    origin: str,
     *,
     allow_global: bool = False,
-    origin: str,
 ) -> None:
     """
     Validate that a machine identifier is well-formed and admissible for a task.
@@ -44,7 +48,7 @@ def validate_machine_id(
         Task whose machine assignment is being validated.
     machine_id : MachineID
         Machine identifier to validate.
-    state : ScheduleState
+    state : "ScheduleState"
         Provides problem dimensions and processing-time feasibility.
     allow_global : bool, optional
         If True, allows `machine_id == GLOBAL_MACHINE_ID` to bypass checks.
@@ -56,23 +60,29 @@ def validate_machine_id(
     RuntimeError
         If the machine identifier is out of bounds or not feasible for the task.
     """
+    if machine_id == GLOBAL_MACHINE_ID:
+        if not allow_global:
+            raise RuntimeError(
+                f"{origin}: Global machine passed on the invalid context. "
+                "Expected a specific machine [0, {self.n_machines - 1}]."
+            )
 
-    if allow_global and machine_id == GLOBAL_MACHINE_ID:
         return
 
     if machine_id < 0 or machine_id >= state.n_machines:
         raise RuntimeError(
-            f"{origin}: invalid machine_id={machine_id} for task {task_id}"
+            f"{origin}: Invalid machine_id={machine_id} for task {task_id}. "
+            f"Expected [0, {state.n_machines - 1}]."
         )
 
     if machine_id not in state.instance.processing_times[task_id]:
         raise RuntimeError(
-            f"{origin}: machine {machine_id} not allowed for task {task_id}"
+            f"{origin}: Machine {machine_id} is not valid for task {task_id}."
         )
 
 def validate_domain_bounds(
     task_id: TaskID,
-    state: ScheduleState,
+    state: "ScheduleState",
     *,
     machine_id: MachineID = GLOBAL_MACHINE_ID,
     origin: str,
@@ -96,7 +106,7 @@ def validate_domain_bounds(
     ----------
     task_id : TaskID
         Task whose temporal domains are being checked.
-    state : ScheduleState
+    state : "ScheduleState"
         Provides access to domain arrays and feasibility information.
     machine_id : MachineID, optional
         Target machine. If GLOBAL_MACHINE_ID, all feasible machines are checked.

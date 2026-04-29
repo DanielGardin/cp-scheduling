@@ -15,9 +15,10 @@ from typing import Any
 from collections.abc import Iterable, Mapping
 from typing_extensions import TypeIs, assert_never
 
-from cpscheduler.environment.utils import convert_to_list
+from cpscheduler.environment.instance import ProblemInstance
 from cpscheduler.environment.protocols import (
     Metric, InstanceTypes, InstanceGenerator, InfoType, Options,
+    prepare_instance
 )
 
 from cpscheduler.environment.constants import EzPickle
@@ -52,17 +53,27 @@ TASK_STARTED = RuntimeEventKind.TASK_STARTED
 TASK_PAUSED = RuntimeEventKind.TASK_PAUSED
 TASK_COMPLETED = RuntimeEventKind.TASK_COMPLETED
 
-
-def prepare_instance(instance: InstanceTypes) -> dict[str, list[Any]]:
-    "Prepare the instance data to a standard dictionary format."
-    return {
-        str(feature): convert_to_list(instance[feature]) for feature in instance
-    }
-
-
-def is_info_dict(value: Any) -> TypeIs[Mapping[Any, Any]]:
+def _is_info_dict(value: Any) -> TypeIs[Mapping[Any, Any]]:
     "Type guard to check if a value is an info dictionary."
     return isinstance(value, Mapping)
+
+def _prepare_instance(instance: InstanceTypes) -> ProblemInstance:
+    if isinstance(instance, ProblemInstance):
+        return instance
+
+    if isinstance(instance, tuple):
+        task_instance, job_instance = instance
+
+        return ProblemInstance(
+            prepare_instance(task_instance),
+            prepare_instance(job_instance)
+        )
+
+    task_instance = instance
+
+    return ProblemInstance(
+        prepare_instance(task_instance)
+    )
 
 class SchedulingEnv(EzPickle):
     """
@@ -94,7 +105,10 @@ class SchedulingEnv(EzPickle):
     # Helper variables
     _prev_obj_value: float
     event_count: int
-    force_reset: bool
+
+    loaded: bool
+    _frozen: bool
+    _debug: bool
 
     def __init__(
         self,
@@ -105,12 +119,15 @@ class SchedulingEnv(EzPickle):
         metrics: Mapping[str, Metric[Any]] | None = None,
         render_mode: Renderer | str | None = None,
     ):
+        self.loaded = False
+        self._frozen = False
+        self._debug = False
+
         if machine_setup is None:
             machine_setup = ScheduleSetup()
 
         self.setup = machine_setup
 
-        self.state = ScheduleState()
         self.schedule = Schedule()
 
         self.constraints = []
@@ -146,50 +163,50 @@ class SchedulingEnv(EzPickle):
 
         self._prev_obj_value = 0.0
         self.event_count = 0
-        self.force_reset = True
+
 
     def __repr__(self) -> str:
         state = self.state
 
         entry = self.get_entry()
 
-        if state.loaded:
-            obj_value = self.objective.get_current(state)
+        if self.loaded:
             n_tasks = state.n_tasks
-            time = state.time
 
-            return (
-                f"SchedulingEnv({entry}, n_tasks={n_tasks}, "
-                f"current_time={time}, objective={obj_value})"
-            )
+            if self._frozen:
+                obj_value = self.objective.get_current(state)
+                time = state.time
+
+                return (
+                    f"SchedulingEnv({entry}, n_tasks={n_tasks}, "
+                    f"current_time={time}, objective={obj_value})"
+                )
+
+            return f"SchedulingEnv({entry}, n_tasks={n_tasks})"
 
         return f"SchedulingEnv({entry}, n_tasks=0)"
 
     # Environment configuration public methods
     def add_constraint(self, constraint: Constraint) -> None:
         "Add a constraint to the environment."
-        state = self.state
-
-        if state.loaded:
-            constraint.initialize(state)
+        if self.loaded:
+            constraint.initialize(self.state)
 
         if isinstance(constraint, PassiveConstraint):
             self.passive_constraints.append(constraint)
 
         else:
             self.constraints.append(constraint)
-            self._rebuild_combined_constraints()
 
-        self.force_reset = True
+        self._frozen = False
 
     def set_objective(self, objective: Objective) -> None:
         "Set the objective function for the environment."
-        state = self.state
-
-        if state.loaded:
-            objective.initialize(state)
+        if self.loaded:
+            objective.initialize(self.state)
 
         self.objective = objective
+        self._frozen = False
 
     def set_instance(self, instance: InstanceTypes) -> None:
         """
@@ -199,16 +216,16 @@ class SchedulingEnv(EzPickle):
             instance: InstanceTypes
                 The instance data for the scheduling problem, can be a DataFrame or a dictionary.
         """
-        instance_dict = prepare_instance(instance)
+        instance = _prepare_instance(instance)
 
-        state = self.state
+        state = ScheduleState(instance)
+        state.set_debug_checks(self._debug)
+
         setup = self.setup
-
-        state.read_instance(instance_dict)
-        setup.initialize(state)
+        setup.initialize(instance)
 
         self.setup_constraints.clear()
-        for constraint in setup.setup_constraints(state):
+        for constraint in setup.setup_constraints(instance):
             self.setup_constraints.append(constraint)
 
         self._rebuild_combined_constraints()
@@ -221,7 +238,8 @@ class SchedulingEnv(EzPickle):
 
         self.objective.initialize(state)
 
-        self.force_reset = True
+        self.loaded = True
+        self.state = state
 
     def add_metric(self, name: str, metric: Metric[Any]) -> None:
         "Add a metric to the environment."
@@ -229,34 +247,15 @@ class SchedulingEnv(EzPickle):
 
     def set_debug_checks(self, enabled: bool = True) -> None:
         "Enable or disable debug guardrails in the underlying schedule state."
-        self.state.set_debug_checks(enabled)
+        self._debug = True
 
     def _rebuild_combined_constraints(self) -> None:
         "Rebuild the combined constraint list for the propagation loop."
         self.combined_constraints = self.setup_constraints + self.constraints
 
-    def clear_constraints(self) -> None:
-        "Clear all constraints from the environment."
-        self.constraints.clear()
-        self.setup_constraints.clear()
-        self.passive_constraints.clear()
-        self.combined_constraints.clear()
-        self.force_reset = True
-
     def clear_metrics(self) -> None:
         "Clear all metrics from the environment."
         self.metrics.clear()
-
-    def clear(self) -> None:
-        "Clear all instance data, constraints, objectives, and metrics from the environment."
-        self.clear_constraints()
-        self.clear_metrics()
-
-        self.set_objective(Objective())
-
-        self.state.clear()
-
-        self.force_reset = True
 
     def get_entry(self) -> str:
         "Get a string representation of the environment's configuration."
@@ -290,7 +289,7 @@ class SchedulingEnv(EzPickle):
         for metric_name, metric in self.metrics.items():
             metric_value = metric(self.state)
 
-            if is_info_dict(metric_value):
+            if _is_info_dict(metric_value):
                 info.update(
                     {
                         f"{metric_name}_{key}": value
@@ -472,15 +471,16 @@ class SchedulingEnv(EzPickle):
         elif self.instance_generator is not None:
             self.set_instance(self.instance_generator.sample(self))
 
-        if not self.state.loaded:
+        if not self.loaded:
             raise ValueError(
                 "Environment has not been loaded with an instance. "
                 "Please call reset(options={'instance':<instance>}) or set_instance(<instance>) before resetting."
             )
 
         state = self.state
-
+        state.instance.freeze()
         self.schedule.reset()
+
         state.reset()
 
         self.objective.reset(state)
@@ -489,7 +489,7 @@ class SchedulingEnv(EzPickle):
 
         self._prev_obj_value = self.objective.get_current(state) # Cold start
         self.event_count = 0
-        self.force_reset = False
+        self._frozen = True
 
         consistent = self.propagate()
 
@@ -506,10 +506,16 @@ class SchedulingEnv(EzPickle):
     ) -> tuple[ObsType, float, bool, bool, InfoType]:
         state = self.state
 
-        if not state.loaded or self.force_reset:
+        if not self.loaded:
             raise RuntimeError(
                 "Environment was not reset after loading an instance, or wasn't loaded. "
                 "Please call reset(options={'instance':<instance>}) or set_instance(<instance>), then reset()."
+            )
+
+        if not self._frozen:
+            raise RuntimeError(
+                "The instance configuration has changed, potentially invalidating the current "
+                "simulation step. Please call reset() for ensuring that the change is applied globally."
             )
 
         self.schedule_action(action)

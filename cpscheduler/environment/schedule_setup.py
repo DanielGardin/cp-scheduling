@@ -15,7 +15,8 @@ from cpscheduler.environment.utils import convert_to_list
 from cpscheduler.environment.constants import (
     MachineID, Time, Int, EzPickle
 )
-from cpscheduler.environment.state import ScheduleState
+
+from cpscheduler.environment.instance import ProblemInstance
 from cpscheduler.environment.constraints import (
     Constraint, NonOverlapConstraint, PrecedenceConstraint, MachineConstraint
 )
@@ -40,11 +41,13 @@ class ScheduleSetup(EzPickle):
 
         setups[cls.__name__] = cls
 
-    def initialize(self, state: ScheduleState) -> None:
+    def initialize(self, instance: ProblemInstance) -> None:
         "Initialize the state with the given schedule setup."
         raise NotImplementedError()
 
-    def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
+    def setup_constraints(
+        self, instance: ProblemInstance
+    ) -> tuple[Constraint, ...]:
         "Build the constraint for that setup."
         return ()
 
@@ -71,15 +74,13 @@ class SingleMachineSetup(ScheduleSetup):
         self.processing_times = processing_times
         self.disjunctive = disjunctive
 
-    def initialize(self, state: ScheduleState) -> None:
-        p_times = convert_to_list(
-            state.get_data(self.processing_times), Time
-        )
+    def initialize(self, instance: ProblemInstance) -> None:
+        p_times = instance.register_task_feature(self.processing_times)
 
         for task_id, p_time in enumerate(p_times):
-            state.set_processing_time(task_id, 0, p_time)
+            instance.set_processing_time(task_id, 0, Time(p_time))
 
-    def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
+    def setup_constraints(self, instance: ProblemInstance) -> tuple[Constraint, ...]:
         if not self.disjunctive:
             return ()
 
@@ -112,16 +113,15 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
         self.processing_times = processing_times
         self.disjunctive = disjunctive
 
-    def initialize(self, state: ScheduleState) -> None:
-        p_times = convert_to_list(
-            state.get_data(self.processing_times), Time
-        )
+    def initialize(self, instance: ProblemInstance) -> None:
+        p_times = instance.register_task_feature(self.processing_times)
+
 
         for task_id, p_time in enumerate(p_times):
             for machine in range(self.n_machines):
-                state.set_processing_time(task_id, machine, p_time)
+                instance.set_processing_time(task_id, machine, Time(p_time))
 
-    def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
+    def setup_constraints(self, instance: ProblemInstance) -> tuple[Constraint, ...]:
         return (MachineConstraint(),) if self.disjunctive else ()
 
     def get_entry(self) -> str:
@@ -155,18 +155,17 @@ class UniformParallelMachineSetup(ScheduleSetup):
         self.processing_times = processing_times
         self.disjunctive = disjunctive
 
-    def initialize(self, state: ScheduleState) -> None:
-        p_times = convert_to_list(
-            state.get_data(self.processing_times), Time
-        )
+    def initialize(self, instance: ProblemInstance) -> None:
+        instance.register_global_feature("speed", self.speed)
+        p_times = instance.register_task_feature(self.processing_times)
 
         for task_id, p_time in enumerate(p_times):
             for machine, speed in enumerate(self.speed):
-                machine_p_time = ceil_div(p_time, speed)
+                machine_p_time = ceil_div(Time(p_time), speed)
 
-                state.set_processing_time(task_id, machine, machine_p_time)
+                instance.set_processing_time(task_id, machine, machine_p_time)
 
-    def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
+    def setup_constraints(self, instance: ProblemInstance) -> tuple[Constraint, ...]:
         return (MachineConstraint(),) if self.disjunctive else ()
 
     def get_entry(self) -> str:
@@ -194,16 +193,15 @@ class UnrelatedParallelMachineSetup(ScheduleSetup):
         self.processing_times = list(processing_times)
         self.disjunctive = disjunctive
 
-    def initialize(self, state: ScheduleState) -> None:
+    def initialize(self, instance: ProblemInstance) -> None:
         for machine, p_time_feature in enumerate(self.processing_times):
-            p_times = convert_to_list(
-                state.get_data(p_time_feature), Time
-            )
+            p_times = instance.register_task_feature(p_time_feature)
+
 
             for task_id, p_time in enumerate(p_times):
-                state.set_processing_time(task_id, machine, p_time)
+                instance.set_processing_time(task_id, machine, Time(p_time))
 
-    def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
+    def setup_constraints(self, instance: ProblemInstance) -> tuple[Constraint, ...]:
         return (MachineConstraint(),) if self.disjunctive else ()
 
     def get_entry(self) -> str:
@@ -232,22 +230,17 @@ class OpenShopSetup(ScheduleSetup):
         self.machine_feature = machine_feature
         self.disjunctive = disjunctive
 
-    def initialize(self, state: ScheduleState) -> None:
-        machine_ids = convert_to_list(
-            state.get_data(self.machine_feature), MachineID
-        )
-
-        p_times = convert_to_list(
-            state.get_data(self.processing_times), Time
-        )
+    def initialize(self, instance: ProblemInstance) -> None:
+        machine_ids = instance.register_task_feature(self.machine_feature)
+        p_times = instance.register_task_feature(self.processing_times)
 
         for task_id, p_time in enumerate(p_times):
-            machine_id = machine_ids[task_id]
+            machine_id = MachineID(machine_ids[task_id])
 
-            state.set_processing_time(task_id, machine_id, p_time)
+            instance.set_processing_time(task_id, machine_id, Time(p_time))
 
-    def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
-        task_disjunction = NonOverlapConstraint(state.instance.job_tasks)
+    def setup_constraints(self, instance: ProblemInstance) -> tuple[Constraint, ...]:
+        task_disjunction = NonOverlapConstraint(instance.job_tasks)
 
         return (
             (MachineConstraint(), task_disjunction)
@@ -284,14 +277,14 @@ class JobShopSetup(OpenShopSetup):
 
         self.operation_order = operation_order
 
-    def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
+    def setup_constraints(self, instance: ProblemInstance) -> tuple[Constraint, ...]:
         precedence_mapping: dict[Int, list[Int]] = {}
-        task_orders: list[list[int]] = [[] for _ in range(state.n_jobs)]
+        task_orders: list[list[int]] = [[] for _ in range(instance.n_jobs)]
 
-        operations = state.instance.task_instance[self.operation_order]
+        operations = instance.register_task_feature(self.operation_order)
 
         for task_id, operation in enumerate(operations):
-            job_id = state.instance.job_ids[task_id]
+            job_id = instance.job_ids[task_id]
 
             if len(task_orders[job_id]) <= operation:
                 task_orders[job_id].extend(
@@ -347,14 +340,14 @@ class FlexibleJobShopSetup(UnrelatedParallelMachineSetup):
 
         self.operation_order = operation_order
 
-    def setup_constraints(self, state: ScheduleState) -> tuple[Constraint, ...]:
+    def setup_constraints(self, instance: ProblemInstance) -> tuple[Constraint, ...]:
         precedence_mapping: dict[Int, list[Int]] = {}
-        task_orders: list[list[int]] = [[] for _ in range(state.n_jobs)]
+        task_orders: list[list[int]] = [[] for _ in range(instance.n_jobs)]
 
-        operations = state.instance.task_instance[self.operation_order]
+        operations = instance.register_task_feature(self.operation_order)
 
         for task_id, operation in enumerate(operations):
-            job_id = state.instance.job_ids[task_id]
+            job_id = instance.job_ids[task_id]
 
             if len(task_orders[job_id]) <= operation:
                 task_orders[job_id].extend(

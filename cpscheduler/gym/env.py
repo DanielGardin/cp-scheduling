@@ -46,7 +46,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
     ):
         self.action_space = ActionSpace
 
-        self._env = SchedulingEnv(
+        self._core = SchedulingEnv(
             machine_setup=machine_setup,
             constraints=constraints,
             objective=objective,
@@ -55,11 +55,11 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
             render_mode=render_mode,
         )
 
-        self._env.reset()
+        self._core.reset()
         self.observation_space = self.get_observation_space()
 
     def get_observation_space(self) -> Space[ObsType]:
-        return infer_collection_space(self._env.get_state())
+        return infer_collection_space(self._core.get_state())
 
     @classmethod
     def from_env(cls, env: SchedulingEnv) -> "SchedulingEnvGym":
@@ -67,23 +67,23 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         self = cls.__new__(cls)
 
         self.action_space = ActionSpace
-        self._env = env
+        self._core = env
 
         return self
 
     @property
     def core(self) -> SchedulingEnv:
         "Return the underlying `SchedulingEnv` instance."
-        return self._env
+        return self._core
 
     def reset(
         self, *, seed: int | None = None, options: Options = None
     ) -> tuple[ObsType, dict[str, Any]]:
         super().reset(seed=seed)
 
-        previously_loaded = self._env.state.loaded
+        previously_loaded = self._core.loaded
 
-        obs, info = self._env.reset(options=options)
+        obs, info = self._core.reset(options=options)
 
         if options is not None or not previously_loaded:
             self.observation_space = self.get_observation_space()
@@ -93,7 +93,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
     def step(
         self, action: ActionType
     ) -> tuple[ObsType, float, bool, bool, dict[str, Any]]:
-        obs, reward, done, truncated, info = self._env.step(action)
+        obs, reward, done, truncated, info = self._core.step(action)
 
         return (
             obs,
@@ -104,10 +104,10 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         )
 
     def __getattr__(self, name: str) -> Any:
-        return getattr(self._env, name)
+        return getattr(self._core, name)
 
     def __repr__(self) -> str:
-        return self._env.__repr__()
+        return self._core.__repr__()
 
     # Expose SchedulingEnv public methods
     set_instance = SchedulingEnv.set_instance
