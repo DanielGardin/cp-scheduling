@@ -70,4 +70,4 @@ from .time_windows import (
     HorizonConstraint,
 )
 
-from .groups import NonOverlapConstraint
+from .disjunctive import NonOverlapConstraint

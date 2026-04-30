@@ -5,7 +5,7 @@ from cpscheduler.environment.constants import TaskID, MachineID, Int
 from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import Constraint
-from cpscheduler.environment.utils import convert_to_list
+from cpscheduler.environment.utils.general import convert_to_list
 
 
 def topological_sort(

@@ -15,14 +15,13 @@ from typing import Any
 from collections.abc import Iterable, Mapping
 from typing_extensions import TypeIs, assert_never
 
-from cpscheduler.environment.instance import ProblemInstance
-from cpscheduler.environment.protocols import (
+from cpscheduler.environment.constants import EzPickle
+from cpscheduler.environment.utils.protocols import (
     Metric, InstanceTypes, InstanceGenerator, InfoType, Options,
     prepare_instance
 )
 
-from cpscheduler.environment.constants import EzPickle
-
+from cpscheduler.environment.instance import ProblemInstance
 from cpscheduler.environment.state import ScheduleState, ObsType
 from cpscheduler.environment.state.events import VarField, RuntimeEventKind
 from cpscheduler.environment.des import (
@@ -118,10 +117,12 @@ class SchedulingEnv(EzPickle):
         instance: InstanceTypes | InstanceGenerator | None = None,
         metrics: Mapping[str, Metric[Any]] | None = None,
         render_mode: Renderer | str | None = None,
+        *,
+        debug_mode: bool = False
     ):
         self.loaded = False
         self._frozen = False
-        self._debug = False
+        self._debug = debug_mode
 
         if machine_setup is None:
             machine_setup = ScheduleSetup()
@@ -190,7 +191,7 @@ class SchedulingEnv(EzPickle):
     def add_constraint(self, constraint: Constraint) -> None:
         "Add a constraint to the environment."
         if self.loaded:
-            constraint.initialize(self.state)
+            constraint.initialize(self.state.instance)
 
         if isinstance(constraint, PassiveConstraint):
             self.passive_constraints.append(constraint)
@@ -203,7 +204,7 @@ class SchedulingEnv(EzPickle):
     def set_objective(self, objective: Objective) -> None:
         "Set the objective function for the environment."
         if self.loaded:
-            objective.initialize(self.state)
+            objective.initialize(self.state.instance)
 
         self.objective = objective
         self._frozen = False
@@ -218,9 +219,6 @@ class SchedulingEnv(EzPickle):
         """
         instance = _prepare_instance(instance)
 
-        state = ScheduleState(instance)
-        state.set_debug_checks(self._debug)
-
         setup = self.setup
         setup.initialize(instance)
 
@@ -231,15 +229,15 @@ class SchedulingEnv(EzPickle):
         self._rebuild_combined_constraints()
 
         for p_constraint in self.passive_constraints:
-            p_constraint.initialize(state)
+            p_constraint.initialize(instance)
 
         for constraint in self.combined_constraints:
-            constraint.initialize(state)
+            constraint.initialize(instance)
 
-        self.objective.initialize(state)
+        self.objective.initialize(instance)
 
+        self.state = ScheduleState(instance)
         self.loaded = True
-        self.state = state
 
     def add_metric(self, name: str, metric: Metric[Any]) -> None:
         "Add a metric to the environment."

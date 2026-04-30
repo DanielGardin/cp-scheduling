@@ -1,5 +1,6 @@
-from cpscheduler.environment.utils import convert_to_list
+from cpscheduler.environment.utils.general import convert_to_list
 from cpscheduler.environment.constants import MachineID, TaskID, Time
+from cpscheduler.environment.instance import ProblemInstance
 from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.objectives.base import Objective
@@ -28,9 +29,9 @@ class TotalEarliness(Objective):
         self.due_tag = due_dates
         self._job_earliness = {}
 
-    def initialize(self, state: ScheduleState) -> None:
+    def initialize(self, instance: ProblemInstance) -> None:
         self.due_dates = convert_to_list(
-            state.instance.task_instance[self.due_tag], Time
+            instance.task_instance[self.due_tag], Time
         )
 
     def reset(self, state: ScheduleState) -> None:
@@ -89,13 +90,13 @@ class WeightedEarliness(Objective):
 
         self._weighted_job_earliness = {}
 
-    def initialize(self, state: ScheduleState) -> None:
+    def initialize(self, instance: ProblemInstance) -> None:
         self.due_dates = convert_to_list(
-            state.instance.task_instance[self.due_tag], Time
+            instance.task_instance[self.due_tag], Time
         )
 
         self.job_weights = convert_to_list(
-            state.instance.task_instance[self.weight_tag], float
+            instance.task_instance[self.weight_tag], float
         )
 
     def reset(self, state: ScheduleState) -> None:

@@ -174,12 +174,10 @@ class RuntimeEvent(EzPickle):
         self.kind = kind
         self.machine_id = machine_id
 
-    def __eq__(self, value: object, /) -> bool:
-        if not isinstance(value, RuntimeEvent):
-            return False
-        
+    def __eq__(self, value: object, /) -> bool:        
         return (
-            self.task_id == value.task_id
+            isinstance(value, RuntimeEvent)
+            and self.task_id == value.task_id
             and self.kind == value.kind
             and self.machine_id == value.machine_id
         )

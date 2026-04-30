@@ -1,9 +1,9 @@
 from collections.abc import Iterable
 
-from cpscheduler.environment.utils import convert_to_list
+from cpscheduler.environment.utils.general import convert_to_list
 
 from cpscheduler.environment.constants import TaskID, Time, Int
-from cpscheduler.environment.state import ScheduleState
+from cpscheduler.environment.instance import ProblemInstance
 
 from cpscheduler.environment.constraints.base import PassiveConstraint
 
@@ -45,22 +45,23 @@ class PreemptionConstraint(PassiveConstraint):
         else:
             self.task_ids = convert_to_list(task_ids, TaskID)
 
-    def initialize(self, state: ScheduleState) -> None:
+    def initialize(self, instance: ProblemInstance) -> None:
         if self.all_tasks:
-            for task_id in range(state.n_tasks):
-                state.instance.preemptive[task_id] = True
+            for task_id in range(instance.n_tasks):
+                instance.set_preemption(task_id)
 
         elif self.preemption_tag:
             preemption_values = convert_to_list(
-                state.instance.task_instance[self.preemption_tag], bool
+                instance.task_instance[self.preemption_tag], bool
             )
 
             for task_id, is_preemptive in enumerate(preemption_values):
-                state.instance.preemptive[task_id] = is_preemptive
+                if is_preemptive:
+                    instance.set_preemption(task_id)
 
         else:
             for task_id in self.task_ids:
-                state.instance.preemptive[task_id] = True
+                instance.set_preemption(task_id)
 
     def get_entry(self) -> str:
         return "prmp"
@@ -95,22 +96,23 @@ class OptionalityConstraint(PassiveConstraint):
         else:
             self.task_ids = convert_to_list(task_ids, TaskID)
 
-    def initialize(self, state: ScheduleState) -> None:
+    def initialize(self, instance: ProblemInstance) -> None:
         if self.all_tasks:
-            for task_id in range(state.n_tasks):
-                state.instance.optional[task_id] = True
+            for task_id in range(instance.n_tasks):
+                instance.set_optionality(task_id)
 
         elif self.optionality_tag:
             optional_values = convert_to_list(
-                state.instance.task_instance[self.optionality_tag], bool
+                instance.task_instance[self.optionality_tag], bool
             )
 
             for task_id, is_optional in enumerate(optional_values):
-                state.instance.optional[task_id] = is_optional
+                if is_optional:
+                    instance.set_optionality(task_id)
 
         else:
             for task_id in self.task_ids:
-                state.instance.optional[task_id] = True
+                instance.set_optionality(task_id)
 
     def get_entry(self) -> str:
         return "opt"
@@ -136,10 +138,10 @@ class ConstantProcessingTime(PassiveConstraint):
     def __init__(self, processing_time: Int = 1):
         self.processing_time = Time(processing_time)
 
-    def initialize(self, state: ScheduleState) -> None:
-        for task_id in range(state.n_tasks):
-            for machine in state.get_original_machines(task_id):
-                state.instance.set_processing_time(
+    def initialize(self, instance: ProblemInstance) -> None:
+        for task_id in range(instance.n_tasks):
+            for machine in instance.get_machines(task_id):
+                instance.set_processing_time(
                     task_id, machine, self.processing_time
                 )
 

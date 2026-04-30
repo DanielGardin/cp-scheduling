@@ -6,11 +6,18 @@ _T = TypeVar("_T")
 
 @overload
 def convert_to_list(array: Iterable[Any], dtype: type[_T]) -> list[_T]: ...
+
 @overload
 def convert_to_list(array: Iterable[_T], dtype: None = ...) -> list[_T]: ...
 
+@overload
+def convert_to_list(array: None, dtype: None = ...) -> list[Any]: ...
+
+@overload
+def convert_to_list(array: None, dtype: type[_T]) -> list[_T]: ...
+
 def convert_to_list(
-    array: Iterable[Any], dtype: type[Any] | None = None
+    array: Iterable[Any] | None, dtype: type[Any] | None = None
 ) -> list[Any]:
     """
     Convert an iterable to a list. If a dtype is provided, the elements of the list will be casted
@@ -18,7 +25,7 @@ def convert_to_list(
 
     Parameters
     ----------
-    array: Iterable
+    array: Iterable | None
         The iterable to be converted to a list.
 
     dtype: type, optional
@@ -27,11 +34,15 @@ def convert_to_list(
     Returns
     -------
     list
-        A list containing the elements of the iterable.
+        A list containing the elements of the iterable. If the array is None, initializes a new
+        empty list of that given type.
     """
 
     if hasattr(array, "tolist"):
         array = getattr(array, "tolist")()
+
+    if array is None:
+        return []
 
     try:
         if dtype is None:

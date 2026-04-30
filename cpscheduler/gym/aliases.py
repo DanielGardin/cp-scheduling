@@ -12,7 +12,7 @@ It is meant to be imported using the `make` function provided by gymnasium
 from typing import Any
 from collections.abc import Mapping
 
-from cpscheduler.environment.protocols import InstanceTypes, Metric
+from cpscheduler.environment.utils.protocols import InstanceTypes, Metric
 from cpscheduler.environment.schedule_setup import JobShopSetup
 from cpscheduler.environment.objectives import Makespan
 

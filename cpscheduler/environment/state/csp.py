@@ -227,12 +227,10 @@ class TaskDomains(EzPickle):
     def get_feasible_machines(self, task_id: TaskID) -> tuple[MachineID, ...]:
         return tuple(self.feasible_machines[task_id])
 
-    def __eq__(self, value: object, /) -> bool:
-        if not isinstance(value, TaskDomains):
-            return False
-        
+    def __eq__(self, value: object, /) -> bool:        
         return (
-            self.original_machines == value.original_machines
+            isinstance(value, TaskDomains)
+            and self.original_machines == value.original_machines
             and self.feasible_machines == value.feasible_machines
             and self.remaining_times == value.remaining_times
             and self.assignment == value.assignment

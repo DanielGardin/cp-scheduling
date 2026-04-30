@@ -7,7 +7,7 @@ from cpscheduler.environment.constants import (
     EzPickle
 )
 
-from cpscheduler.environment.utils import convert_to_list
+from cpscheduler.environment.utils.general import convert_to_list
 
 
 def check_instance_consistency(instance: dict[str, list[Any]]) -> int:
@@ -49,6 +49,7 @@ class ProblemInstance(EzPickle):
     n_machines: int
 
     _frozen: bool
+    _debug: bool
 
     def __init__(
         self,
@@ -93,17 +94,43 @@ class ProblemInstance(EzPickle):
         self.n_jobs = n_jobs
         self.n_machines = 0
 
+        self._debug = False
         self._frozen = False
 
     @property
     def frozen(self) -> bool:
         return self._frozen
 
+    @property
+    def debug(self) -> bool:
+        return self._debug
+
     def _check_mutable(self, origin: str) -> None:
         if self._frozen:
             raise RuntimeError(
                 f"{origin}: ProblemInstance is frozen and cannot be modified."
             )
+
+    def has_task_feature(self, feature: str) -> bool:
+        return feature in self.task_instance
+
+    def has_job_feature(self, feature: str) -> bool:
+        return feature in self.job_instance
+
+    def has_global_feature(self, feature: str) -> bool:
+        return feature in self.global_instance
+
+    def get_task_feature(self, feature: str) -> list[Any]:
+        return self.task_instance[feature]
+
+    def get_job_feature(self, feature: str) -> list[Any]:
+        return self.job_instance[feature]
+
+    def get_global_feature(self, feature: str) -> Any:
+        return self.global_instance[feature]
+
+    def get_machines(self, task_id: TaskID) -> list[MachineID]:
+        return list(self.processing_times[task_id])
 
     def set_processing_time(
         self, task_id: TaskID, machine_id: MachineID, time: Time
@@ -140,11 +167,12 @@ class ProblemInstance(EzPickle):
 
     @overload
     def register_task_feature(
-        self, feature: str, data: None = None
+        self, feature: str, data: None = None, overwrite: bool = False
     ) -> list[Any]: ...
 
+
     def register_task_feature(
-        self, feature: str, data: list[Any] | None = None
+        self, feature: str, data: list[Any] | None = None, overwrite: bool = False
     ) -> list[Any]:
         if data is None:
             if feature not in self.task_instance:
@@ -154,7 +182,7 @@ class ProblemInstance(EzPickle):
 
             return self.task_instance[feature]
 
-        if feature in self.task_instance:
+        if not overwrite and feature in self.task_instance:
             if self.task_instance[feature] != data:
                 raise ValueError(
                     f"register_task_feature: '{feature}' is already registered "
@@ -175,7 +203,7 @@ class ProblemInstance(EzPickle):
 
     @overload
     def register_job_feature(
-        self, feature: str, data: list[_DataType]
+        self, feature: str, data: list[_DataType], overwrite: bool = False
     ) -> list[_DataType]: ...
 
     @overload
@@ -184,7 +212,7 @@ class ProblemInstance(EzPickle):
     ) -> list[Any]: ...
 
     def register_job_feature(
-        self, feature: str, data: list[Any] | None = None
+        self, feature: str, data: list[Any] | None = None, overwrite: bool = False
     ) -> list[Any]:
         if data is None:
             if feature not in self.job_instance:
@@ -194,7 +222,7 @@ class ProblemInstance(EzPickle):
 
             return self.job_instance[feature]
 
-        if feature in self.job_instance:
+        if not overwrite and feature in self.job_instance:
             if self.job_instance[feature] != data:
                 raise ValueError(
                     f"register_job_feature: '{feature}' is already registered "
@@ -215,7 +243,7 @@ class ProblemInstance(EzPickle):
 
     @overload
     def register_global_feature(
-        self, feature: str, data: _DataType
+        self, feature: str, data: _DataType, overwrite: bool = False
     ) -> _DataType: ...
 
     @overload
@@ -224,7 +252,7 @@ class ProblemInstance(EzPickle):
     ) -> Any: ...
 
     def register_global_feature(
-        self, feature: str, data: Any | None = None
+        self, feature: str, data: Any | None = None, overwrite: bool = False
     ) -> Any:
         if data is None:
             if feature not in self.global_instance:
@@ -234,7 +262,7 @@ class ProblemInstance(EzPickle):
 
             return self.global_instance[feature]
 
-        if feature in self.global_instance:
+        if not overwrite and feature in self.global_instance:
             if self.global_instance[feature] != data:
                 raise ValueError(
                     f"register_job_feature: '{feature}' is already registered "
@@ -249,3 +277,24 @@ class ProblemInstance(EzPickle):
 
     def freeze(self) -> None:
         self._frozen = True
+
+    def set_debug_mode(self, debug: bool = True) -> None:
+        self._debug = True
+
+    def __eq__(self, value: object, /) -> bool:
+        return (
+            isinstance(value, ProblemInstance)
+            and self.job_ids == value.job_ids
+            and self.job_tasks == value.job_tasks
+            and self.preemptive == value.preemptive
+            and self.optional == value.optional
+            and self.processing_times == value.processing_times
+            and self.task_instance == value.task_instance
+            and self.job_instance == value.job_instance
+            and self.global_instance == value.global_instance
+            and self.n_tasks == value.n_tasks
+            and self.n_jobs == value.n_jobs
+            and self.n_machines == value.n_machines
+            and self._frozen == value._frozen
+            and self._debug == value._debug
+        )

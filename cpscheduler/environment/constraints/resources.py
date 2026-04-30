@@ -1,9 +1,10 @@
 from typing import Any, TypeVar, TYPE_CHECKING
 from collections.abc import Iterable
 
-from cpscheduler.environment.utils import convert_to_list
+from cpscheduler.environment.utils.general import convert_to_list
 
 from cpscheduler.environment.constants import Time, Float, MAX_TIME
+from cpscheduler.environment.instance import ProblemInstance
 from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import Constraint
@@ -156,7 +157,7 @@ class ResourceConstraint(Constraint):
         self.resource_tags.append(resource_usage)
         self.capacities.append(float(capacity))
 
-    def initialize(self, state: ScheduleState) -> None:
+    def initialize(self, instance: ProblemInstance) -> None:
         if self.constant_capacity is not None:
             self.capacities = [self.constant_capacity] * len(self.resource_tags)
 
@@ -166,7 +167,7 @@ class ResourceConstraint(Constraint):
             )
 
         self.resources = [
-            convert_to_list(state.instance.task_instance[resource], float)
+            convert_to_list(instance.task_instance[resource], float)
             for resource in self.resource_tags
         ]
 
@@ -304,7 +305,7 @@ class NonRenewableResourceConstraint(Constraint):
         self.resource_tags.append(resource_usage)
         self.capacities.append(float(capacity))
 
-    def initialize(self, state: ScheduleState) -> None:
+    def initialize(self, instance: ProblemInstance) -> None:
         if self.constant_capacity is not None:
             self.capacities = [self.constant_capacity] * len(self.resource_tags)
 
@@ -314,12 +315,9 @@ class NonRenewableResourceConstraint(Constraint):
             )
 
         self.resources = [
-            convert_to_list(state.instance.task_instance[resource], float)
+            convert_to_list(instance.task_instance[resource], float)
             for resource in self.resource_tags
         ]
-
-
-
 
     def reset(self, state: ScheduleState) -> None:
         self.current_capacities = self.capacities.copy()

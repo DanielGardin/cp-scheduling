@@ -8,7 +8,7 @@ from numpy import int64
 from gymnasium import ActionWrapper, Env
 from gymnasium.spaces import Space, Box, Sequence
 
-from cpscheduler.environment.protocols import Options
+from cpscheduler.environment.utils.protocols import Options
 from cpscheduler.environment.des import ActionType
 from cpscheduler.environment.constants import Int
 

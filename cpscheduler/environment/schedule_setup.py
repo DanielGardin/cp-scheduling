@@ -10,7 +10,7 @@ from collections.abc import Iterable
 
 from mypy_extensions import mypyc_attr
 
-from cpscheduler.environment.utils import convert_to_list
+from cpscheduler.environment.utils.general import convert_to_list
 
 from cpscheduler.environment.constants import (
     MachineID, Time, Int, EzPickle
@@ -240,7 +240,7 @@ class OpenShopSetup(ScheduleSetup):
             instance.set_processing_time(task_id, machine_id, Time(p_time))
 
     def setup_constraints(self, instance: ProblemInstance) -> tuple[Constraint, ...]:
-        task_disjunction = NonOverlapConstraint(instance.job_tasks)
+        task_disjunction = NonOverlapConstraint(task_groups=instance.job_tasks)
 
         return (
             (MachineConstraint(), task_disjunction)

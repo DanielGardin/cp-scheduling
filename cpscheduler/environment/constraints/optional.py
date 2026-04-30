@@ -1,7 +1,8 @@
 from collections.abc import Iterable
 
-from cpscheduler.environment.utils import convert_to_list
+from cpscheduler.environment.utils.general import convert_to_list
 from cpscheduler.environment.constants import Int, TaskID, MachineID
+from cpscheduler.environment.instance import ProblemInstance
 from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import (
@@ -9,7 +10,7 @@ from cpscheduler.environment.constraints.base import (
     PassiveConstraint
 )
 
-import cpscheduler.environment.debug as debug
+import cpscheduler.environment.utils.debug as debug
 
 class RejectableConstraint(PassiveConstraint):
     """
@@ -18,9 +19,9 @@ class RejectableConstraint(PassiveConstraint):
     cost.
     """
 
-    def initialize(self, state: ScheduleState) -> None:
-        for task_id in range(state.n_tasks):
-            state.instance.set_optionality(task_id)
+    def initialize(self, instance: ProblemInstance) -> None:
+        for task_id in range(instance.n_tasks):
+            instance.set_optionality(task_id)
 
     def get_entry(self) -> str:
         return "rej"
@@ -53,7 +54,7 @@ class AtMostOneConstraint(Constraint):
         if 0 <= group_id < len(self.task_groups):
             self.task_groups.pop(group_id)
 
-    def initialize(self, state: ScheduleState) -> None:
+    def initialize(self, instance: ProblemInstance) -> None:
         for tasks in self.task_groups:
             if not tasks:
                 raise ValueError(
@@ -61,7 +62,7 @@ class AtMostOneConstraint(Constraint):
                 )
 
             for task in tasks:
-                debug.task_bounds(task, state, type(self).__name__)
+                debug.task_bounds(task, instance, type(self).__name__)
 
     def reset(self, state: ScheduleState) -> None:
         self.current_tasks = [

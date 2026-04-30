@@ -2,9 +2,10 @@ from typing import NoReturn, final
 
 from mypy_extensions import mypyc_attr
 
-from cpscheduler.environment.state.events import DomainEvent, VarField
-from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.constants import TaskID, MachineID, Time, EzPickle
+from cpscheduler.environment.instance import ProblemInstance
+from cpscheduler.environment.state import ScheduleState
+from cpscheduler.environment.state.events import DomainEvent, VarField
 
 ASSIGNMENT = VarField.ASSIGNMENT
 START_LB = VarField.START_LB
@@ -32,7 +33,7 @@ class Constraint(EzPickle):
     def __init_subclass__(cls) -> None:
         constraints[cls.__name__] = cls
 
-    def initialize(self, state: ScheduleState) -> None:
+    def initialize(self, instance: ProblemInstance) -> None:
         """
         Initialize the constraint with the scheduling state.
 

@@ -1,19 +1,27 @@
 from collections.abc import Iterable
 
 from cpscheduler.environment.constants import TaskID, MachineID, Int
+from cpscheduler.environment.instance import ProblemInstance
 from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import Constraint
 
-import cpscheduler.environment.debug as debug
+import cpscheduler.environment.utils.debug as debug
 
 class NonOverlapConstraint(Constraint):
 
+    groups_tag: str
     groups_map: list[set[TaskID]]
 
     current_groups: list[set[TaskID]]
 
-    def __init__(self, task_groups: Iterable[Iterable[Int]] | None = None):
+    def __init__(
+        self,
+        groups_tag: str = "non_overlap_groups",
+        task_groups: Iterable[Iterable[Int]] | None = None
+    ):
+        self.groups_tag = groups_tag
+
         if task_groups is None:
             task_groups = []
 
@@ -29,13 +37,13 @@ class NonOverlapConstraint(Constraint):
         if 0 <= group_id < len(self.groups_map):
             self.groups_map.pop(group_id)
 
-    def initialize(self, state: ScheduleState) -> None:
-        if state.debug_mode:
+    def initialize(self, instance: ProblemInstance) -> None:
+        if instance.debug:
             for tasks in self.groups_map:
                 for task in tasks:
                     debug.task_bounds(
                         task,
-                        state,
+                        instance,
                         "NonOverlapConstraint"
                     )
 

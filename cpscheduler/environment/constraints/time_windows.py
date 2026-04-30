@@ -1,6 +1,7 @@
-from cpscheduler.environment.utils import convert_to_list
+from cpscheduler.environment.utils.general import convert_to_list
 
 from cpscheduler.environment.constants import Time, Int, MAX_TIME
+from cpscheduler.environment.instance import ProblemInstance
 from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import Constraint
@@ -51,12 +52,17 @@ class ReleaseDateConstraint(Constraint):
     release_tag: str
     release_dates: list[Time]
 
-    def __init__(self, release_dates: str = "release_time"):
-        self.release_tag = release_dates
+    def __init__(
+        self,
+        release_tag: str = "release_time",
+        release_dates: list[Int] | None = None
+    ):
+        self.release_tag = release_tag
+        self.release_dates = convert_to_list(release_dates, Time)
 
-    def initialize(self, state: ScheduleState) -> None:
+    def initialize(self, instance: ProblemInstance) -> None:
         self.release_dates = convert_to_list(
-            state.instance.task_instance[self.release_tag], Time
+            instance.task_instance[self.release_tag], Time
         )
 
     def reset(self, state: ScheduleState) -> None:
@@ -97,10 +103,10 @@ class DeadlineConstraint(Constraint):
 
         self.due_dates = []
 
-    def initialize(self, state: ScheduleState) -> None:
+    def initialize(self, instance: ProblemInstance) -> None:
         if self.const_due is None:
             self.due_dates = convert_to_list(
-                state.instance.task_instance[self.due_tag], Time
+                instance.task_instance[self.due_tag], Time
             )
 
     def reset(self, state: ScheduleState) -> None:

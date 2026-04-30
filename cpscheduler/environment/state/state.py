@@ -20,7 +20,7 @@ from cpscheduler.environment.state.events import (
 from cpscheduler.environment.instance import ProblemInstance
 from cpscheduler.environment.state.runtime import RuntimeState, TaskHistory
 
-from cpscheduler.environment.debug import (
+from cpscheduler.environment.utils.debug import (
     validate_machine_id, validate_domain_bounds
 )
 
@@ -99,7 +99,7 @@ class ScheduleState(EzPickle):
     domain_event_queue: list[DomainEvent]
     runtime_event_queue: list[RuntimeEvent]
 
-    _debug_checks: bool
+    _debug: bool
 
     def __init__(self, instance: ProblemInstance) -> None:
         self.instance = instance
@@ -107,16 +107,13 @@ class ScheduleState(EzPickle):
         self.time = 0
 
         self.infeasible = False
-        self._debug_checks = False
+        self._debug = instance.debug
 
         self.domains = TaskDomains(instance)
         self.runtime = RuntimeState(instance)
 
         self.domain_event_queue = []
         self.runtime_event_queue = []
-
-    def set_debug_checks(self, enabled: bool = True) -> None:
-        self._debug_checks = bool(enabled)
 
     # Properties
 
@@ -133,8 +130,8 @@ class ScheduleState(EzPickle):
         return self.instance.n_jobs
 
     @property
-    def debug_mode(self) -> bool:
-        return self._debug_checks
+    def debug(self) -> bool:
+        return self._debug
 
     # Flow control methods
     def clear(self) -> None:
@@ -651,10 +648,10 @@ class ScheduleState(EzPickle):
         domains = self.domains
         time = self.time
 
-        if self._debug_checks:
+        if self._debug:
             validate_machine_id(
                 task_id, machine_id,
-                self,
+                self.instance,
                 origin="reset_bounds",
                 allow_global=True,
             )
@@ -689,7 +686,7 @@ class ScheduleState(EzPickle):
             self._recompute_global_bound(task_id, END, LB)
             end.global_ubs[task_id] = MAX_TIME
 
-            if self._debug_checks:
+            if self._debug:
                 validate_domain_bounds(
                     task_id, self,
                     machine_id=machine_id,
@@ -719,7 +716,7 @@ class ScheduleState(EzPickle):
             DomainEvent(task_id, BOUNDS_RESET)
         )
 
-        if self._debug_checks:
+        if self._debug:
             validate_domain_bounds(
                 task_id, self,
                 origin="reset_bounds"
@@ -914,7 +911,7 @@ class ScheduleState(EzPickle):
             TaskHistory(machine_id, start_time, end_time)
         )
 
-        if self._debug_checks:
+        if self._debug:
             validate_domain_bounds(
                 task_id, self,
                 machine_id=machine_id,
@@ -1000,7 +997,7 @@ class ScheduleState(EzPickle):
         if prev_entry.end_time == runtime.last_completion_time:
             runtime.recompute_last_completion_time()
 
-        if self._debug_checks:
+        if self._debug:
             validate_domain_bounds(
                 task_id, self,
                 origin="pause_task"
@@ -1054,14 +1051,12 @@ class ScheduleState(EzPickle):
         return task_obs, {}
 
     def __eq__(self, value: Any) -> bool:
-        if not isinstance(value, ScheduleState):
-            return False
-
         return (
-            self.instance == value.instance
+            isinstance(value, ScheduleState)
+            and self.instance == value.instance
             and self.time == value.time
             and self.infeasible == value.infeasible
-            and self._debug_checks == value._debug_checks
+            and self._debug == value._debug
             and self.domains == value.domains
             and self.runtime == value.runtime
             and self.domain_event_queue == value.domain_event_queue

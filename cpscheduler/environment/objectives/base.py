@@ -1,6 +1,7 @@
 from mypy_extensions import mypyc_attr
 
 from cpscheduler.environment.constants import MachineID, TaskID, EzPickle
+from cpscheduler.environment.instance import ProblemInstance
 from cpscheduler.environment.state import ScheduleState
 
 objectives: dict[str, type["Objective"]] = {}
@@ -40,7 +41,7 @@ class Objective(EzPickle):
 
         return f"{type(self).__name__}(sense={sense})"
 
-    def initialize(self, state: ScheduleState) -> None:
+    def initialize(self, instance: ProblemInstance) -> None:
         "Initialize the objective with the given schedule state."
 
     def reset(self, state: ScheduleState) -> None:

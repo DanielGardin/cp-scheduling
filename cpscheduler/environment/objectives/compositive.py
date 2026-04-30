@@ -1,7 +1,8 @@
 from collections.abc import Iterable
 
-from cpscheduler.environment.utils import convert_to_list
+from cpscheduler.environment.utils.general import convert_to_list
 from cpscheduler.environment.constants import MachineID, TaskID, Float
+from cpscheduler.environment.instance import ProblemInstance
 from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.objectives.base import Objective
@@ -60,9 +61,9 @@ class ComposedObjective(Objective):
         for objective in self.objectives:
             objective.reset(state)
 
-    def initialize(self, state: ScheduleState) -> None:
+    def initialize(self, instance: ProblemInstance) -> None:
         for objective in self.objectives:
-            objective.initialize(state)
+            objective.initialize(instance)
 
     def on_task_started(
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState

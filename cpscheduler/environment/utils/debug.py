@@ -7,26 +7,27 @@ from cpscheduler.environment.constants import (
 )
 
 if TYPE_CHECKING:
+    from cpscheduler.environment.instance import ProblemInstance
     from cpscheduler.environment.state.state import ScheduleState
 
-def job_bounds(job: TaskID, state: "ScheduleState", origin: str) -> None:
-    if not (0 <= job < state.n_jobs):
+def job_bounds(job: TaskID, instance: "ProblemInstance", origin: str) -> None:
+    if not (0 <= job < instance.n_jobs):
         raise ValueError(f"{origin}: invalid job {job}")
 
-def task_bounds(task: TaskID, state: "ScheduleState", origin: str) -> None:
-    if not (0 <= task < state.n_tasks):
+def task_bounds(task: TaskID, instance: "ProblemInstance", origin: str) -> None:
+    if not (0 <= task < instance.n_tasks):
         raise ValueError(f"{origin}: invalid task {task}")
 
 def machine_bounds(
-    machine: MachineID, state: "ScheduleState", origin: str
+    machine: MachineID, instance: "ProblemInstance", origin: str
 ) -> None:
-    if not (0 <= machine < state.n_machines):
+    if not (0 <= machine < instance.n_machines):
         raise ValueError(f"{origin}: invalid machine {machine}")
 
 def validate_machine_id(
     task_id: TaskID,
     machine_id: MachineID,
-    state: "ScheduleState",
+    instance: "ProblemInstance",
     origin: str,
     *,
     allow_global: bool = False,
@@ -69,13 +70,13 @@ def validate_machine_id(
 
         return
 
-    if machine_id < 0 or machine_id >= state.n_machines:
+    if machine_id < 0 or machine_id >= instance.n_machines:
         raise RuntimeError(
             f"{origin}: Invalid machine_id={machine_id} for task {task_id}. "
-            f"Expected [0, {state.n_machines - 1}]."
+            f"Expected [0, {instance.n_machines - 1}]."
         )
 
-    if machine_id not in state.instance.processing_times[task_id]:
+    if machine_id not in instance.processing_times[task_id]:
         raise RuntimeError(
             f"{origin}: Machine {machine_id} is not valid for task {task_id}."
         )
@@ -120,13 +121,14 @@ def validate_domain_bounds(
     """
 
     domains = state.domains
-    row = task_id * state.n_machines
+    intance = state.instance
+    row = task_id * intance.n_machines
 
     if machine_id == GLOBAL_MACHINE_ID:
         machines = list(domains.feasible_machines[task_id])
 
     else:
-        validate_machine_id(task_id, machine_id, state, origin=origin)
+        validate_machine_id(task_id, machine_id, intance, origin=origin)
         machines = [machine_id]
 
     for m_id in machines:
@@ -139,13 +141,21 @@ def validate_domain_bounds(
         remaining = domains.remaining_times[idx]
 
         if start_lb > start_ub:
-            raise RuntimeError(f"{origin}: invalid start bounds for task {task_id} on machine {m_id}")
+            raise RuntimeError(
+                f"{origin}: invalid start bounds for task {task_id} on machine {m_id}"
+            )
 
         if end_lb > end_ub:
-            raise RuntimeError(f"{origin}: invalid end bounds for task {task_id} on machine {m_id}")
+            raise RuntimeError(
+                f"{origin}: invalid end bounds for task {task_id} on machine {m_id}"
+            )
 
         if start_lb + remaining > end_ub:
-            raise RuntimeError(f"{origin}: start_lb + p > end_ub for task {task_id} on machine {m_id}")
+            raise RuntimeError(
+                f"{origin}: start_lb + p > end_ub for task {task_id} on machine {m_id}"
+            )
 
         if end_lb - remaining > start_ub:
-            raise RuntimeError(f"{origin}: end_lb - p > start_ub for task {task_id} on machine {m_id}")
+            raise RuntimeError(
+                f"{origin}: end_lb - p > start_ub for task {task_id} on machine {m_id}"
+            )

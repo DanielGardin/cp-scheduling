@@ -1,7 +1,8 @@
 from math import expm1
 
-from cpscheduler.environment.utils import convert_to_list
+from cpscheduler.environment.utils.general import convert_to_list
 from cpscheduler.environment.constants import MachineID, TaskID, Time
+from cpscheduler.environment.instance import ProblemInstance
 from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.objectives.base import Objective, RegularObjective
@@ -67,9 +68,9 @@ class WeightedCompletionTime(Objective):
     def regular(self) -> bool:
         return all(weight >= 0 for weight in self.job_weights)
 
-    def initialize(self, state: ScheduleState) -> None:
+    def initialize(self, instance: ProblemInstance) -> None:
         self.job_weights = convert_to_list(
-            state.instance.task_instance[self.weights_tag], float
+            instance.task_instance[self.weights_tag], float
         )
 
     def reset(self, state: ScheduleState) -> None:
@@ -153,9 +154,9 @@ class TotalFlowTime(RegularObjective):
         self.release_tag = release_times
         self._job_flow = {}
 
-    def initialize(self, state: ScheduleState) -> None:
+    def initialize(self, instance: ProblemInstance) -> None:
         self.release_times = convert_to_list(
-            state.instance.task_instance[self.release_tag], Time
+            instance.task_instance[self.release_tag], Time
         )
 
     def reset(self, state: ScheduleState) -> None:

@@ -6,12 +6,13 @@ from cpscheduler.environment.constants import (
     MAX_TIME,
 )
 
+from cpscheduler.environment.instance import ProblemInstance
 from cpscheduler.environment.state import ScheduleState
-from cpscheduler.environment.utils import convert_to_list
+from cpscheduler.environment.utils.general import convert_to_list
 
 from cpscheduler.environment.constraints.base import Constraint
 
-import cpscheduler.environment.debug as debug
+import cpscheduler.environment.utils.debug as debug
 
 class MachineEligibilityConstraint(Constraint):
     """
@@ -54,14 +55,14 @@ class MachineEligibilityConstraint(Constraint):
         if TaskID(task_id) in self.eligibility:
             self.eligibility[TaskID(task_id)].discard(MachineID(machine_id))
 
-    def initialize(self, state: ScheduleState) -> None:
-        if state.debug_mode:
+    def initialize(self, instance: ProblemInstance) -> None:
+        if instance.debug:
             for task, machines in self.eligibility.items():
-                debug.task_bounds(task, state, "MachineEligibilityConstraint")
+                debug.task_bounds(task, instance, "MachineEligibilityConstraint")
 
                 for machine in machines:
                     debug.machine_bounds(
-                        machine, state, "MachineEligibilityConstraint"
+                        machine, instance, "MachineEligibilityConstraint"
                     )
 
     def reset(self, state: ScheduleState) -> None:
@@ -104,8 +105,8 @@ class MachineConstraint(Constraint):
     def __init__(self) -> None:
         self.machine_map = []
 
-    def initialize(self, state: ScheduleState) -> None:
-        self.machine_map = [set() for _ in range(state.n_machines)]
+    def initialize(self, instance: ProblemInstance) -> None:
+        self.machine_map = [set() for _ in range(instance.n_machines)]
 
     def reset(self, state: ScheduleState) -> None:
         for tasks in self.machine_map:
@@ -225,11 +226,11 @@ class MachineBreakdownConstraint(Constraint):
 
         return cls(breakdowns)
 
-    def initialize(self, state: ScheduleState) -> None:
-        if state.debug_mode:
+    def initialize(self, instance: ProblemInstance) -> None:
+        if instance.debug:
             for machine in self.breakdowns:
                 debug.machine_bounds(
-                    machine, state, "MachineBreakdownConstraint"
+                    machine, instance, "MachineBreakdownConstraint"
                 )
 
         self.next_breakdown = {machine: 0 for machine in self.breakdowns}
@@ -242,18 +243,7 @@ class MachineBreakdownConstraint(Constraint):
         for machine in self.breakdowns:
             self.next_breakdown[machine] = 0
 
-            for task_id in state.runtime.get_awaiting_tasks():
-                start_lb = state.get_start_lb(task_id, machine)
-
-                for start, end in self.breakdowns[machine]:
-                    if start <= start_lb < end:
-                        state.tight_start_lb(task_id, end, machine)
-
-                if state.is_preemptive(task_id):
-                    end_lb = state.get_end_lb(task_id, machine)
-                    for start, end in self.breakdowns[machine]:
-                        if start < end_lb <= end:
-                            state.tight_start_lb(task_id, end, machine)
+        self.on_time_update(state.time, state)
 
     def on_time_update(self, time: Time, state: ScheduleState) -> None:
         for machine, breakdown_intervals in self.breakdowns.items():
@@ -324,13 +314,13 @@ class BatchConstraint(Constraint):
 
         self.capacity[machine_id] = int(capacity)
 
-    def initialize(self, state: ScheduleState) -> None:
+    def initialize(self, instance: ProblemInstance) -> None:
         if self.constant_capacity is not None:
-            self.capacity = [self.constant_capacity] * state.n_machines
+            self.capacity = [self.constant_capacity] * instance.n_machines
 
-        elif len(self.capacity) != state.n_machines:
+        elif len(self.capacity) != instance.n_machines:
             raise ValueError(
-                f"Capacity list length {len(self.capacity)} does not match the number of machines {state.n_machines}."
+                f"Capacity list length {len(self.capacity)} does not match the number of machines {instance.n_machines}."
             )
 
     def reset(self, state: ScheduleState) -> None:

@@ -122,12 +122,10 @@ class RuntimeState(EzPickle):
         
         self.last_completion_time = best
 
-    def __eq__(self, value: object, /) -> bool:
-        if not isinstance(value, RuntimeState):
-            return False
-        
+    def __eq__(self, value: object, /) -> bool:        
         return (
-            self.history == value.history
+            isinstance(value, RuntimeState)
+            and self.history == value.history
             and self.prerequisites == value.prerequisites
             and self.status == value.status
             and self.awaiting_tasks == value.awaiting_tasks
