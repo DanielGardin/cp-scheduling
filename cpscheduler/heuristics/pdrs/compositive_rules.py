@@ -1,6 +1,6 @@
 from collections.abc import Iterable
 
-from cpscheduler.environment.state import ObsType
+from cpscheduler.environment.observation import Observation
 
 from cpscheduler.heuristics.pdrs.base import PriorityDispatchingRule
 
@@ -34,12 +34,12 @@ class CombinedRule(PriorityDispatchingRule):
         self.rules = rules
         self.weights = weights
 
-    def priority_score(self, obs: ObsType, time: int | None) -> list[float]:
-        scores = self.rules[0].priority_score(obs, time)
+    def priority_score(self, obs: Observation) -> list[float]:
+        scores = self.rules[0].priority_score(obs)
         priorities = [self.weights[0] * p for p in scores]
 
         for rule, w in zip(self.rules[1:], self.weights[1:]):
-            for t, p in enumerate(rule.priority_score(obs, time)):
+            for t, p in enumerate(rule.priority_score(obs)):
                 priorities[t] += w * p
 
         return priorities

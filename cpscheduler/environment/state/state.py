@@ -1,4 +1,4 @@
-from typing import Any, TypeAlias, Literal, cast
+from typing import Any, Literal, cast
 from collections.abc import KeysView
 
 from mypy_extensions import mypyc_attr
@@ -23,9 +23,6 @@ from cpscheduler.environment.state.runtime import RuntimeState, TaskHistory
 from cpscheduler.environment.utils.debug import (
     validate_machine_id, validate_domain_bounds
 )
-
-
-ObsType: TypeAlias = tuple[dict[str, list[Any]], dict[str, list[Any]]]
 
 PRESENT = Presence.PRESENT
 ABSENT = Presence.ABSENT
@@ -1037,18 +1034,6 @@ class ScheduleState(EzPickle):
             assignments[machine_id].append(task_id)
 
         return assignments
-
-    def get_observation(self) -> ObsType:
-        task_obs = self.instance.task_instance.copy()
-        task_obs["status"] = self.runtime.status.copy()
-
-        available = [False] * self.n_tasks
-        for task_id in self.runtime.unlocked_tasks:
-            available[task_id] = self.is_available(task_id)
-
-        task_obs["available"] = available
-
-        return task_obs, {}
 
     def __eq__(self, value: Any) -> bool:
         return (

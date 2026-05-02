@@ -19,6 +19,8 @@ if "--no-mypyc" in sys.argv:
 
 ext_modules: list[Extension] = []
 if USE_MYPYC:
+    from mypyc.build import mypycify
+
     MYPYC_DIRS = (
         "cpscheduler/environment",
         "cpscheduler/heuristics/pdrs",
@@ -26,19 +28,33 @@ if USE_MYPYC:
 
     MYPYC_BLACKLIST = frozenset((
         # Protocols with @runtime_checkable, mypyc strips Protocol identity
-        "cpscheduler/environment/protocols.py",
+        "cpscheduler/environment/utils/protocols.py",
     ))
 
-    mypyc_targets = sorted(
-        str(file)
-        for d in MYPYC_DIRS
-        for file in Path(d).rglob("*.py")
-        if str(file) not in MYPYC_BLACKLIST
-        and file.name != "__init__.py"
-        and "/test" not in str(file)
-    )
+    for blacklisted in MYPYC_BLACKLIST:
+        if not Path(blacklisted).exists():
+            sys.stderr.write(f"ERROR: Mypyc blacklist file '{blacklisted}' does not exist.\n")
+            sys.exit(1)
 
-    from mypyc.build import mypycify
+    mypyc_targets: list[str] = []
+
+    for directory in MYPYC_DIRS:
+        if not Path(directory).exists():
+            sys.stderr.write(f"ERROR: Mypyc target directory '{directory}' does not exist.\n")
+            sys.exit(1)
+        
+        for file in Path(directory).rglob("*.py"):
+            if str(file) in MYPYC_BLACKLIST:
+                continue
+
+            if file.name == "__init__.py":
+                continue
+
+            if "/test" in str(file):
+                continue
+
+            mypyc_targets.append(str(file))
+
 
     opt_level = os.environ.get("MYPYC_OPT_LEVEL", "3")
     debug_level = os.environ.get("MYPYC_DEBUG_LEVEL", "1")

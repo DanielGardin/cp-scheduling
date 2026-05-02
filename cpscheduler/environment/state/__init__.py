@@ -12,6 +12,6 @@ accept changes from the scheduler without exposing the internal details of the
 state representation.
 """
 
-__all__ = ["ScheduleState", "ObsType"]
+__all__ = ["ScheduleState"]
 
-from .state import ScheduleState, ObsType
+from .state import ScheduleState

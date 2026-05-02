@@ -22,7 +22,8 @@ from cpscheduler.environment.utils.protocols import (
 )
 
 from cpscheduler.environment.instance import ProblemInstance
-from cpscheduler.environment.state import ScheduleState, ObsType
+from cpscheduler.environment.state import ScheduleState
+from cpscheduler.environment.observation import Observation
 from cpscheduler.environment.state.events import VarField, RuntimeEventKind
 from cpscheduler.environment.des import (
     ActionType, Schedule,
@@ -91,6 +92,7 @@ class SchedulingEnv(EzPickle):
     passive_constraints: list[PassiveConstraint]
     combined_constraints: list[Constraint]
     objective: Objective
+    observation: Observation
     instance_generator: InstanceGenerator | None
 
     metrics: dict[str, Metric[object | Mapping[str, Any]]]
@@ -114,6 +116,7 @@ class SchedulingEnv(EzPickle):
         machine_setup: ScheduleSetup | None = None,
         constraints: Iterable[Constraint] | None = None,
         objective: Objective | None = None,
+        observation: Observation | None = None,
         instance: InstanceTypes | InstanceGenerator | None = None,
         metrics: Mapping[str, Metric[Any]] | None = None,
         render_mode: Renderer | str | None = None,
@@ -148,6 +151,11 @@ class SchedulingEnv(EzPickle):
                 self.add_metric(name, metric)
 
         self.set_objective(objective)
+
+        if observation is None:
+            observation = Observation()
+        
+        self.observation = observation
 
         self.instance_generator = None
         if isinstance(instance, InstanceGenerator):
@@ -236,6 +244,8 @@ class SchedulingEnv(EzPickle):
 
         self.objective.initialize(instance)
 
+        self.observation.initialize(instance)
+
         self.state = ScheduleState(instance)
         self.loaded = True
 
@@ -272,10 +282,6 @@ class SchedulingEnv(EzPickle):
         return f"{alpha}|{beta}|{gamma}"
 
     # Environment state retrieval methods
-    def get_state(self) -> ObsType:
-        "Retrieve the current state of the environment from tasks."
-        return self.state.get_observation()
-
     def get_info(self) -> InfoType:
         "Retrieve additional information about the environment."
         info: dict[str, Any] = {
@@ -450,7 +456,7 @@ class SchedulingEnv(EzPickle):
         return self.objective.get_current(state)
 
     # Environment API methods
-    def reset(self, *, options: Options = None) -> tuple[ObsType, InfoType]:
+    def reset(self, *, options: Options = None) -> tuple[Observation, InfoType]:
         if isinstance(options, dict):
             if "instance" in options:
                 self.set_instance(options["instance"])
@@ -497,11 +503,13 @@ class SchedulingEnv(EzPickle):
                 "contraditory constraints included in your schedule problem."
             )
 
-        return self.get_state(), self.get_info()
+        self.observation.update(state)
+
+        return self.observation, self.get_info()
 
     def step(
         self, action: ActionType = None
-    ) -> tuple[ObsType, float, bool, bool, InfoType]:
+    ) -> tuple[Observation, float, bool, bool, InfoType]:
         state = self.state
 
         if not self.loaded:
@@ -531,7 +539,7 @@ class SchedulingEnv(EzPickle):
                     break
 
         # Gymnasium-like step return
-        obs = self.get_state()
+        self.observation.update(state)
 
         obj_value = self.get_objective()
         reward = obj_value - self._prev_obj_value
@@ -544,7 +552,7 @@ class SchedulingEnv(EzPickle):
         terminal = state.is_terminal()
         info = self.get_info()
 
-        return obs, reward, terminal, truncated, info
+        return self.observation, reward, terminal, truncated, info
 
     def render(self) -> None:
         self.renderer.render(self.state)

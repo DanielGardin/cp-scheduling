@@ -1,7 +1,7 @@
 from typing import SupportsIndex
 
 from cpscheduler.environment.constants import TaskID
-from cpscheduler.environment.state import ObsType
+from cpscheduler.environment.observation import Observation
 
 from cpscheduler.heuristics.pdrs.base import PriorityDispatchingRule
 
@@ -25,24 +25,22 @@ class MostWorkRemaining(PriorityDispatchingRule):
         self.processing_time = processing_time
         self.operation_label = operation_label
 
-    def priority_score(self, obs: ObsType, time: int | None) -> list[float]:
-        task_order: dict[TaskID, list[TaskID]] = {}
+    def priority_score(self, obs: Observation) -> list[float]:
+        task_order = [
+            [-1] * len(tasks)
+            for tasks in obs.job_tasks
+        ]
 
-        job_ids: list[TaskID] = obs[0]["job_id"]
-        operations: list[SupportsIndex] = obs[0][self.operation_label]
+        operations: list[SupportsIndex] = obs.task[self.operation_label]
 
-        for job_id in job_ids:
-            task_order.setdefault(job_id, []).append(-1)
-
-        for task_id, job_id in enumerate(job_ids):
+        for task_id, job_id in enumerate(obs.job_id):
             op = operations[task_id]
             task_order[job_id][op] = task_id
 
-        n_tasks = len(job_ids)
-        work_remaining = [0.0 for _ in range(n_tasks)]
+        work_remaining = [0.0 for _ in range(obs.n_tasks)]
 
-        processing_times = obs[0][self.processing_time]
-        for task_ids in task_order.values():
+        processing_times = obs.task[self.processing_time]
+        for task_ids in task_order:
             cum_work = 0.0
             for task_id in reversed(task_ids):
                 cum_work += processing_times[task_id]
@@ -65,11 +63,11 @@ class MostOperationsRemaining(PriorityDispatchingRule):
 
         self.operation_label = operation_label
 
-    def priority_score(self, obs: ObsType, time: int | None) -> list[float]:
+    def priority_score(self, obs: Observation) -> list[float]:
         task_order: dict[TaskID, list[TaskID]] = {}
 
-        job_ids: list[TaskID] = obs[0]["job_id"]
-        operations: list[SupportsIndex] = obs[0][self.operation_label]
+        job_ids: list[TaskID] = obs.job_id
+        operations: list[SupportsIndex] = obs.task[self.operation_label]
 
         for job_id in job_ids:
             task_order.setdefault(job_id, []).append(-1)
