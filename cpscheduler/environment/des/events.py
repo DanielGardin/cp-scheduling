@@ -13,7 +13,9 @@ from cpscheduler.environment.state import ScheduleState
 def select_machine(
     state: ScheduleState, task_id: TaskID, machine_id: MachineID
 ) -> int:
-    for machine in state.get_machines(task_id):
+    machines = state.get_machines(task_id)
+
+    for machine in sorted(machines):
         if state.is_available(task_id, machine):
             return machine
 

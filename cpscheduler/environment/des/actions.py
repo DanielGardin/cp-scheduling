@@ -62,7 +62,7 @@ def parse_instruction(
     priority: PriorityValue | None = None
 
     if isinstance(instruction[0], (int, dict)):
-        # instruction = cast(BAction, instruction)
+        instruction = cast(BAction, instruction)
 
         s_args, spec, *spec_args = instruction
 

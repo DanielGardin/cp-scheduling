@@ -249,6 +249,40 @@ class SchedulingEnv(EzPickle):
         self.state = ScheduleState(instance)
         self.loaded = True
 
+    def edit_environment(
+        self,
+        machine_setup: ScheduleSetup | None = None,
+        constraints: Iterable[Constraint] | None = None,
+        objective: Objective | None = None,
+        instance: InstanceTypes | None = None,
+    ) -> None:
+        """Edit the environment's configuration.
+        
+        This method allows changing the machine setup, constraints, objective,
+        and instance of the environment.
+        After calling this method, a reset is required for the changes to take effect.
+
+        This method also can be called after the environment has been frozen to
+        allow changing the configuration without needing to load a new instance.
+        """
+        self.state.instance.unfreeze_()
+        self._frozen = False
+
+        if machine_setup is not None:
+            self.setup = machine_setup
+
+        if constraints is not None:
+            self.constraints.clear()
+            self.passive_constraints.clear()
+            for constraint in constraints:
+                self.add_constraint(constraint)
+
+        if objective is not None:
+            self.set_objective(objective)
+
+        if instance is not None:
+            self.set_instance(instance)
+
     def add_metric(self, name: str, metric: Metric[Any]) -> None:
         "Add a metric to the environment."
         self.metrics[name] = metric
