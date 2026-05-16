@@ -128,18 +128,20 @@ class DomainEvent(EzPickle):
         )
 
 
-EventKindType = Literal[0, 1, 2]
+EventKindType = Literal[0, 1, 2, 3]
 
 class RuntimeEventKind(Enum):
 
     TASK_STARTED: Final[Literal[0]] = 0
     TASK_PAUSED: Final[Literal[1]] = 1
     TASK_COMPLETED: Final[Literal[2]] = 2
+    TASK_MACHINE_INFEASIBLE: Final[Literal[3]] = 3
 
 
 TASK_STARTED = RuntimeEventKind.TASK_STARTED
 TASK_PAUSED = RuntimeEventKind.TASK_PAUSED
 TASK_COMPLETED = RuntimeEventKind.TASK_COMPLETED
+TASK_MACHINE_INFEASIBLE = RuntimeEventKind.TASK_MACHINE_INFEASIBLE
 
 def kind_to_str(kind: EventKindType) -> str:
     if kind == TASK_STARTED:
@@ -150,6 +152,9 @@ def kind_to_str(kind: EventKindType) -> str:
     
     if kind == TASK_COMPLETED:
         return "TASK_COMPLETED"
+
+    if kind == TASK_MACHINE_INFEASIBLE:
+        return "TASK_MACHINE_INFEASIBLE"
     
     assert_never(kind)
 

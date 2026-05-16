@@ -83,6 +83,12 @@ class ComposedObjective(Objective):
         for objective in self.objectives:
             objective.on_task_completed(task_id, machine_id, state)
 
+    def on_task_machine_infeasible(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        for objective in self.objectives:
+            objective.on_task_machine_infeasible(task_id, machine_id, state)
+
     def get_current(self, state: ScheduleState) -> float:
         return sum(
             coefficient * objective.get_current(state)

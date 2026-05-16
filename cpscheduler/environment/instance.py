@@ -278,7 +278,7 @@ class ProblemInstance(EzPickle):
     def freeze(self) -> None:
         self._frozen = True
 
-    def unfreeze_(self) -> None:
+    def unfreeze(self) -> None:
         self._frozen = False
 
     def set_debug_mode(self, debug: bool = True) -> None:

@@ -62,6 +62,11 @@ class Objective(EzPickle):
     ) -> None:
         "Handles the objective change when a task ends its execution."
 
+    def on_task_machine_infeasible(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        "Handles the objective change when a task loses feasibility on a machine."
+
     def get_current(self, state: ScheduleState) -> float:
         """
         Get the current value of the objective function. This is useful for checking

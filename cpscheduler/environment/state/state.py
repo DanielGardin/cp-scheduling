@@ -54,6 +54,7 @@ STATE_INFEASIBLE = VarField.STATE_INFEASIBLE
 TASK_STARTED = RuntimeEventKind.TASK_STARTED
 TASK_PAUSED = RuntimeEventKind.TASK_PAUSED
 TASK_COMPLETED = RuntimeEventKind.TASK_COMPLETED
+TASK_MACHINE_INFEASIBLE = RuntimeEventKind.TASK_MACHINE_INFEASIBLE
 
 
 DUMMY_INSTANCE = ProblemInstance({})
@@ -344,6 +345,11 @@ class ScheduleState(EzPickle):
         elif new_presence == ABSENT:
             runtime.awaiting_tasks.discard(task_id)
             runtime.unlocked_tasks.discard(task_id)
+
+            self.runtime_event_queue.append(
+                RuntimeEvent(task_id, TASK_MACHINE_INFEASIBLE)
+            )
+
             field = ABSENCE
 
         else:
@@ -379,6 +385,9 @@ class ScheduleState(EzPickle):
 
         self.domain_event_queue.append(
             DomainEvent(task_id, MACHINE_INFEASIBLE, machine_id)
+        )
+        self.runtime_event_queue.append(
+            RuntimeEvent(task_id, TASK_MACHINE_INFEASIBLE, machine_id)
         )
 
     def tight_start_lb(

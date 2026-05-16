@@ -63,4 +63,4 @@ class InstanceConfig(TypedDict, total=False):
     seed: int
 
 
-Options = dict[str, Any] | InstanceConfig | None
+Options = dict[str, Any] | InstanceConfig
