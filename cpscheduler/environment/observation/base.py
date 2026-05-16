@@ -151,7 +151,7 @@ class DefaultObservation(Observation[dict[str, Any]]):
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:
         """Handle the loss of feasibility for a task on a specific machine."""
-        self.processing_times[task_id].pop(machine_id, None)
+        del self.processing_times[task_id][machine_id]
 
 
     @overload

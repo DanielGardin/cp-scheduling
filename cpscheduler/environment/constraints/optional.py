@@ -52,7 +52,7 @@ class AtMostOneConstraint(Constraint):
 
     def remove_group(self, group_id: int) -> None:
         if 0 <= group_id < len(self.task_groups):
-            self.task_groups.pop(group_id)
+            del self.task_groups[group_id]
 
     def initialize(self, instance: ProblemInstance) -> None:
         for tasks in self.task_groups:

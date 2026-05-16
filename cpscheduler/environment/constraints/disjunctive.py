@@ -35,7 +35,7 @@ class NonOverlapConstraint(Constraint):
 
     def remove_group(self, group_id: int) -> None:
         if 0 <= group_id < len(self.groups_map):
-            self.groups_map.pop(group_id)
+            del self.groups_map[group_id]
 
     def initialize(self, instance: ProblemInstance) -> None:
         if instance.debug:

@@ -148,7 +148,7 @@ class ProblemInstance(EzPickle):
     def remove_machine(self, task_id: TaskID, machine_id: MachineID) -> None:
         self._check_mutable("remove_machine")
 
-        self.processing_times[task_id].pop(machine_id, None)
+        del self.processing_times[task_id][machine_id]
 
     def set_preemption(self, task_id: TaskID, allow_preemption: bool = True) -> None:
         self._check_mutable("set_preemption")

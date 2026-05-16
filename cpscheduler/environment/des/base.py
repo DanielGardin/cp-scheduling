@@ -267,7 +267,7 @@ class Schedule(EzPickle):
         ), f"Next event time {time} does not match current state time {state.time}"
 
         if time in self.timed_events:
-            timed_events = self.timed_events.pop(time)
+            timed_events = self.timed_events[time]
 
             for event in timed_events:
                 if not event.is_ready(state):
@@ -281,8 +281,10 @@ class Schedule(EzPickle):
                 del self._event_cache[event_id]
                 del self._event_time_cache[event_id]
 
+            del self.timed_events[time]
+
         if time in self.non_timed_events:
-            non_timed_events = self.non_timed_events.pop(time)
+            non_timed_events = self.non_timed_events[time]
             non_timed_events.sort()
             deferred_events: list[_Entry] = []
 
@@ -308,6 +310,8 @@ class Schedule(EzPickle):
 
             for entry in deferred_events:
                 self._reschedule_event(entry, state)
+
+            del self.non_timed_events[time]
 
     # Public API
     # -----------
