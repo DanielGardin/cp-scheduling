@@ -4,7 +4,7 @@ from math import log
 from mypy_extensions import mypyc_attr
 
 from cpscheduler.environment.constants import TaskID, Status
-from cpscheduler.environment.observation import Observation
+from cpscheduler.environment.observation import DefaultObservation
 from cpscheduler.environment.des import SingleInstruction
 
 EXECUTING_STATUS = Status.EXECUTING
@@ -88,7 +88,7 @@ class PriorityDispatchingRule:
     def __init__(self, seed: int | None = None):
         self._internal_rng = random.Random(seed)
 
-    def priority_score(self, obs: Observation) -> list[float]:
+    def priority_score(self, obs: DefaultObservation) -> list[float]:
         """
         Simple priority function, must return a score for each task in the
         observation.
@@ -102,14 +102,14 @@ class PriorityDispatchingRule:
             f"The `priority_score` method must be implemented for {type(self)}."
         )
 
-    def __call__(self, obs: Observation) -> SingleInstruction | None:
+    def __call__(self, obs: DefaultObservation) -> SingleInstruction | None:
         priorities = self.priority_score(obs)
 
         return select_task(priorities, obs.available_tasks)
 
     def sample(
         self,
-        obs: Observation,
+        obs: DefaultObservation,
         *,
         temperature: float = 1.0,
         target_prob: float | None = None,
@@ -134,10 +134,10 @@ class PriorityDispatchingRule:
         )
 
     def ranking(
-        self, obs: Observation, strict: bool = False
+        self, obs: DefaultObservation, strict: bool = False
     )-> list[SingleInstruction]:
         priorities = self.priority_score(obs)
-        status = obs[0]['status']
+        status = obs.status
 
         filtered_priorities = sorted([
             (-prio, task_id) for task_id, prio in enumerate(priorities)

@@ -1,14 +1,10 @@
-from cpscheduler.environment.observation import Observation
+from cpscheduler.environment.observation import DefaultObservation
 
 from cpscheduler.heuristics.pdrs.base import PriorityDispatchingRule
 
-def get_num_tasks(obs: Observation) -> int:
-    return len(obs[0]["task_id"])
-
 class RandomPriority(PriorityDispatchingRule):
-    def priority_score(self, obs: Observation) -> list[float]:
-        n_tasks = get_num_tasks(obs)
-        return [self._internal_rng.random() for _ in range(n_tasks)]
+    def priority_score(self, obs: DefaultObservation) -> list[float]:
+        return [self._internal_rng.random() for _ in range(obs.n_tasks)]
 
 
 class ShortestProcessingTime(PriorityDispatchingRule):
@@ -25,7 +21,7 @@ class ShortestProcessingTime(PriorityDispatchingRule):
 
         self.processing_time = processing_time
 
-    def priority_score(self, obs: Observation) -> list[float]:
+    def priority_score(self, obs: DefaultObservation) -> list[float]:
         return [float(-p) for p in obs.task[self.processing_time]]
 
 
@@ -42,7 +38,7 @@ class EarliestDueDate(PriorityDispatchingRule):
 
         self.due_date = due_date
 
-    def priority_score(self, obs: Observation) -> list[float]:
+    def priority_score(self, obs: DefaultObservation) -> list[float]:
         return [float(-d) for d in obs.task[self.due_date]]
 
 
@@ -59,7 +55,7 @@ class FirstInFirstOut(PriorityDispatchingRule):
 
         self.release_time = release_time
 
-    def priority_score(self, obs: Observation) -> list[float]:
+    def priority_score(self, obs: DefaultObservation) -> list[float]:
         t = obs.time
 
-        return [t - float(r) for r in obs[0][self.release_time]]
+        return [t - float(r) for r in obs["task"][self.release_time]]

@@ -1,7 +1,7 @@
 from typing import SupportsIndex
 
 from cpscheduler.environment.constants import TaskID
-from cpscheduler.environment.observation import Observation
+from cpscheduler.environment.observation import DefaultObservation
 
 from cpscheduler.heuristics.pdrs.base import PriorityDispatchingRule
 
@@ -25,7 +25,7 @@ class MostWorkRemaining(PriorityDispatchingRule):
         self.processing_time = processing_time
         self.operation_label = operation_label
 
-    def priority_score(self, obs: Observation) -> list[float]:
+    def priority_score(self, obs: DefaultObservation) -> list[float]:
         task_order = [
             [-1] * len(tasks)
             for tasks in obs.job_tasks
@@ -63,7 +63,7 @@ class MostOperationsRemaining(PriorityDispatchingRule):
 
         self.operation_label = operation_label
 
-    def priority_score(self, obs: Observation) -> list[float]:
+    def priority_score(self, obs: DefaultObservation) -> list[float]:
         task_order: dict[TaskID, list[TaskID]] = {}
 
         job_ids: list[TaskID] = obs.job_id

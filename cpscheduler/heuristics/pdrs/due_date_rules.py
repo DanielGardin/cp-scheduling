@@ -1,4 +1,4 @@
-from cpscheduler.environment.observation import Observation
+from cpscheduler.environment.observation import DefaultObservation
 
 from cpscheduler.heuristics.pdrs.base import PriorityDispatchingRule
 
@@ -18,7 +18,7 @@ class ModifiedDueDate(PriorityDispatchingRule):
         self.processing_time = processing_time
         self.due_date = due_date
 
-    def priority_score(self, obs: Observation) -> list[float]:
+    def priority_score(self, obs: DefaultObservation) -> list[float]:
         t = obs.time
         due_dates = obs.task[self.due_date]
         processing_times = obs.task[self.processing_time]
@@ -47,7 +47,7 @@ class WeightedModifiedDueDate(PriorityDispatchingRule):
         self.due_date = due_date
         self.weight = weight
 
-    def priority_score(self, obs: Observation) -> list[float]:
+    def priority_score(self, obs: DefaultObservation) -> list[float]:
         t = obs.time
         due_dates = obs.task[self.due_date]
         processing_times = obs.task[self.processing_time]
@@ -78,7 +78,7 @@ class MinimumSlackTime(PriorityDispatchingRule):
         self.processing_time = processing_time
         self.release_time = release_time
     
-    def priority_score(self, obs: Observation) -> list[float]:
+    def priority_score(self, obs: DefaultObservation) -> list[float]:
         t = obs.time
 
         processing_times = obs.task[self.processing_time]
