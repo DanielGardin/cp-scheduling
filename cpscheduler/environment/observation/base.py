@@ -1,6 +1,6 @@
 from typing import Any, Literal, Generic, overload
 from collections.abc import Iterator
-from typing_extensions import Self, TypeVar
+from typing_extensions import TypeVar
 
 from copy import deepcopy
 
@@ -48,28 +48,64 @@ class Observation(EzPickle, Generic[Serialized_Obs]):
         """Handle a task-machine infeasibility event."""
 
     def serialize(self) -> Serialized_Obs:
-        """Return a serialized representation of the observation."""
+        """Return a serialized representation of the observation.
+        
+        Important: this method may not provide a copy of the observation, only
+        a serialized version of the observation buffer inside the class.
+        If you need to actual copies of the current observation, please refer 
+        to `snapshot`.
+        
+        """
         raise NotImplementedError(
             f"serialize() was not implemented for {type(self).__name__}."
         )
 
+    def snapshot(self) -> Serialized_Obs:
+        """Return a serialized copy of the observation."""
+        raise NotImplementedError(
+            f"snapshot() was not implemented for {type(self).__name__}."
+        )
+
+
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=True)
 class DefaultObservation(Observation[dict[str, Any]]):
+    """Default observation layout, provides instance and runtime information.
+
+    Runtime-complete and shape-free observation used in flexible policies, not 
+    ideal for neural networks.
+    This observation is not CP-aware, its only CP related field is the set of 
+    available tasks.
+
+    Layout:
+    -------
+    task: dict[str, list[]: len = (n_tasks)]
+        Dictionary with task-related information.
+    
+    job: dict[str, list[]: len = (n_jobs)]
+        Dictionary with job-related information.
+
+    global_: dict[str, Any]
+        Dictionary with arbitrary, shapeless information.
+
+    available_tasks:
+        Set of available tasks.
+    
+    time:
+        Current time.
+    """
     # Global information
     n_tasks: int
     n_jobs: int
     n_machines: int
     time: int
 
-    job_tasks: list[list[TaskID]]
     available_tasks: set[TaskID]
-    original_processing_times: list[dict[MachineID, Time]]
-    processing_times: list[dict[MachineID, Time]]
 
     # Internal storage for the namespaces, do not modify directly.
     _task: dict[str, list[Any]]
     _job: dict[str, list[Any]]
     _global: dict[str, Any]
+    _processing_times: list[dict[MachineID, Time]]
 
     @property
     def task(self) -> dict[str, list[Any]]:
@@ -91,6 +127,18 @@ class DefaultObservation(Observation[dict[str, Any]]):
     def job_id(self) -> list[int]:
         return self._task["job_id"]
 
+    @property
+    def job_tasks(self) -> list[list[TaskID]]:
+        return self._job["job_tasks"]
+
+    @property
+    def original_processing_times(self) -> list[dict[MachineID, Time]]:
+        return self._task["original_processing_times"]
+
+    @property
+    def processing_times(self) -> list[dict[MachineID, Time]]:
+        return self._processing_times
+
     def initialize(self, instance: ProblemInstance) -> None:
         self.n_tasks = instance.n_tasks
         self.n_jobs = instance.n_jobs
@@ -98,26 +146,33 @@ class DefaultObservation(Observation[dict[str, Any]]):
         self.time = 0
 
         # These copies are shallow, do not modify them during action selection.
-        self.job_tasks = instance.job_tasks.copy()
         self._task = instance.task_instance.copy()
         self._job = instance.job_instance.copy()
         self._global = instance.global_instance.copy()
-        self.original_processing_times = deepcopy(instance.processing_times)
+
+        self._task["original_processing_times"] = deepcopy(instance.processing_times)
+        self._job["job_tasks"] = instance.job_tasks.copy()
+
+        self._global["time"] = 0
 
         # dynamic slots pre-allocated so update() never inserts new keys
         self._task["status"] = [0] * instance.n_tasks
         self._task["job_id"] = instance.job_ids.copy()
+
         self.available_tasks = set()
-        self.processing_times = [
+        self._processing_times = [
             p.copy() for p in self.original_processing_times
         ]
 
+        self._task["processing_times"] = self._processing_times # Reference
+
     def update(self, state: ScheduleState) -> None:
+        self._global["time"] = state.time
+        self.time = state.time
+
         task = self._task
 
         task["status"][:] = state.runtime.status
-
-        self.time = state.time
 
         self.available_tasks.clear()
         for task_id in state.runtime.unlocked_tasks:
@@ -128,7 +183,7 @@ class DefaultObservation(Observation[dict[str, Any]]):
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:
         """Handle the start of a task on a specific machine."""
-        self.processing_times[task_id] = {
+        self._processing_times[task_id] = {
             machine_id: state.get_remaining_time(task_id, machine_id)
         }
 
@@ -136,22 +191,22 @@ class DefaultObservation(Observation[dict[str, Any]]):
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:
         """Handle the pause of a task on a specific machine."""
-        self.processing_times[task_id] = {
+        self._processing_times[task_id] = {
             m_id: state.get_remaining_time(task_id, m_id)
-            for m_id in self.processing_times[task_id]
+            for m_id in self._processing_times[task_id]
         }
 
     def on_task_completed(
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:
         """Handle the completion of a task on a specific machine."""
-        self.processing_times[task_id].clear()
+        self._processing_times[task_id].clear()
 
     def on_task_machine_infeasible(
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:
         """Handle the loss of feasibility for a task on a specific machine."""
-        del self.processing_times[task_id][machine_id]
+        del self._processing_times[task_id][machine_id]
 
 
     @overload
@@ -205,8 +260,12 @@ class DefaultObservation(Observation[dict[str, Any]]):
     def serialize(self) -> dict[str, Any]:
         return {"task": self._task, "job": self._job, "global": self._global}
 
-    def clone(self) -> Self:
-        return deepcopy(self)
+    def snapshot(self) -> dict[str, Any]:
+        return {
+            "task": deepcopy(self._task),
+            "job": deepcopy(self._job),
+            "global": deepcopy(self._global)
+        }
 
     def __repr__(self) -> str:
         task_keys = ", ".join(sorted(self._task))
