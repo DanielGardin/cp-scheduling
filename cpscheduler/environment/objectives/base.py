@@ -1,13 +1,14 @@
 from mypy_extensions import mypyc_attr
 
-from cpscheduler.environment.constants import MachineID, TaskID, EzPickle
-from cpscheduler.environment.instance import ProblemInstance
+from cpscheduler.environment.constants import MachineID, TaskID
+from cpscheduler.environment.components import Component
+
 from cpscheduler.environment.state import ScheduleState
 
 objectives: dict[str, type["Objective"]] = {}
 
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=True)
-class Objective(EzPickle):
+class Objective(Component):
     """
     Base class for all objective functions in the scheduling environment.
 
@@ -20,11 +21,8 @@ class Objective(EzPickle):
     minimize: bool
 
     def __init_subclass__(cls) -> None:
-        super().__init_subclass__()
-
         name = cls.__name__
 
-        # Private classes are not registered
         if not name.startswith('_'):
             objectives[name] = cls
 
@@ -40,12 +38,6 @@ class Objective(EzPickle):
         sense = "minimize" if self.minimize else "maximize"
 
         return f"{type(self).__name__}(sense={sense})"
-
-    def initialize(self, instance: ProblemInstance) -> None:
-        "Initialize the objective with the given schedule state."
-
-    def reset(self, state: ScheduleState) -> None:
-        "Reset the objective's internal state."
 
     def on_task_started(
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
@@ -77,10 +69,6 @@ class Objective(EzPickle):
     def __call__(self, state: ScheduleState) -> float:
         "Call the objective function to get the current value."
         return self.get_current(state)
-
-    def get_entry(self) -> str:
-        "Produce the γ entry for the constraint."
-        return ""
 
 
 class RegularObjective(Objective):

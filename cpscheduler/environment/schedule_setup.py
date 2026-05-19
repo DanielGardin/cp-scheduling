@@ -12,9 +12,8 @@ from mypy_extensions import mypyc_attr
 
 from cpscheduler.environment.utils.general import convert_to_list
 
-from cpscheduler.environment.constants import (
-    MachineID, Time, Int, EzPickle
-)
+from cpscheduler.environment.constants import MachineID, Time, Int
+from cpscheduler.environment.components import Component
 
 from cpscheduler.environment.instance import ProblemInstance
 from cpscheduler.environment.constraints import (
@@ -30,30 +29,23 @@ def ceil_div(a: Time, b: Time) -> Time:
 
 
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=True)
-class ScheduleSetup(EzPickle):
+class ScheduleSetup(Component):
     """
     Base class for scheduling setups. It defines the common interface for all scheduling setups
     and provides methods to parse process times, set tasks, and setup constraints.
     """
 
     def __init_subclass__(cls) -> None:
-        super().__init_subclass__()
+        name = cls.__name__
 
-        setups[cls.__name__] = cls
-
-    def initialize(self, instance: ProblemInstance) -> None:
-        "Initialize the state with the given schedule setup."
-        raise NotImplementedError()
+        if not name.startswith('_'):
+            setups[name] = cls
 
     def setup_constraints(
         self, instance: ProblemInstance
     ) -> tuple[Constraint, ...]:
-        "Build the constraint for that setup."
+        "Build the constraints for that setup."
         return ()
-
-    def get_entry(self) -> str:
-        "Produce the α entry for the constraint."
-        return ""
 
 
 class SingleMachineSetup(ScheduleSetup):
@@ -115,7 +107,6 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
 
     def initialize(self, instance: ProblemInstance) -> None:
         p_times = instance.register_task_feature(self.processing_times)
-
 
         for task_id, p_time in enumerate(p_times):
             for machine in range(self.n_machines):
@@ -196,7 +187,6 @@ class UnrelatedParallelMachineSetup(ScheduleSetup):
     def initialize(self, instance: ProblemInstance) -> None:
         for machine, p_time_feature in enumerate(self.processing_times):
             p_times = instance.register_task_feature(p_time_feature)
-
 
             for task_id, p_time in enumerate(p_times):
                 instance.set_processing_time(task_id, machine, Time(p_time))

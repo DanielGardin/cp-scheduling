@@ -2,8 +2,9 @@ from typing import NoReturn, final
 
 from mypy_extensions import mypyc_attr
 
-from cpscheduler.environment.constants import TaskID, MachineID, Time, EzPickle
-from cpscheduler.environment.instance import ProblemInstance
+from cpscheduler.environment.constants import TaskID, MachineID, Time
+from cpscheduler.environment.components import Component
+
 from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.state.events import DomainEvent, VarField
 
@@ -22,7 +23,7 @@ STATE_INFEASIBLE = VarField.STATE_INFEASIBLE
 constraints: dict[str, type["Constraint"]] = {}
 
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=True)
-class Constraint(EzPickle):
+class Constraint(Component):
     """
     Base class for all constraints in the scheduling environment.
     This class provides a common interface for any piece in the scheduling environment that
@@ -31,22 +32,10 @@ class Constraint(EzPickle):
     """
 
     def __init_subclass__(cls) -> None:
-        constraints[cls.__name__] = cls
+        name = cls.__name__
 
-    def initialize(self, instance: ProblemInstance) -> None:
-        """
-        Initialize the constraint with the scheduling state.
-
-        This operation is meant to initialize the internal state of the constraint given the
-        observed state at the constraint's inclusion time, after the instance
-        have been fixed.
-
-        Any changes to the constraint parameters must be done before
-        initialization time.
-        """
-
-    def reset(self, state: ScheduleState) -> None:
-        "Reset the constraint to its initial state."
+        if not name.startswith('_'):
+            constraints[name] = cls
 
     @final
     def propagate(self, event: DomainEvent, state: ScheduleState) -> None:
@@ -138,10 +127,6 @@ class Constraint(EzPickle):
 
     def on_time_update(self, time: Time, state: ScheduleState) -> None:
         "Handle the event of the current time being updated."
-
-    def get_entry(self) -> str:
-        "Produce the β entry for the constraint."
-        return ""
 
 class PassiveConstraint(Constraint):
     """
