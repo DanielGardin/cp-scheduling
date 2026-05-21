@@ -1,5 +1,4 @@
 from typing import Any, Literal, cast
-from collections.abc import KeysView
 
 from mypy_extensions import mypyc_attr
 
@@ -56,9 +55,6 @@ TASK_PAUSED = RuntimeEventKind.TASK_PAUSED
 TASK_COMPLETED = RuntimeEventKind.TASK_COMPLETED
 TASK_MACHINE_INFEASIBLE = RuntimeEventKind.TASK_MACHINE_INFEASIBLE
 
-
-DUMMY_INSTANCE = ProblemInstance({})
-
 IntervalEnd = bool
 START: IntervalEnd = True
 END: IntervalEnd = False
@@ -82,7 +78,7 @@ class ScheduleState(EzPickle):
     changes through them.
     """
 
-    __args__ = ("instance",)
+    __args__ = ("instance", "_debug")
 
     instance: ProblemInstance
 
@@ -99,13 +95,13 @@ class ScheduleState(EzPickle):
 
     _debug: bool
 
-    def __init__(self, instance: ProblemInstance) -> None:
+    def __init__(self, instance: ProblemInstance, debug: bool) -> None:
         self.instance = instance
 
         self.time = 0
 
         self.infeasible = False
-        self._debug = instance.debug
+        self._debug = debug
 
         self.domains = TaskDomains(instance)
         self.runtime = RuntimeState(instance)
@@ -136,7 +132,7 @@ class ScheduleState(EzPickle):
         self.time = 0
         self.infeasible = False
 
-        self.instance = ProblemInstance()
+        self.instance = ProblemInstance(self._debug)
         self.domains = TaskDomains()
         self.runtime = RuntimeState()
 
@@ -191,34 +187,33 @@ class ScheduleState(EzPickle):
     # Problem Instance API methods
 
     ## Getter methods for instance parameters
-
-    def get_data(self, feature: str) -> list[Any]:
-        return self.instance.task_instance[feature]
-
     def is_preemptive(self, task_id: TaskID) -> bool:
         "Check if a task allows preemption."
-        return self.instance.preemptive[task_id]
+        return self.instance.preemptive.value[task_id]
 
     def is_optional(self, task_id: TaskID) -> bool:
         "Check if a task is optional."
-        return self.instance.optional[task_id]
+        return self.instance.optional.value[task_id]
+
+    def has_processing_time(
+        self, task_id: TaskID, machine_id: MachineID
+    ) -> bool:
+        return self.instance.machine_mask.value[task_id][machine_id]
 
     def get_processing_time(
         self, task_id: TaskID, machine_id: MachineID
     ) -> Time:
         "Get the processing time for a given task and machine."
-        p_time = self.instance.processing_times[task_id].get(machine_id)
+        if self.has_processing_time(task_id, machine_id):
+            return self.instance.processing_times.value[task_id][machine_id]
 
-        if p_time is None:
-            raise ValueError(
-                f"get_processing_time: Task {task_id} cannot be processed in Machine {machine_id}"
-            )
+        raise ValueError(
+            f"get_processing_time: Task {task_id} cannot be processed in Machine {machine_id}"
+        )
 
-        return p_time
-
-    def get_original_machines(self, task_id: TaskID) -> KeysView[MachineID]:
+    def get_original_machines(self, task_id: TaskID) -> list[MachineID]:
         "Get the set of machines that can process a given task."
-        return self.instance.processing_times[task_id].keys()
+        return self.instance.get_machines(task_id)
 
     # Constraint propagation API methods
 
@@ -641,12 +636,10 @@ class ScheduleState(EzPickle):
     def forbid_machine(self, task_id: TaskID, machine_id: MachineID) -> None:
         self.restrict_machine(task_id, machine_id)
 
-
     def require_machine(self, task_id: TaskID, machine_id: MachineID) -> None:
-        for other_machine in self.instance.processing_times[task_id]:
+        for other_machine in self.domains.feasible_machines[task_id]:
             if other_machine != machine_id:
                 self.forbid_machine(task_id, other_machine)
-
 
     def reset_bounds(
         self, task_id: TaskID, machine_id: MachineID = GLOBAL_MACHINE_ID
@@ -701,8 +694,7 @@ class ScheduleState(EzPickle):
 
             return
 
-        original_machines = domains.original_machines[task_id]
-        for m_id in original_machines:
+        for m_id in self.instance.get_machines(task_id):
             idx = row + m_id
 
             start.lbs[idx] = time
@@ -815,7 +807,7 @@ class ScheduleState(EzPickle):
         return self.runtime.status[task_id] == COMPLETED
 
     def is_locked(self, task_id: TaskID) -> bool:
-        return bool(self.runtime.prerequisites[task_id])
+        return bool(self.runtime.dependencies[task_id])
 
     def get_end(self, task_id: TaskID) -> Time:
         if not self.is_fixed(task_id):
@@ -830,15 +822,15 @@ class ScheduleState(EzPickle):
         return self.runtime.get_start(task_id)
 
     ## Setter methods for variable values, triggering constraint propagation through events
-    def add_prerequisite(self, task_id: TaskID, name: str) -> None:
-        self.runtime.prerequisites[task_id].add(name)
+    def add_dependency(self, task_id: TaskID, name: str) -> None:
+        self.runtime.dependencies[task_id].add(name)
         self.runtime.unlocked_tasks.discard(task_id)
 
-    def satisfy_prerequisite(self, task_id: TaskID, name: str) -> None:
-        prerequisites = self.runtime.prerequisites[task_id]
+    def resolve_dependency(self, task_id: TaskID, name: str) -> None:
+        dependencies = self.runtime.dependencies[task_id]
 
-        prerequisites.discard(name)
-        if not prerequisites:
+        dependencies.discard(name)
+        if not dependencies:
             self.runtime.unlocked_tasks.add(task_id)
 
     def execute_task(self, task_id: TaskID, machine_id: MachineID) -> None:
@@ -949,13 +941,13 @@ class ScheduleState(EzPickle):
         prev_assignment = domains.assignment[task_id]
 
         row = task_id * self.n_machines
-        original_machines = domains.original_machines[task_id]
+
         feasible_machines = domains.feasible_machines[task_id]
 
         if expected_duration == 0:
             expected_duration = 1
 
-        for m_id in original_machines:
+        for m_id in self.instance.get_machines(task_id):
             idx = row + m_id
 
             work_done = ((actual_duration) * remaining_times[idx]) // (

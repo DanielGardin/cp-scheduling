@@ -81,7 +81,7 @@ from cpscheduler.heuristics.pdrs import ShortestProcessingTime
 instance, _ = read_jsp_instance("instances/jobshop/ta01.txt")
 
 env = SchedulingEnv(JobShopSetup(), objective=Makespan())
-env.set_instance(instance)
+env.load_instance(instance)
 
 heuristic = ShortestProcessingTime()
 obs, info = env.reset()

@@ -32,12 +32,14 @@ def prec_constraint(
     state: ScheduleState,
     constraint: PrecedenceConstraint,
 ) -> None:
+    precedence_name = constraint.parents.name
+
     for task_id, children in constraint.children.items():
         for child_id in children:
             formulation.add_constraint(
                 formulation.end_times[task_id]
                 <= formulation.start_times[child_id],
-                f"precedence_{task_id}_{child_id}",
+                f"{precedence_name}_{task_id}_{child_id}",
             )
 
             formulation.set_global_order(task_id, child_id)
@@ -49,12 +51,14 @@ def no_wait_constraint(
     state: ScheduleState,
     constraint: NoWaitConstraint,
 ) -> None:
+    precedence_name = constraint.parents.name
+
     for task_id, children in constraint.children.items():
         for child_id in children:
             formulation.add_constraint(
                 formulation.end_times[task_id]
                 == formulation.start_times[child_id],
-                f"no_wait_{task_id}_{child_id}",
+                f"{precedence_name}_{task_id}_{child_id}",
             )
 
             formulation.set_global_order(task_id, child_id)
@@ -66,7 +70,7 @@ def non_overlap_constraint(
     state: ScheduleState,
     constraint: NonOverlapConstraint,
 ) -> None:
-    for group in constraint.groups_map:
+    for group in constraint.groups.value:
         for i, j in combinations(group, 2):
             order_var = formulation.get_order(i, j)
             presence_i = formulation.present[i]
@@ -161,17 +165,16 @@ def non_renewable_resource_constraint(
     state: ScheduleState,
     constraint: NonRenewableResourceConstraint,
 ) -> None:
-    for resource_id, capacity in enumerate(constraint.capacities):
-        resource_demand = sum(
-            demand * formulation.present[task_id]
-            for task_id, demand in enumerate(constraint.resources[resource_id])
-            if demand > 0
-        )
+    resource_demand = sum(
+        demand * formulation.present[task_id]
+        for task_id, demand in enumerate(constraint.resources.value)
+        if demand > 0
+    )
 
-        formulation.add_constraint(
-            resource_demand <= capacity,
-            f"non_renewable_resource_{resource_id}",
-        )
+    formulation.add_constraint(
+        resource_demand <= constraint.capacity,
+        f"non_renewable_resource_{constraint.resources.name}",
+    )
 
 
 @DisjunctiveMILPFormulation.register_constraint(SetupConstraint)

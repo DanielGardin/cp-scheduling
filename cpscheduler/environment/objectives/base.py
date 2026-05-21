@@ -1,8 +1,9 @@
 from mypy_extensions import mypyc_attr
 
-from cpscheduler.environment.constants import MachineID, TaskID
-from cpscheduler.environment.components import Component
+from cpscheduler.environment.constants import MachineID, TaskID, Time
+from cpscheduler.environment.component import Component
 
+from cpscheduler.environment.instance import ProblemInstance
 from cpscheduler.environment.state import ScheduleState
 
 objectives: dict[str, type["Objective"]] = {}
@@ -71,16 +72,45 @@ class Objective(Component):
         return self.get_current(state)
 
 
-class RegularObjective(Objective):
+
+class CompletionTimeObjective(Objective):
+    _job_completion: list[Time]
+
+    def initialize(self, instance: ProblemInstance) -> None:
+        self._job_completion = [0] * instance.n_jobs
+
+    def reset(self, state: ScheduleState) -> None:
+        self._job_completion[:] = [0] * state.n_jobs
+
+    def on_task_completed(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        job_id = state.instance.job_ids.value[task_id]
+        C_j = state.get_end(task_id)
+        self._job_completion[job_id] = max(self._job_completion[job_id], C_j)
+
+    @staticmethod
+    def completion_times(state: ScheduleState) -> list[Time]:
+        "Compute the makespan of a set of tasks."
+        makespans: list[Time] = [0] * state.n_jobs
+
+        job_ids = state.instance.job_ids.value
+
+        for task_id in state.get_completed_tasks():
+            job_id = job_ids[task_id]
+            C_j = state.get_end(task_id)
+
+            makespans[job_id] = max(makespans[job_id], C_j)
+
+        return makespans
+
+
+
+class RegularObjective(CompletionTimeObjective):
     """
     A regular objective is non-decreasing with respect to completion times.
     Any objective that depends solely on completion times is regular.
     """
-
-    def __init__(
-        self, minimize: bool = True
-    ) -> None:
-        super().__init__(minimize)
 
     @property
     def regular(self) -> bool:

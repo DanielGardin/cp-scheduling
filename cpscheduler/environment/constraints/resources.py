@@ -4,7 +4,9 @@ from collections.abc import Iterable
 from cpscheduler.environment.utils.general import convert_to_list
 
 from cpscheduler.environment.constants import Time, Float, MAX_TIME
-from cpscheduler.environment.instance import ProblemInstance
+from cpscheduler.environment.instance import (
+    UNSET, ProblemInstance, TaskFeature,
+)
 from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import Constraint
@@ -71,170 +73,116 @@ def binary_search(
 
 
 class ResourceConstraint(Constraint):
-    """
-    Resource constraint for the scheduling environment.
+    __args__ = ("capacity",)
 
-    This constraint defines the renewable resources available for tasks and their usage.
-    The resources can be defined as a list of capacities and a list of resource usage for each task.
+    resources: TaskFeature[float]
+    capacity: float
 
-    Arguments:
-        capacities: Iterable[float]
-            A list of capacities for each renewable resource. The length of the list should be equal to the
-            number of resources.
+    _next_available_time: list[Time]
+    """Cache for the next available time:
 
-        resource_usage: Iterable[str]
-            A list of strings that define the resource usage for each task.
-            Each string refers to a column in the tasks data that contains the
-            resource usage for each task.
-
-        name: Optional[str] = None
-            An optional name for the constraint.
+    next_available_time = [MAX_TIME, t_1, ..., t_k],
+    where t_1 > t_2 > ... > t_k are the times at which a task finishes its processing,
+    releasing resource to other awaiting tasks.
     """
 
-    resource_tags: list[str]
-    capacities: list[float]
-    constant_capacity: float | None
-    resources: list[list[float]]
-    ""
+    _available_resources: list[float]
+    """Cache for the remaining resources:
 
+    available_resources = [capacity, r_1, ..., r_k]
+    where r_j is the amount of available resources during the interval [t_j, t_{j-1}).
     """
-    Caches the next available time and available resources for each resource type.
-
-    Each resource maintains two lists in the following way:
-
-    next_available_time[i] = [INF, t_1, ..., t_k]
-    where t_1 > t_2 > ... > t_k are the times at which the available resources change.
-
-    available_resources[i] = [C_i, r_1, ..., r_k]
-    where r_j is the amount of available resources during the interval [t_{j-1}, t_j).
-
-    So, when a task starts at time t, we insert its end time into the next_available_time list,
-    and update the available_resources list accordingly.
-    """
-
-    next_available_time: list[list[Time]]
-    available_resources: list[list[float]]
 
     def __init__(
         self,
-        capacities: Iterable[Float] | Float | None = None,
-        resource_usage: Iterable[str] | None = None,
+        capacity: float,
+        resource_tag: str = "resource",
+        resources: Iterable[Float] | None = None,
     ) -> None:
-        self.constant_capacity = None
+        self.capacity = capacity
 
-        if capacities is None:
-            capacities = []
-
-        elif isinstance(capacities, Float):
-            self.constant_capacity = float(capacities)
-            capacities = []
-
-        self.capacities = convert_to_list(capacities, float)
-
-        if resource_usage is None:
-            resource_usage = []
-
-        self.resource_tags = list(resource_usage)
-
-    def add_resource(
-        self,
-        resource_usage: str, 
-        capacity: Float | None = None
-    ) -> None:
-        if self.constant_capacity is not None:
-            if capacity is not None:
-                raise ValueError(
-                    "Cannot add a resource with a specific capacity when a constant capacity is defined."
-                )
-            
-            capacity = self.constant_capacity
-
-        elif capacity is None:
-            raise ValueError(
-                "Capacity must be provided when a constant capacity is not defined."
+        self.resources = TaskFeature(
+            resource_tag,
+            float,
+            "cost",
+            default=(
+                convert_to_list(resources, float)
+                if resources is not None else UNSET
             )
-    
-        self.resource_tags.append(resource_usage)
-        self.capacities.append(float(capacity))
+        )
+
+    def get_features(self) -> list[TaskFeature]:
+        return [self.resources]
 
     def initialize(self, instance: ProblemInstance) -> None:
-        if self.constant_capacity is not None:
-            self.capacities = [self.constant_capacity] * len(self.resource_tags)
-
-        elif len(self.capacities) != len(self.resource_tags):
-            raise ValueError(
-                "The number of capacities must be equal to the number of resource usage columns."
-            )
-
-        self.resources = [
-            convert_to_list(instance.task_instance[resource], float)
-            for resource in self.resource_tags
-        ]
-
-        self.next_available_time = [[] for _ in self.resource_tags]
-        self.available_resources = [[] for _ in self.resource_tags]
+        self._next_available_time = []
+        self._available_resources = []
 
     def reset(self, state: ScheduleState) -> None:
-        for i, capacity in enumerate(self.capacities):
-            self.next_available_time[i] = [MAX_TIME]
-            self.available_resources[i] = [capacity]
+        self._next_available_time.clear()
+        self._available_resources.clear()
 
-        for capacity, task_demand in zip(self.capacities, self.resources):
-            for task_id, demand in enumerate(task_demand):
-                if demand > capacity:
-                    state.forbid_task(task_id)
+        self._next_available_time.append(MAX_TIME)
+        self._available_resources.append(self.capacity)
+
+        capacity = self.capacity
+        for task_id, resource in enumerate(self.resources.value):
+            if resource > capacity:
+                state.forbid_task(task_id)
 
     def on_assignment(
         self, task_id: Time, machine_id: Time, state: ScheduleState
     ) -> None:
-        for i, task_resources in enumerate(self.resources):
-            resource_usage = task_resources[task_id]
+        resources = self.resources.value
+        resource_usage = resources[task_id]
+
+        if resource_usage <= 0:
+            return
+
+        next_available_time = self._next_available_time
+        available_resources = self._available_resources
+
+        end_time = state.get_end_lb(task_id)
+
+        idx = binary_search(next_available_time, end_time, decreasing=True)
+
+        next_available_time.insert(idx, end_time)
+        available_resources.insert(idx, available_resources[idx-1])
+
+        for j in range(idx, len(available_resources)):
+            available_resources[j] -= resource_usage
+
+        for other_task in state.runtime.get_awaiting_tasks():
+            resource_usage = resources[other_task]
 
             if resource_usage <= 0:
                 continue
 
-            next_available_time = self.next_available_time[i]
-            available_resources = self.available_resources[i]
-
-            while next_available_time and next_available_time[-1] <= state.time:
-                next_available_time.pop()
-                available_resources.pop()
-
-            end_time = state.get_end_lb(task_id)
-
-            idx = binary_search(next_available_time, end_time, decreasing=True)
-
-            self.next_available_time[i].insert(idx, end_time)
-            self.available_resources[i].insert(
-                idx, available_resources[idx - 1]
+            idx = binary_search(
+                available_resources, resource_usage, decreasing=True
             )
 
-            for j in range(idx, len(available_resources)):
-                available_resources[j] -= resource_usage
+            earliest_start = (
+                next_available_time[idx]
+                if idx < len(available_resources)
+                else state.time
+            )
 
-        for i, task_resources in enumerate(self.resources):
-            next_available_time = self.next_available_time[i]
-            available_resources = self.available_resources[i]
+            state.tight_start_lb(other_task, earliest_start)
 
-            for other_task in state.runtime.get_awaiting_tasks():
-                resource_usage = task_resources[other_task]
+    def on_time_update(self, time: Time, state: ScheduleState) -> None:
+        next_available_time = self._next_available_time
+        available_resources = self._available_resources
 
-                if resource_usage <= 0:
-                    continue
+        current_time = state.time
 
-                idx = binary_search(
-                    available_resources, resource_usage, decreasing=True
-                )
-
-                earliest_start = (
-                    next_available_time[idx]
-                    if idx < len(available_resources)
-                    else state.time
-                )
-
-                state.tight_start_lb(other_task, earliest_start)
+        while next_available_time and next_available_time[-1] <= current_time:
+            next_available_time.pop()
+            available_resources.pop()
 
 
+
+# TODO: Convert external information as Features
 class NonRenewableResourceConstraint(Constraint):
     """
     Resource constraint for the scheduling environment.
@@ -255,89 +203,55 @@ class NonRenewableResourceConstraint(Constraint):
             An optional name for the constraint.
     """
 
-    resource_tags: list[str]
-    constant_capacity: float | None
-    capacities: list[float]
-    resources: list[list[float]]
+    resources: TaskFeature[float]
+    capacity: float
 
-    current_capacities: list[float]
+    _current_capacity: float
 
     def __init__(
         self,
-        capacities: Iterable[Float] | Float | None = None,
-        resource_usage: Iterable[str] | None = None,
+        capacity: float,
+        resource_tag: str = "resource",
+        resources: Iterable[Float] | None = None,
     ) -> None:
-        
-        self.constant_capacity = None
-        if capacities is None:
-            capacities = []
+        self.capacity = capacity
 
-        elif isinstance(capacities, Float):
-            self.constant_capacity = float(capacities)
-            capacities = []
-
-        self.capacities = convert_to_list(capacities, float)
-
-        if resource_usage is None:
-            resource_usage = []
-
-        self.resource_tags = list(resource_usage)
-        self.resources = []
-
-    def add_resource(
-        self,
-        resource_usage: str, 
-        capacity: Float | None = None
-    ) -> None:
-        if self.constant_capacity is not None:
-            if capacity is not None:
-                raise ValueError(
-                    "Cannot add a resource with a specific capacity when a constant capacity is defined."
-                )
-            
-            capacity = self.constant_capacity
-
-        elif capacity is None:
-            raise ValueError(
-                "Capacity must be provided when a constant capacity is not defined."
+        self.resources = TaskFeature(
+            resource_tag,
+            float,
+            "cost",
+            default=(
+                convert_to_list(resources, float)
+                if resources is not None else UNSET
             )
-    
-        self.resource_tags.append(resource_usage)
-        self.capacities.append(float(capacity))
+        )
+
+    def get_features(self) -> list[TaskFeature]:
+        return [self.resources]
 
     def initialize(self, instance: ProblemInstance) -> None:
-        if self.constant_capacity is not None:
-            self.capacities = [self.constant_capacity] * len(self.resource_tags)
-
-        elif len(self.capacities) != len(self.resource_tags):
-            raise ValueError(
-                "The number of capacities must be equal to the number of resource usage columns."
-            )
-
-        self.resources = [
-            convert_to_list(instance.task_instance[resource], float)
-            for resource in self.resource_tags
-        ]
+        self._current_capacity = self.capacity
 
     def reset(self, state: ScheduleState) -> None:
-        self.current_capacities = self.capacities.copy()
+        self._current_capacity = self.capacity
 
     def on_assignment(
         self, task_id: Time, machine_id: Time, state: ScheduleState
     ) -> None:
-        for i, task_resources in enumerate(self.resources):
-            resource_usage = task_resources[task_id]
+        resources = self.resources.value
+        resource_usage = resources[task_id]
 
-            if resource_usage <= 0:
+        if resource_usage <= 0:
+            return
+
+        current_capacity = self._current_capacity - resource_usage
+        self._current_capacity = current_capacity
+
+        for other_task in state.runtime.get_awaiting_tasks():
+            other_usage = resources[other_task]
+
+            if other_usage <= 0:
                 continue
 
-            current_capacity = self.current_capacities[i] - resource_usage
-            self.current_capacities[i] = current_capacity
-            for other_task in state.runtime.get_awaiting_tasks():
-                other_usage = task_resources[other_task]
-
-                if other_usage <= 0:
-                    continue
-
-                if current_capacity < other_usage:
-                    state.forbid_task(other_task)
+            if current_capacity < other_usage:
+                state.forbid_task(other_task)

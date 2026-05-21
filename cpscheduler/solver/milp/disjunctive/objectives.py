@@ -109,7 +109,7 @@ def weighted_completion_time_objective(
 ) -> PYOMO_PARAM:
     job_makespans = jobs_makespan(formulation, state)
 
-    weights = objective.job_weights
+    weights = objective.weights.value
 
     weighted_completion_time = sum(
         weight * makespan for weight, makespan in zip(weights, job_makespans)
@@ -130,7 +130,9 @@ def maximum_lateness_objective(
 
     lateness = [
         job_makespan - int(due_date)
-        for job_makespan, due_date in zip(job_makespans, objective.due_dates)
+        for job_makespan, due_date in zip(
+            job_makespans, objective.due_dates.value
+        )
     ]
     max_lateness = formulation.max_expr(lateness, name="max_lateness")
 
@@ -147,13 +149,15 @@ def total_tardiness_objective(
 ) -> PYOMO_PARAM:
     job_makespans = jobs_makespan(formulation, state)
 
+    due_dates = objective.due_dates.value
+
     tardiness_terms = [
         formulation.max_expr(
             [0, job_makespan - int(due_date)],
             name=f"tardiness_{job_id}",
         )
         for job_id, (job_makespan, due_date) in enumerate(
-            zip(job_makespans, objective.due_dates)
+            zip(job_makespans, due_dates)
         )
     ]
     total_tardiness = sum(tardiness_terms)
@@ -171,11 +175,12 @@ def weighted_tardiness_objective(
 ) -> PYOMO_PARAM:
     job_makespans = jobs_makespan(formulation, state)
 
-    weights = objective.job_weights
+    weights = objective.weights.value
+    due_dates = objective.due_dates.value
 
     terms = []
     for job_id, (job_makespan, due_date, weight) in enumerate(
-        zip(job_makespans, objective.due_dates, weights)
+        zip(job_makespans, due_dates, weights)
     ):
         if weight == 0:
             continue
@@ -201,13 +206,16 @@ def total_earliness_objective(
 ) -> PYOMO_PARAM:
     job_makespans = jobs_makespan(formulation, state)
 
+    due_dates = objective.due_dates.value
+
+
     earliness_terms = [
         formulation.max_expr(
             [0, int(due_date) - job_makespan],
             name=f"earliness_{job_id}",
         )
         for job_id, (job_makespan, due_date) in enumerate(
-            zip(job_makespans, objective.due_dates)
+            zip(job_makespans, due_dates)
         )
     ]
     total_earliness = sum(earliness_terms)
@@ -225,11 +233,12 @@ def weighted_earliness_objective(
 ) -> PYOMO_PARAM:
     job_makespans = jobs_makespan(formulation, state)
 
-    weights = objective.job_weights
+    weights = objective.weights.value
+    due_dates = objective.due_dates.value
 
     terms = []
     for job_id, (job_makespan, due_date, weight) in enumerate(
-        zip(job_makespans, objective.due_dates, weights)
+        zip(job_makespans, due_dates, weights)
     ):
         if weight == 0:
             continue
@@ -263,7 +272,10 @@ def total_tardy_jobs_objective(
     ]
 
     task_ids = state.instance.job_tasks
-    for job_id, due_date in enumerate(objective.due_dates):
+    due_dates = objective.due_dates.value
+
+
+    for job_id, due_date in enumerate(due_dates):
         U_j = tardy_indicators[job_id]
 
         for task_id in task_ids[job_id]:
@@ -298,7 +310,10 @@ def weighted_tardy_jobs_objective(
     ]
 
     task_ids = state.instance.job_tasks
-    for job_id, due_date in enumerate(objective.due_dates):
+    due_dates = objective.due_dates.value
+    weights = objective.weights.value
+
+    for job_id, due_date in enumerate(due_dates):
         U_j = tardy_indicators[job_id]
 
         for task_id in task_ids[job_id]:
@@ -312,7 +327,7 @@ def weighted_tardy_jobs_objective(
 
     weighted_tardy_jobs = sum(
         tardy_indicators[job_id] * weight
-        for job_id, weight in enumerate(objective.job_weights)
+        for job_id, weight in enumerate(weights)
     )
 
     formulation.set_objective(weighted_tardy_jobs)
@@ -328,13 +343,15 @@ def total_flow_time_objective(
 ) -> PYOMO_PARAM:
     job_makespans = jobs_makespan(formulation, state)
 
+    release_times = objective.release_times.value
+
     flow_terms = [
         formulation.max_expr(
             [0, job_makespan - int(release_time)],
             name=f"flow_time_{job_id}",
         )
         for job_id, (job_makespan, release_time) in enumerate(
-            zip(job_makespans, objective.release_times)
+            zip(job_makespans, release_times)
         )
     ]
     total_flow_time = sum(flow_terms)

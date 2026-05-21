@@ -1,7 +1,7 @@
 """
 env.py
 
-This module defines the SchedulingEnv class, which is a custom environment for generic
+This component defines the SchedulingEnv class, which is a custom environment for generic
 scheduling problems.
 It is designed to be modular and extensible, allowing users to define their own scheduling
 problems by specifying the machine setup, constraints, objectives, and instances.
@@ -11,14 +11,13 @@ reinforcement learning libraries. It provides methods for resetting the environm
 steps, rendering the environment, and exporting the scheduling model.
 """
 
-from typing import Any, Literal, Generic, Final, cast
+from typing import Literal, Generic, Final, cast
 from collections.abc import Iterable, Mapping
-from typing_extensions import TypeIs, TypeVar, assert_never
+from typing_extensions import TypeVar, assert_never
 
 from cpscheduler.environment.constants import EzPickle, Enum
 from cpscheduler.environment.utils.protocols import (
-    Metric, InstanceTypes, InstanceGenerator, InfoType, Options,
-    prepare_instance
+    Metric, InstanceTypes, InstanceGenerator, InfoType, Options
 )
 
 from cpscheduler.environment.instance import ProblemInstance
@@ -41,16 +40,16 @@ EnvStatusType = Literal[0, 1, 2]
 
 class EnvStatus(Enum):
     UNLOADED: Final[Literal[0]] = 0
-    "No instance/state exists and configuration isn't final."
+    "No instance loaded. Constraints and Objectives can be added."
 
-    EDITABLE: Final[Literal[1]] = 1
-    "Instance exists, but configuration may change."
+    LOADED: Final[Literal[1]] = 1
+    "Instance loaded and components initialized, configuration frozen"
 
     RUNNING: Final[Literal[2]] = 2
-    "State globally consistent and configuration frozen."
+    "State globally consistent, instance frozen."
 
 UNLOADED = EnvStatus.UNLOADED
-EDITABLE = EnvStatus.EDITABLE
+LOADED = EnvStatus.LOADED
 RUNNING = EnvStatus.RUNNING
 
 ASSIGNMENT = VarField.ASSIGNMENT
@@ -70,35 +69,14 @@ TASK_PAUSED = RuntimeEventKind.TASK_PAUSED
 TASK_COMPLETED = RuntimeEventKind.TASK_COMPLETED
 TASK_MACHINE_INFEASIBLE = RuntimeEventKind.TASK_MACHINE_INFEASIBLE
 
-def _is_info_dict(value: Any) -> TypeIs[Mapping[Any, Any]]:
-    "Type guard to check if a value is an info dictionary."
-    return isinstance(value, Mapping)
-
-def _prepare_instance(instance: InstanceTypes) -> ProblemInstance:
-    if isinstance(instance, ProblemInstance):
-        return instance
-
-    if isinstance(instance, tuple):
-        task_instance, job_instance = instance
-
-        return ProblemInstance(
-            prepare_instance(task_instance),
-            prepare_instance(job_instance)
-        )
-
-    task_instance = instance
-
-    return ProblemInstance(
-        prepare_instance(task_instance)
-    )
-
 ObsT = TypeVar(
     "ObsT",
-    bound=Observation[Any],
+    bound=Observation,
     default=DefaultObservation,
     covariant=True
 )
 
+# @profile
 class SchedulingEnv(EzPickle, Generic[ObsT]):
     """
     SchedulingEnv is a custom environment for generic scheduling problems. It is designed to be
@@ -119,7 +97,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT]):
     _all_constraints: list[Constraint]
     _observation: ObsT
 
-    metrics: dict[str, Metric[Any]]
+    metrics: dict[str, Metric]
 
     renderer: Renderer
 
@@ -145,7 +123,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT]):
     #     objective: Objective | None = None,
     #     observation: None = None,
     #     instance: InstanceTypes | InstanceGenerator | None = None,
-    #     metrics: Mapping[str, Metric[Any]] | None = None,
+    #     metrics: Mapping[str, Metric] | None = None,
     #     render_mode: Renderer | str | None = None,
     #     debug_mode: bool = False,
     # ) -> None: ...
@@ -158,7 +136,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT]):
     #     objective: Objective | None = None,
     #     observation: ObsT | None = None,
     #     instance: InstanceTypes | InstanceGenerator | None = None,
-    #     metrics: Mapping[str, Metric[Any]] | None = None,
+    #     metrics: Mapping[str, Metric] | None = None,
     #     render_mode: Renderer | str | None = None,
     #     debug_mode: bool = False,
     # ) -> None: ...
@@ -170,7 +148,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT]):
         objective: Objective | None = None,
         observation: ObsT | None = None,
         instance: InstanceTypes | InstanceGenerator | None = None,
-        metrics: Mapping[str, Metric[Any]] | None = None,
+        metrics: Mapping[str, Metric] | None = None,
         render_mode: Renderer | str | None = None,
         debug_mode: bool = False
     ):
@@ -196,12 +174,12 @@ class SchedulingEnv(EzPickle, Generic[ObsT]):
         if objective is None:
             objective = Objective()
 
+        self.set_objective(objective)
+
         self.metrics = {}
         if metrics is not None:
             for name, metric in metrics.items():
                 self.add_metric(name, metric)
-
-        self.set_objective(objective)
 
         if observation is None:
             observation = cast(ObsT, DefaultObservation())
@@ -213,16 +191,13 @@ class SchedulingEnv(EzPickle, Generic[ObsT]):
             self.instance_generator = instance
 
         elif instance is not None:
-            self.set_instance(instance)
+            self.load_instance(instance)
 
         self.renderer = (
             render_mode
             if isinstance(render_mode, Renderer)
             else Renderer.get_renderer(render_mode)
         )
-
-        self._prev_obj_value = 0.0
-        self.event_count = 0
 
     @property
     def loaded(self) -> bool:
@@ -249,7 +224,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT]):
         state = self.state
         n_tasks = state.n_tasks
 
-        if self._status == EDITABLE:
+        if self._status == LOADED:
             return f"SchedulingEnv({entry}, n_tasks={n_tasks})"
 
         time = state.time
@@ -268,17 +243,9 @@ class SchedulingEnv(EzPickle, Generic[ObsT]):
         )
 
     # Environment configuration public methods
-    def _editable_instance(self) -> None:
-        assert self._status != UNLOADED, "Cannot set an instance as editable when none is loaded."
-
-        self._status = EDITABLE
-        self.state.instance.unfreeze()
-
     def add_constraint(self, constraint: Constraint) -> None:
         "Add a constraint to the environment."
-        if self._status != UNLOADED:
-            self._editable_instance()
-            constraint.initialize(self.state.instance)
+        self._status = UNLOADED
 
         if isinstance(constraint, PassiveConstraint):
             self.passive_constraints.append(constraint)
@@ -288,13 +255,10 @@ class SchedulingEnv(EzPickle, Generic[ObsT]):
 
     def set_objective(self, objective: Objective) -> None:
         "Set the objective function for the environment."
-        if self._status != UNLOADED:
-            self._editable_instance()
-            objective.initialize(self.state.instance)
-
+        self._status = UNLOADED
         self.objective = objective
 
-    def set_instance(self, instance: InstanceTypes) -> None:
+    def load_instance(self, instance: InstanceTypes) -> None:
         """
         Set the instance data for the environment.
 
@@ -302,37 +266,45 @@ class SchedulingEnv(EzPickle, Generic[ObsT]):
             instance: InstanceTypes
                 The instance data for the scheduling problem, can be a DataFrame or a dictionary.
         """
-        instance = _prepare_instance(instance)
+        problem_instance = ProblemInstance(self._debug)
 
-        setup = self.setup
-        setup.initialize(instance)
+        for component in [
+            self.setup,
+            *self.passive_constraints,
+            *self.constraints,
+            self.objective
+        ]:
+            for feature in component.get_features():
+                problem_instance.register(feature)
 
-        setup_constraints = setup.setup_constraints(instance)
+        problem_instance.read_instance(instance, self.setup)
+        self.setup.initialize(problem_instance)
+
+        # Invariant: Here, we assume that, as the setup constraints are derived
+        # from the setup, all features are already registered by the setup.
+        # TODO: If this is not the case, we can detect missing features here
+        setup_constraints = self.setup.setup_constraints(problem_instance)
         for constraint in setup_constraints:
-            constraint.initialize(instance)
+            constraint.initialize(problem_instance)
 
         self.setup_constraints = setup_constraints
+        self._all_constraints = [*self.constraints, *setup_constraints]
 
-        for p_constraint in self.passive_constraints:
-            p_constraint.initialize(instance)
+        for component in [
+            *self.passive_constraints,
+            *self.constraints,
+            self.objective
+        ]:
+            component.initialize(problem_instance)
 
-        for constraint in self.constraints:
-            constraint.initialize(instance)
+        self._observation.initialize(problem_instance)
 
-        self.objective.initialize(instance)
+        self.state = ScheduleState(problem_instance, self._debug)
+        self._status = LOADED
 
-        self._observation.initialize(instance)
-
-        self.state = ScheduleState(instance)
-        self._status = EDITABLE
-
-    def add_metric(self, name: str, metric: Metric[Any]) -> None:
+    def add_metric(self, name: str, metric: Metric) -> None:
         "Add a metric to the environment."
         self.metrics[name] = metric
-
-    def set_debug_checks(self, enabled: bool = True) -> None:
-        "Enable or disable debug guardrails in the underlying schedule state."
-        self._debug = enabled
 
     def clear_metrics(self) -> None:
         "Clear all metrics from the environment."
@@ -357,7 +329,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT]):
     # Environment state retrieval methods
     def get_info(self) -> InfoType:
         "Retrieve additional information about the environment."
-        info: dict[str, Any] = {
+        info = {
             "current_time": self.state.time,
             "objective_value": self._prev_obj_value,
             "event_count": self.event_count,
@@ -367,7 +339,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT]):
         for metric_name, metric in self.metrics.items():
             metric_value = metric(self.state)
 
-            if _is_info_dict(metric_value):
+            if isinstance(metric_value, Mapping):
                 info.update(
                     {
                         f"{metric_name}_{key}": value
@@ -536,14 +508,14 @@ class SchedulingEnv(EzPickle, Generic[ObsT]):
 
     def _handle_options(self, options: Options) -> None:
         if "instance" in options:
-            self.set_instance(options["instance"])
+            self.load_instance(options["instance"])
             return
 
         generator = options.get("instance_generator", self.instance_generator)
 
         if generator is not None:
             seed = options.get("seed", None)
-            self.set_instance(generator.sample(self, seed=seed))
+            self.load_instance(generator.sample(self, seed=seed))
 
     # Environment API methods
     def reset(self, *, options: Options | None = None) -> tuple[ObsT, InfoType]:
@@ -553,22 +525,16 @@ class SchedulingEnv(EzPickle, Generic[ObsT]):
         if self._status == UNLOADED:
             raise ValueError(
                 "Environment has not been loaded with an instance. "
-                "Please call reset(options={'instance':<instance>}) or set_instance(<instance>) before resetting."
+                "Please call reset(options={'instance':<instance>}) or load_instance(<instance>) before resetting."
             )
 
         state = self.state
 
-        state.instance.freeze()
         self.schedule.reset()
         state.reset()
 
-        constraints = [*self.constraints, *self.setup_constraints]
-        for constraint in constraints:
-            constraint.reset(state)
-
-        self._all_constraints = constraints
-
-        self.objective.reset(state)
+        for component in [self.setup, *self._all_constraints, self.objective]:
+            component.reset(state)
 
         self.event_count = 0
         consistent = self.propagate()
@@ -597,7 +563,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT]):
             if self._status == UNLOADED:
                 raise RuntimeError(
                     "Environment was not reset after loading an instance, or wasn't loaded. "
-                    "Please call reset(options={'instance':<instance>}) or set_instance(<instance>), then reset()."
+                    "Please call reset(options={'instance':<instance>}) or load_instance(<instance>), then reset()."
                 )
 
             raise RuntimeError(
@@ -619,10 +585,9 @@ class SchedulingEnv(EzPickle, Generic[ObsT]):
                 if not consistent:
                     break
 
-            self.update_runtime()
-
         # Gymnasium-like step return
 
+        self.update_runtime()
         self._observation.update(state)
 
         obj_value = self.objective.get_current(state)

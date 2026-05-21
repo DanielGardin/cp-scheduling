@@ -5,6 +5,7 @@ from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import Constraint
 
+# TODO: Convert external information as Features
 class SetupConstraint(Constraint):
     """
     Setup constraint for the scheduling environment.

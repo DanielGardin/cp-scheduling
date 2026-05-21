@@ -8,8 +8,6 @@ from cpscheduler.environment.constants import (
 
 from cpscheduler.environment.instance import ProblemInstance
 
-DUMMY_INSTANCE = ProblemInstance({})
-
 AWAITING = Status.AWAITING
 
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
@@ -48,7 +46,7 @@ class RuntimeState(EzPickle):
 
     history: list[list[TaskHistory]]
 
-    prerequisites: list[set[str]]
+    dependencies: list[set[str]]
     status: list[StatusType]
 
     awaiting_tasks: set[TaskID]
@@ -59,22 +57,20 @@ class RuntimeState(EzPickle):
     last_completion_time: Time
 
     def __init__(self, instance: ProblemInstance | None = None) -> None:
-        if instance is None:
-            instance = DUMMY_INSTANCE
+        if instance is not None:
+            n_tasks = instance.n_tasks
 
-        n_tasks = instance.n_tasks
+            self.history = [[] for _ in range(n_tasks)]
 
-        self.history = [[] for _ in range(n_tasks)]
+            self.dependencies = [set() for _ in range(n_tasks)]
+            self.status = [AWAITING] * n_tasks
 
-        self.prerequisites = [set() for _ in range(n_tasks)]
-        self.status = [AWAITING] * n_tasks
+            self.awaiting_tasks = set(range(n_tasks))
+            self.unlocked_tasks = set(range(n_tasks))
+            self.executing_tasks = set()
+            self.completed_tasks = set()
 
-        self.awaiting_tasks = set(range(n_tasks))
-        self.unlocked_tasks = set(range(n_tasks))
-        self.executing_tasks = set()
-        self.completed_tasks = set()
-
-        self.last_completion_time = MIN_TIME
+            self.last_completion_time = MIN_TIME
 
     def __repr__(self) -> str:
         return (
@@ -126,7 +122,7 @@ class RuntimeState(EzPickle):
         return (
             isinstance(value, RuntimeState)
             and self.history == value.history
-            and self.prerequisites == value.prerequisites
+            and self.dependencies == value.dependencies
             and self.status == value.status
             and self.awaiting_tasks == value.awaiting_tasks
             and self.unlocked_tasks == value.unlocked_tasks

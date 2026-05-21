@@ -137,7 +137,7 @@ class PriorityDispatchingRule:
         self, obs: DefaultObservation, strict: bool = False
     )-> list[SingleInstruction]:
         priorities = self.priority_score(obs)
-        status = obs.status
+        status = obs.task['status']
 
         filtered_priorities = sorted([
             (-prio, task_id) for task_id, prio in enumerate(priorities)

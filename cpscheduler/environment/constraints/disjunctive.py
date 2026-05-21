@@ -1,17 +1,19 @@
 from collections.abc import Iterable
 
 from cpscheduler.environment.constants import TaskID, MachineID, Int
-from cpscheduler.environment.instance import ProblemInstance
+from cpscheduler.environment.instance import (
+    GlobalFeature, ProblemInstance, UNSET
+)
 from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import Constraint
 
 import cpscheduler.environment.utils.debug as debug
+from cpscheduler.environment.utils.general import convert_to_list, extend_list
 
 class NonOverlapConstraint(Constraint):
 
-    groups_tag: str
-    groups_map: list[set[TaskID]]
+    groups: GlobalFeature[list[list[TaskID]]]
 
     current_groups: list[set[TaskID]]
 
@@ -20,26 +22,41 @@ class NonOverlapConstraint(Constraint):
         groups_tag: str = "non_overlap_groups",
         task_groups: Iterable[Iterable[Int]] | None = None
     ):
-        self.groups_tag = groups_tag
+        self.groups = GlobalFeature(
+            groups_tag,
+            list[list[TaskID]],
+            "task",
+            default=[
+                convert_to_list(task_group, TaskID)
+                for task_group in task_groups
+            ] if task_groups is not None else UNSET
+        )
 
-        if task_groups is None:
-            task_groups = []
+    def add_task(self, group_id: Int, task: Int) -> None:
+        if not self.groups.loaded:
+            self.groups.set_data([])
 
-        self.groups_map = [
-            set(TaskID(task_id) for task_id in task_group)
-            for task_group in task_groups
-        ]
+        group = int(group_id)
+
+        extend_list(self.groups.value, group+1, list)
+
+        self.groups.value[group].append(TaskID(task))
 
     def add_group(self, task_group: Iterable[Int]) -> None:
-        self.groups_map.append(set(TaskID(task_id) for task_id in task_group))
+        if not self.groups.loaded:
+            self.groups.set_data([])
 
-    def remove_group(self, group_id: int) -> None:
-        if 0 <= group_id < len(self.groups_map):
-            del self.groups_map[group_id]
+        self.groups.value.append(convert_to_list(task_group, TaskID))
+
+    def remove_group(self, group_id: Int) -> None:
+        self.groups.value[int(group_id)].clear()
+
+    def get_features(self) -> list[GlobalFeature]:
+        return [self.groups]
 
     def initialize(self, instance: ProblemInstance) -> None:
         if instance.debug:
-            for tasks in self.groups_map:
+            for tasks in self.groups.value:
                 for task in tasks:
                     debug.task_bounds(
                         task,
@@ -48,7 +65,7 @@ class NonOverlapConstraint(Constraint):
                     )
 
     def reset(self, state: ScheduleState) -> None:
-        self.current_groups = [group.copy() for group in self.groups_map]
+        self.current_groups = [set(group) for group in self.groups.value]
 
     def on_assignment(
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
@@ -65,7 +82,7 @@ class NonOverlapConstraint(Constraint):
                 state.tight_start_lb(other_task_id, end_time)
 
     def on_pause(self, task_id: TaskID, machine_id: MachineID, state: ScheduleState) -> None:
-        for i, group_tasks in enumerate(self.groups_map):
+        for i, group_tasks in enumerate(self.groups.value):
             if task_id not in group_tasks:
                 continue
 

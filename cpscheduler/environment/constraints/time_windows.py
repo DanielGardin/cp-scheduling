@@ -1,7 +1,9 @@
 from cpscheduler.environment.utils.general import convert_to_list
 
 from cpscheduler.environment.constants import Time, Int, MAX_TIME
-from cpscheduler.environment.instance import ProblemInstance
+from cpscheduler.environment.instance import (
+    GlobalFeature, TaskFeature, UNSET
+)
 from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import Constraint
@@ -22,17 +24,27 @@ class HorizonConstraint(Constraint):
             The upper bound on the completion time of all tasks.
     """
 
-    horizon: Time
+    horizon: GlobalFeature[Time]
 
     def __init__(self, horizon: Int = MAX_TIME):
-        self.horizon = Time(horizon)
+        self.horizon = GlobalFeature(
+            name="horizon",
+            pytype=Time,
+            semantic="time",
+            default=Time(horizon)
+        )
 
     def set_horizon(self, horizon: Int) -> None:
-        self.horizon = Time(horizon)
+        self.horizon.set_data(Time(horizon))
+
+    def get_features(self) -> list[GlobalFeature]:
+        return [self.horizon]
 
     def reset(self, state: ScheduleState) -> None:
+        horizon = self.horizon.value
+
         for task_id in range(state.n_tasks):
-            state.tight_end_ub(task_id, self.horizon)
+            state.tight_end_ub(task_id, horizon)
 
 
 class ReleaseDateConstraint(Constraint):
@@ -49,27 +61,32 @@ class ReleaseDateConstraint(Constraint):
             it refers to a column in the tasks data that contains the release dates for each task.
     """
 
-    release_tag: str
-    release_dates: list[Time]
+    release_dates: TaskFeature[Time]
 
     def __init__(
         self,
         release_tag: str = "release_time",
         release_dates: list[Int] | None = None
     ):
-        self.release_tag = release_tag
-        self.release_dates = convert_to_list(release_dates, Time)
-
-    def initialize(self, instance: ProblemInstance) -> None:
-        self.release_dates = convert_to_list(
-            instance.task_instance[self.release_tag], Time
+        self.release_dates = TaskFeature(
+            name=release_tag,
+            elem_type=Time,
+            semantic="time",
+            default=(
+                convert_to_list(release_dates, Time)
+                if release_dates is not None else UNSET
+            )
         )
 
+    def get_features(self) -> list[TaskFeature]:
+        return [self.release_dates]
+
     def reset(self, state: ScheduleState) -> None:
-        for task_id, release_time in enumerate(self.release_dates):
+        for task_id, release_time in enumerate(self.release_dates.value):
             state.tight_start_lb(task_id, release_time)
 
-    def get_entry(self) -> str:
+    @classmethod
+    def get_general_entry(cls) -> str:
         return "r_j"
 
 
@@ -90,45 +107,30 @@ class DeadlineConstraint(Constraint):
             An optional name for the constraint.
     """
 
-    due_tag: str
-    due_dates: list[Time]
-
-    const_due: Time | None
+    due_dates: TaskFeature[Time]
 
     def __init__(
-        self, due_dates: str = "due_dates", const_due: Int | None = None
+        self,
+        due_tag: str = "due_time",
+        due_dates: list[Int] | None = None
     ):
-        self.due_tag = due_dates
-        self.const_due = Time(const_due) if const_due is not None else None
-
-        self.due_dates = []
-
-    def initialize(self, instance: ProblemInstance) -> None:
-        if self.const_due is None:
-            self.due_dates = convert_to_list(
-                instance.task_instance[self.due_tag], Time
+        self.due_dates = TaskFeature(
+            name=due_tag,
+            elem_type=Time,
+            semantic="time",
+            default=(
+                convert_to_list(due_dates, Time)
+                if due_dates is not None else UNSET
             )
+        )
+
+    def get_features(self) -> list[TaskFeature]:
+        return [self.due_dates]
 
     def reset(self, state: ScheduleState) -> None:
-        if self.const_due is not None:
-            for task_id in range(state.n_tasks):
-                state.tight_end_ub(task_id, self.const_due)
+        for task_id, due_time in enumerate(self.due_dates.value):
+            state.tight_end_ub(task_id, due_time)
 
-        else:
-            for task_id, due_time in enumerate(self.due_dates):
-                state.tight_end_ub(task_id, due_time)
-
-    def get_entry(self) -> str:
-        if self.const_due is not None:
-            return f"d_j={self.const_due}"
-
-        if self.due_dates:
-            due_time = self.due_dates[0]
-
-            for dt in self.due_dates[1:]:
-                if dt != due_time:
-                    return "d_j"
-
-            return f"d_j={due_time}"
-
+    @classmethod
+    def get_general_entry(cls) -> str:
         return "d_j"

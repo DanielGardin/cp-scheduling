@@ -3,4 +3,5 @@ __all__ = [
     "DefaultObservation"
 ]
 
-from .base import Observation, DefaultObservation
+from .base import Observation
+from .default import DefaultObservation

@@ -2,13 +2,14 @@ __all__ = [
     "objectives",
     "Objective",
     "RegularObjective",
+    "CompletionTimeObjective",
     "ComposedObjective",
     "Makespan",
+    "MaximumLateness",
     "TotalCompletionTime",
     "WeightedCompletionTime",
     "DiscountedTotalCompletionTime",
     "TotalFlowTime",
-    "MaximumLateness",
     "TotalTardiness",
     "WeightedTardiness",
     "TotalEarliness",
@@ -17,11 +18,13 @@ __all__ = [
     "WeightedTardyJobs"
 ]
 
-from .base import Objective, RegularObjective, objectives
+from .base import (
+    Objective, RegularObjective, CompletionTimeObjective, objectives
+)
 
 from .compositive import ComposedObjective
 
-from .makespan import Makespan
+from .makespan import Makespan, MaximumLateness
 
 from .completion import (
     TotalCompletionTime,
@@ -31,7 +34,6 @@ from .completion import (
 )
 
 from .lateness import (
-    MaximumLateness,
     TotalTardiness,
     WeightedTardiness,
 )

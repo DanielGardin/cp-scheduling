@@ -3,7 +3,7 @@ from typing import NoReturn, final
 from mypy_extensions import mypyc_attr
 
 from cpscheduler.environment.constants import TaskID, MachineID, Time
-from cpscheduler.environment.components import Component
+from cpscheduler.environment.component import Component
 
 from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.state.events import DomainEvent, VarField

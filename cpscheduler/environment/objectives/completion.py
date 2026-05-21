@@ -1,12 +1,11 @@
 from math import expm1
 
 from cpscheduler.environment.utils.general import convert_to_list
-from cpscheduler.environment.constants import MachineID, TaskID, Time
-from cpscheduler.environment.instance import ProblemInstance
+from cpscheduler.environment.constants import Time, Float
+from cpscheduler.environment.instance import JobFeature, GlobalFeature, UNSET
 from cpscheduler.environment.state import ScheduleState
 
-from cpscheduler.environment.objectives.base import Objective, RegularObjective
-from cpscheduler.environment.objectives.makespan import makespan_
+from cpscheduler.environment.objectives.base import RegularObjective
 
 class TotalCompletionTime(RegularObjective):
     """
@@ -14,35 +13,18 @@ class TotalCompletionTime(RegularObjective):
     of completion times of all tasks.
     """
 
-    _job_completion: dict[TaskID, Time]
-
-    def __init__(self, minimize: bool = True) -> None:
-        super().__init__(minimize)
-        self._job_completion = {}
-
-    def reset(self, state: ScheduleState) -> None:
-        self._job_completion.clear()
-
-    def on_task_completed(
-        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
-    ) -> None:
-        job_id = state.instance.job_ids[task_id]
-        self._job_completion[job_id] = state.time
-
     def get_current(self, state: ScheduleState) -> float:
-        return float(sum(self._job_completion.values()))
-    
-    def __call__(self, state: ScheduleState) -> float:
-        return sum(
-            makespan_(state, tasks)
-            for tasks in state.instance.job_tasks
-        )
+        return float(sum(self._job_completion))
 
-    def get_entry(self) -> str:
+    def __call__(self, state: ScheduleState) -> float:
+        return float(sum(self.completion_times(state)))
+
+    @classmethod
+    def get_general_entry(cls) -> str:
         return "ΣC_j"
 
 
-class WeightedCompletionTime(Objective):
+class WeightedCompletionTime(TotalCompletionTime):
     """
     The weighted completion time objective function, which aims to minimize the
     weighted sum of completion times of all tasks.
@@ -50,58 +32,56 @@ class WeightedCompletionTime(Objective):
     sum of the completion times multiplied by their respective weights.
     """
 
-    _weighted_job_completion: dict[TaskID, float]
-
-    weights_tag: str
-    job_weights: list[float]
+    weights: JobFeature[float]
 
     def __init__(
         self,
-        job_weights: str = "weight",
+        weights_tag: str = "weight",
+        weights: list[Float] | None = None,
         minimize: bool = True,
     ):
         super().__init__(minimize)
-        self.weights_tag = job_weights
-        self._weighted_job_completion = {}
+
+        self.weights = JobFeature(
+            name=weights_tag,
+            elem_type=float,
+            semantic="continuous",
+            default=(
+                convert_to_list(weights, float)
+                if weights is not None else UNSET
+            )
+        )
 
     @property
     def regular(self) -> bool:
-        return all(weight >= 0 for weight in self.job_weights)
+        return all(weight >= 0 for weight in self.weights.value)
 
-    def initialize(self, instance: ProblemInstance) -> None:
-        self.job_weights = convert_to_list(
-            instance.task_instance[self.weights_tag], float
-        )
-
-    def reset(self, state: ScheduleState) -> None:
-        self._weighted_job_completion.clear()
-
-    def on_task_completed(
-        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
-    ) -> None:
-        job_id = state.instance.job_ids[task_id]
-        weight = self.job_weights[job_id]
-
-        self._weighted_job_completion[job_id] = weight * float(state.time)
+    def get_features(self) -> list[JobFeature]:
+        return [self.weights]
 
     def get_current(self, state: ScheduleState) -> float:
-        return sum(self._weighted_job_completion.values())
-
-    def __call__(self, state: ScheduleState) -> float:
-        job_weights = self.job_weights
+        weights = self.weights.value
 
         return sum(
-            weight * makespan_(state, tasks)
-            for weight, tasks in zip(job_weights, state.instance.job_tasks)
+            weight * float(C_j)
+            for weight, C_j in zip(weights, self._job_completion)
         )
 
-    def get_entry(self) -> str:
+    def __call__(self, state: ScheduleState) -> float:
+        weights = self.weights.value
+
+        return sum(
+            weight * float(C_j)
+            for weight, C_j in zip(weights, self.completion_times(state))
+        )
+
+    @classmethod
+    def get_general_entry(cls) -> str:
         return "Σw_jC_j"
 
 class DiscountedTotalCompletionTime(RegularObjective):
 
-    _discounted_job_completion: dict[TaskID, float]
-    discount_factor: float
+    discount_factor: GlobalFeature[float]
 
     def __init__(
         self,
@@ -109,30 +89,42 @@ class DiscountedTotalCompletionTime(RegularObjective):
         minimize: bool = True,
     ):
         super().__init__(minimize)
-        self.discount_factor = discount_factor
-        self._discounted_job_completion = {}
 
-    def reset(self, state: ScheduleState) -> None:
-        self._discounted_job_completion.clear()
+        self.discount_factor = GlobalFeature(
+            name="discount_factor",
+            pytype=float,
+            semantic="continuous",
+            default=discount_factor
+        )
 
-    def on_task_completed(
-        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
-    ) -> None:
-        job_id = state.instance.job_ids[task_id]
-
-        self._discounted_job_completion[job_id] = -expm1(state.time)
+    def get_features(self) -> list[GlobalFeature]:
+        return [self.discount_factor]
 
     def get_current(self, state: ScheduleState) -> float:
-        return sum(self._discounted_job_completion.values())
+        alpha = self.discount_factor.value
+
+        return - sum(
+            expm1(-alpha * float(C_j))
+            for C_j in self._job_completion
+        )
 
     def __call__(self, state: ScheduleState) -> float:
+        alpha = self.discount_factor.value
+
         return - sum(
-            expm1(makespan_(state, tasks))
-            for tasks in state.instance.job_tasks
+            expm1(-alpha * float(C_j))
+            for C_j in self.completion_times(state)
         )
 
     def get_entry(self) -> str:
-        return f"Σ(1 - e^(-{self.discount_factor}C_j))"
+        if self.discount_factor.loaded:
+            return f"Σ(1 - e^(-{self.discount_factor.value:.2f} C_j))"
+
+        return f"Σ(1 - e^(-r C_j))"
+
+    @classmethod
+    def get_general_entry(cls) -> str:
+        return f"Σ(1 - e^(-r C_j))"
 
 class TotalFlowTime(RegularObjective):
     """
@@ -140,10 +132,7 @@ class TotalFlowTime(RegularObjective):
     tasks. Flow time is defined as the difference between the completion time and the release time.
     """
 
-    _job_flow: dict[TaskID, Time]
-
-    release_tag: str
-    release_times: list[Time]
+    release_times: JobFeature[Time]
 
     def __init__(
         self,
@@ -151,33 +140,32 @@ class TotalFlowTime(RegularObjective):
         minimize: bool = True
     ) -> None:
         super().__init__(minimize)
-        self.release_tag = release_times
-        self._job_flow = {}
 
-    def initialize(self, instance: ProblemInstance) -> None:
-        self.release_times = convert_to_list(
-            instance.task_instance[self.release_tag], Time
+        self.release_times = JobFeature(
+            name=release_times,
+            elem_type=Time,
+            semantic="time"
         )
 
-    def reset(self, state: ScheduleState) -> None:
-        self._job_flow.clear()
-
-    def on_task_completed(
-        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
-    ) -> None:
-        job_id = state.instance.job_ids[task_id]
-        release_time = self.release_times[job_id]
-
-        self._job_flow[job_id] = state.time - release_time
+    def get_features(self) -> list[JobFeature]:
+        return [self.release_times]
 
     def get_current(self, state: ScheduleState) -> float:
-        return float(sum(self._job_flow.values()))
+        return float(sum(
+            C_j - r_j
+            for r_j, C_j in zip(
+                self.release_times.value, self._job_completion
+            )
+        ))
 
     def __call__(self, state: ScheduleState) -> float:
-        return sum(
-            makespan_(state, tasks) - float(release_time)
-            for release_time, tasks in zip(self.release_times, state.instance.job_tasks)
-        )
+        return float(sum(
+            C_j - r_j
+            for r_j, C_j in zip(
+                self.release_times.value, self.completion_times(state)
+            )
+        ))
 
-    def get_entry(self) -> str:
+    @classmethod
+    def get_general_entry(cls) -> str:
         return "ΣF_j"

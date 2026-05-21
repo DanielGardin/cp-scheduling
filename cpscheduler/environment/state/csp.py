@@ -11,8 +11,6 @@ from cpscheduler.environment.constants import (
 
 from cpscheduler.environment.instance import ProblemInstance
 
-DUMMY_INSTANCE = ProblemInstance({})
-
 PresenceType = Literal[0b00, 0b01, 0b10, 0b11]
 
 class Presence(Enum):
@@ -98,34 +96,38 @@ class Bounds(EzPickle):
     global_ubs: list[Time]
 
     def __init__(self, instance: ProblemInstance | None = None) -> None:
-        if instance is None:
-            instance = DUMMY_INSTANCE
+        if instance is not None:
+            n_tasks = instance.n_tasks
+            n_machines = instance.n_machines
 
-        n_tasks = instance.n_tasks
-        n_machines = instance.n_machines
+            lbs = [MAX_TIME] * (n_tasks * n_machines)
+            global_lbs = [MAX_TIME] * n_tasks
 
-        lbs = [MAX_TIME] * (n_tasks * n_machines)
-        global_lbs = [MAX_TIME] * n_tasks
+            ubs = [MIN_TIME] * (n_tasks * n_machines)
+            global_ubs = [MIN_TIME] * n_tasks
 
-        ubs = [MIN_TIME] * (n_tasks * n_machines)
-        global_ubs = [MIN_TIME] * n_tasks
+            machine_mask = instance.machine_mask.value
 
-        for task_id, p_times in enumerate(instance.processing_times):
-            if not p_times:
-                continue
+            for task_id in range(n_tasks):
+                mask = machine_mask[task_id]
 
-            for machine_id in p_times:
-                lbs[task_id * n_machines + machine_id] = MIN_TIME
-                ubs[task_id * n_machines + machine_id] = MAX_TIME
+                start_idx = task_id * n_machines
 
-            global_lbs[task_id] = MIN_TIME
-            global_ubs[task_id] = MAX_TIME
+                for machine_id in range(n_machines):
+                    if mask[machine_id]:
+                        idx = start_idx + machine_id
 
-        self.n_machines = n_machines
-        self.lbs = lbs
-        self.global_lbs = global_lbs
-        self.ubs = ubs
-        self.global_ubs = global_ubs
+                        lbs[idx] = MIN_TIME
+                        global_lbs[task_id] = MIN_TIME
+
+                        ubs[idx] = MAX_TIME
+                        global_ubs[task_id] = MAX_TIME
+
+            self.n_machines = n_machines
+            self.lbs = lbs
+            self.global_lbs = global_lbs
+            self.ubs = ubs
+            self.global_ubs = global_ubs
 
     def get_global_lb(self, task_id: TaskID) -> Time:
         return self.global_lbs[task_id]
@@ -168,8 +170,6 @@ class TaskDomains(EzPickle):
     feasibility checks.
     """
 
-    original_machines: list[tuple[MachineID, ...]]
-
     feasible_machines: list[set[MachineID]]
     remaining_times: list[Time]
 
@@ -180,48 +180,56 @@ class TaskDomains(EzPickle):
     end: Bounds
 
     def __init__(self, instance: ProblemInstance | None = None) -> None:
-        if instance is None:
-            instance = DUMMY_INSTANCE
+        if instance is not None:
+            n_tasks = instance.n_tasks
+            n_machines = instance.n_machines
 
-        n_tasks = instance.n_tasks
-        n_machines = instance.n_machines
+            remaining_times = [0] * (n_tasks * n_machines)
 
-        remaining_times = [0] * (n_tasks * n_machines)
+            presence: list[PresenceType] = [
+                UNDEFINED if optional else PRESENT
+                for optional in instance.optional.value
+            ]
 
-        presence: list[PresenceType] = [
-            UNDEFINED if optional else PRESENT for optional in instance.optional
-        ]
+            feasible_machines: list[set[MachineID]] = [
+                set() for _ in range(n_tasks)
+            ]
 
-        feasible_machines: list[set[MachineID]] = [set() for _ in range(n_tasks)]
-        start = Bounds(instance)
-        end = Bounds(instance)
+            start = Bounds(instance)
+            end = Bounds(instance)
 
+            processing_times = instance.processing_times.value
+            machine_mask = instance.machine_mask.value
 
-        for task_id, p_times in enumerate(instance.processing_times):
-            machines = feasible_machines[task_id]
+            for task_id in range(n_tasks):
+                p_times = processing_times[task_id]
+                mask = machine_mask[task_id]
 
-            start_idx = task_id * n_machines
-            for machine, processing_time in p_times.items():
-                machines.add(machine)
+                eligible_machines = tuple(
+                    machine_id
+                    for machine_id in range(n_machines)
+                    if mask[machine_id]
+                )
+                feasible_machines[task_id].update(eligible_machines)
 
-                idx = start_idx + machine
+                start_idx = task_id * n_machines
+                for machine_id in eligible_machines:
+                    idx = start_idx + machine_id
 
-                remaining_times[idx] = processing_time
-                start.ubs[idx] = end.ubs[idx] - processing_time
-                end.lbs[idx] = start.lbs[idx] + processing_time
+                    p_j = p_times[machine_id]
 
-        self.original_machines = [
-            tuple(p_times) for p_times in instance.processing_times
-        ]
+                    remaining_times[idx] = p_j
+                    start.ubs[idx] = end.ubs[idx] - p_j
+                    end.lbs[idx] = start.lbs[idx] + p_j
 
-        self.feasible_machines = feasible_machines
-        self.remaining_times = remaining_times
+            self.feasible_machines = feasible_machines
+            self.remaining_times = remaining_times
 
-        self.assignment = [GLOBAL_MACHINE_ID] * n_tasks
-        self.presence = presence
+            self.assignment = [GLOBAL_MACHINE_ID] * n_tasks
+            self.presence = presence
 
-        self.start = start
-        self.end = end
+            self.start = start
+            self.end = end
 
 
     def get_feasible_machines(self, task_id: TaskID) -> tuple[MachineID, ...]:
@@ -230,7 +238,6 @@ class TaskDomains(EzPickle):
     def __eq__(self, value: object, /) -> bool:        
         return (
             isinstance(value, TaskDomains)
-            and self.original_machines == value.original_machines
             and self.feasible_machines == value.feasible_machines
             and self.remaining_times == value.remaining_times
             and self.assignment == value.assignment

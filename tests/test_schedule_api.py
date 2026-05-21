@@ -1,3 +1,4 @@
+
 import pytest
 
 from cpscheduler.environment.des import Schedule
@@ -41,10 +42,13 @@ def test_schedule_remove_reschedule_and_clear() -> None:
     schedule.add_event(timed, env.state, time=5)
     schedule.add_event(untimed, env.state)
 
-    schedule.remove_event(timed)
+    schedule.remove_event(timed.event_id)
     assert list(schedule.peek_events_at_time(5)) == []
 
-    schedule.reschedule_event(untimed, 4)
+    scheduled_untimed = list(schedule.peek_events_at_time(0))[0]
+    schedule.remove_event(scheduled_untimed.event_id)
+    rescheduled = SubmitEvent(0)
+    schedule.add_event(rescheduled, env.state, time=4)
     assert list(schedule.peek_events_at_time(0)) == []
     assert [type(event) for event in schedule.peek_events_at_time(4)] == [SubmitEvent]
 
@@ -61,7 +65,7 @@ def test_schedule_change_priority_reorders_non_timed_events() -> None:
     schedule.add_event(low, env.state)
     schedule.add_event(high, env.state)
 
-    schedule.change_event_priority(high, 10)
+    schedule.change_event_priority(high.event_id, 10)
 
     ordered = list(schedule.peek_events_at_time(env.state.time))
 
@@ -76,13 +80,13 @@ def test_schedule_change_priority_rejects_timed_events() -> None:
     event = CheckpointEvent()
     schedule.add_event(event, env.state, time=3)
 
-    with pytest.raises(ValueError, match="is not scheduled"):
-        schedule.change_event_priority(event, 1)
+    with pytest.raises(ValueError, match="Timed events do not handle priority"):
+        schedule.change_event_priority(event.event_id, 1)
 
 
 def test_schedule_remove_event_rejects_missing_event() -> None:
     with pytest.raises(KeyError):
-        Schedule().remove_event(AdvanceTimeEvent(1))
+        Schedule().remove_event(AdvanceTimeEvent(1).event_id)
 
 
 def test_schedule_add_event_resolves_machine_and_peeks() -> None:
@@ -92,5 +96,7 @@ def test_schedule_add_event_resolves_machine_and_peeks() -> None:
     event = ExecuteEvent(0)
     schedule.add_event(event, env.state)
 
-    assert event.machine_id == 0
-    assert [type(item) for item in schedule.peek_events()] == [ExecuteEvent]
+    queued = list(schedule.peek_events())
+    assert len(queued) == 1
+    assert isinstance(queued[0], ExecuteEvent)
+    assert queued[0].machine_id == 0

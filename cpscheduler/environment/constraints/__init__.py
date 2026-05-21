@@ -40,12 +40,12 @@ from .base import (
 
 from .machine import (
     MachineConstraint,
-    MachineEligibilityConstraint,
     MachineBreakdownConstraint,
     BatchConstraint,
 )
 
 from .passive import (
+    MachineEligibilityConstraint,
     PreemptionConstraint,
     OptionalityConstraint,
     ConstantProcessingTime,

@@ -161,7 +161,7 @@ class Formulation(ABC):
         """
         state = env.state
 
-        for constraint in env.setup_constraints + env.constraints:
+        for constraint in env.all_constraints:
             if type(constraint) not in self._constraint_registry:
                 raise ValueError(
                     f"Constraint type '{type(constraint).__name__}' is not "

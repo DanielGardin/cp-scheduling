@@ -70,7 +70,7 @@ def test_dynamic(instance_name: str, heuristic: str) -> None:
 
     done = False
     while not done:
-        assert any(obs[0]["available"])
+        assert obs.available_tasks
 
         single_action = pdr(obs)
         obs, _, done, _, info = env.step(single_action)

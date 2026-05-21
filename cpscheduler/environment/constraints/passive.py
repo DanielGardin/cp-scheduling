@@ -1,120 +1,38 @@
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 
-from cpscheduler.environment.utils.general import convert_to_list
-
-from cpscheduler.environment.constants import TaskID, Time, Int
+from cpscheduler.environment.constants import TaskID, MachineID, Time, Int
 from cpscheduler.environment.instance import ProblemInstance
 
 from cpscheduler.environment.constraints.base import PassiveConstraint
 
 
 class PreemptionConstraint(PassiveConstraint):
-    """
-    Preemption constraint for the scheduling environment.
+    """Preemption constraint for the scheduling environment.
+
     This constraint allows tasks to be preempted, meaning they can be interrupted
     and resumed later.
-
-    Arguments:
-        name: Optional[str] = None
-            An optional name for the constraint.
-
-    Note:
-        This constraint is a placeholder and does not implement any specific logic
-        for preemption. It serves as a marker to indicate that preemption is allowed
-        in the scheduling environment, following the convention used in scheduling literature.
-
-        Another way to provide to the environment that preemption is allowed is to set
-        the `allow_preemption` flag in the `SchedulingEnv` initialization.
     """
-
-    task_ids: list[TaskID]
-    all_tasks: bool
-    preemption_tag: str
-
-    def __init__(self, task_ids: Iterable[Int] | str | None = None) -> None:
-        self.preemption_tag = ""
-        self.all_tasks = False
-        self.task_ids = []
-
-        if task_ids is None:
-            self.all_tasks = True
-
-        elif isinstance(task_ids, str):
-            self.preemption_tag = task_ids
-
-        else:
-            self.task_ids = convert_to_list(task_ids, TaskID)
-
     def initialize(self, instance: ProblemInstance) -> None:
-        if self.all_tasks:
-            for task_id in range(instance.n_tasks):
-                instance.set_preemption(task_id)
+        for task_id in range(instance.n_tasks):
+            instance.set_preemption(task_id)
 
-        elif self.preemption_tag:
-            preemption_values = convert_to_list(
-                instance.task_instance[self.preemption_tag], bool
-            )
-
-            for task_id, is_preemptive in enumerate(preemption_values):
-                if is_preemptive:
-                    instance.set_preemption(task_id)
-
-        else:
-            for task_id in self.task_ids:
-                instance.set_preemption(task_id)
-
-    def get_entry(self) -> str:
+    @classmethod
+    def get_general_entry(cls) -> str:
         return "prmp"
 
 
 class OptionalityConstraint(PassiveConstraint):
-    """
-    Makes tasks optional in the scheduling environment.
+    """Makes tasks optional in the scheduling environment.
+
     Tasks marked as optional are treated equally to regular tasks, but they can be
     left unscheduled without affecting the feasibility of the overall schedule.
-
-    Arguments:
-        task_ids: Iterable[int] | None
-            A list of task IDs to be marked as optional. If None, all tasks are marked as optional.
     """
-
-    task_ids: list[TaskID]
-    all_tasks: bool
-    optionality_tag: str
-
-    def __init__(self, task_ids: Iterable[Int] | str | None = None) -> None:
-        self.optionality_tag = ""
-        self.all_tasks = False
-        self.task_ids = []
-
-        if task_ids is None:
-            self.all_tasks = True
-
-        elif isinstance(task_ids, str):
-            self.optionality_tag = task_ids
-
-        else:
-            self.task_ids = convert_to_list(task_ids, TaskID)
-
     def initialize(self, instance: ProblemInstance) -> None:
-        if self.all_tasks:
-            for task_id in range(instance.n_tasks):
-                instance.set_optionality(task_id)
+        for task_id in range(instance.n_tasks):
+            instance.set_optionality(task_id)
 
-        elif self.optionality_tag:
-            optional_values = convert_to_list(
-                instance.task_instance[self.optionality_tag], bool
-            )
-
-            for task_id, is_optional in enumerate(optional_values):
-                if is_optional:
-                    instance.set_optionality(task_id)
-
-        else:
-            for task_id in self.task_ids:
-                instance.set_optionality(task_id)
-
-    def get_entry(self) -> str:
+    @classmethod
+    def get_general_entry(cls) -> str:
         return "opt"
 
 
@@ -145,5 +63,67 @@ class ConstantProcessingTime(PassiveConstraint):
                     task_id, machine, self.processing_time
                 )
 
+
     def get_entry(self) -> str:
         return f"p_j={self.processing_time}"
+
+    @classmethod
+    def get_general_entry(cls) -> str:
+        return "p_j=p"
+
+class MachineEligibilityConstraint(PassiveConstraint):
+    """
+    Machine eligibility constraint for the scheduling environment.
+    This constraint defines the machines on which each task can be executed.
+
+    Arguments:
+        eligibility: Mapping[int, Iterable[int]]
+            A mapping of task IDs to a list of machine IDs on which the task can be executed.
+
+    Note:
+        This constraint is limited by the setup of the scheduling environment,
+        meaning that you cannot:
+        - add machines that do not exist in the environment.
+        - include/exclude machines that would make the task incompatible with the scheduling setup.
+        - exclude all machines for a task.
+
+        By default, if eligibility is not defined for a task, it is assumed that the task
+        can be executed on the original set of machines defined by the scheduling setup.
+    """
+
+    eligibility: dict[TaskID, set[MachineID]]
+
+    def __init__(self, eligibility: Mapping[Int, Iterable[Int]] | None = None):
+        if eligibility is None:
+            eligibility = {}
+
+        self.eligibility = {
+            TaskID(task): {MachineID(machine) for machine in machines}
+            for task, machines in eligibility.items()
+        }
+
+    def add_eligibility(self, task_id: Int, machine_id: Int) -> None:
+        if TaskID(task_id) not in self.eligibility:
+            self.eligibility[TaskID(task_id)] = set()
+        
+        self.eligibility[TaskID(task_id)].add(MachineID(machine_id))
+
+    def remove_eligibility(self, task_id: Int, machine_id: Int) -> None:
+        if TaskID(task_id) in self.eligibility:
+            self.eligibility[TaskID(task_id)].discard(MachineID(machine_id))
+
+    def initialize(self, instance: ProblemInstance) -> None:
+        for task_id, allowed in self.eligibility.items():
+            current = set(instance.get_machines(task_id))
+
+            for machine_id in current - allowed:
+                instance.remove_machine(task_id, machine_id)
+
+            if not instance.get_machines(task_id):
+                raise ValueError(
+                    f"Task {task_id} has no eligible machines."
+                )
+
+    @classmethod
+    def get_general_entry(cls) -> str:
+        return "M_j"

@@ -76,7 +76,7 @@ def validate_machine_id(
             f"Expected [0, {instance.n_machines - 1}]."
         )
 
-    if machine_id not in instance.processing_times[task_id]:
+    if machine_id not in instance.get_machines(task_id):
         raise RuntimeError(
             f"{origin}: Machine {machine_id} is not valid for task {task_id}."
         )

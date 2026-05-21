@@ -23,9 +23,11 @@ class RejectableConstraint(PassiveConstraint):
         for task_id in range(instance.n_tasks):
             instance.set_optionality(task_id)
 
-    def get_entry(self) -> str:
+    @classmethod
+    def get_general_entry(cls) -> str:
         return "rej"
 
+# TODO: Convert external information as Features
 class AtMostOneConstraint(Constraint):
     """
     Alternative constraint where at most one task have to be processed in each
@@ -89,6 +91,7 @@ class AtMostOneConstraint(Constraint):
             tasks.discard(task_id)
 
 
+# TODO: Convert external information as Features
 class ExactlyOneConstraint(AtMostOneConstraint):
     """
     Alternative constraint where exactly one task have to be processed in each

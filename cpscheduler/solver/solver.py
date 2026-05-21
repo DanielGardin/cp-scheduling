@@ -7,7 +7,7 @@ from copy import deepcopy
 from cpscheduler.environment.des import SingleInstruction
 
 from cpscheduler.environment import SchedulingEnv
-from cpscheduler.common import unwrap_env
+from cpscheduler.common import unwrap_env, AnySchedulingEnv
 
 from cpscheduler.solver.formulation import Formulation, formulations
 
@@ -27,23 +27,25 @@ class SchedulingSolver:
 
     def __init__(
         self,
-        env: Any | SchedulingEnv,
+        env: AnySchedulingEnv,
         formulation: Formulation | str,
         **formulation_kwargs: Any,
     ):
-        self.env = unwrap_env(env)
+        env = unwrap_env(env)
+
+        if not env.running:
+            raise ValueError(
+                "Environment must be loaded before initializing the solver."
+            )
 
         if isinstance(formulation, str):
             formulation = formulations[formulation](**formulation_kwargs)
 
         self.formulation = formulation
 
-        if not self.env.loaded:
-            raise ValueError(
-                "Environment must be loaded before initializing the solver."
-            )
+        self.formulation.initialize_model(env)
 
-        self.formulation.initialize_model(self.env)
+        self.env = env
         self._built = False
 
     def build(self) -> None:

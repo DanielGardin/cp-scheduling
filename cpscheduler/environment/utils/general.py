@@ -1,5 +1,5 @@
 from typing import Any, TypeVar, overload
-from collections.abc import Iterable
+from collections.abc import Iterable, Callable
 
 _T = TypeVar("_T")
 
@@ -10,14 +10,8 @@ def convert_to_list(array: Iterable[Any], dtype: type[_T]) -> list[_T]: ...
 @overload
 def convert_to_list(array: Iterable[_T], dtype: None = ...) -> list[_T]: ...
 
-@overload
-def convert_to_list(array: None, dtype: None = ...) -> list[Any]: ...
-
-@overload
-def convert_to_list(array: None, dtype: type[_T]) -> list[_T]: ...
-
 def convert_to_list(
-    array: Iterable[Any] | None, dtype: type[Any] | None = None
+    array: Iterable[Any], dtype: type[Any] | None = None
 ) -> list[Any]:
     """
     Convert an iterable to a list. If a dtype is provided, the elements of the list will be casted
@@ -41,9 +35,6 @@ def convert_to_list(
     if hasattr(array, "tolist"):
         array = getattr(array, "tolist")()
 
-    if array is None:
-        return []
-
     try:
         if dtype is None:
             return array if isinstance(array, list) else list(array)
@@ -53,3 +44,6 @@ def convert_to_list(
     # If the iterable is not a collection, it will raise a TypeError
     except TypeError:
         return [array] if dtype is None else [dtype(array)]
+
+def extend_list(lst: list[_T], size: int, default: Callable[[], _T]) -> None:
+    lst.extend([default() for _ in range(size - len(lst))])

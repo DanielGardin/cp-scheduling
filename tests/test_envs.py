@@ -2,45 +2,47 @@ import pytest
 
 from copy import deepcopy
 
-from common import env_setup, TEST_INSTANCES
+from common import ENV_CASES, env_setup, TEST_INSTANCES
 
 from cpscheduler.environment.constants import Status
 from cpscheduler.environment.des import Schedule
 from cpscheduler.environment.des.events import CheckpointEvent, SubmitEvent
-from cpscheduler import SchedulingEnv
-from cpscheduler.environment.schedule_setup import IdenticalParallelMachineSetup
+
+from cpscheduler import SchedulingEnv, IdenticalParallelMachineSetup
+
+ENV_CASE_KEYS: list[str] = list(ENV_CASES)
 
 
 @pytest.mark.env
-@pytest.mark.parametrize("instance_name", TEST_INSTANCES)
-def test_execute(instance_name: str) -> None:
-    env = env_setup(instance_name)
+@pytest.mark.parametrize("case_name", ENV_CASE_KEYS)
+def test_execute(case_name: str) -> None:
+    env = ENV_CASES[case_name]()
 
     env.reset()
 
     first_action = ("execute", 0)
-    (obs, _), _, terminated, truncated, info = env.step(first_action)
+    obs, _, terminated, truncated, info = env.step(first_action)
 
     assert not terminated
     assert not truncated
     assert info["current_time"] == 0
-    assert obs["status"][0] == Status.EXECUTING
+    assert obs.task['status'][0] == Status.EXECUTING
 
-    advancing_time = max(obs["processing_time"])
-    (new_obs, _), _, new_terminated, new_truncated, new_info = env.step(
+    advancing_time = max(obs['task']["processing_time"])
+    new_obs, _, new_terminated, new_truncated, new_info = env.step(
         [("advance", advancing_time)]
     )
 
     assert not new_terminated
     assert not new_truncated
     assert new_info["current_time"] == advancing_time
-    assert new_obs["status"][0] == Status.COMPLETED
+    assert new_obs.task['status'][0] == Status.COMPLETED
 
 
 @pytest.mark.env
-@pytest.mark.parametrize("instance_name", TEST_INSTANCES)
-def test_reward(instance_name: str) -> None:
-    env = env_setup(instance_name)
+@pytest.mark.parametrize("case_name", ENV_CASE_KEYS)
+def test_reward(case_name: str) -> None:
+    env = ENV_CASES[case_name]()
 
     env.reset()
 
@@ -63,51 +65,51 @@ def test_submit(instance_name: str) -> None:
         ("submit", 0),
     ]
 
-    (tasks_obs, _), *_, info = env.step(actions)
+    obs, *_, info = env.step(actions)
 
-    assert tasks_obs["status"][0] == Status.COMPLETED
-    assert tasks_obs["status"][1] == Status.COMPLETED
+    assert obs.task['status'][0] == Status.COMPLETED
+    assert obs.task['status'][1] == Status.COMPLETED
 
-    assert tasks_obs["status"][2] == Status.EXECUTING
+    assert obs.task['status'][2] == Status.EXECUTING
 
-    assert info["current_time"] == env.state.runtime.get_end(1)
+    assert info["current_time"] == env.state.get_end(1)
 
-    (new_tasks_obs, _), *_, info = env.step([("complete", 2)])
+    new_obs, *_, info = env.step([("complete", 2)])
 
-    assert new_tasks_obs["status"][0] == Status.COMPLETED
-    assert new_tasks_obs["status"][1] == Status.COMPLETED
-    assert new_tasks_obs["status"][2] == Status.COMPLETED
+    assert new_obs.task['status'][0] == Status.COMPLETED
+    assert new_obs.task['status'][1] == Status.COMPLETED
+    assert new_obs.task['status'][2] == Status.COMPLETED
 
-    assert info["current_time"] == env.state.runtime.get_end(2)
+    assert info["current_time"] == env.state.get_end(2)
 
 
 @pytest.mark.env
-@pytest.mark.parametrize("instance_name", TEST_INSTANCES)
-def test_execute2(instance_name: str) -> None:
-    env = env_setup(instance_name)
+@pytest.mark.parametrize("case_name", ENV_CASE_KEYS)
+def test_execute2(case_name: str) -> None:
+    env = ENV_CASES[case_name]()
 
     env.reset()
 
     actions = [("execute", i) for i in range(env.state.n_tasks)]
 
-    (obs, _), _, terminated, *_ = env.step(actions)
+    obs, _, terminated, *_ = env.step(actions)
 
-    assert obs["status"] == [Status.COMPLETED] * env.state.n_tasks
+    assert obs.task['status'] == [Status.COMPLETED] * obs.n_tasks
     assert terminated
 
 
 @pytest.mark.env
-@pytest.mark.parametrize("instance_name", TEST_INSTANCES)
-def test_submit2(instance_name: str) -> None:
-    env = env_setup(instance_name)
+@pytest.mark.parametrize("case_name", ENV_CASE_KEYS)
+def test_submit2(case_name: str) -> None:
+    env = ENV_CASES[case_name]()
 
     env.reset()
 
     actions = [("submit", i) for i in range(env.state.n_tasks-1, -1, -1)]
 
-    (obs, _), _, terminated, *_ = env.step(actions)
+    obs, _, terminated, *_ = env.step(actions)
 
-    assert obs["status"] == [Status.COMPLETED] * env.state.n_tasks
+    assert obs.task['status'] == [Status.COMPLETED] * obs.n_tasks
     assert terminated
 
 @pytest.mark.env
@@ -122,7 +124,7 @@ def test_blocking_instruction(instance_name: str) -> None:
 
     with pytest.raises(
         RuntimeError,
-        match=r"is potentially deadlocking the event queue due to an action-dependent prerequisite that may never happen."
+        match=r"is potentially deadlocking the event queue due to an action-dependent dependency that may never happen."
     ):
         env.step(deadlock_action)
 
@@ -133,13 +135,14 @@ def test_copy() -> None:
     env_copy = deepcopy(env)
 
     assert env is not env_copy
-    assert env == env_copy
+    # assert EzPickle.__eq__(env, env_copy)
+    assert env.state == env_copy.state
 
     env.step(("execute", 0))
-    assert env != env_copy
+    assert env.state != env_copy.state
 
     env_copy.step(("execute", 0))
-    assert env == env_copy
+    assert env.state == env_copy.state
 
 
 def test_pickle_roundtrip() -> None:

@@ -1,20 +1,18 @@
-from typing import Any, Protocol, TypeVar, runtime_checkable, overload
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable, overload
 from collections.abc import Iterator, Mapping, Hashable, Iterable
-from typing_extensions import TypedDict
+from typing_extensions import TypedDict, TypeVar
 
-from cpscheduler.environment.state import ScheduleState
-from cpscheduler.environment.instance import ProblemInstance
+if TYPE_CHECKING:
+    from cpscheduler.environment.state import ScheduleState
 
-_T_co = TypeVar("_T_co", covariant=True)
-
-
+_T_co = TypeVar("_T_co", covariant=True, default=Any)
 class Metric(Protocol[_T_co]):
     """
     A protocol for metrics that can be used to track and report metrics
     during the scheduling process.
     """
 
-    def __call__(self, state: ScheduleState) -> _T_co: ...
+    def __call__(self, state: "ScheduleState") -> _T_co: ...
 
 
 class DataFrameLike(Protocol):
@@ -33,7 +31,6 @@ def prepare_instance(instance: Instance_T) -> dict[str, list[Any]]:
 
 
 InstanceTypes = (
-    ProblemInstance | # Complete specification
     Instance_T | # Task-instance data
     tuple[Instance_T, Instance_T]
 )

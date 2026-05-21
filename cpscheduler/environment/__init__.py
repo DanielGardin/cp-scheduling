@@ -50,6 +50,7 @@ __all__ = [
     # Gamma objectives
     "Objective",
     "RegularObjective",
+    "CompletionTimeObjective",
     "ComposedObjective",
     "Makespan",
     "TotalCompletionTime",

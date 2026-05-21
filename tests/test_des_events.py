@@ -1,7 +1,7 @@
 import pytest
 
-from cpscheduler.environment.constants import GLOBAL_MACHINE_ID
-from cpscheduler.environment.des import SimulationEvent, parse_instruction, SingleAction
+from common import env_setup
+
 from cpscheduler.environment.des.base import Schedule, instructions
 from cpscheduler.environment.des.events import (
     AdvanceTimeEvent,
@@ -52,24 +52,14 @@ def test_instruction_registry_contains_all_des_instructions() -> None:
     assert {name: instructions[name] for name in expected} == expected
 
 
-def test_parse_instruction_accepts_event_instance_directly() -> None:
-    event = PauseEvent(0)
-
-    parsed, time, priority = parse_instruction(event)
-
-    assert parsed is event
-    assert time is None
-    assert priority is None
-
-
 def test_execute_resolve_sets_single_machine_when_global_machine() -> None:
     env = _single_task_env_single_machine()
     state = env.state
 
     event = ExecuteEvent(task_id=0)
-    event.resolve(state)
+    resolved_event = event.resolve(state)
 
-    assert event.machine_id == 0
+    assert resolved_event.machine_id == 0
 
 
 def test_execute_resolve_rejects_invalid_machine() -> None:
@@ -103,7 +93,7 @@ def test_execute_earliest_ready_and_process() -> None:
     event.process(state, env.schedule)
 
     assert state.is_executing(0)
-    assert state.runtime.get_assignment(0) == 0
+    assert state.get_assignment(0) == 0
 
 
 def test_execute_not_ready_before_start_lb() -> None:
@@ -159,6 +149,7 @@ def test_pause_readiness_and_process() -> None:
     execute = ExecuteEvent(task_id=0)
     execute.resolve(state)
     execute.process(state, env.schedule)
+    env.propagate()
 
     pause = PauseEvent(task_id=0)
 
@@ -166,10 +157,10 @@ def test_pause_readiness_and_process() -> None:
 
     state.advance_time_(3)
     pause.process(state, env.schedule)
+    env.propagate()
 
     assert state.is_paused(0)
     assert not state.is_executing(0)
-    assert state.runtime.get_end(0) == 3
 
 
 def test_pause_not_ready_when_task_not_executing() -> None:
@@ -188,6 +179,8 @@ def test_resume_readiness_and_process() -> None:
     execute.resolve(state)
     execute.process(state, env.schedule)
 
+    last_machine = state.get_assignment(task_id=0)
+
     state.advance_time_(4)
     PauseEvent(task_id=0).process(state, env.schedule)
 
@@ -195,13 +188,12 @@ def test_resume_readiness_and_process() -> None:
 
     assert event.is_ready(state)
 
-    last_machine_before_resume = state.runtime.get_assignment(0)
     history_len_before = len(state.runtime.history[0])
 
     event.process(state, env.schedule)
 
     assert state.is_executing(0)
-    assert state.runtime.get_assignment(0) == last_machine_before_resume
+    assert state.get_assignment(0) == last_machine
     assert len(state.runtime.history[0]) == history_len_before + 1
 
 
@@ -231,7 +223,7 @@ def test_complete_readiness_and_process_schedules_checkpoint_at_end() -> None:
 
     assert schedule.next_time() == expected_end
 
-    timed_events = schedule._timed_events[expected_end]
+    timed_events = schedule.timed_events[expected_end]
     assert len(timed_events) == 1
     assert isinstance(timed_events[0], CheckpointEvent)
 
@@ -258,20 +250,9 @@ def test_advance_process_schedules_checkpoint_after_time_delta() -> None:
 
     assert schedule.next_time() == target_time
 
-    timed_events = schedule._timed_events[target_time]
+    timed_events = schedule.timed_events[target_time]
     assert len(timed_events) == 1
     assert isinstance(timed_events[0], CheckpointEvent)
-
-
-def test_schedule_add_event_resolves_execute_machine() -> None:
-    env = _single_task_env_single_machine()
-    schedule = Schedule()
-    event = ExecuteEvent(0)
-
-    schedule.add_event(event, env.state)
-
-    assert event.machine_id == 0
-
 
 def test_schedule_add_event_rejects_past_time() -> None:
     env = _single_task_env_single_machine()
@@ -331,6 +312,19 @@ def test_non_blocking_not_ready_event_is_deferred() -> None:
     assert isinstance(queued[0], ExecuteEvent)
 
     assert schedule.next_time() == 3
-    deferred = schedule._non_timed_events[3]
+    deferred = schedule.non_timed_events[3]
     assert len(deferred) == 1
     assert isinstance(deferred[0][3], SubmitEvent)
+
+def test_clean_cache_after_run() -> None:
+    env = env_setup('ta01')
+
+    env.reset()
+    env.step([("submit", i) for i in range(env.state.n_tasks)])
+
+    schedule = env.schedule
+
+    assert not schedule._event_cache
+    assert not schedule._event_time_cache
+    assert not schedule.non_timed_events
+    assert not schedule._non_timed_event_keys

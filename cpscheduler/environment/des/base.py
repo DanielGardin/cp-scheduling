@@ -196,7 +196,7 @@ class Schedule(EzPickle):
                 # feasible paths that use non-timed and timed events together
                 raise RuntimeError(
                     f"Event {event} is potentially deadlocking the event "
-                    "queue due to an action-dependent prerequisite that may "
+                    "queue due to an action-dependent dependency that may "
                     "never happen."
                 )
         
@@ -231,7 +231,7 @@ class Schedule(EzPickle):
                 # feasible paths that use non-timed and timed events together
                 raise RuntimeError(
                     f"Event {first_event} is potentially deadlocking the event "
-                    "queue due to an action-dependent prerequisite that may "
+                    "queue due to an action-dependent dependency that may "
                     "never happen."
                 )
 

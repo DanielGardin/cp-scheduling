@@ -4,7 +4,7 @@ from typing import (
     Any, Final, SupportsInt, SupportsFloat, Literal, ClassVar, cast, final
 )
 from collections.abc import Iterable, Mapping, Hashable
-from typing_extensions import Self
+# from typing_extensions import Self
 
 from mypy_extensions import i64, i32, i16, u8, mypyc_attr
 
@@ -147,22 +147,22 @@ class EzPickle:
         for key, value in items:
             object.__setattr__(self, key, value)
 
-    @final
-    def __reduce__(self) -> tuple[type[Self], tuple[Any, ...], dict[str, Any]] | tuple[type[Self], tuple[()], PickleState]:
-        cls = type(self)
-        fields = _collect_fields(cls)
-        args_spec = cls.__args__
+    # @final
+    # def __reduce__(self) -> tuple[type[Self], tuple[Any, ...], dict[str, Any]] | tuple[type[Self], tuple[()], PickleState]:
+    #     cls = type(self)
+    #     fields = _collect_fields(cls)
+    #     args_spec = cls.__args__
 
-        if args_spec is not None:
-            args = tuple(getattr(self, k) for k in args_spec)
-            state = {
-                k: getattr(self, k)
-                for k in fields
-                if k not in args_spec and hasattr(self, k)
-            }
-            return (cls, args, state)
+    #     if args_spec is not None:
+    #         args = tuple(getattr(self, k) for k in args_spec)
+    #         state = {
+    #             k: getattr(self, k)
+    #             for k in fields
+    #             if k not in args_spec and hasattr(self, k)
+    #         }
+    #         return (cls, args, state)
 
-        return (cls, (), self.__getstate__())
+    #     return (cls, (), self.__getstate__())
 
     def __repr__(self) -> str:
         cls = type(self)

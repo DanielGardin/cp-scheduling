@@ -10,8 +10,8 @@ class MostWorkRemaining(PriorityDispatchingRule):
     """
     Most Work Remaining (MWKR) heuristic.
 
-    This heuristic selects the job with the most work remaining as the next job
-    to be scheduled.
+    Selects the task belonging to the job with the largest
+    remaining cumulative processing time.
     """
 
     def __init__(
@@ -26,25 +26,39 @@ class MostWorkRemaining(PriorityDispatchingRule):
         self.operation_label = operation_label
 
     def priority_score(self, obs: DefaultObservation) -> list[float]:
-        task_order = [
-            [-1] * len(tasks)
-            for tasks in obs.job_tasks
+        operations: list[int] = obs.task[self.operation_label]
+        job_ids: list[int] = obs.task["job_id"]
+
+        processing_times: list[float] = obs.task[self.processing_time]
+
+        max_job_id = max(job_ids, default=-1)
+
+        task_order: list[list[int]] = [
+            []
+            for _ in range(max_job_id + 1)
         ]
 
-        operations: list[SupportsIndex] = obs.task[self.operation_label]
+        for task_id, (job_id, operation) in enumerate(
+            zip(job_ids, operations)
+        ):
+            tasks = task_order[job_id]
 
-        for task_id, job_id in enumerate(obs.job_id):
-            op = operations[task_id]
-            task_order[job_id][op] = task_id
+            if len(tasks) <= operation:
+                tasks.extend(
+                    -1
+                    for _ in range(len(tasks), operation + 1)
+                )
 
-        work_remaining = [0.0 for _ in range(obs.n_tasks)]
+            tasks[operation] = task_id
 
-        processing_times = obs.task[self.processing_time]
-        for task_ids in task_order:
-            cum_work = 0.0
-            for task_id in reversed(task_ids):
-                cum_work += processing_times[task_id]
-                work_remaining[task_id] = cum_work
+        work_remaining = [0.0] * obs.n_tasks
+
+        for tasks in task_order:
+            cumulative = 0.0
+
+            for task_id in reversed(tasks):
+                cumulative += float(processing_times[task_id])
+                work_remaining[task_id] = cumulative
 
         return work_remaining
 
@@ -66,7 +80,7 @@ class MostOperationsRemaining(PriorityDispatchingRule):
     def priority_score(self, obs: DefaultObservation) -> list[float]:
         task_order: dict[TaskID, list[TaskID]] = {}
 
-        job_ids: list[TaskID] = obs.job_id
+        job_ids: list[TaskID] = obs.task['job_id']
         operations: list[SupportsIndex] = obs.task[self.operation_label]
 
         for job_id in job_ids:

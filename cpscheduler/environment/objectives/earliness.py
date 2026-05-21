@@ -1,81 +1,64 @@
-from cpscheduler.environment.utils.general import convert_to_list
-from cpscheduler.environment.constants import MachineID, TaskID, Time
-from cpscheduler.environment.instance import ProblemInstance
+from cpscheduler.environment.constants import Time
+
+from cpscheduler.environment.instance import JobFeature
 from cpscheduler.environment.state import ScheduleState
 
-from cpscheduler.environment.objectives.base import Objective
-from cpscheduler.environment.objectives.makespan import makespan_
+from cpscheduler.environment.objectives.base import CompletionTimeObjective
 
-
-class TotalEarliness(Objective):
+class TotalEarliness(CompletionTimeObjective):
     """
     The total earliness objective function, which aims to minimize the sum of
-    earliness of all tasks.
+    earliness of all jobs.
     Earliness is defined as the difference between the due date and the
-    completion time, if the task is completed early.
+    completion time, if the job is completed early.
     """
 
-    _job_earliness: dict[TaskID, Time]
-
-    due_tag: str
-    due_dates: list[Time]
+    due_dates: JobFeature[Time]
 
     def __init__(
         self,
         due_dates: str = "due_date",
-        minimize: bool = True,
-    ):
+        minimize: bool = True
+    ) -> None:
         super().__init__(minimize)
-        self.due_tag = due_dates
-        self._job_earliness = {}
 
-    def initialize(self, instance: ProblemInstance) -> None:
-        self.due_dates = convert_to_list(
-            instance.task_instance[self.due_tag], Time
+        self.due_dates = JobFeature(
+            name=due_dates,
+            elem_type=Time,
+            semantic="time"
         )
 
-    def reset(self, state: ScheduleState) -> None:
-        self._job_earliness.clear()
-
-    def on_task_completed(
-        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
-    ) -> None:
-        job_id = state.instance.job_ids[task_id]
-        due_date = self.due_dates[job_id]
-
-        earliness = due_date - state.time
-        if earliness > 0:
-            self._job_earliness[job_id] = earliness
+    def get_features(self) -> list[JobFeature]:
+        return [self.due_dates]
 
     def get_current(self, state: ScheduleState) -> float:
-        return float(sum(self._job_earliness.values()))
+        return float(sum(
+            max(d_j - C_j, 0)
+            for d_j, C_j in zip(
+                self.due_dates.value, self._job_completion
+            )
+        ))
 
     def __call__(self, state: ScheduleState) -> float:
-        due_dates = self.due_dates
+        return float(sum(
+            max(d_j - C_j, 0)
+            for d_j, C_j in zip(
+                self.due_dates.value, self.completion_times(state)
+            )
+        ))
 
-        return sum(
-            max(float(due_date) - makespan_(state, tasks), 0.0)
-            for due_date, tasks in zip(due_dates, state.instance.job_tasks)
-        )
-
-    def get_entry(self) -> str:
+    @classmethod
+    def get_general_entry(cls) -> str:
         return "ΣE_j"
 
 
-class WeightedEarliness(Objective):
+class WeightedEarliness(TotalEarliness):
     """
-    The weighted earliness objective function, which aims to minimize the weighted sum of earliness
-    of all tasks. Earliness is defined as the difference between the due date and the completion time,
-    if the task is completed early.
+    The weighted earliness objective function, which aims to minimize the
+    weighted sum of earliness of all jobs.
     """
 
-    _weighted_job_earliness: dict[TaskID, float]
-
-    weight_tag: str
-    job_weights: list[float]
-
-    due_tag: str
-    due_dates: list[Time]
+    weights: JobFeature[float]
 
     def __init__(
         self,
@@ -83,49 +66,37 @@ class WeightedEarliness(Objective):
         job_weights: str = "weight",
         minimize: bool = True,
     ):
-        super().__init__(minimize)
+        super().__init__(due_dates, minimize)
 
-        self.due_tag = due_dates
-        self.weight_tag = job_weights
-
-        self._weighted_job_earliness = {}
-
-    def initialize(self, instance: ProblemInstance) -> None:
-        self.due_dates = convert_to_list(
-            instance.task_instance[self.due_tag], Time
+        self.weights = JobFeature(
+            name=job_weights,
+            elem_type=float,
+            semantic="continuous",
         )
 
-        self.job_weights = convert_to_list(
-            instance.task_instance[self.weight_tag], float
-        )
+    @property
+    def regular(self) -> bool:
+        return all(weight >= 0 for weight in self.weights.value)
 
-    def reset(self, state: ScheduleState) -> None:
-        self._weighted_job_earliness.clear()
-
-    def on_task_completed(
-        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
-    ) -> None:
-        job_id = state.instance.job_ids[task_id]
-        due_date = self.due_dates[job_id]
-        weight = self.job_weights[job_id]
-
-        earliness = due_date - state.time
-        if earliness > 0:
-            self._weighted_job_earliness[job_id] = weight * float(earliness)
+    def get_features(self) -> list[JobFeature]:
+        return [self.due_dates, self.weights]
 
     def get_current(self, state: ScheduleState) -> float:
-        return float(sum(self._weighted_job_earliness.values()))
+        return float(sum(
+            w_j * float(max(d_j - C_j, 0))
+            for w_j, d_j, C_j in zip(
+                self.weights.value, self.due_dates.value, self._job_completion
+            )
+        ))
 
     def __call__(self, state: ScheduleState) -> float:
-        due_dates = self.due_dates
-        job_weights = self.job_weights
-
-        return sum(
-            job_weights[j] * max(float(due_date) - makespan_(state, tasks), 0.0)
-            for j, (due_date, tasks) in enumerate(
-                zip(due_dates, state.instance.job_tasks)
+        return float(sum(
+            w_j * float(max(d_j - C_j, 0))
+            for w_j, d_j, C_j in zip(
+                self.weights.value, self.due_dates.value, self.completion_times(state)
             )
-        )
+        ))
 
-    def get_entry(self) -> str:
+    @classmethod
+    def get_general_entry(cls) -> str:
         return "Σw_jE_j"

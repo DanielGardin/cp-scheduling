@@ -13,9 +13,11 @@ from mypy_extensions import mypyc_attr
 from cpscheduler.environment.utils.general import convert_to_list
 
 from cpscheduler.environment.constants import MachineID, Time, Int
-from cpscheduler.environment.components import Component
+from cpscheduler.environment.component import Component
 
-from cpscheduler.environment.instance import ProblemInstance
+from cpscheduler.environment.instance import (
+    ProblemInstance, Feature, TaskFeature, MachineFeature, UNSET
+)
 from cpscheduler.environment.constraints import (
     Constraint, NonOverlapConstraint, PrecedenceConstraint, MachineConstraint
 )
@@ -41,6 +43,11 @@ class ScheduleSetup(Component):
         if not name.startswith('_'):
             setups[name] = cls
 
+    @property
+    def n_machines(self) -> int:
+        "Return the number of machines after the instance is loaded."
+        return 0
+
     def setup_constraints(
         self, instance: ProblemInstance
     ) -> tuple[Constraint, ...]:
@@ -55,7 +62,8 @@ class SingleMachineSetup(ScheduleSetup):
     This setup is used for scheduling tasks on a single machine.
     """
 
-    processing_times: str
+    processing_times: TaskFeature[Time]
+
     disjunctive: bool
 
     def __init__(
@@ -63,14 +71,24 @@ class SingleMachineSetup(ScheduleSetup):
         processing_times: str = "processing_time",
         disjunctive: bool = True,
     ) -> None:
-        self.processing_times = processing_times
         self.disjunctive = disjunctive
 
-    def initialize(self, instance: ProblemInstance) -> None:
-        p_times = instance.register_task_feature(self.processing_times)
+        self.processing_times = TaskFeature(
+            name=processing_times,
+            elem_type=Time,
+            semantic="duration",
+        )
 
-        for task_id, p_time in enumerate(p_times):
-            instance.set_processing_time(task_id, 0, Time(p_time))
+    @property
+    def n_machines(self) -> int:
+        return 1
+
+    def get_features(self) -> list[TaskFeature]:
+        return [self.processing_times]
+
+    def initialize(self, instance: ProblemInstance) -> None:
+        for task_id, p_time in enumerate(self.processing_times.value):
+            instance.set_processing_time(task_id, 0, p_time)
 
     def setup_constraints(self, instance: ProblemInstance) -> tuple[Constraint, ...]:
         if not self.disjunctive:
@@ -78,7 +96,8 @@ class SingleMachineSetup(ScheduleSetup):
 
         return (MachineConstraint(),)
 
-    def get_entry(self) -> str:
+    @classmethod
+    def get_general_entry(cls) -> str:
         return "1"
 
 
@@ -91,8 +110,8 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
 
     __args__ = ("n_machines",)
 
-    n_machines: int
-    processing_times: str 
+    _n_machines: int
+    processing_times: TaskFeature[Time]
     disjunctive: bool
 
     def __init__(
@@ -101,21 +120,36 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
         processing_times: str = "processing_time",
         disjunctive: bool = True,
     ):
-        self.n_machines = n_machines
-        self.processing_times = processing_times
         self.disjunctive = disjunctive
 
-    def initialize(self, instance: ProblemInstance) -> None:
-        p_times = instance.register_task_feature(self.processing_times)
+        self.processing_times = TaskFeature(
+            name=processing_times,
+            elem_type=Time,
+            semantic="duration",
+        )
 
-        for task_id, p_time in enumerate(p_times):
+        self._n_machines = n_machines
+
+    @property
+    def n_machines(self) -> int:
+        return self._n_machines
+
+    def get_features(self) -> list[TaskFeature]:
+        return [self.processing_times]
+
+    def initialize(self, instance: ProblemInstance) -> None:
+        for task_id, p_time in enumerate(self.processing_times.value):
             for machine in range(self.n_machines):
-                instance.set_processing_time(task_id, machine, Time(p_time))
+                instance.set_processing_time(task_id, machine, p_time)
 
     def setup_constraints(self, instance: ProblemInstance) -> tuple[Constraint, ...]:
         return (MachineConstraint(),) if self.disjunctive else ()
 
     def get_entry(self) -> str:
+        return f"P{self.n_machines}"
+
+    @classmethod
+    def get_general_entry(cls) -> str:
         return "Pm"
 
 
@@ -128,31 +162,55 @@ class UniformParallelMachineSetup(ScheduleSetup):
 
     __args__ = ("speed",)
 
-    speed: list[int]
-    processing_times: str
+    speed: MachineFeature[int]
+    processing_times: TaskFeature[Time]
     disjunctive: bool
 
     def __init__(
         self,
-        speed: Iterable[Int],
+        speed: Iterable[Int] | None = None,
+        speed_tag: str = "speed",
         processing_times: str = "processing_time",
         disjunctive: bool = True,
     ):
-        self.speed = convert_to_list(speed, int)
-
-        if any(s <= 0 for s in self.speed):
-            raise ValueError("Machine speeds must be positive integers.")
-
-        self.processing_times = processing_times
         self.disjunctive = disjunctive
 
-    def initialize(self, instance: ProblemInstance) -> None:
-        instance.register_global_feature("speed", self.speed)
-        p_times = instance.register_task_feature(self.processing_times)
+        self.processing_times = TaskFeature(
+            name=processing_times,
+            elem_type=Time,
+            semantic="duration",
+        )
 
-        for task_id, p_time in enumerate(p_times):
-            for machine, speed in enumerate(self.speed):
-                machine_p_time = ceil_div(Time(p_time), speed)
+        self.speed = MachineFeature(
+            name=speed_tag,
+            elem_type=int,
+            semantic="discrete",
+            default=(
+                convert_to_list(speed, int)
+                if speed is not None else UNSET
+            )
+        )
+
+    @property
+    def n_machines(self) -> int:
+        if self.speed.loaded:
+            return len(self.speed.value)
+
+        return 0
+
+    def get_features(self) -> list[Feature]:
+        return [
+            self.speed,
+            self.processing_times,
+        ]
+
+    def initialize(self, instance: ProblemInstance) -> None:
+        if any(s <= 0 for s in self.speed.value):
+            raise ValueError("Machine speeds must be positive integers.")
+
+        for task_id, p_time in enumerate(self.processing_times.value):
+            for machine, speed in enumerate(self.speed.value):
+                machine_p_time = ceil_div(p_time, speed)
 
                 instance.set_processing_time(task_id, machine, machine_p_time)
 
@@ -160,6 +218,13 @@ class UniformParallelMachineSetup(ScheduleSetup):
         return (MachineConstraint(),) if self.disjunctive else ()
 
     def get_entry(self) -> str:
+        if self.speed.loaded:
+            return f"Q{self.n_machines}"
+
+        return f"Qm"
+
+    @classmethod
+    def get_general_entry(cls) -> str:
         return "Qm"
 
 
@@ -167,34 +232,52 @@ class UnrelatedParallelMachineSetup(ScheduleSetup):
 
     __args__ = ("processing_times",)
 
-    processing_times: list[str]
+    processing_times: TaskFeature[list[Time]]
     disjunctive: bool
 
     def __init__(
         self,
-        processing_times: Iterable[str],
+        processing_times: str = "processing_time",
         disjunctive: bool = True,
     ):
-        if isinstance(processing_times, str):
-            raise ValueError(
-                "UnrelatedParallelMachineSetup does not support a single processing time feature. "
-                "Please provide an iterable of processing time features."
-            )
-
-        self.processing_times = list(processing_times)
         self.disjunctive = disjunctive
 
-    def initialize(self, instance: ProblemInstance) -> None:
-        for machine, p_time_feature in enumerate(self.processing_times):
-            p_times = instance.register_task_feature(p_time_feature)
+        self.processing_times = TaskFeature(
+            name="processing_times",
+            elem_type=list[Time],
+            semantic="duration",
+        )
 
-            for task_id, p_time in enumerate(p_times):
-                instance.set_processing_time(task_id, machine, Time(p_time))
+    @property
+    def n_machines(self) -> int:
+        if self.processing_times.loaded:
+            return len(self.processing_times.value[0])
+        
+        return 0
+
+    def get_features(self) -> list[TaskFeature]:
+        return [self.processing_times]
+
+    def initialize(self, instance: ProblemInstance) -> None:
+        for task_id, machine_times in enumerate(self.processing_times.value):
+            for machine_id, ptime in enumerate(machine_times):
+                instance.set_processing_time(
+                    task_id,
+                    machine_id,
+                    ptime
+                )
 
     def setup_constraints(self, instance: ProblemInstance) -> tuple[Constraint, ...]:
         return (MachineConstraint(),) if self.disjunctive else ()
 
     def get_entry(self) -> str:
+        if self.processing_times.loaded:
+            return f"R{self.n_machines}"
+
+        return "Rm"
+
+    @classmethod
+    def get_general_entry(cls) -> str:
         return "Rm"
 
 
@@ -206,8 +289,8 @@ class OpenShopSetup(ScheduleSetup):
     processed on any machine, and the order of operations is not fixed.
     """
 
-    processing_times: str
-    machine_feature: str
+    processing_times: TaskFeature[Time]
+    machines: TaskFeature[MachineID]
     disjunctive: bool
 
     def __init__(
@@ -216,18 +299,35 @@ class OpenShopSetup(ScheduleSetup):
         machine_feature: str = "machine",
         disjunctive: bool = True,
     ):
-        self.processing_times = processing_times
-        self.machine_feature = machine_feature
         self.disjunctive = disjunctive
 
+        self.processing_times = TaskFeature(
+            name=processing_times,
+            elem_type=Time,
+            semantic="duration",
+        )
+
+        self.machines = TaskFeature(
+            name=machine_feature,
+            elem_type=MachineID,
+            semantic="machine",
+        )
+
+    @property
+    def n_machines(self) -> int:
+        if self.machines.loaded:
+            return max(self.machines.value) + 1
+        
+        return 0
+
+    def get_features(self) -> list[TaskFeature]:
+        return [self.processing_times, self.machines]
+
     def initialize(self, instance: ProblemInstance) -> None:
-        machine_ids = instance.register_task_feature(self.machine_feature)
-        p_times = instance.register_task_feature(self.processing_times)
-
-        for task_id, p_time in enumerate(p_times):
-            machine_id = MachineID(machine_ids[task_id])
-
-            instance.set_processing_time(task_id, machine_id, Time(p_time))
+        for task_id, (p_time, machine_id) in enumerate(
+            zip(self.processing_times.value, self.machines.value)
+        ):
+            instance.set_processing_time(task_id, machine_id, p_time)
 
     def setup_constraints(self, instance: ProblemInstance) -> tuple[Constraint, ...]:
         task_disjunction = NonOverlapConstraint(task_groups=instance.job_tasks)
@@ -239,7 +339,42 @@ class OpenShopSetup(ScheduleSetup):
         )
 
     def get_entry(self) -> str:
-        return f"Om"
+        if self.machines.loaded:
+            return f"O{self.n_machines}"
+
+        return "Om"
+
+    @classmethod
+    def get_general_entry(cls) -> str:
+        return "Om"
+
+
+def build_job_precedence(
+    instance: ProblemInstance,
+    operation_order: list[int],
+    name: str
+) -> PrecedenceConstraint:
+    precedence = PrecedenceConstraint(name=name)
+
+    task_orders = [
+        [-1] * len(tasks) for tasks in instance.job_tasks
+    ]
+
+    for task_id, (job, op) in enumerate(
+        zip(instance.job_ids.value, operation_order)
+    ):
+        if task_orders[job][op] != -1:
+            raise ValueError(
+                f"Cannot have tasks have the same job and operation values: "
+                f" {job}, {op}"
+            )
+
+        task_orders[job][op] = task_id
+
+    for chain in task_orders:
+        precedence.add_chain(chain)
+
+    return precedence
 
 
 class JobShopSetup(OpenShopSetup):
@@ -250,7 +385,7 @@ class JobShopSetup(OpenShopSetup):
     operation order and is assigned to a specific machine.
     """
 
-    operation_order: str
+    operation_order: TaskFeature[int]
 
     def __init__(
         self,
@@ -265,44 +400,43 @@ class JobShopSetup(OpenShopSetup):
             disjunctive=disjunctive,
         )
 
-        self.operation_order = operation_order
-
-    def setup_constraints(self, instance: ProblemInstance) -> tuple[Constraint, ...]:
-        precedence_mapping: dict[Int, list[Int]] = {}
-        task_orders: list[list[int]] = [[] for _ in range(instance.n_jobs)]
-
-        operations = instance.register_task_feature(self.operation_order)
-
-        for task_id, operation in enumerate(operations):
-            job_id = instance.job_ids[task_id]
-
-            if len(task_orders[job_id]) <= operation:
-                task_orders[job_id].extend(
-                    -1 for _ in range(len(task_orders[job_id]), operation + 1)
-                )
-
-            task_orders[job_id][operation] = task_id
-
-        for tasks in task_orders:
-            if len(tasks) < 2:
-                continue
-
-            prec = tasks[0]
-            for task_id in tasks[1:]:
-                precedence_mapping[task_id] = [prec]
-
-                prec = task_id
-
-        precedence_constraint = PrecedenceConstraint(precedence_mapping)
-
-        return (
-            (MachineConstraint(), precedence_constraint)
-            if self.disjunctive
-            else (precedence_constraint,)
+        self.operation_order = TaskFeature(
+            name=operation_order,
+            elem_type=int,
+            semantic="order",
         )
 
+    def get_features(self) -> list[TaskFeature]:
+        return [
+            self.processing_times,
+            self.machines,
+            self.operation_order,
+        ]
+
+    def setup_constraints(
+        self,
+        instance: ProblemInstance
+    ) -> tuple[Constraint, ...]:
+        precedence = build_job_precedence(
+            instance, self.operation_order.value, "jobshop_chains"
+        )
+
+        return (
+            (MachineConstraint(), precedence)
+            if self.disjunctive
+            else (precedence,)
+        )
+
+
     def get_entry(self) -> str:
-        return f"Jm"
+        if self.machines.loaded:
+            return f"J{self.n_machines}"
+
+        return "Jm"
+
+    @classmethod
+    def get_general_entry(cls) -> str:
+        return "Jm"
 
 
 class FlexibleJobShopSetup(UnrelatedParallelMachineSetup):
@@ -315,11 +449,11 @@ class FlexibleJobShopSetup(UnrelatedParallelMachineSetup):
     allowing for more scheduling options and potentially better solutions.
     """
 
-    operation_order: str
+    operation_order: TaskFeature[int]
 
     def __init__(
         self,
-        processing_times: Iterable[str],
+        processing_times: str = "processing_times",
         operation_order: str = "operation",
         disjunctive: bool = True,
     ):
@@ -328,47 +462,44 @@ class FlexibleJobShopSetup(UnrelatedParallelMachineSetup):
             disjunctive=disjunctive,
         )
 
-        self.operation_order = operation_order
+        self.operation_order = TaskFeature(
+            name=operation_order,
+            elem_type=int,
+            semantic="order",
+        )
 
-    def setup_constraints(self, instance: ProblemInstance) -> tuple[Constraint, ...]:
-        precedence_mapping: dict[Int, list[Int]] = {}
-        task_orders: list[list[int]] = [[] for _ in range(instance.n_jobs)]
+    def get_features(self) -> list[TaskFeature]:
+        return [
+            self.processing_times,
+            self.operation_order,
+        ]
 
-        operations = instance.register_task_feature(self.operation_order)
-
-        for task_id, operation in enumerate(operations):
-            job_id = instance.job_ids[task_id]
-
-            if len(task_orders[job_id]) <= operation:
-                task_orders[job_id].extend(
-                    -1 for _ in range(len(task_orders[job_id]), operation + 1)
-                )
-
-            task_orders[job_id][operation] = task_id
-
-        for tasks in task_orders:
-            if len(tasks) < 2:
-                continue
-
-            prec = tasks[0]
-            for task_id in tasks[1:]:
-                precedence_mapping[task_id] = [prec]
-
-                prec = task_id
-
-        precedence_constraint = PrecedenceConstraint(precedence_mapping)
+    def setup_constraints(
+        self,
+        instance: ProblemInstance
+    ) -> tuple[Constraint, ...]:
+        precedence = build_job_precedence(
+            instance, self.operation_order.value, "flexible_jobshop_chains"
+        )
 
         return (
-            (MachineConstraint(), precedence_constraint)
+            (MachineConstraint(), precedence)
             if self.disjunctive
-            else (precedence_constraint,)
+            else (precedence,)
         )
 
     def get_entry(self) -> str:
+        if self.processing_times.loaded:
+            return f"FJ{self.n_machines}"
+
+        return "FJm"
+
+    @classmethod
+    def get_general_entry(cls) -> str:
         return "FJm"
 
 
-class FlowShopSetup(JobShopSetup):
+class FlowShopSetup(ScheduleSetup):
     """
     Flow Shop Scheduling Setup.
 
@@ -377,18 +508,70 @@ class FlowShopSetup(JobShopSetup):
     machine order.
     """
 
+    processing_times: TaskFeature[Time]
+    operation_order: TaskFeature[int]
+    disjunctive: bool
+
     def __init__(
         self,
         processing_times: str = "processing_time",
         operation_order: str = "operation",
         disjunctive: bool = True,
     ):
-        super().__init__(
-            processing_times=processing_times,
-            operation_order=operation_order,
-            machine_feature=operation_order,
-            disjunctive=disjunctive,
+        self.disjunctive = disjunctive
+
+        self.processing_times = TaskFeature(
+            name=processing_times,
+            elem_type=Time,
+            semantic="duration",
         )
 
+        self.operation_order = TaskFeature(
+            name=operation_order,
+            elem_type=int,
+            semantic="order",
+        )
+
+    @property
+    def n_machines(self) -> int:
+        if self.operation_order.loaded:
+            return max(self.operation_order.value) + 1
+        
+        return 0
+
+    def get_features(self) -> list[TaskFeature]:
+        return [
+            self.processing_times,
+            self.operation_order,
+        ]
+
+    def setup_constraints(
+        self,
+        instance: ProblemInstance
+    ) -> tuple[Constraint, ...]:
+        precedence = build_job_precedence(
+            instance, self.operation_order.value, "flowshop_chains"
+        )
+
+        return (
+            (MachineConstraint(), precedence)
+            if self.disjunctive
+            else (precedence,)
+        )
+
+    def initialize(self, instance: ProblemInstance) -> None:
+        for task_id, (p_time, machine_id) in enumerate(
+            zip(self.processing_times.value, self.operation_order.value)
+        ):
+            instance.set_processing_time(task_id, machine_id, p_time)
+
+
     def get_entry(self) -> str:
-        return f"Fm"
+        if self.operation_order.loaded:
+            return f"F{self.n_machines}"
+
+        return "Fm"
+
+    @classmethod
+    def get_general_entry(cls) -> str:
+        return "Fm"

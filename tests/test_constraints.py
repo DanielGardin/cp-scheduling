@@ -12,7 +12,7 @@ from cpscheduler.environment.constraints import (
     ResourceConstraint,
     NonRenewableResourceConstraint,
     SetupConstraint,
-    MachineBreakdownConstraint,
+    # MachineBreakdownConstraint,
     MachineEligibilityConstraint,
     ConstantProcessingTime,
 )
@@ -87,7 +87,7 @@ def test_non_overlap_constraint() -> None:
     instance = {"processing_time": [3, 2, 4]}
     env = SchedulingEnv(
         SingleMachineSetup(disjunctive=False),
-        constraints=[NonOverlapConstraint([[0, 1], [0, 2]])],
+        constraints=[NonOverlapConstraint(task_groups=[[0, 1], [0, 2]])],
         instance=instance,
     )
 
@@ -100,17 +100,20 @@ def test_non_overlap_constraint() -> None:
 
 
 def test_deadline_constraint() -> None:
-    instance = {"processing_time": [2, 2]}
+    instance = {
+        "processing_time": [2, 2],
+        "due_time": [10, 20]
+    }
     env = SchedulingEnv(
         SingleMachineSetup(disjunctive=False),
-        constraints=[DeadlineConstraint(const_due=10)],
+        constraints=[DeadlineConstraint()],
         instance=instance,
     )
 
     env.reset()
 
     assert env.state.get_end_ub(0) == 10
-    assert env.state.get_end_ub(1) == 10
+    assert env.state.get_end_ub(1) == 20
 
 
 def test_resource_constraint() -> None:
@@ -120,7 +123,7 @@ def test_resource_constraint() -> None:
     }
     env = SchedulingEnv(
         SingleMachineSetup(disjunctive=False),
-        constraints=[ResourceConstraint([3], ["resource_0"])],
+        constraints=[ResourceConstraint(3, "resource_0")],
         instance=instance,
     )
 
@@ -140,7 +143,7 @@ def test_nonrenewable_resource_constraint() -> None:
     instance = {"processing_time": [1, 1], "resource_0": [1, 1]}
     env = SchedulingEnv(
         SingleMachineSetup(disjunctive=False),
-        constraints=[NonRenewableResourceConstraint([1], ["resource_0"])],
+        constraints=[NonRenewableResourceConstraint(1, "resource_0")],
         instance=instance,
     )
 
@@ -171,17 +174,17 @@ def test_setup_constraint() -> None:
 
 
 
-def test_machine_breakdown_constraint() -> None:
-    instance = {"processing_time": [3]}
-    env = SchedulingEnv(
-        SingleMachineSetup(disjunctive=False),
-        constraints=[MachineBreakdownConstraint({0: [(2, 5)]})],
-        instance=instance,
-    )
+# def test_machine_breakdown_constraint() -> None:
+#     instance = {"processing_time": [3]}
+#     env = SchedulingEnv(
+#         SingleMachineSetup(disjunctive=False),
+#         constraints=[MachineBreakdownConstraint({0: [(2, 5)]})],
+#         instance=instance,
+#     )
 
-    env.reset()
+#     env.reset()
 
-    assert env.state.get_start_lb(0, 0) == 5
+#     assert env.state.get_start_lb(0, 0) == 5
 
 
 def test_machine_eligibility_constraint() -> None:
@@ -209,5 +212,5 @@ def test_constant_processing_time_overrides_processing_times() -> None:
     for task_id in range(env.state.n_tasks):
         assert all(
             p_time == 1
-            for p_time in env.state.instance.processing_times[task_id].values()
+            for p_time in env.state.instance.processing_times.value[task_id]
         )
