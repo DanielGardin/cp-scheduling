@@ -1,23 +1,22 @@
-from typing_extensions import Self
 from collections.abc import Iterable, Mapping
 
-from cpscheduler.environment.constants import (
-    TaskID,
-    MachineID,
-    Time,
-    Int,
-    MAX_TIME,
-)
+from typing_extensions import Self
 
-from cpscheduler.environment.state import ScheduleState
+from cpscheduler.environment.constants import (
+    MAX_TIME,
+    Int,
+    MachineID,
+    TaskID,
+    Time,
+)
+from cpscheduler.environment.constraints.base import Constraint
 from cpscheduler.environment.instance import (
     Feature,
-    ProblemInstance,
     MachineFeature,
+    ProblemInstance,
 )
+from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.utils.general import convert_to_list, extend_list
-
-from cpscheduler.environment.constraints.base import Constraint
 
 
 class MachineConstraint(Constraint):
@@ -105,32 +104,23 @@ class MachineBreakdownConstraint(Constraint):
             n_machines = max(convert_to_list(breakdowns.keys(), int)) + 1
 
             calendar = [
-                [
-                    (Time(start), Time(end))
-                    for start, end in breakdowns.get(i, [])
-                ]
+                [(Time(start), Time(end)) for start, end in breakdowns.get(i, [])]
                 for i in range(n_machines)
             ]
 
             self.breakdowns.set_data(calendar)
 
-    def add_breakdown(
-        self, machine_id: Int, start_time: Int, end_time: Int
-    ) -> None:
+    def add_breakdown(self, machine_id: Int, start_time: Int, end_time: Int) -> None:
         if not self.breakdowns.loaded:
             self.breakdowns.set_data([])
 
         machine = MachineID(machine_id)
         extend_list(self.breakdowns.value, machine + 1, list)
 
-        self.breakdowns.value[machine].append(
-            (Time(start_time), Time(end_time))
-        )
+        self.breakdowns.value[machine].append((Time(start_time), Time(end_time)))
 
     @classmethod
-    def from_machine_step_function(
-        cls, step_function: Mapping[Int, Int]
-    ) -> Self:
+    def from_machine_step_function(cls, step_function: Mapping[Int, Int]) -> Self:
         """
         Create a MachineBreakdownConstraint from a machine step function.
         This function is only useful in Parallel Machine Environments, where machines are
@@ -146,7 +136,7 @@ class MachineBreakdownConstraint(Constraint):
         """
         breakdowns: dict[Int, list[tuple[Int, Int]]] = {}
 
-        sorted_times = sorted([int(time) for time in step_function.keys()])
+        sorted_times = sorted([int(time) for time in step_function])
         n_machines = max(int(count) for count in step_function.values())
 
         for time in sorted_times:
@@ -241,9 +231,7 @@ class BatchConstraint(Constraint):
         self.constant_capacity = None
 
         if capacity is None:
-            self.capacity = MachineFeature(
-                name=name, elem_type=int, semantic="count"
-            )
+            self.capacity = MachineFeature(name=name, elem_type=int, semantic="count")
 
         else:
             if isinstance(capacity, Int):
@@ -326,10 +314,7 @@ class BatchConstraint(Constraint):
 
         self.running_tasks[machine_id].add(task_id)
 
-        if (
-            len(self.running_tasks[machine_id])
-            == self.capacity.value[machine_id]
-        ):
+        if len(self.running_tasks[machine_id]) == self.capacity.value[machine_id]:
             for other_task_id in self.machine_map[machine_id]:
                 state.tight_start_lb(other_task_id, end_time, machine_id)
 
@@ -363,10 +348,7 @@ class BatchConstraint(Constraint):
                 self.running_tasks[machine_id].clear()
                 continue
 
-            if (
-                len(self.running_tasks[machine_id])
-                < self.capacity.value[machine_id]
-            ):
+            if len(self.running_tasks[machine_id]) < self.capacity.value[machine_id]:
                 for other_task_id in self.machine_map[machine_id]:
                     state.tight_start_lb(other_task_id, free_time, machine_id)
 

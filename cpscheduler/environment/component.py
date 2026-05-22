@@ -1,12 +1,12 @@
-from typing import TYPE_CHECKING
 from collections.abc import Sequence
-
-from cpscheduler.environment.constants import EzPickle
+from typing import TYPE_CHECKING
 
 from mypy_extensions import mypyc_attr
 
+from cpscheduler.environment.constants import EzPickle
+
 if TYPE_CHECKING:
-    from cpscheduler.environment.instance import ProblemInstance, Feature
+    from cpscheduler.environment.instance import Feature, ProblemInstance
     from cpscheduler.environment.state import ScheduleState
 
 

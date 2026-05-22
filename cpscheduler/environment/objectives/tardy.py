@@ -4,11 +4,9 @@ from cpscheduler.environment.constants import (
     TaskID,
     Time,
 )
-
-from cpscheduler.environment.instance import JobFeature, ProblemInstance, UNSET
-from cpscheduler.environment.state import ScheduleState
-
+from cpscheduler.environment.instance import UNSET, JobFeature, ProblemInstance
 from cpscheduler.environment.objectives.base import CompletionTimeObjective
+from cpscheduler.environment.state import ScheduleState
 
 
 class TotalTardyJobs(CompletionTimeObjective):
@@ -84,6 +82,7 @@ class TotalTardyJobs(CompletionTimeObjective):
                 for C_j, d_j in zip(
                     self.completion_times(state),
                     self.due_dates.value,
+                    strict=False,
                 )
             )
         )
@@ -119,9 +118,7 @@ class WeightedTardyJobs(TotalTardyJobs):
             elem_type=float,
             semantic="continuous",
             default=(
-                [float(weight) for weight in weights]
-                if weights is not None
-                else UNSET
+                [float(weight) for weight in weights] if weights is not None else UNSET
             ),
         )
 
@@ -169,6 +166,7 @@ class WeightedTardyJobs(TotalTardyJobs):
                 self.weights.value,
                 self.due_dates.value,
                 self.completion_times(state),
+                strict=False,
             )
             if C_j > d_j
         )

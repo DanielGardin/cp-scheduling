@@ -1,15 +1,14 @@
 from mypy_extensions import mypyc_attr
 
 from cpscheduler.environment.constants import (
-    MachineID,
-    TaskID,
-    Time,
-    Status,
-    StatusType,
     MIN_TIME,
     EzPickle,
+    MachineID,
+    Status,
+    StatusType,
+    TaskID,
+    Time,
 )
-
 from cpscheduler.environment.instance import ProblemInstance
 
 AWAITING = Status.AWAITING

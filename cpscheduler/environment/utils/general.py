@@ -1,5 +1,5 @@
+from collections.abc import Callable, Iterable
 from typing import Any, TypeVar, overload
-from collections.abc import Iterable, Callable
 
 _T = TypeVar("_T")
 
@@ -12,9 +12,7 @@ def convert_to_list(array: Iterable[Any], dtype: type[_T]) -> list[_T]: ...
 def convert_to_list(array: Iterable[_T], dtype: None = ...) -> list[_T]: ...
 
 
-def convert_to_list(
-    array: Iterable[Any], dtype: type[Any] | None = None
-) -> list[Any]:
+def convert_to_list(array: Iterable[Any], dtype: type[Any] | None = None) -> list[Any]:
     """
     Convert an iterable to a list. If a dtype is provided, the elements of the list will be casted
     to that type.
@@ -35,7 +33,7 @@ def convert_to_list(
     """
 
     if hasattr(array, "tolist"):
-        array = getattr(array, "tolist")()
+        array = array.tolist()
 
     try:
         if dtype is None:

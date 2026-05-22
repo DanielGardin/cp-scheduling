@@ -1,13 +1,12 @@
 from copy import deepcopy
 from typing import Any, Generic
-from typing_extensions import TypeVar
 
 from mypy_extensions import mypyc_attr
+from typing_extensions import TypeVar
 
 from cpscheduler.environment.constants import EzPickle, MachineID, TaskID
-from cpscheduler.environment.state import ScheduleState
-
 from cpscheduler.environment.instance import ProblemInstance
+from cpscheduler.environment.state import ScheduleState
 
 Serialized_Obs = TypeVar("Serialized_Obs", default=Any)
 

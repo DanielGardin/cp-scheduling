@@ -1,19 +1,16 @@
 from collections.abc import Iterable
 
-from cpscheduler.environment.utils.general import convert_to_list
-
-from cpscheduler.environment.constants import Time, Int
-
-from cpscheduler.environment.instance import (
-    ProblemInstance,
-    Feature,
-    TaskFeature,
-    MachineFeature,
-    UNSET,
-)
+from cpscheduler.environment.constants import Int, Time
 from cpscheduler.environment.constraints import Constraint, MachineConstraint
-
+from cpscheduler.environment.instance import (
+    UNSET,
+    Feature,
+    MachineFeature,
+    ProblemInstance,
+    TaskFeature,
+)
 from cpscheduler.environment.setups.base import ScheduleSetup
+from cpscheduler.environment.utils.general import convert_to_list
 
 
 def ceil_div(a: Time, b: Time) -> Time:
@@ -56,9 +53,7 @@ class SingleMachineSetup(ScheduleSetup):
         for task_id, p_time in enumerate(self.processing_times.value):
             instance.set_processing_time(task_id, 0, p_time)
 
-    def setup_constraints(
-        self, instance: ProblemInstance
-    ) -> tuple[Constraint, ...]:
+    def setup_constraints(self, instance: ProblemInstance) -> tuple[Constraint, ...]:
         if not self.disjunctive:
             return ()
 
@@ -110,9 +105,7 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
             for machine in range(self.n_machines):
                 instance.set_processing_time(task_id, machine, p_time)
 
-    def setup_constraints(
-        self, instance: ProblemInstance
-    ) -> tuple[Constraint, ...]:
+    def setup_constraints(self, instance: ProblemInstance) -> tuple[Constraint, ...]:
         return (MachineConstraint(),) if self.disjunctive else ()
 
     def get_entry(self) -> str:
@@ -155,9 +148,7 @@ class UniformParallelMachineSetup(ScheduleSetup):
             name=speed_tag,
             elem_type=int,
             semantic="discrete",
-            default=(
-                convert_to_list(speed, int) if speed is not None else UNSET
-            ),
+            default=(convert_to_list(speed, int) if speed is not None else UNSET),
         )
 
     @property
@@ -183,9 +174,7 @@ class UniformParallelMachineSetup(ScheduleSetup):
 
                 instance.set_processing_time(task_id, machine, machine_p_time)
 
-    def setup_constraints(
-        self, instance: ProblemInstance
-    ) -> tuple[Constraint, ...]:
+    def setup_constraints(self, instance: ProblemInstance) -> tuple[Constraint, ...]:
         return (MachineConstraint(),) if self.disjunctive else ()
 
     def get_entry(self) -> str:
@@ -200,7 +189,6 @@ class UniformParallelMachineSetup(ScheduleSetup):
 
 
 class UnrelatedParallelMachineSetup(ScheduleSetup):
-
     __args__ = ("processing_times",)
 
     processing_times: TaskFeature[list[Time]]
@@ -235,9 +223,7 @@ class UnrelatedParallelMachineSetup(ScheduleSetup):
             for machine_id, ptime in enumerate(machine_times):
                 instance.set_processing_time(task_id, machine_id, ptime)
 
-    def setup_constraints(
-        self, instance: ProblemInstance
-    ) -> tuple[Constraint, ...]:
+    def setup_constraints(self, instance: ProblemInstance) -> tuple[Constraint, ...]:
         return (MachineConstraint(),) if self.disjunctive else ()
 
     def get_entry(self) -> str:

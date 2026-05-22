@@ -1,51 +1,45 @@
 __all__ = [
-    "objectives",
-    "Objective",
-    "RegularObjective",
     "CompletionTimeObjective",
     "ComposedObjective",
+    "DiscountedTotalCompletionTime",
     "Makespan",
     "MaximumLateness",
+    "Objective",
+    "RegularObjective",
     "TotalCompletionTime",
-    "WeightedCompletionTime",
-    "DiscountedTotalCompletionTime",
+    "TotalEarliness",
     "TotalFlowTime",
     "TotalTardiness",
-    "WeightedTardiness",
-    "TotalEarliness",
-    "WeightedEarliness",
     "TotalTardyJobs",
+    "WeightedCompletionTime",
+    "WeightedEarliness",
+    "WeightedTardiness",
     "WeightedTardyJobs",
+    "objectives",
 ]
 
 from .base import (
+    CompletionTimeObjective,
     Objective,
     RegularObjective,
-    CompletionTimeObjective,
     objectives,
 )
-
-from .compositive import ComposedObjective
-
-from .makespan import Makespan, MaximumLateness
-
 from .completion import (
-    TotalCompletionTime,
-    WeightedCompletionTime,
     DiscountedTotalCompletionTime,
+    TotalCompletionTime,
     TotalFlowTime,
+    WeightedCompletionTime,
 )
-
-from .lateness import (
-    TotalTardiness,
-    WeightedTardiness,
-)
-
+from .compositive import ComposedObjective
 from .earliness import (
     TotalEarliness,
     WeightedEarliness,
 )
-
+from .lateness import (
+    TotalTardiness,
+    WeightedTardiness,
+)
+from .makespan import Makespan, MaximumLateness
 from .tardy import (
     TotalTardyJobs,
     WeightedTardyJobs,

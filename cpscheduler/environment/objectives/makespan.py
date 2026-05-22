@@ -1,9 +1,7 @@
 from cpscheduler.environment.constants import MAX_TIME, MachineID, TaskID, Time
-
 from cpscheduler.environment.instance import JobFeature
-from cpscheduler.environment.state import ScheduleState
-
 from cpscheduler.environment.objectives.base import Objective
+from cpscheduler.environment.state import ScheduleState
 
 
 class Makespan(Objective):
@@ -61,9 +59,7 @@ class MaximumLateness(Objective):
     ):
         super().__init__(minimize)
 
-        self.due_dates = JobFeature(
-            name=due_dates, elem_type=Time, semantic="time"
-        )
+        self.due_dates = JobFeature(name=due_dates, elem_type=Time, semantic="time")
 
     @property
     def regular(self) -> bool:

@@ -1,27 +1,26 @@
 __all__ = [
-    "ScheduleSetup",
-    "setups",
-    "SingleMachineSetup",
-    "IdenticalParallelMachineSetup",
-    "UniformParallelMachineSetup",
-    "UnrelatedParallelMachineSetup",
-    "OpenShopSetup",
-    "JobShopSetup",
     "FlexibleJobShopSetup",
     "FlowShopSetup",
+    "IdenticalParallelMachineSetup",
+    "JobShopSetup",
+    "OpenShopSetup",
+    "ScheduleSetup",
+    "SingleMachineSetup",
+    "UniformParallelMachineSetup",
+    "UnrelatedParallelMachineSetup",
+    "setups",
 ]
 
 from .base import ScheduleSetup, setups
 from .parallel import (
-    SingleMachineSetup,
     IdenticalParallelMachineSetup,
+    SingleMachineSetup,
     UniformParallelMachineSetup,
     UnrelatedParallelMachineSetup,
 )
-
 from .shop import (
-    OpenShopSetup,
-    JobShopSetup,
     FlexibleJobShopSetup,
     FlowShopSetup,
+    JobShopSetup,
+    OpenShopSetup,
 )

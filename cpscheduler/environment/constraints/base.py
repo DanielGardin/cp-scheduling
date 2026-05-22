@@ -2,9 +2,8 @@ from typing import NoReturn, final
 
 from mypy_extensions import mypyc_attr
 
-from cpscheduler.environment.constants import TaskID, MachineID, Time
 from cpscheduler.environment.component import Component
-
+from cpscheduler.environment.constants import MachineID, TaskID, Time
 from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.state.events import DomainEvent, VarField
 
@@ -147,9 +146,7 @@ class PassiveConstraint(Constraint):
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> NoReturn:
         "Passive constraint does not handle assignment events."
-        raise RuntimeError(
-            "Passive constraint does not handle assignment events."
-        )
+        raise RuntimeError("Passive constraint does not handle assignment events.")
 
     @final
     def on_start_lb(
@@ -190,9 +187,7 @@ class PassiveConstraint(Constraint):
     @final
     def on_presence(self, task_id: TaskID, state: ScheduleState) -> NoReturn:
         "Passive constraint does not handle presence events."
-        raise RuntimeError(
-            "Passive constraint does not handle presence events."
-        )
+        raise RuntimeError("Passive constraint does not handle presence events.")
 
     @final
     def on_absence(self, task_id: TaskID, state: ScheduleState) -> NoReturn:
@@ -204,9 +199,7 @@ class PassiveConstraint(Constraint):
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> NoReturn:
         "Passive constraint does not handle infeasibility events."
-        raise RuntimeError(
-            "Passive constraint does not handle infeasibility events."
-        )
+        raise RuntimeError("Passive constraint does not handle infeasibility events.")
 
     @final
     def on_pause(

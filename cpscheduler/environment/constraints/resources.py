@@ -1,17 +1,15 @@
-from typing import Any, TypeVar, TYPE_CHECKING
 from collections.abc import Iterable
+from typing import TYPE_CHECKING, Any, TypeVar
 
-from cpscheduler.environment.utils.general import convert_to_list
-
-from cpscheduler.environment.constants import Time, Float, MAX_TIME
+from cpscheduler.environment.constants import MAX_TIME, Float, Time
+from cpscheduler.environment.constraints.base import Constraint
 from cpscheduler.environment.instance import (
     UNSET,
     ProblemInstance,
     TaskFeature,
 )
 from cpscheduler.environment.state import ScheduleState
-
-from cpscheduler.environment.constraints.base import Constraint
+from cpscheduler.environment.utils.general import convert_to_list
 
 if TYPE_CHECKING:
     from _typeshed import SupportsDunderLT
@@ -108,9 +106,7 @@ class ResourceConstraint(Constraint):
             float,
             "cost",
             default=(
-                convert_to_list(resources, float)
-                if resources is not None
-                else UNSET
+                convert_to_list(resources, float) if resources is not None else UNSET
             ),
         )
 
@@ -161,9 +157,7 @@ class ResourceConstraint(Constraint):
             if resource_usage <= 0:
                 continue
 
-            idx = binary_search(
-                available_resources, resource_usage, decreasing=True
-            )
+            idx = binary_search(available_resources, resource_usage, decreasing=True)
 
             earliest_start = (
                 next_available_time[idx]
@@ -223,9 +217,7 @@ class NonRenewableResourceConstraint(Constraint):
             float,
             "cost",
             default=(
-                convert_to_list(resources, float)
-                if resources is not None
-                else UNSET
+                convert_to_list(resources, float) if resources is not None else UNSET
             ),
         )
 

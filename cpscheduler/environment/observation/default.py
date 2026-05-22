@@ -3,18 +3,15 @@ from typing import Any
 from mypy_extensions import mypyc_attr
 
 from cpscheduler.environment.constants import TaskID, Time
-
 from cpscheduler.environment.instance import (
-    ProblemInstance,
-    TaskFeature,
+    GlobalFeature,
     JobFeature,
     MachineFeature,
-    GlobalFeature,
+    ProblemInstance,
+    TaskFeature,
 )
-
-from cpscheduler.environment.state import ScheduleState
-
 from cpscheduler.environment.observation.base import Observation
+from cpscheduler.environment.state import ScheduleState
 
 
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=True)
@@ -89,8 +86,7 @@ class DefaultObservation(Observation[dict[str, dict[str, Any]]]):
 
         for task_id in range(self.n_tasks):
             is_available = (
-                task_id in state.runtime.unlocked_tasks
-                and state.is_available(task_id)
+                task_id in state.runtime.unlocked_tasks and state.is_available(task_id)
             )
 
             available[task_id] = is_available

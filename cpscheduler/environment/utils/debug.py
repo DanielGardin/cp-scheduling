@@ -1,9 +1,9 @@
 from typing import TYPE_CHECKING
 
 from cpscheduler.environment.constants import (
-    TaskID,
-    MachineID,
     GLOBAL_MACHINE_ID,
+    MachineID,
+    TaskID,
 )
 
 if TYPE_CHECKING:

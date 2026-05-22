@@ -1,10 +1,8 @@
-from cpscheduler.environment.utils.general import convert_to_list
-
-from cpscheduler.environment.constants import Time, Int, MAX_TIME
-from cpscheduler.environment.instance import GlobalFeature, TaskFeature, UNSET
-from cpscheduler.environment.state import ScheduleState
-
+from cpscheduler.environment.constants import MAX_TIME, Int, Time
 from cpscheduler.environment.constraints.base import Constraint
+from cpscheduler.environment.instance import UNSET, GlobalFeature, TaskFeature
+from cpscheduler.environment.state import ScheduleState
+from cpscheduler.environment.utils.general import convert_to_list
 
 
 class HorizonConstraint(Constraint):
@@ -105,17 +103,13 @@ class DeadlineConstraint(Constraint):
 
     due_dates: TaskFeature[Time]
 
-    def __init__(
-        self, due_tag: str = "due_time", due_dates: list[Int] | None = None
-    ):
+    def __init__(self, due_tag: str = "due_time", due_dates: list[Int] | None = None):
         self.due_dates = TaskFeature(
             name=due_tag,
             elem_type=Time,
             semantic="time",
             default=(
-                convert_to_list(due_dates, Time)
-                if due_dates is not None
-                else UNSET
+                convert_to_list(due_dates, Time) if due_dates is not None else UNSET
             ),
         )
 

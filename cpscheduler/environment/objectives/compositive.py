@@ -1,11 +1,10 @@
 from collections.abc import Iterable
 
-from cpscheduler.environment.utils.general import convert_to_list
-from cpscheduler.environment.constants import MachineID, TaskID, Float
+from cpscheduler.environment.constants import Float, MachineID, TaskID
 from cpscheduler.environment.instance import ProblemInstance
-from cpscheduler.environment.state import ScheduleState
-
 from cpscheduler.environment.objectives.base import Objective
+from cpscheduler.environment.state import ScheduleState
+from cpscheduler.environment.utils.general import convert_to_list
 
 
 class ComposedObjective(Objective):
@@ -57,7 +56,7 @@ class ComposedObjective(Objective):
             (coefficient == 0 or objective.regular)
             and not (coefficient < 0 and objective.regular)
             for objective, coefficient in zip(
-                self.objectives, self.coefficients
+                self.objectives, self.coefficients, strict=False
             )
         )
 
@@ -97,7 +96,7 @@ class ComposedObjective(Objective):
         return sum(
             coefficient * objective.get_current(state)
             for objective, coefficient in zip(
-                self.objectives, self.coefficients
+                self.objectives, self.coefficients, strict=False
             )
         )
 
@@ -105,22 +104,20 @@ class ComposedObjective(Objective):
         return sum(
             coefficient * objective(state)
             for objective, coefficient in zip(
-                self.objectives, self.coefficients
+                self.objectives, self.coefficients, strict=False
             )
         )
 
     def get_entry(self) -> str:
         terms: list[str] = []
 
-        for coef, objective in zip(self.coefficients, self.objectives):
+        for coef, objective in zip(self.coefficients, self.objectives, strict=False):
             if coef == 0:
                 continue
 
             abs_coef = abs(coef)
             coef_str = (
-                str(int(abs_coef))
-                if abs_coef.is_integer()
-                else f"{abs_coef:.2f}"
+                str(int(abs_coef)) if abs_coef.is_integer() else f"{abs_coef:.2f}"
             )
             term = (
                 objective.get_entry()
@@ -129,9 +126,7 @@ class ComposedObjective(Objective):
             )
             sign = "-" if coef < 0 else "+"
             terms.append(
-                f"{sign} {term}"
-                if terms
-                else (f"- {term}" if coef < 0 else term)
+                f"{sign} {term}" if terms else (f"- {term}" if coef < 0 else term)
             )
 
         return " ".join(terms) if terms else "0"

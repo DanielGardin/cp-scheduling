@@ -1,19 +1,19 @@
 __all__ = [
-    "ProblemInstance",
-    "Feature",
     "UNSET",
-    "TaskFeature",
+    "Feature",
+    "GlobalFeature",
     "JobFeature",
     "MachineFeature",
-    "GlobalFeature",
+    "ProblemInstance",
+    "TaskFeature",
 ]
 
-from .instance import ProblemInstance
 from .features import (
+    UNSET,
     Feature,
-    TaskFeature,
+    GlobalFeature,
     JobFeature,
     MachineFeature,
-    GlobalFeature,
-    UNSET,
+    TaskFeature,
 )
+from .instance import ProblemInstance

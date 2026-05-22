@@ -1,9 +1,7 @@
 from cpscheduler.environment.constants import Time
-
 from cpscheduler.environment.instance import JobFeature
-from cpscheduler.environment.state import ScheduleState
-
 from cpscheduler.environment.objectives.base import RegularObjective
+from cpscheduler.environment.state import ScheduleState
 
 
 class TotalTardiness(RegularObjective):
@@ -16,14 +14,10 @@ class TotalTardiness(RegularObjective):
 
     due_dates: JobFeature[Time]
 
-    def __init__(
-        self, due_dates: str = "due_date", minimize: bool = True
-    ) -> None:
+    def __init__(self, due_dates: str = "due_date", minimize: bool = True) -> None:
         super().__init__(minimize)
 
-        self.due_dates = JobFeature(
-            name=due_dates, elem_type=Time, semantic="time"
-        )
+        self.due_dates = JobFeature(name=due_dates, elem_type=Time, semantic="time")
 
     def get_features(self) -> list[JobFeature]:
         return [self.due_dates]
@@ -32,7 +26,9 @@ class TotalTardiness(RegularObjective):
         return float(
             sum(
                 max(C_j - d_j, 0)
-                for d_j, C_j in zip(self.due_dates.value, self._job_completion)
+                for d_j, C_j in zip(
+                    self.due_dates.value, self._job_completion, strict=False
+                )
             )
         )
 
@@ -41,7 +37,9 @@ class TotalTardiness(RegularObjective):
             sum(
                 max(C_j - d_j, 0)
                 for d_j, C_j in zip(
-                    self.due_dates.value, self.completion_times(state)
+                    self.due_dates.value,
+                    self.completion_times(state),
+                    strict=False,
                 )
             )
         )
@@ -85,7 +83,10 @@ class WeightedTardiness(TotalTardiness):
         return sum(
             w_j * float(max(C_j - d_j, 0))
             for w_j, d_j, C_j in zip(
-                self.weights.value, self.due_dates.value, self._job_completion
+                self.weights.value,
+                self.due_dates.value,
+                self._job_completion,
+                strict=False,
             )
         )
 
@@ -97,6 +98,7 @@ class WeightedTardiness(TotalTardiness):
                     self.weights.value,
                     self.due_dates.value,
                     self.completion_times(state),
+                    strict=False,
                 )
             )
         )

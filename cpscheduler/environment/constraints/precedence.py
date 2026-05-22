@@ -1,15 +1,15 @@
 from collections.abc import Iterable, Mapping, Sequence
+
 from typing_extensions import Self
 
-from cpscheduler.environment.constants import TaskID, MachineID, Int
-from cpscheduler.environment.state import ScheduleState
-from cpscheduler.environment.instance import (
-    ProblemInstance,
-    GlobalFeature,
-    UNSET,
-)
-
+from cpscheduler.environment.constants import Int, MachineID, TaskID
 from cpscheduler.environment.constraints.base import Constraint
+from cpscheduler.environment.instance import (
+    UNSET,
+    GlobalFeature,
+    ProblemInstance,
+)
+from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.utils.general import convert_to_list
 
 
@@ -48,9 +48,7 @@ def topological_sort(
         vertex = queue[idx]
         idx += 1
 
-        if not remove_leaves or (
-            vertex in precedence_map and precedence_map[vertex]
-        ):
+        if not remove_leaves or (precedence_map.get(vertex)):
             topological_order.append(vertex)
 
             for child in precedence_map.get(vertex, []):
@@ -196,9 +194,7 @@ class PrecedenceConstraint(Constraint):
 
             return True
 
-        raise ValueError(
-            "is_outtree: Precedence graph has not been loaded yet."
-        )
+        raise ValueError("is_outtree: Precedence graph has not been loaded yet.")
 
     def get_features(self) -> list[GlobalFeature]:
         return [self.parents]
@@ -387,8 +383,7 @@ class ORPrecedenceConstraint(PrecedenceConstraint):
         for task_id in tasks:
             if task_id in parents:
                 earliest_start = min(
-                    state.get_end_lb(parent_id)
-                    for parent_id in parents[task_id]
+                    state.get_end_lb(parent_id) for parent_id in parents[task_id]
                 )
                 state.tight_start_lb(task_id, earliest_start)
 
@@ -400,8 +395,7 @@ class ORPrecedenceConstraint(PrecedenceConstraint):
         if task_id in self.children:
             for child_id in self.children[task_id]:
                 earliest_start = min(
-                    state.get_end_lb(parent_id)
-                    for parent_id in parents[child_id]
+                    state.get_end_lb(parent_id) for parent_id in parents[child_id]
                 )
                 state.tight_start_lb(child_id, earliest_start)
 

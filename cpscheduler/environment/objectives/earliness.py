@@ -1,9 +1,7 @@
 from cpscheduler.environment.constants import Time
-
 from cpscheduler.environment.instance import JobFeature
-from cpscheduler.environment.state import ScheduleState
-
 from cpscheduler.environment.objectives.base import CompletionTimeObjective
+from cpscheduler.environment.state import ScheduleState
 
 
 class TotalEarliness(CompletionTimeObjective):
@@ -16,14 +14,10 @@ class TotalEarliness(CompletionTimeObjective):
 
     due_dates: JobFeature[Time]
 
-    def __init__(
-        self, due_dates: str = "due_date", minimize: bool = True
-    ) -> None:
+    def __init__(self, due_dates: str = "due_date", minimize: bool = True) -> None:
         super().__init__(minimize)
 
-        self.due_dates = JobFeature(
-            name=due_dates, elem_type=Time, semantic="time"
-        )
+        self.due_dates = JobFeature(name=due_dates, elem_type=Time, semantic="time")
 
     def get_features(self) -> list[JobFeature]:
         return [self.due_dates]
@@ -32,7 +26,9 @@ class TotalEarliness(CompletionTimeObjective):
         return float(
             sum(
                 max(d_j - C_j, 0)
-                for d_j, C_j in zip(self.due_dates.value, self._job_completion)
+                for d_j, C_j in zip(
+                    self.due_dates.value, self._job_completion, strict=False
+                )
             )
         )
 
@@ -41,7 +37,9 @@ class TotalEarliness(CompletionTimeObjective):
             sum(
                 max(d_j - C_j, 0)
                 for d_j, C_j in zip(
-                    self.due_dates.value, self.completion_times(state)
+                    self.due_dates.value,
+                    self.completion_times(state),
+                    strict=False,
                 )
             )
         )
@@ -88,6 +86,7 @@ class WeightedEarliness(TotalEarliness):
                     self.weights.value,
                     self.due_dates.value,
                     self._job_completion,
+                    strict=False,
                 )
             )
         )
@@ -100,6 +99,7 @@ class WeightedEarliness(TotalEarliness):
                     self.weights.value,
                     self.due_dates.value,
                     self.completion_times(state),
+                    strict=False,
                 )
             )
         )

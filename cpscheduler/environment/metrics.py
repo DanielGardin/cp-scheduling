@@ -1,12 +1,11 @@
 from collections import Counter
-from typing import Any
 from copy import deepcopy
-
 from math import sqrt
+from typing import Any
 
-from cpscheduler.environment.constants import TaskID, Time, MachineID
-from cpscheduler.environment.env import SchedulingEnv
+from cpscheduler.environment.constants import MachineID, TaskID, Time
 from cpscheduler.environment.des import ActionType
+from cpscheduler.environment.env import SchedulingEnv
 from cpscheduler.environment.state import ScheduleState
 
 
@@ -134,9 +133,7 @@ class ReferenceScheduleMetrics:
     # Collect all metrics automatically in a single call to avoid redundant calculations
     def __call__(self, state: ScheduleState) -> dict[str, float]:
         metrics = {
-            "mean_displacement_distance": self.mean_displacement_distance(
-                state
-            ),
+            "mean_displacement_distance": self.mean_displacement_distance(state),
             "order_preservation": self.order_preservation(state),
             "hamming_accuracy": self.hamming_accuracy(state),
             "kendall_tau": self.kendall_tau(state),
@@ -259,7 +256,7 @@ class ReferenceScheduleMetrics:
         )
         # reference order is just the task_ids in sorted_start_times order
         matches = 0
-        for ref_task, act_task in zip(ref_order, actual_order):
+        for ref_task, act_task in zip(ref_order, actual_order, strict=False):
             if ref_task == act_task:
                 matches += 1
 
@@ -281,17 +278,13 @@ class ReferenceScheduleMetrics:
         total_pairs = n * (n - 1) // 2
 
         # Count all tied pairs, not just adjacent equal values.
-        ties = sum(
-            count * (count - 1) // 2 for count in Counter(actual_times).values()
-        )
+        ties = sum(count * (count - 1) // 2 for count in Counter(actual_times).values())
 
         concordant = total_pairs - inversions - ties
         discordant = inversions
         denominator = sqrt(total_pairs * (total_pairs - ties))
 
-        return (
-            (concordant - discordant) / denominator if denominator > 0 else 1.0
-        )
+        return (concordant - discordant) / denominator if denominator > 0 else 1.0
 
     # Machine assignment metrics
 

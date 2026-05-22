@@ -8,8 +8,8 @@ interface for rendering tasks.
 
 from typing import Any, ClassVar
 
-from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.constants import EzPickle
+from cpscheduler.environment.state import ScheduleState
 
 renderers: dict[str, "Renderer"] = {}
 
@@ -329,7 +329,6 @@ class PlotlyRenderer(Renderer):
         for job_id, job_tasks in enumerate(instance.job_tasks):
             for task_id in job_tasks:
                 for entry in history[task_id]:
-
                     start_times.append(entry.start_time)
                     durations.append(entry.end_time - entry.start_time)
                     machines.append(entry.machine_id)

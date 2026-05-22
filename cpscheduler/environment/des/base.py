@@ -1,12 +1,11 @@
-from typing import Any, ClassVar, TypeAlias
 from collections.abc import Iterator
+from heapq import heapify, heappop, heappush
+from typing import Any, ClassVar, TypeAlias
 
 from mypy_extensions import mypyc_attr
 
-from cpscheduler.environment.constants import Time, EzPickle
+from cpscheduler.environment.constants import EzPickle, Time
 from cpscheduler.environment.state import ScheduleState
-
-from heapq import heappush, heappop, heapify
 
 instructions: dict[str, type["SimulationEvent"]] = {}
 
@@ -87,9 +86,7 @@ def register_instruction(cls: type[SimulationEvent], instruction: str) -> None:
     instructions[instruction] = cls
 
 
-def validate_event(
-    event: SimulationEvent, state: ScheduleState
-) -> SimulationEvent:
+def validate_event(event: SimulationEvent, state: ScheduleState) -> SimulationEvent:
     while True:
         validated_event = event.resolve(state)
 
@@ -175,9 +172,9 @@ class Schedule(EzPickle):
 
     def _may_remove_time_slot(self, time: Time) -> None:
         "Remove a time slot if it has no more events, ensuring the heap is updated."
-        if time in self.timed_events and self.timed_events[time]:
+        if self.timed_events.get(time):
             return
-        if time in self.non_timed_events and self.non_timed_events[time]:
+        if self.non_timed_events.get(time):
             return
 
         self.non_timed_events.pop(time, None)
@@ -253,22 +250,19 @@ class Schedule(EzPickle):
             heappush(self.non_timed_events[time], entry)
             self._event_time_cache[event.event_id] = time
 
-        if first_event.blocking:
-            if self._tail is None or time > self._tail:
-                self._tail = time
+        if first_event.blocking and (self._tail is None or time > self._tail):
+            self._tail = time
 
-    def instruction_queue(
-        self, state: ScheduleState
-    ) -> Iterator[SimulationEvent]:
+    def instruction_queue(self, state: ScheduleState) -> Iterator[SimulationEvent]:
         """
         Get an iterator over the events that are ready to be processed, in the
         correct order according to their timing and blocking behavior.
         """
         time = heappop(self._heap)
 
-        assert (
-            time == state.time
-        ), f"Next event time {time} does not match current state time {state.time}"
+        assert time == state.time, (
+            f"Next event time {time} does not match current state time {state.time}"
+        )
 
         if time in self.timed_events:
             timed_events = self.timed_events[time]
@@ -297,9 +291,7 @@ class Schedule(EzPickle):
 
                 if not event.is_ready(state):
                     if event.blocking:
-                        self._reschedule_blocking_event(
-                            non_timed_events, idx, state
-                        )
+                        self._reschedule_blocking_event(non_timed_events, idx, state)
                         break
 
                     deferred_events.append(entry)
@@ -372,9 +364,7 @@ class Schedule(EzPickle):
             return
 
         if priority is not None:
-            raise ValueError(
-                "priority is only supported for non-timed (C) events"
-            )
+            raise ValueError("priority is only supported for non-timed (C) events")
 
         if time < state.time:
             raise ValueError(

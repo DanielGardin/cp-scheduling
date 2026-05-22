@@ -1,19 +1,18 @@
-from typing import Literal, Final
-from typing_extensions import assert_never
+from typing import Final, Literal
 
 from mypy_extensions import mypyc_attr
+from typing_extensions import assert_never
 
 from cpscheduler.environment.constants import (
-    MachineID,
-    TaskID,
-    Time,
     GLOBAL_MACHINE_ID,
     MAX_TIME,
     MIN_TIME,
     Enum,
     EzPickle,
+    MachineID,
+    TaskID,
+    Time,
 )
-
 from cpscheduler.environment.instance import ProblemInstance
 
 PresenceType = Literal[0b00, 0b01, 0b10, 0b11]
@@ -193,13 +192,10 @@ class TaskDomains(EzPickle):
             remaining_times = [0] * (n_tasks * n_machines)
 
             presence: list[PresenceType] = [
-                UNDEFINED if optional else PRESENT
-                for optional in instance.optional
+                UNDEFINED if optional else PRESENT for optional in instance.optional
             ]
 
-            feasible_machines: list[set[MachineID]] = [
-                set() for _ in range(n_tasks)
-            ]
+            feasible_machines: list[set[MachineID]] = [set() for _ in range(n_tasks)]
 
             start = Bounds(instance)
             end = Bounds(instance)
@@ -212,9 +208,7 @@ class TaskDomains(EzPickle):
                 mask = machine_mask[task_id]
 
                 eligible_machines = tuple(
-                    machine_id
-                    for machine_id in range(n_machines)
-                    if mask[machine_id]
+                    machine_id for machine_id in range(n_machines) if mask[machine_id]
                 )
                 feasible_machines[task_id].update(eligible_machines)
 

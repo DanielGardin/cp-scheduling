@@ -1,12 +1,12 @@
-from typing import Any, cast
-from typing_extensions import Unpack, TypeIs, TypedDict, NotRequired
 from collections.abc import Iterable
+from typing import Any, cast
+
+from typing_extensions import NotRequired, TypedDict, TypeIs, Unpack
 
 from cpscheduler.environment.constants import Int, Time
-
 from cpscheduler.environment.des.base import (
-    SimulationEvent,
     PriorityValue,
+    SimulationEvent,
     instructions,
 )
 
@@ -39,11 +39,7 @@ def is_single_action(
     if not isinstance(action, tuple):
         return False
 
-    if isinstance(action[0], int) or isinstance(action[0], dict):
-        spec = action[1]
-
-    else:
-        spec = action[0]
+    spec = action[1] if isinstance(action[0], int | dict) else action[0]
 
     if isinstance(spec, str):
         return True
@@ -62,7 +58,7 @@ def parse_instruction(
     time: Time | None = None
     priority: PriorityValue | None = None
 
-    if isinstance(instruction[0], (int, dict)):
+    if isinstance(instruction[0], int | dict):
         instruction = cast(BAction, instruction)
 
         s_args, spec, *spec_args = instruction
@@ -73,9 +69,7 @@ def parse_instruction(
         else:
             time = Time(s_args["time"]) if "time" in s_args else None
             priority = (
-                PriorityValue(s_args["priority"])
-                if "priority" in s_args
-                else None
+                PriorityValue(s_args["priority"]) if "priority" in s_args else None
             )
 
     else:

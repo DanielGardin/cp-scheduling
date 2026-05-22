@@ -1,13 +1,11 @@
 from cpscheduler.environment.constants import MachineID, Time
-
-from cpscheduler.environment.instance import ProblemInstance, TaskFeature
 from cpscheduler.environment.constraints import (
     Constraint,
+    MachineConstraint,
     NonOverlapConstraint,
     PrecedenceConstraint,
-    MachineConstraint,
 )
-
+from cpscheduler.environment.instance import ProblemInstance, TaskFeature
 from cpscheduler.environment.setups.base import ScheduleSetup
 from cpscheduler.environment.setups.parallel import (
     UnrelatedParallelMachineSetup,
@@ -58,13 +56,11 @@ class OpenShopSetup(ScheduleSetup):
 
     def initialize(self, instance: ProblemInstance) -> None:
         for task_id, (p_time, machine_id) in enumerate(
-            zip(self.processing_times.value, self.machines.value)
+            zip(self.processing_times.value, self.machines.value, strict=False)
         ):
             instance.set_processing_time(task_id, machine_id, p_time)
 
-    def setup_constraints(
-        self, instance: ProblemInstance
-    ) -> tuple[Constraint, ...]:
+    def setup_constraints(self, instance: ProblemInstance) -> tuple[Constraint, ...]:
         task_disjunction = NonOverlapConstraint(task_groups=instance.job_tasks)
 
         return (
@@ -91,7 +87,9 @@ def build_job_precedence(
 
     task_orders = [[-1] * len(tasks) for tasks in instance.job_tasks]
 
-    for task_id, (job, op) in enumerate(zip(instance.job_ids, operation_order)):
+    for task_id, (job, op) in enumerate(
+        zip(instance.job_ids, operation_order, strict=False)
+    ):
         if task_orders[job][op] != -1:
             raise ValueError(
                 f"Cannot have tasks have the same job and operation values: "
@@ -142,18 +140,12 @@ class JobShopSetup(OpenShopSetup):
             self.operation_order,
         ]
 
-    def setup_constraints(
-        self, instance: ProblemInstance
-    ) -> tuple[Constraint, ...]:
+    def setup_constraints(self, instance: ProblemInstance) -> tuple[Constraint, ...]:
         precedence = build_job_precedence(
             instance, self.operation_order.value, "jobshop_chains"
         )
 
-        return (
-            (MachineConstraint(), precedence)
-            if self.disjunctive
-            else (precedence,)
-        )
+        return (MachineConstraint(), precedence) if self.disjunctive else (precedence,)
 
     def get_entry(self) -> str:
         if self.machines.loaded:
@@ -201,18 +193,12 @@ class FlexibleJobShopSetup(UnrelatedParallelMachineSetup):
             self.operation_order,
         ]
 
-    def setup_constraints(
-        self, instance: ProblemInstance
-    ) -> tuple[Constraint, ...]:
+    def setup_constraints(self, instance: ProblemInstance) -> tuple[Constraint, ...]:
         precedence = build_job_precedence(
             instance, self.operation_order.value, "flexible_jobshop_chains"
         )
 
-        return (
-            (MachineConstraint(), precedence)
-            if self.disjunctive
-            else (precedence,)
-        )
+        return (MachineConstraint(), precedence) if self.disjunctive else (precedence,)
 
     def get_entry(self) -> str:
         if self.processing_times.loaded:
@@ -271,22 +257,20 @@ class FlowShopSetup(ScheduleSetup):
             self.operation_order,
         ]
 
-    def setup_constraints(
-        self, instance: ProblemInstance
-    ) -> tuple[Constraint, ...]:
+    def setup_constraints(self, instance: ProblemInstance) -> tuple[Constraint, ...]:
         precedence = build_job_precedence(
             instance, self.operation_order.value, "flowshop_chains"
         )
 
-        return (
-            (MachineConstraint(), precedence)
-            if self.disjunctive
-            else (precedence,)
-        )
+        return (MachineConstraint(), precedence) if self.disjunctive else (precedence,)
 
     def initialize(self, instance: ProblemInstance) -> None:
         for task_id, (p_time, machine_id) in enumerate(
-            zip(self.processing_times.value, self.operation_order.value)
+            zip(
+                self.processing_times.value,
+                self.operation_order.value,
+                strict=False,
+            )
         ):
             instance.set_processing_time(task_id, machine_id, p_time)
 

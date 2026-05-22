@@ -1,9 +1,8 @@
 # from dataclasses import dataclass
-from typing import Literal
 from collections.abc import Mapping
+from typing import Literal
 
 from cpscheduler.environment.constants import EzPickle
-
 
 SemanticType = Literal[
     # Numerical
@@ -159,9 +158,7 @@ class SequenceSpec(ObservationSpec):
     element: ObservationSpec
     length: int | None
 
-    def __init__(
-        self, element: ObservationSpec, length: int | None = None
-    ) -> None:
+    def __init__(self, element: ObservationSpec, length: int | None = None) -> None:
         self.element = element
         self.length = length
 

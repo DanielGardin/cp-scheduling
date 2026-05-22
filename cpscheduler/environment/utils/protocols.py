@@ -1,5 +1,6 @@
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable, overload
-from collections.abc import Iterator, Mapping, Hashable, Iterable
+from collections.abc import Hashable, Iterable, Iterator, Mapping
+from typing import TYPE_CHECKING, Any, Protocol, overload, runtime_checkable
+
 from typing_extensions import TypedDict, TypeVar
 
 if TYPE_CHECKING:
@@ -43,9 +44,7 @@ class InstanceGenerator(Protocol):
     @overload
     def sample(self, *, seed: int | None = None) -> InstanceTypes: ...
 
-    def sample(
-        self, env: Any = None, *, seed: int | None = None
-    ) -> InstanceTypes: ...
+    def sample(self, env: Any = None, *, seed: int | None = None) -> InstanceTypes: ...
 
 
 InfoType = dict[str, Any]

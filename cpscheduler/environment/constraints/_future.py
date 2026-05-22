@@ -1,7 +1,6 @@
 from collections.abc import Iterable
 
 from cpscheduler.environment.constants import TaskID
-
 from cpscheduler.environment.constraints.base import Constraint
 
 

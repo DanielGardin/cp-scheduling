@@ -1,16 +1,14 @@
 from collections.abc import Iterable
 
-from cpscheduler.environment.utils.general import convert_to_list
-from cpscheduler.environment.constants import Int, TaskID, MachineID
-from cpscheduler.environment.instance import ProblemInstance
-from cpscheduler.environment.state import ScheduleState
-
+import cpscheduler.environment.utils.debug as debug
+from cpscheduler.environment.constants import Int, MachineID, TaskID
 from cpscheduler.environment.constraints.base import (
     Constraint,
     PassiveConstraint,
 )
-
-import cpscheduler.environment.utils.debug as debug
+from cpscheduler.environment.instance import ProblemInstance
+from cpscheduler.environment.state import ScheduleState
+from cpscheduler.environment.utils.general import convert_to_list
 
 
 class RejectableConstraint(PassiveConstraint):
@@ -41,9 +39,7 @@ class AtMostOneConstraint(Constraint):
     current_tasks: list[set[TaskID]]
 
     def __init__(self, task_groups: Iterable[Iterable[Int]]) -> None:
-        self.task_groups = [
-            convert_to_list(tasks, TaskID) for tasks in task_groups
-        ]
+        self.task_groups = [convert_to_list(tasks, TaskID) for tasks in task_groups]
 
         self.current_tasks = []
 

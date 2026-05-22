@@ -10,64 +10,57 @@ implementing the required methods.
 """
 
 __all__ = [
-    "constraints",
-    "Constraint",
-    "PassiveConstraint",
-    "MachineConstraint",
     "BatchConstraint",
-    "PreemptionConstraint",
-    "OptionalityConstraint",
-    "MachineEligibilityConstraint",
-    "PrecedenceConstraint",
-    "NoWaitConstraint",
-    "ORPrecedenceConstraint",
     "ConstantProcessingTime",
-    "NonOverlapConstraint",
-    "ReleaseDateConstraint",
+    "Constraint",
     "DeadlineConstraint",
     "HorizonConstraint",
-    "ResourceConstraint",
-    "NonRenewableResourceConstraint",
-    "SetupConstraint",
     "MachineBreakdownConstraint",
+    "MachineConstraint",
+    "MachineEligibilityConstraint",
+    "NoWaitConstraint",
+    "NonOverlapConstraint",
+    "NonRenewableResourceConstraint",
+    "ORPrecedenceConstraint",
+    "OptionalityConstraint",
+    "PassiveConstraint",
+    "PrecedenceConstraint",
+    "PreemptionConstraint",
+    "ReleaseDateConstraint",
+    "ResourceConstraint",
+    "SetupConstraint",
+    "constraints",
 ]
 
 from .base import (
-    constraints,
     Constraint,
     PassiveConstraint,
+    constraints,
 )
-
+from .disjunctive import NonOverlapConstraint
 from .machine import (
-    MachineConstraint,
-    MachineBreakdownConstraint,
     BatchConstraint,
+    MachineBreakdownConstraint,
+    MachineConstraint,
 )
-
 from .passive import (
-    MachineEligibilityConstraint,
-    PreemptionConstraint,
-    OptionalityConstraint,
     ConstantProcessingTime,
+    MachineEligibilityConstraint,
+    OptionalityConstraint,
+    PreemptionConstraint,
 )
-
 from .precedence import (
-    PrecedenceConstraint,
     NoWaitConstraint,
     ORPrecedenceConstraint,
+    PrecedenceConstraint,
 )
-
 from .resources import (
-    ResourceConstraint,
     NonRenewableResourceConstraint,
+    ResourceConstraint,
 )
-
 from .setup import SetupConstraint
-
 from .time_windows import (
-    ReleaseDateConstraint,
     DeadlineConstraint,
     HorizonConstraint,
+    ReleaseDateConstraint,
 )
-
-from .disjunctive import NonOverlapConstraint

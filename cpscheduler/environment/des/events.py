@@ -1,18 +1,16 @@
 from typing_extensions import Self
 
 from cpscheduler.environment.constants import (
-    TaskID,
-    MachineID,
-    Time,
     GLOBAL_MACHINE_ID,
+    MachineID,
+    TaskID,
+    Time,
 )
-from cpscheduler.environment.des.base import SimulationEvent, Schedule
+from cpscheduler.environment.des.base import Schedule, SimulationEvent
 from cpscheduler.environment.state import ScheduleState
 
 
-def select_machine(
-    state: ScheduleState, task_id: TaskID, machine_id: MachineID
-) -> int:
+def select_machine(state: ScheduleState, task_id: TaskID, machine_id: MachineID) -> int:
     machines = state.get_machines(task_id)
 
     for machine in sorted(machines):
@@ -146,9 +144,7 @@ class CompleteEvent(SimulationEvent):
         return state.is_executing(self.task_id)
 
     def process(self, state: ScheduleState, schedule: Schedule) -> None:
-        schedule.add_event(
-            CheckpointEvent(), state, state.get_end_lb(self.task_id)
-        )
+        schedule.add_event(CheckpointEvent(), state, state.get_end_lb(self.task_id))
 
 
 class AdvanceTimeEvent(SimulationEvent):

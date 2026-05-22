@@ -1,29 +1,36 @@
-__all__ = [
-    "SimulationEvent",
-    "Schedule",
-    "SingleInstruction",
-    "ActionType",
+__all__ = [  # noqa: RUF022
+    # Parsing / utilities
+    "instructions",
     "is_single_action",
     "parse_instruction",
-    "instructions",
+    # Core types
+    "ActionType",
+    "Schedule",
+    "SingleInstruction",
+    "SimulationEvent",
     # Events
+    "AdvanceTimeEvent",
+    "CheckpointEvent",
+    "CompleteEvent",
     "ExecuteEvent",
-    "SubmitEvent",
+    "InterruptEvent",
     "PauseEvent",
     "ResumeEvent",
-    "CheckpointEvent",
-    "InterruptEvent",
-    "CompleteEvent",
-    "AdvanceTimeEvent",
+    "SubmitEvent",
 ]
 
 from cpscheduler.environment.des.actions import (
-    SingleInstruction,
     ActionType,
+    SingleInstruction,
     is_single_action,
     parse_instruction,
 )
-
+from cpscheduler.environment.des.base import (
+    Schedule,
+    SimulationEvent,
+    instructions,
+    register_instruction,
+)
 from cpscheduler.environment.des.events import (
     AdvanceTimeEvent,
     CheckpointEvent,
@@ -33,12 +40,6 @@ from cpscheduler.environment.des.events import (
     PauseEvent,
     ResumeEvent,
     SubmitEvent,
-)
-from cpscheduler.environment.des.base import (
-    SimulationEvent,
-    Schedule,
-    instructions,
-    register_instruction,
 )
 
 register_instruction(ExecuteEvent, "execute")

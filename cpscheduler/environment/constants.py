@@ -1,20 +1,19 @@
 "Common types and constants used in the environment module."
 
+from collections.abc import Hashable, Iterable, Mapping
 from typing import (
     Any,
-    Final,
-    SupportsInt,
-    SupportsFloat,
-    Literal,
     ClassVar,
+    Final,
+    Literal,
+    SupportsFloat,
+    SupportsInt,
     cast,
     final,
 )
-from collections.abc import Iterable, Mapping, Hashable
 
 # from typing_extensions import Self
-
-from mypy_extensions import i64, i32, i16, u8, mypyc_attr
+from mypy_extensions import i16, i32, i64, mypyc_attr, u8
 
 # ------------------------------------------------------------------------------
 # Type aliases for commonly used types
@@ -86,7 +85,7 @@ def _to_hashable(value: Any) -> Any:
     if isinstance(value, set | frozenset):
         return frozenset(_to_hashable(item) for item in value)
 
-    if isinstance(value, Iterable) and not isinstance(value, (str, bytes)):
+    if isinstance(value, Iterable) and not isinstance(value, str | bytes):
         return tuple(_to_hashable(item) for item in value)
 
     if isinstance(value, Hashable):
@@ -114,9 +113,7 @@ def _collect_fields(cls: type) -> tuple[str, ...]:
     result: list[str] = []
 
     for c in reversed(cls.__mro__):
-        annotations = cast(
-            dict[str, type], c.__dict__.get("__annotations__", {})
-        )
+        annotations = cast(dict[str, type], c.__dict__.get("__annotations__", {}))
 
         for name in annotations:
             if name.startswith("__") and name.endswith("__"):

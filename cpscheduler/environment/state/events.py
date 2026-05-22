@@ -1,21 +1,20 @@
 from typing import Final, Literal
-from typing_extensions import assert_never
 
 from mypy_extensions import mypyc_attr
+from typing_extensions import assert_never
 
 from cpscheduler.environment.constants import (
-    TaskID,
-    MachineID,
     GLOBAL_MACHINE_ID,
     Enum,
     EzPickle,
+    MachineID,
+    TaskID,
 )
 
 VarFieldType = Literal[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
 
 class VarField(Enum):
-
     ASSIGNMENT: Final[Literal[0]] = 0
     "A task have its domain colapsed to a single machine and l = u = start time."
 
@@ -137,7 +136,6 @@ EventKindType = Literal[0, 1, 2, 3]
 
 
 class RuntimeEventKind(Enum):
-
     TASK_STARTED: Final[Literal[0]] = 0
     TASK_PAUSED: Final[Literal[1]] = 1
     TASK_COMPLETED: Final[Literal[2]] = 2

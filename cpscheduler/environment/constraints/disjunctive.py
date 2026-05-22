@@ -1,21 +1,18 @@
 from collections.abc import Iterable
 
-from cpscheduler.environment.constants import TaskID, MachineID, Int
+import cpscheduler.environment.utils.debug as debug
+from cpscheduler.environment.constants import Int, MachineID, TaskID
+from cpscheduler.environment.constraints.base import Constraint
 from cpscheduler.environment.instance import (
+    UNSET,
     GlobalFeature,
     ProblemInstance,
-    UNSET,
 )
 from cpscheduler.environment.state import ScheduleState
-
-from cpscheduler.environment.constraints.base import Constraint
-
-import cpscheduler.environment.utils.debug as debug
 from cpscheduler.environment.utils.general import convert_to_list, extend_list
 
 
 class NonOverlapConstraint(Constraint):
-
     groups: GlobalFeature[list[list[TaskID]]]
 
     current_groups: list[set[TaskID]]
@@ -30,10 +27,7 @@ class NonOverlapConstraint(Constraint):
             list[list[TaskID]],
             "task",
             default=(
-                [
-                    convert_to_list(task_group, TaskID)
-                    for task_group in task_groups
-                ]
+                [convert_to_list(task_group, TaskID) for task_group in task_groups]
                 if task_groups is not None
                 else UNSET
             ),

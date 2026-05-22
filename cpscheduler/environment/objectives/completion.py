@@ -1,11 +1,10 @@
 from math import expm1
 
-from cpscheduler.environment.utils.general import convert_to_list
-from cpscheduler.environment.constants import Time, Float
-from cpscheduler.environment.instance import JobFeature, GlobalFeature, UNSET
-from cpscheduler.environment.state import ScheduleState
-
+from cpscheduler.environment.constants import Float, Time
+from cpscheduler.environment.instance import UNSET, GlobalFeature, JobFeature
 from cpscheduler.environment.objectives.base import RegularObjective
+from cpscheduler.environment.state import ScheduleState
+from cpscheduler.environment.utils.general import convert_to_list
 
 
 class TotalCompletionTime(RegularObjective):
@@ -47,11 +46,7 @@ class WeightedCompletionTime(TotalCompletionTime):
             name=weights_tag,
             elem_type=float,
             semantic="continuous",
-            default=(
-                convert_to_list(weights, float)
-                if weights is not None
-                else UNSET
-            ),
+            default=(convert_to_list(weights, float) if weights is not None else UNSET),
         )
 
     @property
@@ -66,7 +61,7 @@ class WeightedCompletionTime(TotalCompletionTime):
 
         return sum(
             weight * float(C_j)
-            for weight, C_j in zip(weights, self._job_completion)
+            for weight, C_j in zip(weights, self._job_completion, strict=False)
         )
 
     def __call__(self, state: ScheduleState) -> float:
@@ -74,7 +69,7 @@ class WeightedCompletionTime(TotalCompletionTime):
 
         return sum(
             weight * float(C_j)
-            for weight, C_j in zip(weights, self.completion_times(state))
+            for weight, C_j in zip(weights, self.completion_times(state), strict=False)
         )
 
     @classmethod
@@ -83,7 +78,6 @@ class WeightedCompletionTime(TotalCompletionTime):
 
 
 class DiscountedTotalCompletionTime(RegularObjective):
-
     discount_factor: GlobalFeature[float]
 
     def __init__(
@@ -111,9 +105,7 @@ class DiscountedTotalCompletionTime(RegularObjective):
     def __call__(self, state: ScheduleState) -> float:
         alpha = self.discount_factor.value
 
-        return -sum(
-            expm1(-alpha * float(C_j)) for C_j in self.completion_times(state)
-        )
+        return -sum(expm1(-alpha * float(C_j)) for C_j in self.completion_times(state))
 
     def get_entry(self) -> str:
         if self.discount_factor.loaded:
@@ -151,7 +143,7 @@ class TotalFlowTime(RegularObjective):
             sum(
                 C_j - r_j
                 for r_j, C_j in zip(
-                    self.release_times.value, self._job_completion
+                    self.release_times.value, self._job_completion, strict=False
                 )
             )
         )
@@ -161,7 +153,9 @@ class TotalFlowTime(RegularObjective):
             sum(
                 C_j - r_j
                 for r_j, C_j in zip(
-                    self.release_times.value, self.completion_times(state)
+                    self.release_times.value,
+                    self.completion_times(state),
+                    strict=False,
                 )
             )
         )

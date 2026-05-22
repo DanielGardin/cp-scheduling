@@ -1,8 +1,7 @@
 from mypy_extensions import mypyc_attr
 
-from cpscheduler.environment.constants import MachineID, TaskID, Time
 from cpscheduler.environment.component import Component
-
+from cpscheduler.environment.constants import MachineID, TaskID, Time
 from cpscheduler.environment.instance import ProblemInstance
 from cpscheduler.environment.state import ScheduleState
 

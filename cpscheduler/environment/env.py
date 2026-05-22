@@ -11,34 +11,33 @@ reinforcement learning libraries. It provides methods for resetting the environm
 steps, rendering the environment, and exporting the scheduling model.
 """
 
-from typing import Literal, Generic, cast
 from collections.abc import Iterable, Mapping
+from typing import Generic, Literal, cast
+
 from typing_extensions import TypeVar, assert_never
 
 from cpscheduler.environment.constants import EzPickle
-from cpscheduler.environment.utils.protocols import (
-    Metric,
-    InstanceTypes,
-    InstanceGenerator,
-    InfoType,
-    Options,
-)
-
-from cpscheduler.environment.instance import ProblemInstance
-from cpscheduler.environment.state import ScheduleState
-from cpscheduler.environment.observation import Observation, DefaultObservation
-from cpscheduler.environment.state.events import VarField, RuntimeEventKind
+from cpscheduler.environment.constraints import Constraint, PassiveConstraint
 from cpscheduler.environment.des import (
     ActionType,
     Schedule,
-    parse_instruction,
     is_single_action,
+    parse_instruction,
 )
-from cpscheduler.environment.setups import ScheduleSetup
-from cpscheduler.environment.constraints import Constraint, PassiveConstraint
+from cpscheduler.environment.instance import ProblemInstance
 from cpscheduler.environment.objectives import Objective
-
+from cpscheduler.environment.observation import DefaultObservation, Observation
 from cpscheduler.environment.render import Renderer
+from cpscheduler.environment.setups import ScheduleSetup
+from cpscheduler.environment.state import ScheduleState
+from cpscheduler.environment.state.events import RuntimeEventKind, VarField
+from cpscheduler.environment.utils.protocols import (
+    InfoType,
+    InstanceGenerator,
+    InstanceTypes,
+    Metric,
+    Options,
+)
 
 # Event fields and kinds
 
@@ -320,10 +319,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
         beta = ",".join(
             [constraint.get_entry() for constraint in self.constraints]
-            + [
-                constraint.get_entry()
-                for constraint in self.passive_constraints
-            ]
+            + [constraint.get_entry() for constraint in self.passive_constraints]
         )
 
         gamma = self.objective.get_entry()
@@ -465,9 +461,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             # In the current version, the event queue is not cleared to make
             # discovery easier, but it must not be the final behavior.
             elif field == STATE_INFEASIBLE:
-                assert (
-                    state.infeasible
-                ), "STATE_INFEASIBLE event produced erroneously."
+                assert state.infeasible, "STATE_INFEASIBLE event produced erroneously."
                 return False
 
             else:
@@ -505,9 +499,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
             elif kind == TASK_MACHINE_INFEASIBLE:
                 objective.on_task_machine_infeasible(task_id, machine_id, state)
-                observation.on_task_machine_infeasible(
-                    task_id, machine_id, state
-                )
+                observation.on_task_machine_infeasible(task_id, machine_id, state)
 
             else:
                 assert_never(kind)
@@ -526,9 +518,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             self.load_instance(generator.sample(self, seed=seed))
 
     # Environment API methods
-    def reset(
-        self, *, options: Options | None = None
-    ) -> tuple[ObsT_co, InfoType]:
+    def reset(self, *, options: Options | None = None) -> tuple[ObsT_co, InfoType]:
         if options is not None:
             self._handle_options(options)
 
@@ -616,8 +606,6 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
     def render(self) -> None:
         if self._status != RUNNING:
-            raise RuntimeError(
-                "Cannot render an environment during configuration."
-            )
+            raise RuntimeError("Cannot render an environment during configuration.")
 
         self.renderer.render(self.state)

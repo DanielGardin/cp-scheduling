@@ -1,11 +1,8 @@
 from typing import TYPE_CHECKING, Any, TypeVar
 
 # from mypy_extensions import mypyc_attr
-
-from cpscheduler.environment.constants import MachineID, TaskID, Time, EzPickle
-
+from cpscheduler.environment.constants import EzPickle, MachineID, TaskID, Time
 from cpscheduler.environment.instance.features import Feature, TaskFeature
-
 from cpscheduler.environment.utils.general import convert_to_list
 from cpscheduler.environment.utils.protocols import (
     InstanceTypes,
@@ -80,9 +77,7 @@ class ProblemInstance(EzPickle):
             name="preemptive", elem_type=bool, semantic="binary"
         )
 
-        self._optional = TaskFeature(
-            name="optional", elem_type=bool, semantic="binary"
-        )
+        self._optional = TaskFeature(name="optional", elem_type=bool, semantic="binary")
 
         self._machine_mask = TaskFeature(
             name="machine_mask",
@@ -98,9 +93,7 @@ class ProblemInstance(EzPickle):
             semantic="duration",
         )
 
-        self._job_ids = TaskFeature(
-            name="job_id", elem_type=TaskID, semantic="task"
-        )
+        self._job_ids = TaskFeature(name="job_id", elem_type=TaskID, semantic="task")
 
         # Setting features without self.register(...)
         self.features = {
@@ -200,9 +193,7 @@ class ProblemInstance(EzPickle):
 
     def _set_instance_data(self, name: str, data: Any) -> None:
         if name in self._providers:
-            raise ValueError(
-                f"Feature '{name}' in instance already has a provider."
-            )
+            raise ValueError(f"Feature '{name}' in instance already has a provider.")
 
         for feature in self.features.get(name, ()):
             feature.set_data(data)
@@ -230,12 +221,11 @@ class ProblemInstance(EzPickle):
                                 f"n_jobs, but {length} != {self.n_jobs}."
                             )
 
-                    elif scope == "machine":
-                        if length != self.n_machines:
-                            raise ValueError(
-                                f"MachineFeature '{name}' is expected to have length "
-                                f"n_machines, but {length} != {self.n_machines}."
-                            )
+                    elif scope == "machine" and length != self.n_machines:
+                        raise ValueError(
+                            f"MachineFeature '{name}' is expected to have length "
+                            f"n_machines, but {length} != {self.n_machines}."
+                        )
 
                 elif not spec.optional:
                     raise ValueError(
@@ -243,9 +233,7 @@ class ProblemInstance(EzPickle):
                         "Check your instance specification, or your components."
                     )
 
-    def initialize(
-        self, instance: InstanceTypes, setup: "ScheduleSetup"
-    ) -> None:
+    def initialize(self, instance: InstanceTypes, setup: "ScheduleSetup") -> None:
         if isinstance(instance, tuple):
             task_raw_instance, job_raw_instance = instance
 
@@ -296,9 +284,7 @@ class ProblemInstance(EzPickle):
 
     def get_feature(self, feat_name: str) -> Feature:
         if feat_name not in self.features:
-            raise KeyError(
-                f"Feature {feat_name} was never registered in the instance."
-            )
+            raise KeyError(f"Feature {feat_name} was never registered in the instance.")
 
         return self.features[feat_name][0]
 
@@ -327,9 +313,7 @@ class ProblemInstance(EzPickle):
     def remove_machine(self, task_id: TaskID, machine_id: MachineID) -> None:
         self._machine_mask.value[task_id][machine_id] = False
 
-    def set_preemption(
-        self, task_id: TaskID, allow_preemption: bool = True
-    ) -> None:
+    def set_preemption(self, task_id: TaskID, allow_preemption: bool = True) -> None:
         self._preemptive.value[task_id] = allow_preemption
 
     def set_optionality(self, task_id: TaskID, optional: bool = True) -> None:

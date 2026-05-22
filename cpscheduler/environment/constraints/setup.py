@@ -1,9 +1,8 @@
 from collections.abc import Mapping
 
-from cpscheduler.environment.constants import Time, TaskID, MachineID, Int
-from cpscheduler.environment.state import ScheduleState
-
+from cpscheduler.environment.constants import Int, MachineID, TaskID, Time
 from cpscheduler.environment.constraints.base import Constraint
+from cpscheduler.environment.state import ScheduleState
 
 
 # TODO: Convert external information as Features
@@ -41,9 +40,7 @@ class SetupConstraint(Constraint):
             for task, children in setup_times.items()
         }
 
-    def add_setup_time(
-        self, task_id: Int, child_id: Int, setup_time: Int
-    ) -> None:
+    def add_setup_time(self, task_id: Int, child_id: Int, setup_time: Int) -> None:
         task = TaskID(task_id)
         child = TaskID(child_id)
 
@@ -64,8 +61,7 @@ class SetupConstraint(Constraint):
 
     def reset(self, state: ScheduleState) -> None:
         self.current_setup_times = {
-            task_id: children.copy()
-            for task_id, children in self.setup_times.items()
+            task_id: children.copy() for task_id, children in self.setup_times.items()
         }
 
     def on_assignment(

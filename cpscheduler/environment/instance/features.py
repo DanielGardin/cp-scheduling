@@ -6,8 +6,8 @@ from cpscheduler.environment.constants import EzPickle
 from cpscheduler.environment.specs import (
     FeatureSpec,
     Scope,
-    ShapeDim,
     SemanticType,
+    ShapeDim,
 )
 
 
@@ -109,7 +109,6 @@ class Feature(EzPickle, Generic[_T]):
 
 
 class TaskFeature(Feature[list[_T]]):
-
     elem_type: type[_T]
 
     def __init__(
@@ -141,7 +140,6 @@ class TaskFeature(Feature[list[_T]]):
 
 
 class JobFeature(Feature[list[_T]]):
-
     elem_type: type[_T]
 
     def __init__(
@@ -173,7 +171,6 @@ class JobFeature(Feature[list[_T]]):
 
 
 class MachineFeature(Feature[list[_T]]):
-
     elem_type: type[_T]
 
     def __init__(
@@ -205,7 +202,6 @@ class MachineFeature(Feature[list[_T]]):
 
 
 class GlobalFeature(Feature[_T]):
-
     pytype: type[_T]
 
     def __init__(
