@@ -106,7 +106,7 @@ class Bounds(EzPickle):
             ubs = [MIN_TIME] * (n_tasks * n_machines)
             global_ubs = [MIN_TIME] * n_tasks
 
-            machine_mask = instance.machine_mask.value
+            machine_mask = instance.machine_mask
 
             for task_id in range(n_tasks):
                 mask = machine_mask[task_id]
@@ -150,7 +150,7 @@ class Bounds(EzPickle):
     def __eq__(self, value: object, /) -> bool:
         if not isinstance(value, Bounds):
             return False
-        
+
         return (
             self.n_machines ==value.n_machines
             and self.lbs ==value.lbs
@@ -188,7 +188,7 @@ class TaskDomains(EzPickle):
 
             presence: list[PresenceType] = [
                 UNDEFINED if optional else PRESENT
-                for optional in instance.optional.value
+                for optional in instance.optional
             ]
 
             feasible_machines: list[set[MachineID]] = [
@@ -198,8 +198,8 @@ class TaskDomains(EzPickle):
             start = Bounds(instance)
             end = Bounds(instance)
 
-            processing_times = instance.processing_times.value
-            machine_mask = instance.machine_mask.value
+            processing_times = instance.processing_times
+            machine_mask = instance.machine_mask
 
             for task_id in range(n_tasks):
                 p_times = processing_times[task_id]
@@ -235,7 +235,7 @@ class TaskDomains(EzPickle):
     def get_feasible_machines(self, task_id: TaskID) -> tuple[MachineID, ...]:
         return tuple(self.feasible_machines[task_id])
 
-    def __eq__(self, value: object, /) -> bool:        
+    def __eq__(self, value: object, /) -> bool:
         return (
             isinstance(value, TaskDomains)
             and self.feasible_machines == value.feasible_machines

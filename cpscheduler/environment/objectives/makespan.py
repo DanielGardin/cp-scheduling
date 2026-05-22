@@ -82,7 +82,7 @@ class MaximumLateness(Objective):
     def on_task_completed(
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:
-        job_id = state.instance.job_ids.value[task_id]
+        job_id = state.instance.job_ids[task_id]
         d_j = self.due_dates.value[job_id]
 
         self._value = max(self._value, state.get_end(task_id) - d_j)
@@ -96,7 +96,7 @@ class MaximumLateness(Objective):
         if not completed_tasks:
             return float(-MAX_TIME)
 
-        job_ids = state.instance.job_ids.value
+        job_ids = state.instance.job_ids
         due_dates = self.due_dates.value
 
         return float(max(

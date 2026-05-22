@@ -47,32 +47,70 @@ Scope = Literal[
     "global",
 ]
 
+ShapeDim = int | Literal[
+    "n_tasks",
+    "n_jobs",
+    "n_machines",
+]
+
 _T = TypeVar('_T', default=Any)
 
+
+# FUTURE: Support sparse features, i.e. dict[SupportIndex, T]
+# Materialization then materialize a list[T].
 class FeatureSpec(EzPickle, Generic[_T]):
-
-    __args__ = ("scope", "semantic", "optional")
-
     scope: Scope
     semantic: SemanticType
+    sparse: bool
     optional: bool
+
+    # Feature metadata (used for ObservationSpec)
+    shape: tuple[ShapeDim, ...]
+    n_categories: int | None
 
     def __init__(
         self,
         scope: Scope,
         semantic: SemanticType,
-        optional: bool = False
+        sparse: bool = False,
+        optional: bool = False,
+        *,
+        shape: tuple[ShapeDim, ...] = (),
+        n_categories: int | None = None,
+        low: float | None = None,
+        high: float | None = None,
     ) -> None:
+        if n_categories is not None and semantic != "categorical":
+            raise ValueError(
+                f"Cannot provide 'n_categories' in a '{semantic}' feature."
+            )
+
+        if low is not None and high is not None and high < low:
+            raise ValueError(
+                f"Expected low < high, but {low} > {high}."
+            )
+
         self.scope = scope
         self.semantic = semantic
+        self.sparse = sparse
         self.optional = optional
+
+        self.shape = shape
+        self.n_categories = n_categories
+        self.low = low
+        self.high = high
 
     def __eq__(self, value: object, /) -> bool:
         return (
             isinstance(value, FeatureSpec)
             and self.scope == value.scope
             and self.semantic == value.semantic
+            and self.sparse == value.sparse
             and self.optional == value.optional
+            and self.shape == value.shape
+            and self.n_categories == value.n_categories
+            and self.low == value.low
+            and self.high == value.high
         )
 
 class UnsetType:
@@ -82,7 +120,7 @@ class UnsetType:
 UNSET = UnsetType()
 """Defines a Feature without default data value (unitialized by default)
 
-Usually used to define a consumer, that will be filled by the user-specified 
+Usually used to define a consumer, that will be filled by the user-specified
 instance later.
 """
 
@@ -100,13 +138,22 @@ class Feature(EzPickle, Generic[_T]):
         scope: Scope,
         semantic: SemanticType,
         optional: bool = False,
-        default: _T | UnsetType = UNSET
+        default: _T | UnsetType = UNSET,
+        *,
+        shape: tuple[ShapeDim, ...] = (),
+        n_categories: int | None = None,
+        low: float | None = None,
+        high: float | None = None,
     ) -> None:
         self.name = name
         self.spec = FeatureSpec(
-            scope,
-            semantic,
-            optional,
+            scope=scope,
+            semantic=semantic,
+            optional=optional,
+            shape=shape,
+            n_categories=n_categories,
+            low=low,
+            high=high
         )
 
         self._default = default
@@ -121,11 +168,15 @@ class Feature(EzPickle, Generic[_T]):
         cls, name: str, spec: FeatureSpec[_T], default: _T | UnsetType = UNSET
     ) -> Self:
         return cls(
-            name,
-            spec.scope,
-            spec.semantic,
-            spec.optional,
-            default
+            name=name,
+            scope=spec.scope,
+            semantic=spec.semantic,
+            optional=spec.optional,
+            default=default,
+            shape=spec.shape,
+            n_categories=spec.n_categories,
+            low=spec.low,
+            high=spec.high,
         )
 
     @property
@@ -151,15 +202,9 @@ class Feature(EzPickle, Generic[_T]):
                 f"Source feature '{source.name}' has different specs: expected {self.spec}, "
                 f"got {source.spec}."
             )
-        
+
         self.set_data(source._data)
 
-    def __eq__(self, value: object, /) -> bool:
-        return (
-            isinstance(value, Feature)
-            and self.name == value.name
-            and self.spec == value.spec
-        )
 
 class TaskFeature(Feature[list[_T]]):
 
@@ -171,7 +216,12 @@ class TaskFeature(Feature[list[_T]]):
         elem_type: type[_T],
         semantic: SemanticType,
         optional: bool = False,
-        default: list[_T] | UnsetType = UNSET
+        default: list[_T] | UnsetType = UNSET,
+        *,
+        shape: tuple[ShapeDim, ...] = (),
+        n_categories: int | None = None,
+        low: float | None = None,
+        high: float | None = None,
     ) -> None:
         super().__init__(
             name=name,
@@ -179,9 +229,14 @@ class TaskFeature(Feature[list[_T]]):
             semantic=semantic,
             optional=optional,
             default=default,
+            shape=("n_tasks", *shape),
+            n_categories=n_categories,
+            low=low,
+            high=high
         )
 
         self.elem_type = elem_type
+
 
 class JobFeature(Feature[list[_T]]):
 
@@ -193,7 +248,12 @@ class JobFeature(Feature[list[_T]]):
         elem_type: type[_T],
         semantic: SemanticType,
         optional: bool = False,
-        default: list[_T] | UnsetType = UNSET
+        default: list[_T] | UnsetType = UNSET,
+        *,
+        shape: tuple[ShapeDim, ...] = (),
+        n_categories: int | None = None,
+        low: float | None = None,
+        high: float | None = None,
     ) -> None:
         super().__init__(
             name=name,
@@ -201,9 +261,14 @@ class JobFeature(Feature[list[_T]]):
             semantic=semantic,
             optional=optional,
             default=default,
+            shape=("n_jobs", *shape),
+            n_categories=n_categories,
+            low=low,
+            high=high
         )
 
         self.elem_type = elem_type
+
 
 class MachineFeature(Feature[list[_T]]):
 
@@ -215,7 +280,12 @@ class MachineFeature(Feature[list[_T]]):
         elem_type: type[_T],
         semantic: SemanticType,
         optional: bool = False,
-        default: list[_T] | UnsetType = UNSET
+        default: list[_T] | UnsetType = UNSET,
+        *,
+        shape: tuple[ShapeDim, ...] = (),
+        n_categories: int | None = None,
+        low: float | None = None,
+        high: float | None = None,
     ) -> None:
         super().__init__(
             name=name,
@@ -223,9 +293,14 @@ class MachineFeature(Feature[list[_T]]):
             semantic=semantic,
             optional=optional,
             default=default,
+            shape=("n_machines", *shape),
+            n_categories=n_categories,
+            low=low,
+            high=high
         )
 
         self.elem_type = elem_type
+
 
 class GlobalFeature(Feature[_T]):
 
@@ -237,14 +312,19 @@ class GlobalFeature(Feature[_T]):
         pytype: type[_T],
         semantic: SemanticType,
         optional: bool = False,
-        default: _T | UnsetType = UNSET
+        default: _T | UnsetType = UNSET,
+        *,
+        shape: tuple[ShapeDim, ...] = (),
+        n_categories: int | None = None
     ) -> None:
         super().__init__(
             name=name,
-            scope="task",
+            scope="global",
             semantic=semantic,
             optional=optional,
             default=default,
+            shape=shape,
+            n_categories=n_categories
         )
 
         self.pytype = pytype

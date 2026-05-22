@@ -12,6 +12,12 @@ from cpscheduler import SchedulingEnv, IdenticalParallelMachineSetup
 
 ENV_CASE_KEYS: list[str] = list(ENV_CASES)
 
+def test_empty_instance() -> None:
+    env = SchedulingEnv(IdenticalParallelMachineSetup(2))
+
+    env.load_instance({"processing_time": []})
+    env.reset()
+    assert env.state.is_terminal()
 
 @pytest.mark.env
 @pytest.mark.parametrize("case_name", ENV_CASE_KEYS)

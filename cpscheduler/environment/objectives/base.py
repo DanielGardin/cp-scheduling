@@ -85,7 +85,7 @@ class CompletionTimeObjective(Objective):
     def on_task_completed(
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:
-        job_id = state.instance.job_ids.value[task_id]
+        job_id = state.instance.job_ids[task_id]
         C_j = state.get_end(task_id)
         self._job_completion[job_id] = max(self._job_completion[job_id], C_j)
 
@@ -94,7 +94,7 @@ class CompletionTimeObjective(Objective):
         "Compute the makespan of a set of tasks."
         makespans: list[Time] = [0] * state.n_jobs
 
-        job_ids = state.instance.job_ids.value
+        job_ids = state.instance.job_ids
 
         for task_id in state.get_completed_tasks():
             job_id = job_ids[task_id]

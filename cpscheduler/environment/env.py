@@ -102,6 +102,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT]):
     renderer: Renderer
 
     # Environment dynamic variables
+    _instance: ProblemInstance
     state: ScheduleState
     schedule: Schedule
 
@@ -110,7 +111,6 @@ class SchedulingEnv(EzPickle, Generic[ObsT]):
     event_count: int
 
     _status: EnvStatusType
-    _debug: bool
 
     # FUTURE: Mypyc issue https://github.com/mypyc/mypyc/issues/961
     # The trick used here produces a false-positive when type checking:
@@ -153,10 +153,15 @@ class SchedulingEnv(EzPickle, Generic[ObsT]):
         debug_mode: bool = False
     ):
         self._status = UNLOADED
-        self._debug = debug_mode
+
+        problem_instance = ProblemInstance(debug_mode)
+        self._instance = problem_instance
 
         if machine_setup is None:
             machine_setup = ScheduleSetup()
+
+        for feature in machine_setup.get_features():
+            problem_instance.register(feature)
 
         self.setup = machine_setup
 
@@ -253,10 +258,20 @@ class SchedulingEnv(EzPickle, Generic[ObsT]):
         else:
             self.constraints.append(constraint)
 
+        instance = self._instance
+        for feature in constraint.get_features():
+            instance.register(feature)
+
+
     def set_objective(self, objective: Objective) -> None:
         "Set the objective function for the environment."
         self._status = UNLOADED
         self.objective = objective
+
+        instance = self._instance
+        for feature in objective.get_features():
+            instance.register(feature)
+
 
     def load_instance(self, instance: InstanceTypes) -> None:
         """
@@ -266,24 +281,16 @@ class SchedulingEnv(EzPickle, Generic[ObsT]):
             instance: InstanceTypes
                 The instance data for the scheduling problem, can be a DataFrame or a dictionary.
         """
-        problem_instance = ProblemInstance(self._debug)
+        problem_instance = self._instance
 
-        for component in [
-            self.setup,
-            *self.passive_constraints,
-            *self.constraints,
-            self.objective
-        ]:
-            for feature in component.get_features():
-                problem_instance.register(feature)
-
-        problem_instance.read_instance(instance, self.setup)
+        problem_instance.initialize(instance, self.setup)
         self.setup.initialize(problem_instance)
 
-        # Invariant: Here, we assume that, as the setup constraints are derived
-        # from the setup, all features are already registered by the setup.
-        # TODO: If this is not the case, we can detect missing features here
         setup_constraints = self.setup.setup_constraints(problem_instance)
+        for constraint in setup_constraints:
+            for feature in constraint.get_features():
+                problem_instance.register(feature)
+
         for constraint in setup_constraints:
             constraint.initialize(problem_instance)
 
@@ -299,7 +306,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT]):
 
         self._observation.initialize(problem_instance)
 
-        self.state = ScheduleState(problem_instance, self._debug)
+        self.state = ScheduleState(problem_instance)
         self._status = LOADED
 
     def add_metric(self, name: str, metric: Metric) -> None:

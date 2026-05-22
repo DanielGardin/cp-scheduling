@@ -245,6 +245,7 @@ class UnrelatedParallelMachineSetup(ScheduleSetup):
         self.processing_times = TaskFeature(
             name="processing_times",
             elem_type=list[Time],
+            shape=("n_machines",),
             semantic="duration",
         )
 
@@ -252,7 +253,7 @@ class UnrelatedParallelMachineSetup(ScheduleSetup):
     def n_machines(self) -> int:
         if self.processing_times.loaded:
             return len(self.processing_times.value[0])
-        
+
         return 0
 
     def get_features(self) -> list[TaskFeature]:
@@ -317,7 +318,7 @@ class OpenShopSetup(ScheduleSetup):
     def n_machines(self) -> int:
         if self.machines.loaded:
             return max(self.machines.value) + 1
-        
+
         return 0
 
     def get_features(self) -> list[TaskFeature]:
@@ -361,7 +362,7 @@ def build_job_precedence(
     ]
 
     for task_id, (job, op) in enumerate(
-        zip(instance.job_ids.value, operation_order)
+        zip(instance.job_ids, operation_order)
     ):
         if task_orders[job][op] != -1:
             raise ValueError(
@@ -536,7 +537,7 @@ class FlowShopSetup(ScheduleSetup):
     def n_machines(self) -> int:
         if self.operation_order.loaded:
             return max(self.operation_order.value) + 1
-        
+
         return 0
 
     def get_features(self) -> list[TaskFeature]:

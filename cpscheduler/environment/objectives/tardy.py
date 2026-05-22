@@ -62,7 +62,7 @@ class TotalTardyJobs(CompletionTimeObjective):
     ) -> None:
         super().on_task_completed(task_id, machine_id, state)
 
-        job_id = state.instance.job_ids.value[task_id]
+        job_id = state.instance.job_ids[task_id]
 
         if self._tardy_jobs[job_id]:
             return
@@ -145,7 +145,7 @@ class WeightedTardyJobs(TotalTardyJobs):
         machine_id: MachineID,
         state: ScheduleState,
     ) -> None:
-        job_id = state.instance.job_ids.value[task_id]
+        job_id = state.instance.job_ids[task_id]
         already_tardy = self._tardy_jobs[job_id]
 
         super().on_task_completed(task_id, machine_id, state)

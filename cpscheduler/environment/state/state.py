@@ -95,13 +95,13 @@ class ScheduleState(EzPickle):
 
     _debug: bool
 
-    def __init__(self, instance: ProblemInstance, debug: bool) -> None:
+    def __init__(self, instance: ProblemInstance) -> None:
         self.instance = instance
 
         self.time = 0
 
         self.infeasible = False
-        self._debug = debug
+        self._debug = instance.debug
 
         self.domains = TaskDomains(instance)
         self.runtime = RuntimeState(instance)
@@ -189,23 +189,23 @@ class ScheduleState(EzPickle):
     ## Getter methods for instance parameters
     def is_preemptive(self, task_id: TaskID) -> bool:
         "Check if a task allows preemption."
-        return self.instance.preemptive.value[task_id]
+        return self.instance.preemptive[task_id]
 
     def is_optional(self, task_id: TaskID) -> bool:
         "Check if a task is optional."
-        return self.instance.optional.value[task_id]
+        return self.instance.optional[task_id]
 
     def has_processing_time(
         self, task_id: TaskID, machine_id: MachineID
     ) -> bool:
-        return self.instance.machine_mask.value[task_id][machine_id]
+        return self.instance.machine_mask[task_id][machine_id]
 
     def get_processing_time(
         self, task_id: TaskID, machine_id: MachineID
     ) -> Time:
         "Get the processing time for a given task and machine."
         if self.has_processing_time(task_id, machine_id):
-            return self.instance.processing_times.value[task_id][machine_id]
+            return self.instance.processing_times[task_id][machine_id]
 
         raise ValueError(
             f"get_processing_time: Task {task_id} cannot be processed in Machine {machine_id}"
@@ -924,7 +924,7 @@ class ScheduleState(EzPickle):
                 f"Cannot pause task {task_id} at {pause_time}, the task is not "
                 f"currently executing."
             )
-        
+
         domains = self.domains
         runtime = self.runtime
 

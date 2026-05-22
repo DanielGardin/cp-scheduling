@@ -212,5 +212,5 @@ def test_constant_processing_time_overrides_processing_times() -> None:
     for task_id in range(env.state.n_tasks):
         assert all(
             p_time == 1
-            for p_time in env.state.instance.processing_times.value[task_id]
+            for p_time in env.state.instance.processing_times[task_id]
         )

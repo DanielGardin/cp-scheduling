@@ -84,28 +84,23 @@ class MachineBreakdownConstraint(Constraint):
             breakdowns: Mapping[Int, Iterable[tuple[Int, Int]]] | None = None,
             name: str = "breakdown"
         ):
-        if breakdowns is None:
-            self.breakdowns = MachineFeature(
-                name=name,
-                elem_type=list[tuple[Time, Time]],
-                semantic="calendar",
-            )
-        
-        else:
+        self.breakdowns = MachineFeature(
+            name=name,
+            elem_type=list[tuple[Time, Time]],
+            semantic="calendar",
+        )
+
+        if breakdowns is not None:
             n_machines = max(convert_to_list(breakdowns.keys(), int)) + 1
 
-            self.breakdowns = MachineFeature(
-                name=name,
-                elem_type=list[tuple[Time, Time]],
-                semantic="calendar",
-                default=[
+            calendar = [
                     [
                         (Time(start), Time(end))
                         for start, end in breakdowns.get(i, [])
-                    ]
-                    for i in range(n_machines)
+                    ] for i in range(n_machines)
                 ]
-            )
+
+            self.breakdowns.set_data(calendar)
 
     def add_breakdown(self, machine_id: Int, start_time: Int, end_time: Int) -> None:
         if not self.breakdowns.loaded:
@@ -243,7 +238,7 @@ class BatchConstraint(Constraint):
             if isinstance(capacity, Int):
                 self.constant_capacity = int(capacity)
                 storage: list[int] = []
-            
+
             else:
                 storage = convert_to_list(capacity, int)
 
@@ -365,7 +360,7 @@ class BatchConstraint(Constraint):
     def get_entry(self) -> str:
         if self.constant_capacity:
             return f"batch={self.constant_capacity}"
-        
+
         return "batch"
 
     @classmethod
