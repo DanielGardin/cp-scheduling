@@ -5,6 +5,7 @@ from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import Constraint
 
+
 # TODO: Convert external information as Features
 class SetupConstraint(Constraint):
     """
@@ -28,16 +29,14 @@ class SetupConstraint(Constraint):
     current_setup_times: dict[TaskID, dict[TaskID, Time]]
 
     def __init__(
-            self,
-            setup_times: Mapping[Int, Mapping[Int, Int]] | None = None
-        ) -> None:
+        self, setup_times: Mapping[Int, Mapping[Int, Int]] | None = None
+    ) -> None:
         if setup_times is None:
             setup_times = {}
 
         self.setup_times = {
             TaskID(task): {
-                TaskID(child): Time(time)
-                for child, time in children.items()
+                TaskID(child): Time(time) for child, time in children.items()
             }
             for task, children in setup_times.items()
         }

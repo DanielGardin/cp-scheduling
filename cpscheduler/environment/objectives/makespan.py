@@ -5,6 +5,7 @@ from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.objectives.base import Objective
 
+
 class Makespan(Objective):
     """
     Classic makespan objective function, which aims to minimize the time at
@@ -36,14 +37,12 @@ class Makespan(Objective):
         if not completed_tasks:
             return 0.0
 
-        return float(max(
-            state.get_end(task_id)
-            for task_id in completed_tasks
-        ))
+        return float(max(state.get_end(task_id) for task_id in completed_tasks))
 
     @classmethod
     def get_general_entry(cls) -> str:
         return "C_max"
+
 
 class MaximumLateness(Objective):
     """
@@ -63,9 +62,7 @@ class MaximumLateness(Objective):
         super().__init__(minimize)
 
         self.due_dates = JobFeature(
-            name=due_dates,
-            elem_type=Time,
-            semantic="time"
+            name=due_dates, elem_type=Time, semantic="time"
         )
 
     @property
@@ -99,10 +96,12 @@ class MaximumLateness(Objective):
         job_ids = state.instance.job_ids
         due_dates = self.due_dates.value
 
-        return float(max(
-            state.get_end(task_id) - due_dates[job_ids[task_id]]
-            for task_id in completed_tasks
-        ))
+        return float(
+            max(
+                state.get_end(task_id) - due_dates[job_ids[task_id]]
+                for task_id in completed_tasks
+            )
+        )
 
     @classmethod
     def get_general_entry(cls) -> str:

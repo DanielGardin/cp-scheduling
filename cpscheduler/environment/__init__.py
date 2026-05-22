@@ -68,6 +68,6 @@ __all__ = [
 
 from .env import SchedulingEnv
 
-from .schedule_setup import *
+from .setups import *
 from .constraints import *
 from .objectives import *

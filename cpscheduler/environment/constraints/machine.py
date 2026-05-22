@@ -2,15 +2,23 @@ from typing_extensions import Self
 from collections.abc import Iterable, Mapping
 
 from cpscheduler.environment.constants import (
-    TaskID, MachineID, Time, Int,
+    TaskID,
+    MachineID,
+    Time,
+    Int,
     MAX_TIME,
 )
 
 from cpscheduler.environment.state import ScheduleState
-from cpscheduler.environment.instance import Feature, ProblemInstance, MachineFeature
+from cpscheduler.environment.instance import (
+    Feature,
+    ProblemInstance,
+    MachineFeature,
+)
 from cpscheduler.environment.utils.general import convert_to_list, extend_list
 
 from cpscheduler.environment.constraints.base import Constraint
+
 
 class MachineConstraint(Constraint):
     """
@@ -51,12 +59,15 @@ class MachineConstraint(Constraint):
         for other_task_id in self.machine_map[machine_id]:
             state.tight_start_lb(other_task_id, end_time, machine_id)
 
-    def on_pause(self, task_id: TaskID, machine_id: MachineID, state: ScheduleState) -> None:
+    def on_pause(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
         for other_task_id in self.machine_map[machine_id]:
             state.reset_bounds(other_task_id)
 
         for machine in state.get_original_machines(task_id):
             self.machine_map[machine].add(task_id)
+
 
 class MachineBreakdownConstraint(Constraint):
     """
@@ -80,10 +91,10 @@ class MachineBreakdownConstraint(Constraint):
     next_breakdown: dict[MachineID, int]
 
     def __init__(
-            self,
-            breakdowns: Mapping[Int, Iterable[tuple[Int, Int]]] | None = None,
-            name: str = "breakdown"
-        ):
+        self,
+        breakdowns: Mapping[Int, Iterable[tuple[Int, Int]]] | None = None,
+        name: str = "breakdown",
+    ):
         self.breakdowns = MachineFeature(
             name=name,
             elem_type=list[tuple[Time, Time]],
@@ -94,20 +105,23 @@ class MachineBreakdownConstraint(Constraint):
             n_machines = max(convert_to_list(breakdowns.keys(), int)) + 1
 
             calendar = [
-                    [
-                        (Time(start), Time(end))
-                        for start, end in breakdowns.get(i, [])
-                    ] for i in range(n_machines)
+                [
+                    (Time(start), Time(end))
+                    for start, end in breakdowns.get(i, [])
                 ]
+                for i in range(n_machines)
+            ]
 
             self.breakdowns.set_data(calendar)
 
-    def add_breakdown(self, machine_id: Int, start_time: Int, end_time: Int) -> None:
+    def add_breakdown(
+        self, machine_id: Int, start_time: Int, end_time: Int
+    ) -> None:
         if not self.breakdowns.loaded:
             self.breakdowns.set_data([])
 
         machine = MachineID(machine_id)
-        extend_list(self.breakdowns.value, machine+1, list)
+        extend_list(self.breakdowns.value, machine + 1, list)
 
         self.breakdowns.value[machine].append(
             (Time(start_time), Time(end_time))
@@ -170,7 +184,6 @@ class MachineBreakdownConstraint(Constraint):
         for machine in self.next_breakdown:
             self.breakdowns.value[machine].sort()
 
-
     def reset(self, state: ScheduleState) -> None:
         for machine in self.next_breakdown:
             self.next_breakdown[machine] = 0
@@ -223,15 +236,13 @@ class BatchConstraint(Constraint):
     def __init__(
         self,
         capacity: Iterable[Int] | Int | None = None,
-        name: str = "batch_capacity"
+        name: str = "batch_capacity",
     ):
         self.constant_capacity = None
 
         if capacity is None:
             self.capacity = MachineFeature(
-                name=name,
-                elem_type=int,
-                semantic="count"
+                name=name, elem_type=int, semantic="count"
             )
 
         else:
@@ -243,20 +254,18 @@ class BatchConstraint(Constraint):
                 storage = convert_to_list(capacity, int)
 
             self.capacity = MachineFeature(
-                name=name,
-                elem_type=int,
-                semantic="count",
-                default=storage
+                name=name, elem_type=int, semantic="count", default=storage
             )
-
 
     def set_capacity(self, machine_id: Int, capacity: Int) -> None:
         machine_id = MachineID(machine_id)
 
         if self.constant_capacity is not None:
-            raise ValueError("Cannot add capacity to a batch constraint with constant capacity.")
+            raise ValueError(
+                "Cannot add capacity to a batch constraint with constant capacity."
+            )
 
-        extend_list(self.capacity.value, machine_id+1, lambda:1)
+        extend_list(self.capacity.value, machine_id + 1, lambda: 1)
 
         self.capacity.value[machine_id] = int(capacity)
 
@@ -268,11 +277,7 @@ class BatchConstraint(Constraint):
         cap = self.constant_capacity
 
         if cap is not None:
-            extend_list(
-                self.capacity.value,
-                n_machines,
-                lambda:cap
-            )
+            extend_list(self.capacity.value, n_machines, lambda: cap)
 
         elif len(self.capacity.value) != n_machines:
             raise ValueError(
@@ -321,11 +326,16 @@ class BatchConstraint(Constraint):
 
         self.running_tasks[machine_id].add(task_id)
 
-        if len(self.running_tasks[machine_id]) == self.capacity.value[machine_id]:
+        if (
+            len(self.running_tasks[machine_id])
+            == self.capacity.value[machine_id]
+        ):
             for other_task_id in self.machine_map[machine_id]:
                 state.tight_start_lb(other_task_id, end_time, machine_id)
 
-    def on_pause(self, task_id: TaskID, machine_id: MachineID, state: ScheduleState) -> None:
+    def on_pause(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
         # Decrement the running task count on the machine
         self.running_tasks[machine_id].discard(task_id)
 
@@ -353,7 +363,10 @@ class BatchConstraint(Constraint):
                 self.running_tasks[machine_id].clear()
                 continue
 
-            if len(self.running_tasks[machine_id]) < self.capacity.value[machine_id]:
+            if (
+                len(self.running_tasks[machine_id])
+                < self.capacity.value[machine_id]
+            ):
                 for other_task_id in self.machine_map[machine_id]:
                     state.tight_start_lb(other_task_id, free_time, machine_id)
 

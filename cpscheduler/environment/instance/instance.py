@@ -2,20 +2,19 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 # from mypy_extensions import mypyc_attr
 
-from cpscheduler.environment.constants import (
-    MachineID, TaskID, Time,
-    EzPickle
-)
+from cpscheduler.environment.constants import MachineID, TaskID, Time, EzPickle
 
 from cpscheduler.environment.instance.features import Feature, TaskFeature
 
 from cpscheduler.environment.utils.general import convert_to_list
 from cpscheduler.environment.utils.protocols import (
-    InstanceTypes, prepare_instance
+    InstanceTypes,
+    prepare_instance,
 )
 
 if TYPE_CHECKING:
-    from cpscheduler.environment.schedule_setup import ScheduleSetup
+    from cpscheduler.environment.setups import ScheduleSetup
+
 
 def check_instance_consistency(instance: dict[str, list[Any]]) -> int:
     "Check if all lists in the instance have the same length."
@@ -36,7 +35,9 @@ def check_instance_consistency(instance: dict[str, list[Any]]) -> int:
 
     return first
 
-JOB_FEATURES = ['job', 'job_id']
+
+JOB_FEATURES = ["job", "job_id"]
+
 
 def get_job_ids(task_instance: dict[str, Any], n_tasks: int) -> list[TaskID]:
     for feat_name in JOB_FEATURES:
@@ -45,7 +46,9 @@ def get_job_ids(task_instance: dict[str, Any], n_tasks: int) -> list[TaskID]:
 
     return convert_to_list(range(n_tasks), TaskID)
 
-_T = TypeVar('_T')
+
+_T = TypeVar("_T")
+
 
 # TODO: Validate the features after read_instance
 class ProblemInstance(EzPickle):
@@ -74,15 +77,11 @@ class ProblemInstance(EzPickle):
         self._debug = debug_mode
 
         self._preemptive = TaskFeature(
-            name="preemptive",
-            elem_type=bool,
-            semantic="binary"
+            name="preemptive", elem_type=bool, semantic="binary"
         )
 
         self._optional = TaskFeature(
-            name="optional",
-            elem_type=bool,
-            semantic="binary"
+            name="optional", elem_type=bool, semantic="binary"
         )
 
         self._machine_mask = TaskFeature(
@@ -100,9 +99,7 @@ class ProblemInstance(EzPickle):
         )
 
         self._job_ids = TaskFeature(
-            name="job_id",
-            elem_type=TaskID,
-            semantic="task"
+            name="job_id", elem_type=TaskID, semantic="task"
         )
 
         # Setting features without self.register(...)
@@ -111,7 +108,7 @@ class ProblemInstance(EzPickle):
             "optional": [self._optional],
             "all_processing_times": [self._processing_times],
             "machine_mask": [self._machine_mask],
-            "job_id": [self._job_ids]
+            "job_id": [self._job_ids],
         }
 
     @property
@@ -172,15 +169,11 @@ class ProblemInstance(EzPickle):
             ref = registered[0]
 
             if ref.spec != feature.spec:
-                raise ValueError(
-                    f"Incompatible feature spec for '{name}'."
-                )
+                raise ValueError(f"Incompatible feature spec for '{name}'.")
 
         if feature.loaded:
             if name in self._providers:
-                raise ValueError(
-                    f"Feature '{name}' already has a provider."
-                )
+                raise ValueError(f"Feature '{name}' already has a provider.")
 
             self._providers[name] = feature
 
@@ -213,7 +206,6 @@ class ProblemInstance(EzPickle):
 
         for feature in self.features.get(name, ()):
             feature.set_data(data)
-
 
     def _validate_features(self) -> None:
         for name, features in self.features.items():
@@ -251,8 +243,9 @@ class ProblemInstance(EzPickle):
                         "Check your instance specification, or your components."
                     )
 
-
-    def initialize(self, instance: InstanceTypes, setup: "ScheduleSetup") -> None:
+    def initialize(
+        self, instance: InstanceTypes, setup: "ScheduleSetup"
+    ) -> None:
         if isinstance(instance, tuple):
             task_raw_instance, job_raw_instance = instance
 
@@ -286,12 +279,12 @@ class ProblemInstance(EzPickle):
         self._preemptive.set_data([False] * n_tasks)
         self._optional.set_data([False] * n_tasks)
 
-        self._processing_times.set_data([
-            [0] * setup.n_machines for _ in range(n_tasks)
-        ])
-        self._machine_mask.set_data([
-            [False] * setup.n_machines for _ in range(n_tasks)
-        ])
+        self._processing_times.set_data(
+            [[0] * setup.n_machines for _ in range(n_tasks)]
+        )
+        self._machine_mask.set_data(
+            [[False] * setup.n_machines for _ in range(n_tasks)]
+        )
 
         self._job_ids.set_data(job_ids)
         self.job_tasks = job_tasks
@@ -299,10 +292,7 @@ class ProblemInstance(EzPickle):
         self._validate_features()
 
     def has_feature(self, feat_name: str) -> bool:
-        return (
-            feat_name in self.features
-            or feat_name in self._unused_features
-        )
+        return feat_name in self.features or feat_name in self._unused_features
 
     def get_feature(self, feat_name: str) -> Feature:
         if feat_name not in self.features:
@@ -337,14 +327,16 @@ class ProblemInstance(EzPickle):
     def remove_machine(self, task_id: TaskID, machine_id: MachineID) -> None:
         self._machine_mask.value[task_id][machine_id] = False
 
-    def set_preemption(self, task_id: TaskID, allow_preemption: bool = True) -> None:
+    def set_preemption(
+        self, task_id: TaskID, allow_preemption: bool = True
+    ) -> None:
         self._preemptive.value[task_id] = allow_preemption
 
     def set_optionality(self, task_id: TaskID, optional: bool = True) -> None:
         self._optional.value[task_id] = optional
 
     def __repr__(self) -> str:
-        features = ', '.join(self.features.keys())
+        features = ", ".join(self.features.keys())
 
         return (
             f"ProblemInstance("

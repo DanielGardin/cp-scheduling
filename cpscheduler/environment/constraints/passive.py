@@ -12,6 +12,7 @@ class PreemptionConstraint(PassiveConstraint):
     This constraint allows tasks to be preempted, meaning they can be interrupted
     and resumed later.
     """
+
     def initialize(self, instance: ProblemInstance) -> None:
         for task_id in range(instance.n_tasks):
             instance.set_preemption(task_id)
@@ -27,6 +28,7 @@ class OptionalityConstraint(PassiveConstraint):
     Tasks marked as optional are treated equally to regular tasks, but they can be
     left unscheduled without affecting the feasibility of the overall schedule.
     """
+
     def initialize(self, instance: ProblemInstance) -> None:
         for task_id in range(instance.n_tasks):
             instance.set_optionality(task_id)
@@ -63,13 +65,13 @@ class ConstantProcessingTime(PassiveConstraint):
                     task_id, machine, self.processing_time
                 )
 
-
     def get_entry(self) -> str:
         return f"p_j={self.processing_time}"
 
     @classmethod
     def get_general_entry(cls) -> str:
         return "p_j=p"
+
 
 class MachineEligibilityConstraint(PassiveConstraint):
     """
@@ -105,7 +107,7 @@ class MachineEligibilityConstraint(PassiveConstraint):
     def add_eligibility(self, task_id: Int, machine_id: Int) -> None:
         if TaskID(task_id) not in self.eligibility:
             self.eligibility[TaskID(task_id)] = set()
-        
+
         self.eligibility[TaskID(task_id)].add(MachineID(machine_id))
 
     def remove_eligibility(self, task_id: Int, machine_id: Int) -> None:
@@ -120,9 +122,7 @@ class MachineEligibilityConstraint(PassiveConstraint):
                 instance.remove_machine(task_id, machine_id)
 
             if not instance.get_machines(task_id):
-                raise ValueError(
-                    f"Task {task_id} has no eligible machines."
-                )
+                raise ValueError(f"Task {task_id} has no eligible machines.")
 
     @classmethod
     def get_general_entry(cls) -> str:

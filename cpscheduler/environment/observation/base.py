@@ -5,24 +5,33 @@ from typing_extensions import TypeVar
 from mypy_extensions import mypyc_attr
 
 from cpscheduler.environment.constants import EzPickle, MachineID, TaskID
-from cpscheduler.environment.instance import ProblemInstance
 from cpscheduler.environment.state import ScheduleState
 
+from cpscheduler.environment.instance import ProblemInstance
+
 Serialized_Obs = TypeVar("Serialized_Obs", default=Any)
+
 
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=True)
 class Observation(EzPickle, Generic[Serialized_Obs]):
     """Abstract observation contract for scheduling environments."""
 
+    n_tasks: int
+    n_jobs: int
+    n_machines: int
+
     def initialize(self, instance: ProblemInstance) -> None:
         """Initialize the observation with the scheduling instance."""
+        self.n_tasks = instance.n_tasks
+        self.n_jobs = instance.n_jobs
+        self.n_machines = instance.n_machines
 
     def update(self, state: ScheduleState) -> None:
         """Update the observation from the current stable scheduling state.
-        
-        This function is called immediatelly before the observation is returned 
+
+        This function is called immediatelly before the observation is returned
         in the `step` and `reset` methods.
-        Consider this method as a importer of the most recent 
+        Consider this method as a importer of the most recent
         """
 
     def on_task_started(
@@ -47,12 +56,12 @@ class Observation(EzPickle, Generic[Serialized_Obs]):
 
     def serialize(self) -> Serialized_Obs:
         """Return a serialized representation of the observation.
-        
+
         Important: this method may not provide a copy of the observation, only
         a serialized version of the observation buffer inside the class.
-        If you need to actual copies of the current observation, please refer 
+        If you need to actual copies of the current observation, please refer
         to `snapshot`.
-        
+
         """
         raise NotImplementedError(
             f"serialize() was not implemented for {type(self).__name__}."
@@ -60,8 +69,8 @@ class Observation(EzPickle, Generic[Serialized_Obs]):
 
     def snapshot(self) -> Serialized_Obs:
         """Return a serialized copy of the observation.
-        
-        By default, it uses `deepcopy` to generate an observation snapshot, but 
+
+        By default, it uses `deepcopy` to generate an observation snapshot, but
         this logic can be changed directly when required.
         """
         return deepcopy(self.serialize())

@@ -6,6 +6,8 @@ if TYPE_CHECKING:
     from cpscheduler.environment.state import ScheduleState
 
 _T_co = TypeVar("_T_co", covariant=True, default=Any)
+
+
 class Metric(Protocol[_T_co]):
     """
     A protocol for metrics that can be used to track and report metrics
@@ -23,17 +25,13 @@ class DataFrameLike(Protocol):
 
 Instance_T = DataFrameLike | Mapping[Any, Iterable[Any]]
 
+
 def prepare_instance(instance: Instance_T) -> dict[str, list[Any]]:
-    return {
-        str(feature): list(instance[feature])
-        for feature in instance
-    }
+    return {str(feature): list(instance[feature]) for feature in instance}
 
 
-InstanceTypes = (
-    Instance_T | # Task-instance data
-    tuple[Instance_T, Instance_T]
-)
+InstanceTypes = Instance_T | tuple[Instance_T, Instance_T]  # Task-instance data
+
 
 @runtime_checkable
 class InstanceGenerator(Protocol):
@@ -48,6 +46,7 @@ class InstanceGenerator(Protocol):
     def sample(
         self, env: Any = None, *, seed: int | None = None
     ) -> InstanceTypes: ...
+
 
 InfoType = dict[str, Any]
 

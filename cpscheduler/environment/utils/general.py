@@ -7,8 +7,10 @@ _T = TypeVar("_T")
 @overload
 def convert_to_list(array: Iterable[Any], dtype: type[_T]) -> list[_T]: ...
 
+
 @overload
 def convert_to_list(array: Iterable[_T], dtype: None = ...) -> list[_T]: ...
+
 
 def convert_to_list(
     array: Iterable[Any], dtype: type[Any] | None = None
@@ -44,6 +46,7 @@ def convert_to_list(
     # If the iterable is not a collection, it will raise a TypeError
     except TypeError:
         return [array] if dtype is None else [dtype(array)]
+
 
 def extend_list(lst: list[_T], size: int, default: Callable[[], _T]) -> None:
     lst.extend([default() for _ in range(size - len(lst))])

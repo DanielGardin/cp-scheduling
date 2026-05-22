@@ -15,11 +15,14 @@ __all__ = [
     "TotalEarliness",
     "WeightedEarliness",
     "TotalTardyJobs",
-    "WeightedTardyJobs"
+    "WeightedTardyJobs",
 ]
 
 from .base import (
-    Objective, RegularObjective, CompletionTimeObjective, objectives
+    Objective,
+    RegularObjective,
+    CompletionTimeObjective,
+    objectives,
 )
 
 from .compositive import ComposedObjective

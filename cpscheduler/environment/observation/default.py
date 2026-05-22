@@ -2,10 +2,7 @@ from typing import Any
 
 from mypy_extensions import mypyc_attr
 
-from cpscheduler.environment.constants import (
-    TaskID,
-    Time,
-)
+from cpscheduler.environment.constants import TaskID, Time
 
 from cpscheduler.environment.instance import (
     ProblemInstance,
@@ -29,10 +26,6 @@ class DefaultObservation(Observation[dict[str, dict[str, Any]]]):
     Runtime buffers are updated in-place.
     """
 
-    n_tasks: int
-    n_jobs: int
-    n_machines: int
-
     time: Time
 
     task: dict[str, Any]
@@ -43,9 +36,7 @@ class DefaultObservation(Observation[dict[str, dict[str, Any]]]):
     available_tasks: set[TaskID]
 
     def initialize(self, instance: ProblemInstance) -> None:
-        self.n_tasks = instance.n_tasks
-        self.n_jobs = instance.n_jobs
-        self.n_machines = instance.n_machines
+        super().initialize(instance)
 
         self.time = 0
 
@@ -120,9 +111,7 @@ class DefaultObservation(Observation[dict[str, dict[str, Any]]]):
         if key == "global":
             return self.global_state
 
-        raise KeyError(
-            f"Unknown observation scope '{key}'."
-        )
+        raise KeyError(f"Unknown observation scope '{key}'.")
 
     def serialize(self) -> dict[str, dict[str, Any]]:
         return {

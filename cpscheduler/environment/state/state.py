@@ -3,35 +3,51 @@ from typing import Any, Literal, cast
 from mypy_extensions import mypyc_attr
 
 from cpscheduler.environment.constants import (
-    MachineID, TaskID, Time, Status,
-    MIN_TIME, MAX_TIME, GLOBAL_MACHINE_ID,
-    EzPickle
+    MachineID,
+    TaskID,
+    Time,
+    Status,
+    MIN_TIME,
+    MAX_TIME,
+    GLOBAL_MACHINE_ID,
+    EzPickle,
 )
 
 from cpscheduler.environment.state.csp import (
-    TaskDomains, Presence, PresenceType, presence_to_str
+    TaskDomains,
+    Presence,
+    PresenceType,
+    presence_to_str,
 )
 
 from cpscheduler.environment.state.events import (
-    DomainEvent, RuntimeEvent, VarField, VarFieldType, RuntimeEventKind
+    DomainEvent,
+    RuntimeEvent,
+    VarField,
+    VarFieldType,
+    RuntimeEventKind,
 )
 
 from cpscheduler.environment.instance import ProblemInstance
 from cpscheduler.environment.state.runtime import RuntimeState, TaskHistory
 
 from cpscheduler.environment.utils.debug import (
-    validate_machine_id, validate_domain_bounds
+    validate_machine_id,
+    validate_domain_bounds,
 )
 
 PRESENT = Presence.PRESENT
 ABSENT = Presence.ABSENT
 INFEASIBLE = Presence.INFEASIBLE
 
+
 def can_be_present(presence: PresenceType) -> bool:
     return (presence & PRESENT) != 0
 
+
 def can_be_absent(presence: PresenceType) -> bool:
     return (presence & ABSENT) != 0
+
 
 AWAITING = Status.AWAITING
 PAUSED = Status.PAUSED
@@ -64,6 +80,7 @@ LB: Bound = True
 UB: Bound = False
 
 UNKNOWN_TASK: TaskID = -1
+
 
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
 class ScheduleState(EzPickle):
@@ -316,7 +333,9 @@ class ScheduleState(EzPickle):
         self._recompute_global_bound(task_id, END, LB)
         self._recompute_global_bound(task_id, END, UB)
 
-    def _restrict_presence(self, task_id: TaskID, mask: Literal[0b01, 0b10]) -> None:
+    def _restrict_presence(
+        self, task_id: TaskID, mask: Literal[0b01, 0b10]
+    ) -> None:
         domains = self.domains
         runtime = self.runtime
 
@@ -420,9 +439,7 @@ class ScheduleState(EzPickle):
             self._recompute_global_bound(task_id, END, LB)
 
             if feasible_machines:
-                self.domain_event_queue.append(
-                    DomainEvent(task_id, START_LB)
-                )
+                self.domain_event_queue.append(DomainEvent(task_id, START_LB))
 
             return
 
@@ -441,7 +458,6 @@ class ScheduleState(EzPickle):
         if old_lb == domains.start.global_lbs[task_id]:
             self._recompute_global_bound(task_id, START, LB)
             self._recompute_global_bound(task_id, END, LB)
-
 
         self.domain_event_queue.append(
             DomainEvent(task_id, START_LB, machine_id)
@@ -474,16 +490,17 @@ class ScheduleState(EzPickle):
                     start_ubs[idx] = value
                     end_ubs[idx] = value + remaining_times[idx]
 
-                    if value < start_lbs[idx] or end_ubs[idx] < domains.end.lbs[idx]:
+                    if (
+                        value < start_lbs[idx]
+                        or end_ubs[idx] < domains.end.lbs[idx]
+                    ):
                         self.restrict_machine(task_id, m_id)
 
             self._recompute_global_bound(task_id, START, UB)
             self._recompute_global_bound(task_id, END, UB)
 
             if feasible_machines:
-                self.domain_event_queue.append(
-                    DomainEvent(task_id, START_UB)
-                )
+                self.domain_event_queue.append(DomainEvent(task_id, START_UB))
 
             return
 
@@ -504,7 +521,6 @@ class ScheduleState(EzPickle):
         self.domain_event_queue.append(
             DomainEvent(task_id, START_UB, machine_id)
         )
-
 
     def tight_end_lb(
         self,
@@ -543,9 +559,7 @@ class ScheduleState(EzPickle):
             self._recompute_global_bound(task_id, START, LB)
 
             if feasible_machines:
-                self.domain_event_queue.append(
-                    DomainEvent(task_id, END_LB)
-                )
+                self.domain_event_queue.append(DomainEvent(task_id, END_LB))
 
             return
 
@@ -565,10 +579,7 @@ class ScheduleState(EzPickle):
             self._recompute_global_bound(task_id, END, LB)
             self._recompute_global_bound(task_id, START, LB)
 
-        self.domain_event_queue.append(
-            DomainEvent(task_id, END_LB, machine_id)
-        )
-
+        self.domain_event_queue.append(DomainEvent(task_id, END_LB, machine_id))
 
     def tight_end_ub(
         self,
@@ -599,16 +610,17 @@ class ScheduleState(EzPickle):
                     if start_ubs[idx] > derived_start_ub:
                         start_ubs[idx] = derived_start_ub
 
-                    if value < end_lbs[idx] or start_ubs[idx] < domains.start.lbs[idx]:
+                    if (
+                        value < end_lbs[idx]
+                        or start_ubs[idx] < domains.start.lbs[idx]
+                    ):
                         self.restrict_machine(task_id, m_id)
 
             self._recompute_global_bound(task_id, END, UB)
             self._recompute_global_bound(task_id, START, UB)
 
             if feasible_machines:
-                self.domain_event_queue.append(
-                    DomainEvent(task_id, END_UB)
-                )
+                self.domain_event_queue.append(DomainEvent(task_id, END_UB))
 
             return
 
@@ -629,9 +641,7 @@ class ScheduleState(EzPickle):
             self._recompute_global_bound(task_id, END, UB)
             self._recompute_global_bound(task_id, START, UB)
 
-        self.domain_event_queue.append(
-            DomainEvent(task_id, END_UB, machine_id)
-        )
+        self.domain_event_queue.append(DomainEvent(task_id, END_UB, machine_id))
 
     def forbid_machine(self, task_id: TaskID, machine_id: MachineID) -> None:
         self.restrict_machine(task_id, machine_id)
@@ -649,15 +659,15 @@ class ScheduleState(EzPickle):
 
         if self._debug:
             validate_machine_id(
-                task_id, machine_id,
+                task_id,
+                machine_id,
                 self.instance,
                 origin="reset_bounds",
                 allow_global=True,
             )
 
-        if (
-            self.is_fixed(task_id)
-            or not can_be_present(domains.presence[task_id])
+        if self.is_fixed(task_id) or not can_be_present(
+            domains.presence[task_id]
         ):
             return
 
@@ -687,9 +697,7 @@ class ScheduleState(EzPickle):
 
             if self._debug:
                 validate_domain_bounds(
-                    task_id, self,
-                    machine_id=machine_id,
-                    origin="reset_bounds"
+                    task_id, self, machine_id=machine_id, origin="reset_bounds"
                 )
 
             return
@@ -710,15 +718,10 @@ class ScheduleState(EzPickle):
         self._recompute_global_bound(task_id, END, LB)
         end.global_ubs[task_id] = MAX_TIME
 
-        self.domain_event_queue.append(
-            DomainEvent(task_id, BOUNDS_RESET)
-        )
+        self.domain_event_queue.append(DomainEvent(task_id, BOUNDS_RESET))
 
         if self._debug:
-            validate_domain_bounds(
-                task_id, self,
-                origin="reset_bounds"
-            )
+            validate_domain_bounds(task_id, self, origin="reset_bounds")
 
     def fail(self, task_id: TaskID = UNKNOWN_TASK) -> None:
         """
@@ -741,9 +744,7 @@ class ScheduleState(EzPickle):
         self.runtime.awaiting_tasks.clear()
         self.runtime.unlocked_tasks.clear()
 
-        self.domain_event_queue.append(
-            DomainEvent(task_id, STATE_INFEASIBLE)
-        )
+        self.domain_event_queue.append(DomainEvent(task_id, STATE_INFEASIBLE))
 
     # Discrete event simulation API methods
 
@@ -835,7 +836,9 @@ class ScheduleState(EzPickle):
 
     def execute_task(self, task_id: TaskID, machine_id: MachineID) -> None:
         if machine_id == GLOBAL_MACHINE_ID:
-            raise ValueError(f"Cannot assign to the global machine {GLOBAL_MACHINE_ID}.")
+            raise ValueError(
+                f"Cannot assign to the global machine {GLOBAL_MACHINE_ID}."
+            )
 
         start_time = self.time
         domains = self.domains
@@ -897,8 +900,9 @@ class ScheduleState(EzPickle):
             RuntimeEvent(task_id, TASK_STARTED, machine_id)
         )
 
-        if end_time > runtime.last_completion_time:
-            runtime.last_completion_time = end_time
+        runtime.last_completion_time = max(
+            runtime.last_completion_time, end_time
+        )
 
         runtime.unlocked_tasks.remove(task_id)
         runtime.awaiting_tasks.remove(task_id)
@@ -911,9 +915,7 @@ class ScheduleState(EzPickle):
 
         if self._debug:
             validate_domain_bounds(
-                task_id, self,
-                machine_id=machine_id,
-                origin="execute_task"
+                task_id, self, machine_id=machine_id, origin="execute_task"
             )
 
     def pause_task(self, task_id: TaskID) -> None:
@@ -996,10 +998,7 @@ class ScheduleState(EzPickle):
             runtime.recompute_last_completion_time()
 
         if self._debug:
-            validate_domain_bounds(
-                task_id, self,
-                origin="pause_task"
-            )
+            validate_domain_bounds(task_id, self, origin="pause_task")
 
     # Runtime utils
 

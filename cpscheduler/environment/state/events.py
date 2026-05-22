@@ -4,12 +4,15 @@ from typing_extensions import assert_never
 from mypy_extensions import mypyc_attr
 
 from cpscheduler.environment.constants import (
-    TaskID, MachineID,
+    TaskID,
+    MachineID,
     GLOBAL_MACHINE_ID,
-    Enum, EzPickle
+    Enum,
+    EzPickle,
 )
 
 VarFieldType = Literal[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
 
 class VarField(Enum):
 
@@ -45,6 +48,7 @@ class VarField(Enum):
 
     STATE_INFEASIBLE: Final[Literal[10]] = 10
     "Flag indicating global infeasibility, it is not handled by constraints."
+
 
 ASSIGNMENT = VarField.ASSIGNMENT
 START_LB = VarField.START_LB
@@ -101,6 +105,7 @@ class DomainEvent(EzPickle):
     """
     Container for CP events in the scheduling environment.
     """
+
     __args__ = ("task_id", "field", "machine_id")
 
     task_id: TaskID
@@ -109,7 +114,7 @@ class DomainEvent(EzPickle):
 
     def __init__(
         self,
-        task_id: TaskID ,
+        task_id: TaskID,
         field: VarFieldType,
         machine_id: MachineID = GLOBAL_MACHINE_ID,
     ) -> None:
@@ -120,7 +125,7 @@ class DomainEvent(EzPickle):
     def __eq__(self, value: object, /) -> bool:
         if not isinstance(value, DomainEvent):
             return False
-        
+
         return (
             self.task_id == value.task_id
             and self.field == value.field
@@ -129,6 +134,7 @@ class DomainEvent(EzPickle):
 
 
 EventKindType = Literal[0, 1, 2, 3]
+
 
 class RuntimeEventKind(Enum):
 
@@ -143,26 +149,29 @@ TASK_PAUSED = RuntimeEventKind.TASK_PAUSED
 TASK_COMPLETED = RuntimeEventKind.TASK_COMPLETED
 TASK_MACHINE_INFEASIBLE = RuntimeEventKind.TASK_MACHINE_INFEASIBLE
 
+
 def kind_to_str(kind: EventKindType) -> str:
     if kind == TASK_STARTED:
         return "TASK_STARTED"
 
     if kind == TASK_PAUSED:
         return "TASK_PAUSED"
-    
+
     if kind == TASK_COMPLETED:
         return "TASK_COMPLETED"
 
     if kind == TASK_MACHINE_INFEASIBLE:
         return "TASK_MACHINE_INFEASIBLE"
-    
+
     assert_never(kind)
+
 
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
 class RuntimeEvent(EzPickle):
     """
     Container for runtime events in the scheduling environment.
     """
+
     __args__ = ("task_id", "kind", "machine_id")
 
     task_id: TaskID
@@ -179,7 +188,7 @@ class RuntimeEvent(EzPickle):
         self.kind = kind
         self.machine_id = machine_id
 
-    def __eq__(self, value: object, /) -> bool:        
+    def __eq__(self, value: object, /) -> bool:
         return (
             isinstance(value, RuntimeEvent)
             and self.task_id == value.task_id

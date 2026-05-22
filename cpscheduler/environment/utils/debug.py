@@ -3,26 +3,30 @@ from typing import TYPE_CHECKING
 from cpscheduler.environment.constants import (
     TaskID,
     MachineID,
-    GLOBAL_MACHINE_ID
+    GLOBAL_MACHINE_ID,
 )
 
 if TYPE_CHECKING:
     from cpscheduler.environment.instance import ProblemInstance
     from cpscheduler.environment.state.state import ScheduleState
 
+
 def job_bounds(job: TaskID, instance: "ProblemInstance", origin: str) -> None:
     if not (0 <= job < instance.n_jobs):
         raise ValueError(f"{origin}: invalid job {job}")
 
+
 def task_bounds(task: TaskID, instance: "ProblemInstance", origin: str) -> None:
     if not (0 <= task < instance.n_tasks):
         raise ValueError(f"{origin}: invalid task {task}")
+
 
 def machine_bounds(
     machine: MachineID, instance: "ProblemInstance", origin: str
 ) -> None:
     if not (0 <= machine < instance.n_machines):
         raise ValueError(f"{origin}: invalid machine {machine}")
+
 
 def validate_machine_id(
     task_id: TaskID,
@@ -80,6 +84,7 @@ def validate_machine_id(
         raise RuntimeError(
             f"{origin}: Machine {machine_id} is not valid for task {task_id}."
         )
+
 
 def validate_domain_bounds(
     task_id: TaskID,

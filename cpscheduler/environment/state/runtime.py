@@ -1,18 +1,24 @@
 from mypy_extensions import mypyc_attr
 
 from cpscheduler.environment.constants import (
-    MachineID, TaskID, Time, Status, StatusType,
+    MachineID,
+    TaskID,
+    Time,
+    Status,
+    StatusType,
     MIN_TIME,
-    EzPickle
+    EzPickle,
 )
 
 from cpscheduler.environment.instance import ProblemInstance
 
 AWAITING = Status.AWAITING
 
+
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
 class TaskHistory(EzPickle):
     "A record of a task execution, (machine_id, start_time, end_time)"
+
     __args__ = ("machine_id", "start_time", "end_time")
 
     machine_id: MachineID
@@ -27,12 +33,13 @@ class TaskHistory(EzPickle):
     def __eq__(self, value: object, /) -> bool:
         if not isinstance(value, TaskHistory):
             return False
-        
+
         return (
             self.machine_id == value.machine_id
             and self.start_time == value.start_time
             and self.end_time == value.end_time
         )
+
 
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
 class RuntimeState(EzPickle):
@@ -115,10 +122,10 @@ class RuntimeState(EzPickle):
 
             if completion_time > best:
                 best = completion_time
-        
+
         self.last_completion_time = best
 
-    def __eq__(self, value: object, /) -> bool:        
+    def __eq__(self, value: object, /) -> bool:
         return (
             isinstance(value, RuntimeState)
             and self.history == value.history

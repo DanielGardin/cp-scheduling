@@ -78,13 +78,15 @@ class TotalTardyJobs(CompletionTimeObjective):
         return float(self._n_tardy_jobs)
 
     def __call__(self, state: ScheduleState) -> float:
-        return float(sum(
-            C_j > d_j
-            for C_j, d_j in zip(
-                self.completion_times(state),
-                self.due_dates.value,
+        return float(
+            sum(
+                C_j > d_j
+                for C_j, d_j in zip(
+                    self.completion_times(state),
+                    self.due_dates.value,
+                )
             )
-        ))
+        )
 
     @classmethod
     def get_general_entry(cls) -> str:
@@ -118,8 +120,9 @@ class WeightedTardyJobs(TotalTardyJobs):
             semantic="continuous",
             default=(
                 [float(weight) for weight in weights]
-                if weights is not None else UNSET
-            )
+                if weights is not None
+                else UNSET
+            ),
         )
 
     @property

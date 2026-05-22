@@ -4,14 +4,20 @@ from typing_extensions import assert_never
 from mypy_extensions import mypyc_attr
 
 from cpscheduler.environment.constants import (
-    MachineID, TaskID, Time,
-    GLOBAL_MACHINE_ID, MAX_TIME, MIN_TIME,
-    Enum, EzPickle,
+    MachineID,
+    TaskID,
+    Time,
+    GLOBAL_MACHINE_ID,
+    MAX_TIME,
+    MIN_TIME,
+    Enum,
+    EzPickle,
 )
 
 from cpscheduler.environment.instance import ProblemInstance
 
 PresenceType = Literal[0b00, 0b01, 0b10, 0b11]
+
 
 class Presence(Enum):
     """
@@ -54,13 +60,13 @@ def presence_to_str(presence: PresenceType) -> str:
     if presence == INFEASIBLE:
         return "INFEASIBLE"
 
-    elif presence == PRESENT:
+    if presence == PRESENT:
         return "PRESENT"
 
-    elif presence == ABSENT:
+    if presence == ABSENT:
         return "ABSENT"
 
-    elif presence == UNDEFINED:
+    if presence == UNDEFINED:
         return "UNDEFINED"
 
     assert_never(presence)
@@ -152,11 +158,11 @@ class Bounds(EzPickle):
             return False
 
         return (
-            self.n_machines ==value.n_machines
-            and self.lbs ==value.lbs
-            and self.global_lbs ==value.global_lbs
-            and self.ubs ==value.ubs
-            and self.global_ubs ==value.global_ubs
+            self.n_machines == value.n_machines
+            and self.lbs == value.lbs
+            and self.global_lbs == value.global_lbs
+            and self.ubs == value.ubs
+            and self.global_ubs == value.global_ubs
         )
 
 
@@ -230,7 +236,6 @@ class TaskDomains(EzPickle):
 
             self.start = start
             self.end = end
-
 
     def get_feasible_machines(self, task_id: TaskID) -> tuple[MachineID, ...]:
         return tuple(self.feasible_machines[task_id])

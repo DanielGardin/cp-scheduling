@@ -21,7 +21,7 @@ class DisjunctiveConstraint(Constraint):
     def __init__(
         self,
         disjunctive_tag: str = "disjunctive_tasks",
-        edges: Iterable[tuple[int, int]] | None = None
+        edges: Iterable[tuple[int, int]] | None = None,
     ) -> None:
         self.adjacency = {}
 

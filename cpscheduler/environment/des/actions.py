@@ -50,13 +50,14 @@ def is_single_action(
 
     return isinstance(spec, type) and issubclass(spec, SimulationEvent)
 
+
 def _parse_args(args: list[Any]) -> tuple[Any, ...]:
     "Parse raw instruction arguments, converting Int to int where appropriate."
     return tuple(int(arg) if isinstance(arg, Int) else arg for arg in args)
 
 
 def parse_instruction(
-    instruction: SingleInstruction
+    instruction: SingleInstruction,
 ) -> tuple[SimulationEvent, Time | None, PriorityValue | None]:
     time: Time | None = None
     priority: PriorityValue | None = None
@@ -68,13 +69,9 @@ def parse_instruction(
 
         if isinstance(s_args, Int):
             time = Time(s_args)
- 
+
         else:
-            time = (
-                Time(s_args["time"])
-                if "time" in s_args
-                else None
-            )
+            time = Time(s_args["time"]) if "time" in s_args else None
             priority = (
                 PriorityValue(s_args["priority"])
                 if "priority" in s_args

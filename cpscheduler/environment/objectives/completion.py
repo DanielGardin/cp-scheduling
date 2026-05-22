@@ -7,6 +7,7 @@ from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.objectives.base import RegularObjective
 
+
 class TotalCompletionTime(RegularObjective):
     """
     The total completion time objective function, which aims to minimize the sum
@@ -48,8 +49,9 @@ class WeightedCompletionTime(TotalCompletionTime):
             semantic="continuous",
             default=(
                 convert_to_list(weights, float)
-                if weights is not None else UNSET
-            )
+                if weights is not None
+                else UNSET
+            ),
         )
 
     @property
@@ -79,6 +81,7 @@ class WeightedCompletionTime(TotalCompletionTime):
     def get_general_entry(cls) -> str:
         return "Σw_jC_j"
 
+
 class DiscountedTotalCompletionTime(RegularObjective):
 
     discount_factor: GlobalFeature[float]
@@ -94,7 +97,7 @@ class DiscountedTotalCompletionTime(RegularObjective):
             name="discount_factor",
             pytype=float,
             semantic="continuous",
-            default=discount_factor
+            default=discount_factor,
         )
 
     def get_features(self) -> list[GlobalFeature]:
@@ -103,28 +106,25 @@ class DiscountedTotalCompletionTime(RegularObjective):
     def get_current(self, state: ScheduleState) -> float:
         alpha = self.discount_factor.value
 
-        return - sum(
-            expm1(-alpha * float(C_j))
-            for C_j in self._job_completion
-        )
+        return -sum(expm1(-alpha * float(C_j)) for C_j in self._job_completion)
 
     def __call__(self, state: ScheduleState) -> float:
         alpha = self.discount_factor.value
 
-        return - sum(
-            expm1(-alpha * float(C_j))
-            for C_j in self.completion_times(state)
+        return -sum(
+            expm1(-alpha * float(C_j)) for C_j in self.completion_times(state)
         )
 
     def get_entry(self) -> str:
         if self.discount_factor.loaded:
             return f"Σ(1 - e^(-{self.discount_factor.value:.2f} C_j))"
 
-        return f"Σ(1 - e^(-r C_j))"
+        return "Σ(1 - e^(-r C_j))"
 
     @classmethod
     def get_general_entry(cls) -> str:
-        return f"Σ(1 - e^(-r C_j))"
+        return "Σ(1 - e^(-r C_j))"
+
 
 class TotalFlowTime(RegularObjective):
     """
@@ -135,36 +135,36 @@ class TotalFlowTime(RegularObjective):
     release_times: JobFeature[Time]
 
     def __init__(
-        self,
-        release_times: str = "release_time",
-        minimize: bool = True
+        self, release_times: str = "release_time", minimize: bool = True
     ) -> None:
         super().__init__(minimize)
 
         self.release_times = JobFeature(
-            name=release_times,
-            elem_type=Time,
-            semantic="time"
+            name=release_times, elem_type=Time, semantic="time"
         )
 
     def get_features(self) -> list[JobFeature]:
         return [self.release_times]
 
     def get_current(self, state: ScheduleState) -> float:
-        return float(sum(
-            C_j - r_j
-            for r_j, C_j in zip(
-                self.release_times.value, self._job_completion
+        return float(
+            sum(
+                C_j - r_j
+                for r_j, C_j in zip(
+                    self.release_times.value, self._job_completion
+                )
             )
-        ))
+        )
 
     def __call__(self, state: ScheduleState) -> float:
-        return float(sum(
-            C_j - r_j
-            for r_j, C_j in zip(
-                self.release_times.value, self.completion_times(state)
+        return float(
+            sum(
+                C_j - r_j
+                for r_j, C_j in zip(
+                    self.release_times.value, self.completion_times(state)
+                )
             )
-        ))
+        )
 
     @classmethod
     def get_general_entry(cls) -> str:

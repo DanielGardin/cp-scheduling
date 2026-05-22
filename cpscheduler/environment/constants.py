@@ -1,9 +1,17 @@
 "Common types and constants used in the environment module."
 
 from typing import (
-    Any, Final, SupportsInt, SupportsFloat, Literal, ClassVar, cast, final
+    Any,
+    Final,
+    SupportsInt,
+    SupportsFloat,
+    Literal,
+    ClassVar,
+    cast,
+    final,
 )
 from collections.abc import Iterable, Mapping, Hashable
+
 # from typing_extensions import Self
 
 from mypy_extensions import i64, i32, i16, u8, mypyc_attr
@@ -34,12 +42,11 @@ GLOBAL_MACHINE_ID: MachineID = -1
 # ------------------------------------------------------------------------------
 # Enums
 
+
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
 class Enum:
     def __init__(self) -> None:
-        raise ValueError(
-            f"Cannot instantiate enum class {type(self).__name__}"
-        )
+        raise ValueError(f"Cannot instantiate enum class {type(self).__name__}")
 
 
 StatusType = Literal[0, 1, 2, 3]
@@ -60,6 +67,7 @@ class Status(Enum):
     COMPLETED: Final[Literal[3]] = 3
     "Task has been completed and is no longer active in the schedule."
 
+
 # ------------------------------------------------------------------------------
 # Pickling utils
 
@@ -72,8 +80,7 @@ def _to_hashable(value: Any) -> Any:
 
     if isinstance(value, Mapping):
         return frozenset(
-            (_to_hashable(key), _to_hashable(val))
-            for key, val in value.items()
+            (_to_hashable(key), _to_hashable(val)) for key, val in value.items()
         )
 
     if isinstance(value, set | frozenset):
@@ -87,6 +94,7 @@ def _to_hashable(value: Any) -> Any:
 
     raise TypeError(f"Value of type {type(value).__name__} is not hashable")
 
+
 def _collect_fields(cls: type) -> tuple[str, ...]:
     fields = getattr(cls, "__ez_fields__", None)
     if fields is not None:
@@ -96,7 +104,8 @@ def _collect_fields(cls: type) -> tuple[str, ...]:
     attrs = getattr(cls, "__mypyc_attrs__", None)
     if attrs is not None:
         return tuple(
-            name for name in cast(tuple[str, ...], attrs)
+            name
+            for name in cast(tuple[str, ...], attrs)
             if not (name.startswith("__") and name.endswith("__"))
         )
 
@@ -110,7 +119,7 @@ def _collect_fields(cls: type) -> tuple[str, ...]:
         )
 
         for name in annotations:
-            if (name.startswith("__") and name.endswith("__")):
+            if name.startswith("__") and name.endswith("__"):
                 continue
 
             if name not in seen:
@@ -119,12 +128,11 @@ def _collect_fields(cls: type) -> tuple[str, ...]:
 
     return tuple(result)
 
+
 def _iter_state(obj: object) -> tuple[str, ...]:
     cls = type(obj)
-    return tuple(
-        name for name in _collect_fields(cls)
-        if hasattr(obj, name)
-    )
+    return tuple(name for name in _collect_fields(cls) if hasattr(obj, name))
+
 
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=True)
 class EzPickle:
@@ -135,6 +143,7 @@ class EzPickle:
     - compiled: __mypyc_attrs__
     - interpreted: __annotations__
     """
+
     __args__: ClassVar[tuple[str, ...] | None] = None
 
     @final
@@ -182,5 +191,5 @@ class EzPickle:
     # def __eq__(self, value: Any) -> bool:
     #     if not isinstance(value, EzPickle):
     #         return NotImplemented
-        
+
     #     return self.__getstate__() == value.__getstate__()

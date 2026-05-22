@@ -8,6 +8,7 @@ from cpscheduler.environment.state import ScheduleState
 
 objectives: dict[str, type["Objective"]] = {}
 
+
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=True)
 class Objective(Component):
     """
@@ -24,7 +25,7 @@ class Objective(Component):
     def __init_subclass__(cls) -> None:
         name = cls.__name__
 
-        if not name.startswith('_'):
+        if not name.startswith("_"):
             objectives[name] = cls
 
     def __init__(self, minimize: bool = True) -> None:
@@ -72,7 +73,6 @@ class Objective(Component):
         return self.get_current(state)
 
 
-
 class CompletionTimeObjective(Objective):
     _job_completion: list[Time]
 
@@ -103,7 +103,6 @@ class CompletionTimeObjective(Objective):
             makespans[job_id] = max(makespans[job_id], C_j)
 
         return makespans
-
 
 
 class RegularObjective(CompletionTimeObjective):

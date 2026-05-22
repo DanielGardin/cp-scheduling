@@ -22,6 +22,7 @@ STATE_INFEASIBLE = VarField.STATE_INFEASIBLE
 
 constraints: dict[str, type["Constraint"]] = {}
 
+
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=True)
 class Constraint(Component):
     """
@@ -34,7 +35,7 @@ class Constraint(Component):
     def __init_subclass__(cls) -> None:
         name = cls.__name__
 
-        if not name.startswith('_'):
+        if not name.startswith("_"):
             constraints[name] = cls
 
     @final
@@ -121,12 +122,13 @@ class Constraint(Component):
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:
         "Handle the invalidation of bounds of a task that was paused."
-    
+
     def on_bound_reset(self, task_id: TaskID, state: ScheduleState) -> None:
         "Handle the bound invalidation of a given task."
 
     def on_time_update(self, time: Time, state: ScheduleState) -> None:
         "Handle the event of the current time being updated."
+
 
 class PassiveConstraint(Constraint):
     """

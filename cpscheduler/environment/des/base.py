@@ -14,6 +14,7 @@ EventID = int
 
 _global_event_id: EventID = 0
 
+
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=True)
 class SimulationEvent(EzPickle):
     """
@@ -97,12 +98,14 @@ def validate_event(
 
         event = validated_event
 
+
 Rank: TypeAlias = int
 PriorityValue: TypeAlias = int
 OrderValue: TypeAlias = int
 
 _Entry = tuple[Rank, PriorityValue, OrderValue, SimulationEvent]
 _EntryKey = tuple[Rank, PriorityValue, OrderValue]
+
 
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
 class Schedule(EzPickle):
@@ -172,8 +175,10 @@ class Schedule(EzPickle):
 
     def _may_remove_time_slot(self, time: Time) -> None:
         "Remove a time slot if it has no more events, ensuring the heap is updated."
-        if time in self.timed_events and self.timed_events[time]: return
-        if time in self.non_timed_events and self.non_timed_events[time]: return
+        if time in self.timed_events and self.timed_events[time]:
+            return
+        if time in self.non_timed_events and self.non_timed_events[time]:
+            return
 
         self.non_timed_events.pop(time, None)
         self.timed_events.pop(time, None)
@@ -192,14 +197,14 @@ class Schedule(EzPickle):
 
         if time == current_time:
             if not event.is_ready(state):
-                # This guardrail is stronger than we need, it will block 
+                # This guardrail is stronger than we need, it will block
                 # feasible paths that use non-timed and timed events together
                 raise RuntimeError(
                     f"Event {event} is potentially deadlocking the event "
                     "queue due to an action-dependent dependency that may "
                     "never happen."
                 )
-        
+
         elif time < current_time:
             raise ValueError(
                 f"Cannot reschedule events triggered by {event} to the past: "
@@ -212,7 +217,6 @@ class Schedule(EzPickle):
 
         if event.blocking and (self._tail is None or time > self._tail):
             self._tail = time
-
 
     def _reschedule_blocking_event(
         self, entries: list[_Entry], idx: int, state: ScheduleState
@@ -227,7 +231,7 @@ class Schedule(EzPickle):
 
         if time == current_time:
             if not first_event.is_ready(state):
-                # This guardrail is stronger than we need, it will block 
+                # This guardrail is stronger than we need, it will block
                 # feasible paths that use non-timed and timed events together
                 raise RuntimeError(
                     f"Event {first_event} is potentially deadlocking the event "
@@ -406,7 +410,7 @@ class Schedule(EzPickle):
         "Reschedule an existing timed event to a new time."
         if event_id not in self._event_cache:
             raise ValueError(f"Event {event_id} is not scheduled")
-    
+
         if event_id in self._non_timed_event_keys:
             raise ValueError("Cannot reschedule non-timed events.")
 
@@ -417,7 +421,8 @@ class Schedule(EzPickle):
 
         time = self._event_time_cache[event_id]
 
-        if new_time == time: return
+        if new_time == time:
+            return
 
         event = self._event_cache[event_id]
 
@@ -439,7 +444,7 @@ class Schedule(EzPickle):
             event = self._event_cache[event_id]
 
             raise ValueError(
-                f"change_event_priority: Timed events do not handle priority."
+                "change_event_priority: Timed events do not handle priority."
             )
 
         time = self._event_time_cache[event_id]

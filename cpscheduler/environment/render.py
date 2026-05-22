@@ -302,6 +302,7 @@ GLASBEY_BW_PALETTE: list[str] = [
     "#dbafc8",
 ]
 
+
 class PlotlyRenderer(Renderer):
     "Renderer for visualizing task schedules using the Plotly backend."
 

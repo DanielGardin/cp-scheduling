@@ -1,9 +1,7 @@
 from cpscheduler.environment.utils.general import convert_to_list
 
 from cpscheduler.environment.constants import Time, Int, MAX_TIME
-from cpscheduler.environment.instance import (
-    GlobalFeature, TaskFeature, UNSET
-)
+from cpscheduler.environment.instance import GlobalFeature, TaskFeature, UNSET
 from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import Constraint
@@ -28,10 +26,7 @@ class HorizonConstraint(Constraint):
 
     def __init__(self, horizon: Int = MAX_TIME):
         self.horizon = GlobalFeature(
-            name="horizon",
-            pytype=Time,
-            semantic="time",
-            default=Time(horizon)
+            name="horizon", pytype=Time, semantic="time", default=Time(horizon)
         )
 
     def set_horizon(self, horizon: Int) -> None:
@@ -66,7 +61,7 @@ class ReleaseDateConstraint(Constraint):
     def __init__(
         self,
         release_tag: str = "release_time",
-        release_dates: list[Int] | None = None
+        release_dates: list[Int] | None = None,
     ):
         self.release_dates = TaskFeature(
             name=release_tag,
@@ -74,8 +69,9 @@ class ReleaseDateConstraint(Constraint):
             semantic="time",
             default=(
                 convert_to_list(release_dates, Time)
-                if release_dates is not None else UNSET
-            )
+                if release_dates is not None
+                else UNSET
+            ),
         )
 
     def get_features(self) -> list[TaskFeature]:
@@ -110,9 +106,7 @@ class DeadlineConstraint(Constraint):
     due_dates: TaskFeature[Time]
 
     def __init__(
-        self,
-        due_tag: str = "due_time",
-        due_dates: list[Int] | None = None
+        self, due_tag: str = "due_time", due_dates: list[Int] | None = None
     ):
         self.due_dates = TaskFeature(
             name=due_tag,
@@ -120,8 +114,9 @@ class DeadlineConstraint(Constraint):
             semantic="time",
             default=(
                 convert_to_list(due_dates, Time)
-                if due_dates is not None else UNSET
-            )
+                if due_dates is not None
+                else UNSET
+            ),
         )
 
     def get_features(self) -> list[TaskFeature]:

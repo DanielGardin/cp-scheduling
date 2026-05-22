@@ -7,10 +7,11 @@ from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.constraints.base import (
     Constraint,
-    PassiveConstraint
+    PassiveConstraint,
 )
 
 import cpscheduler.environment.utils.debug as debug
+
 
 class RejectableConstraint(PassiveConstraint):
     """
@@ -27,6 +28,7 @@ class RejectableConstraint(PassiveConstraint):
     def get_general_entry(cls) -> str:
         return "rej"
 
+
 # TODO: Convert external information as Features
 class AtMostOneConstraint(Constraint):
     """
@@ -38,13 +40,9 @@ class AtMostOneConstraint(Constraint):
 
     current_tasks: list[set[TaskID]]
 
-    def __init__(
-        self,
-        task_groups: Iterable[Iterable[Int]]
-    ) -> None:
+    def __init__(self, task_groups: Iterable[Iterable[Int]]) -> None:
         self.task_groups = [
-            convert_to_list(tasks, TaskID)
-            for tasks in task_groups
+            convert_to_list(tasks, TaskID) for tasks in task_groups
         ]
 
         self.current_tasks = []
@@ -67,9 +65,7 @@ class AtMostOneConstraint(Constraint):
                 debug.task_bounds(task, instance, type(self).__name__)
 
     def reset(self, state: ScheduleState) -> None:
-        self.current_tasks = [
-            set(tasks) for tasks in self.task_groups
-        ]
+        self.current_tasks = [set(tasks) for tasks in self.task_groups]
 
     def on_presence(self, task_id: TaskID, state: ScheduleState) -> None:
         for tasks in self.current_tasks:
@@ -85,7 +81,7 @@ class AtMostOneConstraint(Constraint):
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:
         self.on_presence(task_id, state)
-    
+
     def on_absence(self, task_id: TaskID, state: ScheduleState) -> None:
         for tasks in self.current_tasks:
             tasks.discard(task_id)

@@ -5,6 +5,7 @@ from cpscheduler.environment.state import ScheduleState
 
 from cpscheduler.environment.objectives.base import RegularObjective
 
+
 class TotalTardiness(RegularObjective):
     """
     The total tardiness objective function, which aims to minimize the sum of
@@ -16,36 +17,34 @@ class TotalTardiness(RegularObjective):
     due_dates: JobFeature[Time]
 
     def __init__(
-        self,
-        due_dates: str = "due_date",
-        minimize: bool = True
+        self, due_dates: str = "due_date", minimize: bool = True
     ) -> None:
         super().__init__(minimize)
 
         self.due_dates = JobFeature(
-            name=due_dates,
-            elem_type=Time,
-            semantic="time"
+            name=due_dates, elem_type=Time, semantic="time"
         )
 
     def get_features(self) -> list[JobFeature]:
         return [self.due_dates]
 
     def get_current(self, state: ScheduleState) -> float:
-        return float(sum(
-            max(C_j - d_j, 0)
-            for d_j, C_j in zip(
-                self.due_dates.value, self._job_completion
+        return float(
+            sum(
+                max(C_j - d_j, 0)
+                for d_j, C_j in zip(self.due_dates.value, self._job_completion)
             )
-        ))
+        )
 
     def __call__(self, state: ScheduleState) -> float:
-        return float(sum(
-            max(C_j - d_j, 0)
-            for d_j, C_j in zip(
-                self.due_dates.value, self.completion_times(state)
+        return float(
+            sum(
+                max(C_j - d_j, 0)
+                for d_j, C_j in zip(
+                    self.due_dates.value, self.completion_times(state)
+                )
             )
-        ))
+        )
 
     @classmethod
     def get_general_entry(cls) -> str:
@@ -58,7 +57,7 @@ class WeightedTardiness(TotalTardiness):
     of all tasks. Tardiness is defined as the difference between the completion time and the due
     date, if the task is completed late.
     """
-    
+
     weights: JobFeature[float]
 
     def __init__(
@@ -91,12 +90,16 @@ class WeightedTardiness(TotalTardiness):
         )
 
     def __call__(self, state: ScheduleState) -> float:
-        return float(sum(
-            w_j * float(max(C_j - d_j, 0))
-            for w_j, d_j, C_j in zip(
-                self.weights.value, self.due_dates.value, self.completion_times(state)
+        return float(
+            sum(
+                w_j * float(max(C_j - d_j, 0))
+                for w_j, d_j, C_j in zip(
+                    self.weights.value,
+                    self.due_dates.value,
+                    self.completion_times(state),
+                )
             )
-        ))
+        )
 
     @classmethod
     def get_general_entry(cls) -> str:

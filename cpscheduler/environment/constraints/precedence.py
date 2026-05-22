@@ -4,7 +4,9 @@ from typing_extensions import Self
 from cpscheduler.environment.constants import TaskID, MachineID, Int
 from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.instance import (
-    ProblemInstance, GlobalFeature, UNSET
+    ProblemInstance,
+    GlobalFeature,
+    UNSET,
 )
 
 from cpscheduler.environment.constraints.base import Constraint
@@ -12,8 +14,9 @@ from cpscheduler.environment.utils.general import convert_to_list
 
 
 def topological_sort(
-    precedence_map: dict[TaskID, list[TaskID]], n_tasks: int,
-    remove_leaves: bool = True
+    precedence_map: dict[TaskID, list[TaskID]],
+    n_tasks: int,
+    remove_leaves: bool = True,
 ) -> list[TaskID]:
     """
     Perform a topological sort on a directed acyclic graph.
@@ -44,8 +47,10 @@ def topological_sort(
     while idx < len(queue):
         vertex = queue[idx]
         idx += 1
-        
-        if not remove_leaves or (vertex in precedence_map and precedence_map[vertex]):
+
+        if not remove_leaves or (
+            vertex in precedence_map and precedence_map[vertex]
+        ):
             topological_order.append(vertex)
 
             for child in precedence_map.get(vertex, []):
@@ -57,13 +62,16 @@ def topological_sort(
     return topological_order
 
 
-def inverse_graph(graph: dict[TaskID, list[TaskID]]) -> dict[TaskID, list[TaskID]]:
+def inverse_graph(
+    graph: dict[TaskID, list[TaskID]],
+) -> dict[TaskID, list[TaskID]]:
     inverse: dict[TaskID, list[TaskID]] = {}
     for child_id, parent_ids in graph.items():
         for parent_id in parent_ids:
             inverse.setdefault(parent_id, []).append(child_id)
 
     return inverse
+
 
 class PrecedenceConstraint(Constraint):
     """
@@ -80,6 +88,7 @@ class PrecedenceConstraint(Constraint):
         name: Optional[str] = None
             An optional name for the constraint.
     """
+
     parents: GlobalFeature[dict[TaskID, list[TaskID]]]
     "A mapping of task IDs to their parent task IDs."
 
@@ -95,10 +104,14 @@ class PrecedenceConstraint(Constraint):
             name=name,
             pytype=dict[TaskID, list[TaskID]],
             semantic="adjacency",
-            default={
-                TaskID(child_id): convert_to_list(parent_ids, TaskID)
-                for child_id, parent_ids in precedence.items()
-            } if precedence is not None else UNSET
+            default=(
+                {
+                    TaskID(child_id): convert_to_list(parent_ids, TaskID)
+                    for child_id, parent_ids in precedence.items()
+                }
+                if precedence is not None
+                else UNSET
+            ),
         )
 
     @classmethod
@@ -131,11 +144,11 @@ class PrecedenceConstraint(Constraint):
         parent, child = TaskID(parent_id), TaskID(child_id)
 
         self.parents.value.setdefault(child, []).append(parent)
-    
+
     def remove_precedence(self, parent_id: Int, child_id: Int) -> None:
         if not self.parents.loaded:
             raise ValueError(
-                f"Cannot remove precedence, no precedence graph has been loaded."
+                "Cannot remove precedence, no precedence graph has been loaded."
             )
 
         parent, child = TaskID(parent_id), TaskID(child_id)
@@ -171,10 +184,8 @@ class PrecedenceConstraint(Constraint):
                     return False
 
             return True
-        
-        raise ValueError(
-            f"is_intree: Precedence graph has not been loaded yet."
-        )
+
+        raise ValueError("is_intree: Precedence graph has not been loaded yet.")
 
     def is_outtree(self) -> bool:
         "Check if the precedence graph is an out-tree."
@@ -186,7 +197,7 @@ class PrecedenceConstraint(Constraint):
             return True
 
         raise ValueError(
-            f"is_outtree: Precedence graph has not been loaded yet."
+            "is_outtree: Precedence graph has not been loaded yet."
         )
 
     def get_features(self) -> list[GlobalFeature]:

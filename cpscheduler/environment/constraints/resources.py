@@ -5,7 +5,9 @@ from cpscheduler.environment.utils.general import convert_to_list
 
 from cpscheduler.environment.constants import Time, Float, MAX_TIME
 from cpscheduler.environment.instance import (
-    UNSET, ProblemInstance, TaskFeature,
+    UNSET,
+    ProblemInstance,
+    TaskFeature,
 )
 from cpscheduler.environment.state import ScheduleState
 
@@ -107,8 +109,9 @@ class ResourceConstraint(Constraint):
             "cost",
             default=(
                 convert_to_list(resources, float)
-                if resources is not None else UNSET
-            )
+                if resources is not None
+                else UNSET
+            ),
         )
 
     def get_features(self) -> list[TaskFeature]:
@@ -147,7 +150,7 @@ class ResourceConstraint(Constraint):
         idx = binary_search(next_available_time, end_time, decreasing=True)
 
         next_available_time.insert(idx, end_time)
-        available_resources.insert(idx, available_resources[idx-1])
+        available_resources.insert(idx, available_resources[idx - 1])
 
         for j in range(idx, len(available_resources)):
             available_resources[j] -= resource_usage
@@ -179,7 +182,6 @@ class ResourceConstraint(Constraint):
         while next_available_time and next_available_time[-1] <= current_time:
             next_available_time.pop()
             available_resources.pop()
-
 
 
 # TODO: Convert external information as Features
@@ -222,8 +224,9 @@ class NonRenewableResourceConstraint(Constraint):
             "cost",
             default=(
                 convert_to_list(resources, float)
-                if resources is not None else UNSET
-            )
+                if resources is not None
+                else UNSET
+            ),
         )
 
     def get_features(self) -> list[TaskFeature]:

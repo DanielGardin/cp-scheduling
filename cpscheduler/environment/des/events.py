@@ -25,7 +25,7 @@ def select_machine(
 class ExecuteEvent(SimulationEvent):
     blocking = True
 
-    __args__ =  ("task_id", "machine_id")
+    __args__ = ("task_id", "machine_id")
 
     task_id: TaskID
     machine_id: MachineID
@@ -77,7 +77,7 @@ class SubmitEvent(ExecuteEvent):
 class PauseEvent(SimulationEvent):
     blocking = True
 
-    __args__ =  ("task_id",)
+    __args__ = ("task_id",)
 
     task_id: TaskID
 
@@ -96,7 +96,7 @@ class PauseEvent(SimulationEvent):
 class ResumeEvent(SimulationEvent):
     blocking = True
 
-    __args__ =  ("task_id",)
+    __args__ = ("task_id",)
 
     task_id: TaskID
 
@@ -133,7 +133,7 @@ class InterruptEvent(SimulationEvent):
 class CompleteEvent(SimulationEvent):
     blocking = True
 
-    __args__ =  ("task_id",)
+    __args__ = ("task_id",)
 
     task_id: TaskID
 
@@ -154,7 +154,7 @@ class CompleteEvent(SimulationEvent):
 class AdvanceTimeEvent(SimulationEvent):
     blocking = True
 
-    __args__ =  ("dt",)
+    __args__ = ("dt",)
 
     dt: Time
 

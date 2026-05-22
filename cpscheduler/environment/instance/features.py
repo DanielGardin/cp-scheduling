@@ -1,121 +1,20 @@
-from typing import Any, Literal, Generic
+from typing import Any, Generic
 
 from typing_extensions import Self, TypeVar
 
 from cpscheduler.environment.constants import EzPickle
+from cpscheduler.environment.specs import (
+    FeatureSpec,
+    Scope,
+    ShapeDim,
+    SemanticType,
+)
 
-SemanticType = Literal[
-    # Numerical
-    "continuous",   # Real number
-    "discrete",     # Integer number
-    "binary",       # Boolean
-    "count",        # Non-negative integers
-    "cost",         # Non-negative real
-    "probability",  # Real [0,1], interpreted as p(.)
-    "normalized",   # Real [0,1]
-
-    # Identity / indexing
-    "id",           # ID Integer
-    "order",        # Ordinal Integer
-    "categorical",  # Arbitrary categories
-
-    # Scheduling
-    "task",         # Integer [0, n_tasks)
-    "job",          # Integer [0, n_jobs)
-    "machine",      # Integer [0, n_machines)
-    "time",         # Integer [0, MAX_TIME)
-    "duration",     # Integer delta [0, MAX_TIME)
-    "interval",     # Interval (start, end)
-    "calendar",     # Sequence of intervals (start, end)
-
-    # Structural
-    "mask",         # Boolean mask
-    "set",          # Arbitrary set
-    "sequence",     # Arbitrary sequence
-
-    # Graph
-    "adjacency",    # Adjacency matrix
-
-    # Unknown
-    "unknown",      # Non-structured data, ignored when serialized
-]
-
-Scope = Literal[
-    "task",
-    "job",
-    "machine",
-    "global",
-]
-
-ShapeDim = int | Literal[
-    "n_tasks",
-    "n_jobs",
-    "n_machines",
-]
-
-_T = TypeVar('_T', default=Any)
-
-
-# FUTURE: Support sparse features, i.e. dict[SupportIndex, T]
-# Materialization then materialize a list[T].
-class FeatureSpec(EzPickle, Generic[_T]):
-    scope: Scope
-    semantic: SemanticType
-    sparse: bool
-    optional: bool
-
-    # Feature metadata (used for ObservationSpec)
-    shape: tuple[ShapeDim, ...]
-    n_categories: int | None
-
-    def __init__(
-        self,
-        scope: Scope,
-        semantic: SemanticType,
-        sparse: bool = False,
-        optional: bool = False,
-        *,
-        shape: tuple[ShapeDim, ...] = (),
-        n_categories: int | None = None,
-        low: float | None = None,
-        high: float | None = None,
-    ) -> None:
-        if n_categories is not None and semantic != "categorical":
-            raise ValueError(
-                f"Cannot provide 'n_categories' in a '{semantic}' feature."
-            )
-
-        if low is not None and high is not None and high < low:
-            raise ValueError(
-                f"Expected low < high, but {low} > {high}."
-            )
-
-        self.scope = scope
-        self.semantic = semantic
-        self.sparse = sparse
-        self.optional = optional
-
-        self.shape = shape
-        self.n_categories = n_categories
-        self.low = low
-        self.high = high
-
-    def __eq__(self, value: object, /) -> bool:
-        return (
-            isinstance(value, FeatureSpec)
-            and self.scope == value.scope
-            and self.semantic == value.semantic
-            and self.sparse == value.sparse
-            and self.optional == value.optional
-            and self.shape == value.shape
-            and self.n_categories == value.n_categories
-            and self.low == value.low
-            and self.high == value.high
-        )
 
 class UnsetType:
     def __repr__(self) -> str:
         return "UNSET"
+
 
 UNSET = UnsetType()
 """Defines a Feature without default data value (unitialized by default)
@@ -124,9 +23,12 @@ Usually used to define a consumer, that will be filled by the user-specified
 instance later.
 """
 
+_T = TypeVar("_T", default=Any)
+
+
 class Feature(EzPickle, Generic[_T]):
     name: str
-    spec: FeatureSpec[_T]
+    spec: FeatureSpec
     _default: _T | UnsetType
     _data: _T
 
@@ -153,7 +55,7 @@ class Feature(EzPickle, Generic[_T]):
             shape=shape,
             n_categories=n_categories,
             low=low,
-            high=high
+            high=high,
         )
 
         self._default = default
@@ -165,7 +67,7 @@ class Feature(EzPickle, Generic[_T]):
 
     @classmethod
     def from_spec(
-        cls, name: str, spec: FeatureSpec[_T], default: _T | UnsetType = UNSET
+        cls, name: str, spec: FeatureSpec, default: _T | UnsetType = UNSET
     ) -> Self:
         return cls(
             name=name,
@@ -232,7 +134,7 @@ class TaskFeature(Feature[list[_T]]):
             shape=("n_tasks", *shape),
             n_categories=n_categories,
             low=low,
-            high=high
+            high=high,
         )
 
         self.elem_type = elem_type
@@ -264,7 +166,7 @@ class JobFeature(Feature[list[_T]]):
             shape=("n_jobs", *shape),
             n_categories=n_categories,
             low=low,
-            high=high
+            high=high,
         )
 
         self.elem_type = elem_type
@@ -296,7 +198,7 @@ class MachineFeature(Feature[list[_T]]):
             shape=("n_machines", *shape),
             n_categories=n_categories,
             low=low,
-            high=high
+            high=high,
         )
 
         self.elem_type = elem_type
@@ -315,7 +217,7 @@ class GlobalFeature(Feature[_T]):
         default: _T | UnsetType = UNSET,
         *,
         shape: tuple[ShapeDim, ...] = (),
-        n_categories: int | None = None
+        n_categories: int | None = None,
     ) -> None:
         super().__init__(
             name=name,
@@ -324,7 +226,7 @@ class GlobalFeature(Feature[_T]):
             optional=optional,
             default=default,
             shape=shape,
-            n_categories=n_categories
+            n_categories=n_categories,
         )
 
         self.pytype = pytype
