@@ -86,7 +86,8 @@ class DefaultObservation(Observation[dict[str, dict[str, Any]]]):
 
         for task_id in range(self.n_tasks):
             is_available = (
-                task_id in state.runtime.unlocked_tasks and state.is_available(task_id)
+                task_id in state.runtime.unlocked_tasks
+                and state.is_available(task_id)
             )
 
             available[task_id] = is_available

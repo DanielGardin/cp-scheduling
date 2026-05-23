@@ -1,4 +1,3 @@
-
 import pytest
 
 from cpscheduler.environment.des import Schedule
@@ -9,7 +8,7 @@ from cpscheduler.environment.des.events import (
     SubmitEvent,
 )
 from cpscheduler.environment.env import SchedulingEnv
-from cpscheduler.environment.schedule_setup import (
+from cpscheduler.environment.setups import (
     IdenticalParallelMachineSetup,
     SingleMachineSetup,
 )
@@ -45,12 +44,14 @@ def test_schedule_remove_reschedule_and_clear() -> None:
     schedule.remove_event(timed.event_id)
     assert list(schedule.peek_events_at_time(5)) == []
 
-    scheduled_untimed = list(schedule.peek_events_at_time(0))[0]
+    scheduled_untimed = next(iter(schedule.peek_events_at_time(0)))
     schedule.remove_event(scheduled_untimed.event_id)
     rescheduled = SubmitEvent(0)
     schedule.add_event(rescheduled, env.state, time=4)
     assert list(schedule.peek_events_at_time(0)) == []
-    assert [type(event) for event in schedule.peek_events_at_time(4)] == [SubmitEvent]
+    assert [type(event) for event in schedule.peek_events_at_time(4)] == [
+        SubmitEvent
+    ]
 
     schedule.clear_schedule()
     assert schedule.is_empty()

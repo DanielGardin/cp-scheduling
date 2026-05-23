@@ -61,12 +61,12 @@ def test_action_logic_small_instance_changes_state() -> None:
 
     # execute job 0 then job 1; ensure environment state progresses and terminates eventually
     _, reward, terminated, *_ = env.step(("execute", 0))
-    assert isinstance(reward, (int, float))
+    assert isinstance(reward, int | float)
     assert isinstance(terminated, bool)
 
     # take another step; should still be valid
     _, reward2, terminated2, *_ = env.step(("execute", 1))
-    assert isinstance(reward2, (int, float))
+    assert isinstance(reward2, int | float)
     assert isinstance(terminated2, bool)
 
 
@@ -98,7 +98,7 @@ def test_vectorized_env_support_sync_vector_env() -> None:
     assert len(rewards) == n_envs
     # terminated/truncated should be arrays or lists of bools
     assert len(terminated) == n_envs
-    assert all(isinstance(x, (bool, np.bool_)) for x in terminated)
+    assert all(isinstance(x, bool | np.bool_) for x in terminated)
 
 
 def test_vectorized_env_support_async_vector_env() -> None:
@@ -129,7 +129,7 @@ def test_vectorized_env_support_async_vector_env() -> None:
     assert len(rewards) == n_envs
     # terminated/truncated should be arrays or lists of bools
     assert len(terminated) == n_envs
-    assert all(isinstance(x, (bool, np.bool_)) for x in terminated)
+    assert all(isinstance(x, bool | np.bool_) for x in terminated)
 
 
 def test_observation_space_matches_core_observation_structure() -> None:
@@ -152,7 +152,9 @@ def test_observation_space_matches_core_observation_structure() -> None:
 def test_observation_space_updates_on_load_instance_and_reset_options() -> None:
     pytest.importorskip("gymnasium")
 
-    from cpscheduler.environment import SingleMachineSetup, ReleaseDateConstraint
+    from cpscheduler.environment import (
+        SingleMachineSetup,
+    )
     from cpscheduler.gym import SchedulingEnvGym
 
     env = SchedulingEnvGym(
@@ -167,7 +169,9 @@ def test_observation_space_updates_on_load_instance_and_reset_options() -> None:
     # change instance to two jobs -> observation_space should expand
     env.load_instance({"processing_time": [1, 2]})
     obs2, _ = env.reset()
-    assert not env.observation_space.contains(obs1)  # old obs should no longer be valid
+    assert not env.observation_space.contains(
+        obs1
+    )  # old obs should no longer be valid
     assert env.observation_space.contains(obs2)
 
     # calling reset with options should also recompute the observation space
@@ -182,7 +186,9 @@ def test_from_env_delegation_and_info_mapping_preserved() -> None:
     from cpscheduler.environment import SchedulingEnv, SingleMachineSetup
     from cpscheduler.gym import SchedulingEnvGym
 
-    core = SchedulingEnv(SingleMachineSetup(disjunctive=False), instance={"processing_time": [1]})
+    core = SchedulingEnv(
+        SingleMachineSetup(disjunctive=False), instance={"processing_time": [1]}
+    )
     core.reset()
 
     gym_env = SchedulingEnvGym.from_env(core)

@@ -14,10 +14,14 @@ class TotalEarliness(CompletionTimeObjective):
 
     due_dates: JobFeature[Time]
 
-    def __init__(self, due_dates: str = "due_date", minimize: bool = True) -> None:
+    def __init__(
+        self, due_dates: str = "due_date", minimize: bool = True
+    ) -> None:
         super().__init__(minimize)
 
-        self.due_dates = JobFeature(name=due_dates, elem_type=Time, semantic="time")
+        self.due_dates = JobFeature(
+            name=due_dates, elem_type=Time, semantic="time"
+        )
 
     def get_features(self) -> list[JobFeature]:
         return [self.due_dates]

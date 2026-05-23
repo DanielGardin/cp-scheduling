@@ -1,7 +1,7 @@
 import pytest
-
 from common import env_setup
 
+from cpscheduler.environment.constraints import ReleaseDateConstraint
 from cpscheduler.environment.des.base import Schedule, instructions
 from cpscheduler.environment.des.events import (
     AdvanceTimeEvent,
@@ -13,8 +13,7 @@ from cpscheduler.environment.des.events import (
     SubmitEvent,
 )
 from cpscheduler.environment.env import SchedulingEnv
-from cpscheduler.environment.constraints import ReleaseDateConstraint
-from cpscheduler.environment.schedule_setup import (
+from cpscheduler.environment.setups import (
     IdenticalParallelMachineSetup,
     SingleMachineSetup,
 )
@@ -254,6 +253,7 @@ def test_advance_process_schedules_checkpoint_after_time_delta() -> None:
     assert len(timed_events) == 1
     assert isinstance(timed_events[0], CheckpointEvent)
 
+
 def test_schedule_add_event_rejects_past_time() -> None:
     env = _single_task_env_single_machine()
     schedule = Schedule()
@@ -316,8 +316,9 @@ def test_non_blocking_not_ready_event_is_deferred() -> None:
     assert len(deferred) == 1
     assert isinstance(deferred[0][3], SubmitEvent)
 
+
 def test_clean_cache_after_run() -> None:
-    env = env_setup('ta01')
+    env = env_setup("ta01")
 
     env.reset()
     env.step([("submit", i) for i in range(env.state.n_tasks)])

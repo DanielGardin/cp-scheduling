@@ -133,7 +133,9 @@ class ReferenceScheduleMetrics:
     # Collect all metrics automatically in a single call to avoid redundant calculations
     def __call__(self, state: ScheduleState) -> dict[str, float]:
         metrics = {
-            "mean_displacement_distance": self.mean_displacement_distance(state),
+            "mean_displacement_distance": self.mean_displacement_distance(
+                state
+            ),
             "order_preservation": self.order_preservation(state),
             "hamming_accuracy": self.hamming_accuracy(state),
             "kendall_tau": self.kendall_tau(state),
@@ -278,13 +280,17 @@ class ReferenceScheduleMetrics:
         total_pairs = n * (n - 1) // 2
 
         # Count all tied pairs, not just adjacent equal values.
-        ties = sum(count * (count - 1) // 2 for count in Counter(actual_times).values())
+        ties = sum(
+            count * (count - 1) // 2 for count in Counter(actual_times).values()
+        )
 
         concordant = total_pairs - inversions - ties
         discordant = inversions
         denominator = sqrt(total_pairs * (total_pairs - ties))
 
-        return (concordant - discordant) / denominator if denominator > 0 else 1.0
+        return (
+            (concordant - discordant) / denominator if denominator > 0 else 1.0
+        )
 
     # Machine assignment metrics
 

@@ -1,6 +1,6 @@
 from cpscheduler.environment.observation import DefaultObservation
-
 from cpscheduler.heuristics.pdrs.base import PriorityDispatchingRule
+
 
 class RandomPriority(PriorityDispatchingRule):
     def priority_score(self, obs: DefaultObservation) -> list[float]:
@@ -31,6 +31,7 @@ class EarliestDueDate(PriorityDispatchingRule):
 
     This heuristic selects the job with the earliest due date as the next job to be scheduled.
     """
+
     def __init__(
         self, due_date: str = "due_date", seed: int | None = None
     ) -> None:
@@ -48,6 +49,7 @@ class FirstInFirstOut(PriorityDispatchingRule):
 
     This heuristic selects the job that has been in the waiting buffer the longest as the next job to be scheduled.
     """
+
     def __init__(
         self, release_time: str = "release_time", seed: int | None = None
     ) -> None:

@@ -1,24 +1,24 @@
-from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.objectives import (
-    Objective,
     ComposedObjective,
     Makespan,
-    TotalCompletionTime,
-    WeightedCompletionTime,
     MaximumLateness,
-    TotalTardiness,
-    WeightedTardiness,
+    Objective,
+    TotalCompletionTime,
     TotalEarliness,
-    WeightedEarliness,
+    TotalFlowTime,
+    TotalTardiness,
     TotalTardyJobs,
+    WeightedCompletionTime,
+    WeightedEarliness,
+    WeightedTardiness,
     WeightedTardyJobs,
-    TotalFlowTime
 )
-
+from cpscheduler.environment.state import ScheduleState
 from cpscheduler.solver.milp.disjunctive.formulation import (
     DisjunctiveMILPFormulation,
 )
 from cpscheduler.solver.milp.pyomo_formulation import PYOMO_PARAM
+
 
 def jobs_makespan(
     formulation: DisjunctiveMILPFormulation,
@@ -69,7 +69,7 @@ def composed_objective(
     objective: ComposedObjective,
 ) -> PYOMO_PARAM:
     sub_objectives = [
-        DisjunctiveMILPFormulation._objective_registry[type(sub_objective)](
+        DisjunctiveMILPFormulation.get_objective_fn(type(sub_objective))(
             formulation, state, sub_objective
         )
         for sub_objective in objective.objectives
@@ -78,7 +78,9 @@ def composed_objective(
     coefficients = objective.coefficients
     objective_value = sum(
         coefficient * sub_objective
-        for coefficient, sub_objective in zip(coefficients, sub_objectives)
+        for coefficient, sub_objective in zip(
+            coefficients, sub_objectives, strict=False
+        )
     )
 
     formulation.set_objective(objective_value)
@@ -112,7 +114,8 @@ def weighted_completion_time_objective(
     weights = objective.weights.value
 
     weighted_completion_time = sum(
-        weight * makespan for weight, makespan in zip(weights, job_makespans)
+        weight * makespan
+        for weight, makespan in zip(weights, job_makespans, strict=False)
     )
 
     formulation.set_objective(weighted_completion_time)
@@ -131,7 +134,7 @@ def maximum_lateness_objective(
     lateness = [
         job_makespan - int(due_date)
         for job_makespan, due_date in zip(
-            job_makespans, objective.due_dates.value
+            job_makespans, objective.due_dates.value, strict=False
         )
     ]
     max_lateness = formulation.max_expr(lateness, name="max_lateness")
@@ -157,7 +160,7 @@ def total_tardiness_objective(
             name=f"tardiness_{job_id}",
         )
         for job_id, (job_makespan, due_date) in enumerate(
-            zip(job_makespans, due_dates)
+            zip(job_makespans, due_dates, strict=False)
         )
     ]
     total_tardiness = sum(tardiness_terms)
@@ -180,7 +183,7 @@ def weighted_tardiness_objective(
 
     terms = []
     for job_id, (job_makespan, due_date, weight) in enumerate(
-        zip(job_makespans, due_dates, weights)
+        zip(job_makespans, due_dates, weights, strict=False)
     ):
         if weight == 0:
             continue
@@ -208,14 +211,13 @@ def total_earliness_objective(
 
     due_dates = objective.due_dates.value
 
-
     earliness_terms = [
         formulation.max_expr(
             [0, int(due_date) - job_makespan],
             name=f"earliness_{job_id}",
         )
         for job_id, (job_makespan, due_date) in enumerate(
-            zip(job_makespans, due_dates)
+            zip(job_makespans, due_dates, strict=False)
         )
     ]
     total_earliness = sum(earliness_terms)
@@ -238,7 +240,7 @@ def weighted_earliness_objective(
 
     terms = []
     for job_id, (job_makespan, due_date, weight) in enumerate(
-        zip(job_makespans, due_dates, weights)
+        zip(job_makespans, due_dates, weights, strict=False)
     ):
         if weight == 0:
             continue
@@ -262,18 +264,13 @@ def total_tardy_jobs_objective(
     state: ScheduleState,
     objective: TotalTardyJobs,
 ) -> PYOMO_PARAM:
-
     tardy_indicators = [
-        formulation.add_var(
-            f"tardy_{job_id}",
-            binary=True
-        )
+        formulation.add_var(f"tardy_{job_id}", binary=True)
         for job_id in range(state.n_jobs)
     ]
 
     task_ids = state.instance.job_tasks
     due_dates = objective.due_dates.value
-
 
     for job_id, due_date in enumerate(due_dates):
         U_j = tardy_indicators[job_id]
@@ -283,8 +280,8 @@ def total_tardy_jobs_objective(
 
             formulation.implication(
                 (1 - U_j,),
-                (C_j, '<=', due_date),
-                f"tardy_implication_{task_id}"
+                (C_j, "<=", due_date),
+                f"tardy_implication_{task_id}",
             )
 
     total_tardy_jobs = sum(tardy_indicators)
@@ -300,12 +297,8 @@ def weighted_tardy_jobs_objective(
     state: ScheduleState,
     objective: WeightedTardyJobs,
 ) -> PYOMO_PARAM:
-
     tardy_indicators = [
-        formulation.add_var(
-            f"tardy_{job_id}",
-            binary=True
-        )
+        formulation.add_var(f"tardy_{job_id}", binary=True)
         for job_id in range(state.n_jobs)
     ]
 
@@ -321,8 +314,8 @@ def weighted_tardy_jobs_objective(
 
             formulation.implication(
                 (1 - U_j,),
-                (C_j, '<=', due_date),
-                f"tardy_implication_{task_id}"
+                (C_j, "<=", due_date),
+                f"tardy_implication_{task_id}",
             )
 
     weighted_tardy_jobs = sum(
@@ -351,7 +344,7 @@ def total_flow_time_objective(
             name=f"flow_time_{job_id}",
         )
         for job_id, (job_makespan, release_time) in enumerate(
-            zip(job_makespans, release_times)
+            zip(job_makespans, release_times, strict=False)
         )
     ]
     total_flow_time = sum(flow_terms)

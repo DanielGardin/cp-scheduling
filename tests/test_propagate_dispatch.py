@@ -2,11 +2,9 @@ import pytest
 
 from cpscheduler.environment.constants import GLOBAL_MACHINE_ID
 from cpscheduler.environment.constraints.base import Constraint
-from cpscheduler.environment.state import ScheduleState
-from cpscheduler.environment.des import Schedule
 from cpscheduler.environment.env import (
-    ASSIGNMENT,
     ABSENCE,
+    ASSIGNMENT,
     BOUNDS_RESET,
     END_LB,
     END_UB,
@@ -18,7 +16,8 @@ from cpscheduler.environment.env import (
     STATE_INFEASIBLE,
     SchedulingEnv,
 )
-from cpscheduler.environment.schedule_setup import SingleMachineSetup
+from cpscheduler.environment.setups import SingleMachineSetup
+from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.state.events import DomainEvent, VarFieldType
 
 
@@ -26,19 +25,29 @@ class RecordingConstraint(Constraint):
     def __init__(self) -> None:
         self.calls: list[tuple[str, int, int | None]] = []
 
-    def on_assignment(self, task_id: int, machine_id: int, state: ScheduleState) -> None:
+    def on_assignment(
+        self, task_id: int, machine_id: int, state: ScheduleState
+    ) -> None:
         self.calls.append(("assignment", task_id, machine_id))
 
-    def on_start_lb(self, task_id: int, machine_id: int, state: ScheduleState) -> None:
+    def on_start_lb(
+        self, task_id: int, machine_id: int, state: ScheduleState
+    ) -> None:
         self.calls.append(("start_lb", task_id, machine_id))
 
-    def on_start_ub(self, task_id: int, machine_id: int, state: ScheduleState) -> None:
+    def on_start_ub(
+        self, task_id: int, machine_id: int, state: ScheduleState
+    ) -> None:
         self.calls.append(("start_ub", task_id, machine_id))
 
-    def on_end_lb(self, task_id: int, machine_id: int, state: ScheduleState) -> None:
+    def on_end_lb(
+        self, task_id: int, machine_id: int, state: ScheduleState
+    ) -> None:
         self.calls.append(("end_lb", task_id, machine_id))
 
-    def on_end_ub(self, task_id: int, machine_id: int, state: ScheduleState) -> None:
+    def on_end_ub(
+        self, task_id: int, machine_id: int, state: ScheduleState
+    ) -> None:
         self.calls.append(("end_ub", task_id, machine_id))
 
     def on_presence(self, task_id: int, state: ScheduleState) -> None:
@@ -47,10 +56,14 @@ class RecordingConstraint(Constraint):
     def on_absence(self, task_id: int, state: ScheduleState) -> None:
         self.calls.append(("absence", task_id, None))
 
-    def on_infeasibility(self, task_id: int, machine_id: int, state: ScheduleState) -> None:
+    def on_infeasibility(
+        self, task_id: int, machine_id: int, state: ScheduleState
+    ) -> None:
         self.calls.append(("infeasibility", task_id, machine_id))
 
-    def on_pause(self, task_id: int, machine_id: int, state: ScheduleState) -> None:
+    def on_pause(
+        self, task_id: int, machine_id: int, state: ScheduleState
+    ) -> None:
         self.calls.append(("pause", task_id, machine_id))
 
     def on_bound_reset(self, task_id: int, state: ScheduleState) -> None:

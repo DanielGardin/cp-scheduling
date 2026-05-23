@@ -158,7 +158,9 @@ class SequenceSpec(ObservationSpec):
     element: ObservationSpec
     length: int | None
 
-    def __init__(self, element: ObservationSpec, length: int | None = None) -> None:
+    def __init__(
+        self, element: ObservationSpec, length: int | None = None
+    ) -> None:
         self.element = element
         self.length = length
 

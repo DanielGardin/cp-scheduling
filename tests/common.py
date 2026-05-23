@@ -1,13 +1,14 @@
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, TypeAlias
+from typing import TypeAlias
 
 from cpscheduler.environment import (
-    SchedulingEnv,
     FlowShopSetup,
     IdenticalParallelMachineSetup,
     JobShopSetup,
     Makespan,
     OpenShopSetup,
+    SchedulingEnv,
     SingleMachineSetup,
 )
 from cpscheduler.environment.constraints import PreemptionConstraint
@@ -32,16 +33,20 @@ def _single_machine_case() -> SchedulingEnv:
         machine_setup=SingleMachineSetup(disjunctive=False),
         objective=Makespan(),
         instance={"processing_time": [2, 1, 3, 2]},
-        debug_mode=True
+        debug_mode=True,
     )
+
 
 def _identical_parallel_case() -> SchedulingEnv:
     return SchedulingEnv(
-        machine_setup=IdenticalParallelMachineSetup(n_machines=2, disjunctive=False),
+        machine_setup=IdenticalParallelMachineSetup(
+            n_machines=2, disjunctive=False
+        ),
         objective=Makespan(),
         instance={"processing_time": [2, 1, 3, 2]},
-        debug_mode=True
+        debug_mode=True,
     )
+
 
 def _flow_shop_case() -> SchedulingEnv:
     return SchedulingEnv(
@@ -52,8 +57,9 @@ def _flow_shop_case() -> SchedulingEnv:
             "operation": [0, 1, 0, 1],
             "processing_time": [2, 3, 1, 2],
         },
-        debug_mode=True
+        debug_mode=True,
     )
+
 
 def _open_shop_case() -> SchedulingEnv:
     return SchedulingEnv(
@@ -64,10 +70,13 @@ def _open_shop_case() -> SchedulingEnv:
             "machine": [0, 1, 0, 1],
             "processing_time": [2, 1, 3, 2],
         },
-        debug_mode=True
+        debug_mode=True,
     )
 
-def env_setup(instance_name: str, allow_preemption: bool = False) -> SchedulingEnv:
+
+def env_setup(
+    instance_name: str, allow_preemption: bool = False
+) -> SchedulingEnv:
     path = PROJECT_ROOT / f"instances/jobshop/{instance_name}.txt"
 
     try:
@@ -76,8 +85,8 @@ def env_setup(instance_name: str, allow_preemption: bool = False) -> SchedulingE
     except FileNotFoundError as e:
         if not (PROJECT_ROOT / "instances").exists():
             raise FileNotFoundError(
-                f"Could not locate `instances` directory. Maybe you forgot to run `git submodule update --init`?"
-            )
+                "Could not locate `instances` directory. Maybe you forgot to run `git submodule update --init`?"
+            ) from e
 
         raise e
 
@@ -86,7 +95,7 @@ def env_setup(instance_name: str, allow_preemption: bool = False) -> SchedulingE
         constraints=(PreemptionConstraint(),) if allow_preemption else (),
         objective=Makespan(),
         instance=instance,
-        debug_mode=True
+        debug_mode=True,
     )
 
     return env

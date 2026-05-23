@@ -59,7 +59,9 @@ class MaximumLateness(Objective):
     ):
         super().__init__(minimize)
 
-        self.due_dates = JobFeature(name=due_dates, elem_type=Time, semantic="time")
+        self.due_dates = JobFeature(
+            name=due_dates, elem_type=Time, semantic="time"
+        )
 
     @property
     def regular(self) -> bool:

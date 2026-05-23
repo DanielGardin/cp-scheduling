@@ -1,16 +1,15 @@
-import pytest
-
 from copy import deepcopy
 
-from common import ENV_CASES, env_setup, TEST_INSTANCES
+import pytest
+from common import ENV_CASES, TEST_INSTANCES, env_setup
 
+from cpscheduler.environment import IdenticalParallelMachineSetup, SchedulingEnv
 from cpscheduler.environment.constants import Status
 from cpscheduler.environment.des import Schedule
 from cpscheduler.environment.des.events import CheckpointEvent, SubmitEvent
 
-from cpscheduler import SchedulingEnv, IdenticalParallelMachineSetup
-
 ENV_CASE_KEYS: list[str] = list(ENV_CASES)
+
 
 def test_empty_instance() -> None:
     env = SchedulingEnv(IdenticalParallelMachineSetup(2))
@@ -18,6 +17,7 @@ def test_empty_instance() -> None:
     env.load_instance({"processing_time": []})
     env.reset()
     assert env.state.is_terminal()
+
 
 @pytest.mark.env
 @pytest.mark.parametrize("case_name", ENV_CASE_KEYS)
@@ -32,9 +32,9 @@ def test_execute(case_name: str) -> None:
     assert not terminated
     assert not truncated
     assert info["current_time"] == 0
-    assert obs.task['status'][0] == Status.EXECUTING
+    assert obs.task["status"][0] == Status.EXECUTING
 
-    advancing_time = max(obs['task']["processing_time"])
+    advancing_time = max(obs["task"]["processing_time"])
     new_obs, _, new_terminated, new_truncated, new_info = env.step(
         [("advance", advancing_time)]
     )
@@ -42,7 +42,7 @@ def test_execute(case_name: str) -> None:
     assert not new_terminated
     assert not new_truncated
     assert new_info["current_time"] == advancing_time
-    assert new_obs.task['status'][0] == Status.COMPLETED
+    assert new_obs.task["status"][0] == Status.COMPLETED
 
 
 @pytest.mark.env
@@ -56,7 +56,8 @@ def test_reward(case_name: str) -> None:
     _, reward, terminated, _, info = env.step(action)
 
     assert terminated
-    assert info['current_time'] == -reward
+    assert info["current_time"] == -reward
+
 
 @pytest.mark.env
 @pytest.mark.parametrize("instance_name", TEST_INSTANCES)
@@ -73,18 +74,18 @@ def test_submit(instance_name: str) -> None:
 
     obs, *_, info = env.step(actions)
 
-    assert obs.task['status'][0] == Status.COMPLETED
-    assert obs.task['status'][1] == Status.COMPLETED
+    assert obs.task["status"][0] == Status.COMPLETED
+    assert obs.task["status"][1] == Status.COMPLETED
 
-    assert obs.task['status'][2] == Status.EXECUTING
+    assert obs.task["status"][2] == Status.EXECUTING
 
     assert info["current_time"] == env.state.get_end(1)
 
     new_obs, *_, info = env.step([("complete", 2)])
 
-    assert new_obs.task['status'][0] == Status.COMPLETED
-    assert new_obs.task['status'][1] == Status.COMPLETED
-    assert new_obs.task['status'][2] == Status.COMPLETED
+    assert new_obs.task["status"][0] == Status.COMPLETED
+    assert new_obs.task["status"][1] == Status.COMPLETED
+    assert new_obs.task["status"][2] == Status.COMPLETED
 
     assert info["current_time"] == env.state.get_end(2)
 
@@ -100,7 +101,7 @@ def test_execute2(case_name: str) -> None:
 
     obs, _, terminated, *_ = env.step(actions)
 
-    assert obs.task['status'] == [Status.COMPLETED] * obs.n_tasks
+    assert obs.task["status"] == [Status.COMPLETED] * obs.n_tasks
     assert terminated
 
 
@@ -111,12 +112,13 @@ def test_submit2(case_name: str) -> None:
 
     env.reset()
 
-    actions = [("submit", i) for i in range(env.state.n_tasks-1, -1, -1)]
+    actions = [("submit", i) for i in range(env.state.n_tasks - 1, -1, -1)]
 
     obs, _, terminated, *_ = env.step(actions)
 
-    assert obs.task['status'] == [Status.COMPLETED] * obs.n_tasks
+    assert obs.task["status"] == [Status.COMPLETED] * obs.n_tasks
     assert terminated
+
 
 @pytest.mark.env
 @pytest.mark.parametrize("instance_name", TEST_INSTANCES)
@@ -130,9 +132,10 @@ def test_blocking_instruction(instance_name: str) -> None:
 
     with pytest.raises(
         RuntimeError,
-        match=r"is potentially deadlocking the event queue due to an action-dependent dependency that may never happen."
+        match=r"is potentially deadlocking the event queue due to an action-dependent dependency that may never happen.",
     ):
         env.step(deadlock_action)
+
 
 def test_copy() -> None:
     env = env_setup("ta01")

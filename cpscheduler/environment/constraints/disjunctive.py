@@ -27,7 +27,10 @@ class NonOverlapConstraint(Constraint):
             list[list[TaskID]],
             "task",
             default=(
-                [convert_to_list(task_group, TaskID) for task_group in task_groups]
+                [
+                    convert_to_list(task_group, TaskID)
+                    for task_group in task_groups
+                ]
                 if task_groups is not None
                 else UNSET
             ),

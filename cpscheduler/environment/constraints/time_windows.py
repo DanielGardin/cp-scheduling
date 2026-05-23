@@ -103,13 +103,17 @@ class DeadlineConstraint(Constraint):
 
     due_dates: TaskFeature[Time]
 
-    def __init__(self, due_tag: str = "due_time", due_dates: list[Int] | None = None):
+    def __init__(
+        self, due_tag: str = "due_time", due_dates: list[Int] | None = None
+    ):
         self.due_dates = TaskFeature(
             name=due_tag,
             elem_type=Time,
             semantic="time",
             default=(
-                convert_to_list(due_dates, Time) if due_dates is not None else UNSET
+                convert_to_list(due_dates, Time)
+                if due_dates is not None
+                else UNSET
             ),
         )
 

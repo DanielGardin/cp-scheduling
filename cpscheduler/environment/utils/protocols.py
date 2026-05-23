@@ -44,7 +44,9 @@ class InstanceGenerator(Protocol):
     @overload
     def sample(self, *, seed: int | None = None) -> InstanceTypes: ...
 
-    def sample(self, env: Any = None, *, seed: int | None = None) -> InstanceTypes: ...
+    def sample(
+        self, env: Any = None, *, seed: int | None = None
+    ) -> InstanceTypes: ...
 
 
 InfoType = dict[str, Any]

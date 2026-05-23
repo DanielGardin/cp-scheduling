@@ -1,20 +1,19 @@
 from itertools import combinations
 
-from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.constraints import (
-    PrecedenceConstraint,
-    NoWaitConstraint,
-    ResourceConstraint,
-    NonRenewableResourceConstraint,
-    MachineConstraint,
-    SetupConstraint,
-    # MachineBreakdownConstraint,
-    NonOverlapConstraint,
-    ReleaseDateConstraint,
     DeadlineConstraint,
     HorizonConstraint,
+    MachineConstraint,
+    # MachineBreakdownConstraint,
+    NonOverlapConstraint,
+    NonRenewableResourceConstraint,
+    NoWaitConstraint,
+    PrecedenceConstraint,
+    ReleaseDateConstraint,
+    ResourceConstraint,
+    SetupConstraint,
 )
-
+from cpscheduler.environment.state import ScheduleState
 from cpscheduler.solver.milp.disjunctive.formulation import (
     DisjunctiveMILPFormulation,
 )

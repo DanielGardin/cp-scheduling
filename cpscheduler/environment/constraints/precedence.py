@@ -194,7 +194,9 @@ class PrecedenceConstraint(Constraint):
 
             return True
 
-        raise ValueError("is_outtree: Precedence graph has not been loaded yet.")
+        raise ValueError(
+            "is_outtree: Precedence graph has not been loaded yet."
+        )
 
     def get_features(self) -> list[GlobalFeature]:
         return [self.parents]
@@ -383,7 +385,8 @@ class ORPrecedenceConstraint(PrecedenceConstraint):
         for task_id in tasks:
             if task_id in parents:
                 earliest_start = min(
-                    state.get_end_lb(parent_id) for parent_id in parents[task_id]
+                    state.get_end_lb(parent_id)
+                    for parent_id in parents[task_id]
                 )
                 state.tight_start_lb(task_id, earliest_start)
 
@@ -395,7 +398,8 @@ class ORPrecedenceConstraint(PrecedenceConstraint):
         if task_id in self.children:
             for child_id in self.children[task_id]:
                 earliest_start = min(
-                    state.get_end_lb(parent_id) for parent_id in parents[child_id]
+                    state.get_end_lb(parent_id)
+                    for parent_id in parents[child_id]
                 )
                 state.tight_start_lb(child_id, earliest_start)
 

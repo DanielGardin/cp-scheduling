@@ -176,7 +176,9 @@ class ScheduleState(EzPickle):
         return not awaiting and not executing
 
     def advance_time_(self, new_time: Time) -> None:
-        assert new_time > self.time, "Advance time must be monotonic increasing."
+        assert new_time > self.time, (
+            "Advance time must be monotonic increasing."
+        )
 
         self.time = new_time
 
@@ -206,10 +208,14 @@ class ScheduleState(EzPickle):
         "Check if a task is optional."
         return self.instance.optional[task_id]
 
-    def has_processing_time(self, task_id: TaskID, machine_id: MachineID) -> bool:
+    def has_processing_time(
+        self, task_id: TaskID, machine_id: MachineID
+    ) -> bool:
         return self.instance.machine_mask[task_id][machine_id]
 
-    def get_processing_time(self, task_id: TaskID, machine_id: MachineID) -> Time:
+    def get_processing_time(
+        self, task_id: TaskID, machine_id: MachineID
+    ) -> Time:
         "Get the processing time for a given task and machine."
         if self.has_processing_time(task_id, machine_id):
             return self.instance.processing_times[task_id][machine_id]
@@ -245,7 +251,9 @@ class ScheduleState(EzPickle):
     ) -> Time:
         return self.domains.end.get_ub(task_id, machine_id)
 
-    def get_remaining_time(self, task_id: TaskID, machine_id: MachineID) -> Time:
+    def get_remaining_time(
+        self, task_id: TaskID, machine_id: MachineID
+    ) -> Time:
         idx = task_id * self.instance.n_machines + machine_id
 
         return self.domains.remaining_times[idx]
@@ -320,7 +328,9 @@ class ScheduleState(EzPickle):
         self._recompute_global_bound(task_id, END, LB)
         self._recompute_global_bound(task_id, END, UB)
 
-    def _restrict_presence(self, task_id: TaskID, mask: Literal[0b01, 0b10]) -> None:
+    def _restrict_presence(
+        self, task_id: TaskID, mask: Literal[0b01, 0b10]
+    ) -> None:
         domains = self.domains
         runtime = self.runtime
 
@@ -444,7 +454,9 @@ class ScheduleState(EzPickle):
             self._recompute_global_bound(task_id, START, LB)
             self._recompute_global_bound(task_id, END, LB)
 
-        self.domain_event_queue.append(DomainEvent(task_id, START_LB, machine_id))
+        self.domain_event_queue.append(
+            DomainEvent(task_id, START_LB, machine_id)
+        )
 
     def tight_start_ub(
         self,
@@ -473,7 +485,10 @@ class ScheduleState(EzPickle):
                     start_ubs[idx] = value
                     end_ubs[idx] = value + remaining_times[idx]
 
-                    if value < start_lbs[idx] or end_ubs[idx] < domains.end.lbs[idx]:
+                    if (
+                        value < start_lbs[idx]
+                        or end_ubs[idx] < domains.end.lbs[idx]
+                    ):
                         self.restrict_machine(task_id, m_id)
 
             self._recompute_global_bound(task_id, START, UB)
@@ -498,7 +513,9 @@ class ScheduleState(EzPickle):
             self._recompute_global_bound(task_id, START, UB)
             self._recompute_global_bound(task_id, END, UB)
 
-        self.domain_event_queue.append(DomainEvent(task_id, START_UB, machine_id))
+        self.domain_event_queue.append(
+            DomainEvent(task_id, START_UB, machine_id)
+        )
 
     def tight_end_lb(
         self,
@@ -588,7 +605,10 @@ class ScheduleState(EzPickle):
                     if start_ubs[idx] > derived_start_ub:
                         start_ubs[idx] = derived_start_ub
 
-                    if value < end_lbs[idx] or start_ubs[idx] < domains.start.lbs[idx]:
+                    if (
+                        value < end_lbs[idx]
+                        or start_ubs[idx] < domains.start.lbs[idx]
+                    ):
                         self.restrict_machine(task_id, m_id)
 
             self._recompute_global_bound(task_id, END, UB)
@@ -641,7 +661,9 @@ class ScheduleState(EzPickle):
                 allow_global=True,
             )
 
-        if self.is_fixed(task_id) or not can_be_present(domains.presence[task_id]):
+        if self.is_fixed(task_id) or not can_be_present(
+            domains.presence[task_id]
+        ):
             return
 
         start = domains.start
@@ -866,17 +888,25 @@ class ScheduleState(EzPickle):
         end.global_lbs[task_id] = end_time
         end.global_ubs[task_id] = end_time
 
-        self.domain_event_queue.append(DomainEvent(task_id, ASSIGNMENT, machine_id))
-        self.runtime_event_queue.append(RuntimeEvent(task_id, TASK_STARTED, machine_id))
+        self.domain_event_queue.append(
+            DomainEvent(task_id, ASSIGNMENT, machine_id)
+        )
+        self.runtime_event_queue.append(
+            RuntimeEvent(task_id, TASK_STARTED, machine_id)
+        )
 
-        runtime.last_completion_time = max(runtime.last_completion_time, end_time)
+        runtime.last_completion_time = max(
+            runtime.last_completion_time, end_time
+        )
 
         runtime.unlocked_tasks.remove(task_id)
         runtime.awaiting_tasks.remove(task_id)
         runtime.executing_tasks.add(task_id)
         runtime.status[task_id] = EXECUTING
 
-        runtime.history[task_id].append(TaskHistory(machine_id, start_time, end_time))
+        runtime.history[task_id].append(
+            TaskHistory(machine_id, start_time, end_time)
+        )
 
         if self._debug:
             validate_domain_bounds(
@@ -937,7 +967,9 @@ class ScheduleState(EzPickle):
 
         domains.assignment[task_id] = GLOBAL_MACHINE_ID
 
-        self.domain_event_queue.append(DomainEvent(task_id, PAUSE, prev_assignment))
+        self.domain_event_queue.append(
+            DomainEvent(task_id, PAUSE, prev_assignment)
+        )
 
         runtime.executing_tasks.remove(task_id)
         runtime.awaiting_tasks.add(task_id)
@@ -947,7 +979,9 @@ class ScheduleState(EzPickle):
 
         prev_entry = history.pop()
         history.append(
-            TaskHistory(prev_entry.machine_id, prev_entry.start_time, pause_time)
+            TaskHistory(
+                prev_entry.machine_id, prev_entry.start_time, pause_time
+            )
         )
 
         runtime.status[task_id] = PAUSED

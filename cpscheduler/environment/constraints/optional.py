@@ -39,7 +39,9 @@ class AtMostOneConstraint(Constraint):
     current_tasks: list[set[TaskID]]
 
     def __init__(self, task_groups: Iterable[Iterable[Int]]) -> None:
-        self.task_groups = [convert_to_list(tasks, TaskID) for tasks in task_groups]
+        self.task_groups = [
+            convert_to_list(tasks, TaskID) for tasks in task_groups
+        ]
 
         self.current_tasks = []
 

@@ -86,7 +86,9 @@ def register_instruction(cls: type[SimulationEvent], instruction: str) -> None:
     instructions[instruction] = cls
 
 
-def validate_event(event: SimulationEvent, state: ScheduleState) -> SimulationEvent:
+def validate_event(
+    event: SimulationEvent, state: ScheduleState
+) -> SimulationEvent:
     while True:
         validated_event = event.resolve(state)
 
@@ -253,7 +255,9 @@ class Schedule(EzPickle):
         if first_event.blocking and (self._tail is None or time > self._tail):
             self._tail = time
 
-    def instruction_queue(self, state: ScheduleState) -> Iterator[SimulationEvent]:
+    def instruction_queue(
+        self, state: ScheduleState
+    ) -> Iterator[SimulationEvent]:
         """
         Get an iterator over the events that are ready to be processed, in the
         correct order according to their timing and blocking behavior.
@@ -291,7 +295,9 @@ class Schedule(EzPickle):
 
                 if not event.is_ready(state):
                     if event.blocking:
-                        self._reschedule_blocking_event(non_timed_events, idx, state)
+                        self._reschedule_blocking_event(
+                            non_timed_events, idx, state
+                        )
                         break
 
                     deferred_events.append(entry)
@@ -364,7 +370,9 @@ class Schedule(EzPickle):
             return
 
         if priority is not None:
-            raise ValueError("priority is only supported for non-timed (C) events")
+            raise ValueError(
+                "priority is only supported for non-timed (C) events"
+            )
 
         if time < state.time:
             raise ValueError(

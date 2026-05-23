@@ -1,25 +1,42 @@
-__all__ = [
+__all__ = [  # noqa: RUF022
+    # Base classes
     "PriorityDispatchingRule",
-    "RandomPriority",
     "CombinedRule",
+    # Generic policies
+    "RandomPriority",
+    "FirstInFirstOut",
+    # Processing-time-based
     "ShortestProcessingTime",
+    # "WeightedShortestProcessingTime",
+    # Remaining-work-based
     "MostOperationsRemaining",
     "MostWorkRemaining",
+    # Due-date-based
     "EarliestDueDate",
-    "WeightedModifiedDueDate",
     "ModifiedDueDate",
-    # "WeightedShortestProcessingTime",
+    "WeightedModifiedDueDate",
     "MinimumSlackTime",
-    "FirstInFirstOut",
-    # "CostOverTime",
+    # Advanced / experimental
     # "CriticalRatio",
     # "ApparentTardinessCost",
     # "TrafficPriority",
+    # "CostOverTime",
 ]
 
 from .base import PriorityDispatchingRule
-
-from .simple_rules import *
-from .compositive_rules import *
-from .precedence_rules import *
-from .due_date_rules import *
+from .composite_rules import CombinedRule
+from .due_date_rules import (
+    MinimumSlackTime,
+    ModifiedDueDate,
+    WeightedModifiedDueDate,
+)
+from .precedence_rules import (
+    MostOperationsRemaining,
+    MostWorkRemaining,
+)
+from .simple_rules import (
+    EarliestDueDate,
+    FirstInFirstOut,
+    RandomPriority,
+    ShortestProcessingTime,
+)

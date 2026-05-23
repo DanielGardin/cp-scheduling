@@ -192,10 +192,13 @@ class TaskDomains(EzPickle):
             remaining_times = [0] * (n_tasks * n_machines)
 
             presence: list[PresenceType] = [
-                UNDEFINED if optional else PRESENT for optional in instance.optional
+                UNDEFINED if optional else PRESENT
+                for optional in instance.optional
             ]
 
-            feasible_machines: list[set[MachineID]] = [set() for _ in range(n_tasks)]
+            feasible_machines: list[set[MachineID]] = [
+                set() for _ in range(n_tasks)
+            ]
 
             start = Bounds(instance)
             end = Bounds(instance)
@@ -208,7 +211,9 @@ class TaskDomains(EzPickle):
                 mask = machine_mask[task_id]
 
                 eligible_machines = tuple(
-                    machine_id for machine_id in range(n_machines) if mask[machine_id]
+                    machine_id
+                    for machine_id in range(n_machines)
+                    if mask[machine_id]
                 )
                 feasible_machines[task_id].update(eligible_machines)
 

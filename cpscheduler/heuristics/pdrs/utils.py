@@ -1,6 +1,6 @@
+from math import exp, log, sqrt
 from typing import SupportsFloat
 
-from math import exp, log, sqrt
 
 def explst(lst: list[SupportsFloat]) -> list[float]:
     return [exp(i) for i in lst]

@@ -1,5 +1,4 @@
 from cpscheduler.environment import SchedulingEnv
-
 from cpscheduler.solver.milp.pyomo_formulation import (
     PYOMO_PARAM,
     PyomoFormulation,
@@ -57,9 +56,7 @@ class DisjunctiveMILPFormulation(PyomoFormulation):
         self.orders.clear()
         self.present = [1] * n_tasks
 
-        self.assignments = [
-            [0] * n_machines for _ in range(n_tasks)
-        ]
+        self.assignments = [[0] * n_machines for _ in range(n_tasks)]
 
         for task_id in range(n_tasks):
             if state.is_fixed(task_id):
@@ -69,21 +66,16 @@ class DisjunctiveMILPFormulation(PyomoFormulation):
                 self.present[task_id] = 1
                 continue
 
-
-            self.start_times[task_id] = (
-                self.add_var(
-                    f"start_time_{task_id}",
-                    lb=state.get_start_lb(task_id),
-                    ub=state.get_start_ub(task_id),
-                )
+            self.start_times[task_id] = self.add_var(
+                f"start_time_{task_id}",
+                lb=state.get_start_lb(task_id),
+                ub=state.get_start_ub(task_id),
             )
 
-            self.end_times[task_id] = (
-                self.add_var(
-                    f"end_time_{task_id}",
-                    lb=state.get_end_lb(task_id),
-                    ub=state.get_end_ub(task_id),
-                )
+            self.end_times[task_id] = self.add_var(
+                f"end_time_{task_id}",
+                lb=state.get_end_lb(task_id),
+                ub=state.get_end_ub(task_id),
             )
             presence: PYOMO_PARAM
             if state.is_present(task_id):
@@ -107,10 +99,8 @@ class DisjunctiveMILPFormulation(PyomoFormulation):
             else:
                 for machine_id in machines:
                     assignments[machine_id] = self.add_var(
-                        f"assign_{task_id}_{machine_id}",
-                        binary=True
+                        f"assign_{task_id}_{machine_id}", binary=True
                     )
-
 
             self.add_constraint(
                 sum(assignments[machine_id] for machine_id in machines)
@@ -119,15 +109,19 @@ class DisjunctiveMILPFormulation(PyomoFormulation):
             )
 
             if state.is_preemptive(task_id):
-                raise NotImplementedError("Preemptive tasks are not yet supported in the disjunctive formulation.")
+                raise NotImplementedError(
+                    "Preemptive tasks are not yet supported in the disjunctive formulation."
+                )
 
             processing_time = sum(
-                assignments[machine_id] * int(state.get_remaining_time(task_id, machine_id))
+                assignments[machine_id]
+                * int(state.get_remaining_time(task_id, machine_id))
                 for machine_id in machines
             )
 
             self.add_constraint(
-                self.end_times[task_id] == self.start_times[task_id] + processing_time,
+                self.end_times[task_id]
+                == self.start_times[task_id] + processing_time,
                 f"non_preemptive_{task_id}",
             )
 
@@ -136,8 +130,7 @@ class DisjunctiveMILPFormulation(PyomoFormulation):
 
             for task_id in range(n_tasks):
                 self.add_constraint(
-                    self.end_times[task_id] <= horizon,
-                    f"horizon_{task_id}"
+                    self.end_times[task_id] <= horizon, f"horizon_{task_id}"
                 )
 
     def warm_start(self, env: SchedulingEnv) -> None:
@@ -192,21 +185,15 @@ class DisjunctiveMILPFormulation(PyomoFormulation):
             self.orders[(i, j)] = 1
 
         else:
-            self.add_constraint(
-                self.orders[(i, j)] == 1,
-                f"order_{i}_prec_{j}"
-            )
+            self.add_constraint(self.orders[(i, j)] == 1, f"order_{i}_prec_{j}")
 
         if (j, i) not in self.orders:
             self.orders[(j, i)] = 0
-        
+
         else:
             self.add_constraint(
-                self.orders[(j, i)] == 0,
-                f"order_{i}_prec_{j}_r"
+                self.orders[(j, i)] == 0, f"order_{i}_prec_{j}_r"
             )
-
-
 
     def get_order(self, i: int, j: int) -> PYOMO_PARAM:
         if i == j:
@@ -215,17 +202,13 @@ class DisjunctiveMILPFormulation(PyomoFormulation):
         if (i, j) in self.orders:
             return self.orders[(i, j)]
 
-        order_var = self.add_var(
-            f"order_{i}_{j}",
-            binary=True
-        )
+        order_var = self.add_var(f"order_{i}_{j}", binary=True)
 
         self.orders[(i, j)] = order_var
 
         return order_var
 
     def set_order(self, i: int, j: int) -> None:
-
         if (i, j) not in self.orders:
             self.orders[(i, j)] = 1
 

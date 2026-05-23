@@ -334,6 +334,16 @@ class PlotlyRenderer(Renderer):
                     machines.append(entry.machine_id)
                     task_ids.append(task_id)
 
+            customdata: Any = [
+                [
+                    task_ids[i],
+                    job_id,
+                    start_times[i],
+                    start_times[i] + durations[i],
+                ]
+                for i in range(len(start_times))
+            ]
+
             fig.add_trace(
                 go.Bar(
                     x=durations,
@@ -341,15 +351,7 @@ class PlotlyRenderer(Renderer):
                     base=start_times,
                     orientation="h",
                     name=f"Job {job_id}",
-                    customdata=[
-                        (
-                            task_ids[i],
-                            job_id,
-                            start_times[i],
-                            start_times[i] + durations[i],
-                        )
-                        for i in range(len(start_times))
-                    ],
+                    customdata=customdata,
                     hovertemplate=template,
                     marker=dict(
                         color=GLASBEY_BW_PALETTE[job_id % 256],

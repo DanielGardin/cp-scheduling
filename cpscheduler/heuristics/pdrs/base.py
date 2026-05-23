@@ -3,11 +3,12 @@ from math import log
 
 from mypy_extensions import mypyc_attr
 
-from cpscheduler.environment.constants import TaskID, Status
-from cpscheduler.environment.observation import DefaultObservation
+from cpscheduler.environment.constants import Status, TaskID
 from cpscheduler.environment.des import SingleInstruction
+from cpscheduler.environment.observation import DefaultObservation
 
 EXECUTING_STATUS = Status.EXECUTING
+
 
 def prob_to_lmbda(prob: float, size: int, n_iter: int) -> float:
     """
@@ -29,38 +30,33 @@ def prob_to_lmbda(prob: float, size: int, n_iter: int) -> float:
 
     return -log(x)
 
+
 def solve_p_star_temperature(
     priorities: list[float], target_prob: float, n_iter: int
 ) -> float:
     n = len(priorities)
 
     ordered_priorities = sorted(priorities, reverse=True)
-    
-    ts = sum(
-        prio * rank
-        for rank, prio in enumerate(ordered_priorities)
-    )
 
-    lmbda = ts * 12 / (n*(n+1)*(n-1))
+    ts = sum(prio * rank for rank, prio in enumerate(ordered_priorities))
+
+    lmbda = ts * 12 / (n * (n + 1) * (n - 1))
     target_lmbda = prob_to_lmbda(target_prob, n, n_iter)
 
     return lmbda / target_lmbda
 
-def sample_gumbel(rng: random.Random | None) -> float:
-    if rng is None:
-        u = random.random()
 
-    else:
-        u = rng.random()
-    
+def sample_gumbel(rng: random.Random | None) -> float:
+    u = random.random() if rng is None else rng.random()
     return -log(-log(u))
+
 
 def select_task(
     priorities: list[float],
     available_tasks: set[TaskID],
     temperature: float = 0.0,
     *,
-    rng: random.Random | None = None
+    rng: random.Random | None = None,
 ) -> SingleInstruction | None:
     best_prio = float("-inf")
 
@@ -82,6 +78,7 @@ def select_task(
         return None
 
     return ("execute", dispatching_task)
+
 
 @mypyc_attr(allow_interpreted_subclasses=True)
 class PriorityDispatchingRule:
@@ -113,7 +110,7 @@ class PriorityDispatchingRule:
         *,
         temperature: float = 1.0,
         target_prob: float | None = None,
-        n_iter: int = 5
+        n_iter: int = 5,
     ) -> SingleInstruction | None:
         priorities = self.priority_score(obs)
 
@@ -127,25 +124,23 @@ class PriorityDispatchingRule:
             )
 
         return select_task(
-            priorities,
-            obs.available_tasks,
-            temperature,
-            rng=self._internal_rng
+            priorities, obs.available_tasks, temperature, rng=self._internal_rng
         )
 
     def ranking(
         self, obs: DefaultObservation, strict: bool = False
-    )-> list[SingleInstruction]:
+    ) -> list[SingleInstruction]:
         priorities = self.priority_score(obs)
-        status = obs.task['status']
+        status = obs.task["status"]
 
-        filtered_priorities = sorted([
-            (-prio, task_id) for task_id, prio in enumerate(priorities)
-            if status[task_id] < EXECUTING_STATUS
-        ])
+        filtered_priorities = sorted(
+            [
+                (-prio, task_id)
+                for task_id, prio in enumerate(priorities)
+                if status[task_id] < EXECUTING_STATUS
+            ]
+        )
 
         instruction = "execute" if strict else "submit"
 
-        return [
-            (instruction, task_id) for _, task_id in filtered_priorities
-        ]
+        return [(instruction, task_id) for _, task_id in filtered_priorities]

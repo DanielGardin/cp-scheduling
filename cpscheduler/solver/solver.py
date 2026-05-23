@@ -1,14 +1,12 @@
-from typing import Any
 from collections.abc import Sequence
+from copy import deepcopy
+from typing import Any
+
 from typing_extensions import NamedTuple
 
-from copy import deepcopy
-
-from cpscheduler.environment.des import SingleInstruction
-
+from cpscheduler.common import AnySchedulingEnv, unwrap_env
 from cpscheduler.environment import SchedulingEnv
-from cpscheduler.common import unwrap_env, AnySchedulingEnv
-
+from cpscheduler.environment.des import SingleInstruction
 from cpscheduler.solver.formulation import Formulation, formulations
 
 

@@ -1,24 +1,24 @@
 import random
 from typing import Any
 
-from cpscheduler.environment.env import SchedulingEnv
 from cpscheduler.environment.constraints import (
-    PrecedenceConstraint,
-    NoWaitConstraint,
-    ORPrecedenceConstraint,
-    NonOverlapConstraint,
-    ReleaseDateConstraint,
+    ConstantProcessingTime,
     DeadlineConstraint,
-    ResourceConstraint,
-    NonRenewableResourceConstraint,
-    SetupConstraint,
     # MachineBreakdownConstraint,
     MachineEligibilityConstraint,
-    ConstantProcessingTime,
+    NonOverlapConstraint,
+    NonRenewableResourceConstraint,
+    NoWaitConstraint,
+    ORPrecedenceConstraint,
+    PrecedenceConstraint,
+    ReleaseDateConstraint,
+    ResourceConstraint,
+    SetupConstraint,
 )
-from cpscheduler.environment.schedule_setup import (
-    SingleMachineSetup,
+from cpscheduler.environment.env import SchedulingEnv
+from cpscheduler.environment.setups import (
     IdenticalParallelMachineSetup,
+    SingleMachineSetup,
 )
 
 
@@ -37,6 +37,7 @@ def test_precedence_constraint_on_reset() -> None:
     assert env.state.get_start_lb(3) == 5
     assert env.state.get_start_lb(4) == 7
 
+
 def test_no_wait_constraint() -> None:
     instance = {"processing_time": [3, 2]}
     env = SchedulingEnv(
@@ -51,6 +52,7 @@ def test_no_wait_constraint() -> None:
     env.step((0, "execute", 0))
 
     assert env.state.get_start_ub(1) == 3
+
 
 def test_or_precedence_constraint_on_reset() -> None:
     instance = {"processing_time": [3, 2, 4, 1, 5]}
@@ -83,6 +85,7 @@ def test_no_wait_constraint_parallel() -> None:
     assert env.state.get_end_lb(0) == 10
     assert env.state.get_start_lb(0) == 7
 
+
 def test_non_overlap_constraint() -> None:
     instance = {"processing_time": [3, 2, 4]}
     env = SchedulingEnv(
@@ -100,10 +103,7 @@ def test_non_overlap_constraint() -> None:
 
 
 def test_deadline_constraint() -> None:
-    instance = {
-        "processing_time": [2, 2],
-        "due_time": [10, 20]
-    }
+    instance = {"processing_time": [2, 2], "due_time": [10, 20]}
     env = SchedulingEnv(
         SingleMachineSetup(disjunctive=False),
         constraints=[DeadlineConstraint()],
@@ -139,6 +139,7 @@ def test_resource_constraint() -> None:
 
     assert env.state.get_start_lb(3) == 7
 
+
 def test_nonrenewable_resource_constraint() -> None:
     instance = {"processing_time": [1, 1], "resource_0": [1, 1]}
     env = SchedulingEnv(
@@ -173,7 +174,6 @@ def test_setup_constraint() -> None:
     assert env.state.get_start_lb(0) == 3
 
 
-
 # def test_machine_breakdown_constraint() -> None:
 #     instance = {"processing_time": [3]}
 #     env = SchedulingEnv(
@@ -198,6 +198,7 @@ def test_machine_eligibility_constraint() -> None:
     env.reset()
 
     assert env.state.is_feasible(0, 1) and not env.state.is_feasible(0, 0)
+
 
 def test_constant_processing_time_overrides_processing_times() -> None:
     instance = {"processing_time": [random.randint(1, 10) for _ in range(10)]}

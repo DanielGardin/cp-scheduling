@@ -3,15 +3,11 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+
 from setuptools import Extension, setup
 
-if sys.version_info < (3, 10, 0):
-    sys.stderr.write("ERROR: You need Python 3.10 or later to use cpscheduler.\n")
-    sys.exit(1)
-
 USE_MYPYC = (
-    os.environ.get("MYPYC_DISABLE", "0") != "1"
-    and "--no-mypyc" not in sys.argv
+    os.environ.get("MYPYC_DISABLE", "0") != "1" and "--no-mypyc" not in sys.argv
 )
 
 if "--no-mypyc" in sys.argv:
@@ -26,23 +22,29 @@ if USE_MYPYC:
         "cpscheduler/heuristics/pdrs",
     )
 
-    MYPYC_BLACKLIST = frozenset((
-        # Protocols with @runtime_checkable, mypyc strips Protocol identity
-        "cpscheduler/environment/utils/protocols.py",
-    ))
+    MYPYC_BLACKLIST = frozenset(
+        (
+            # Protocols with @runtime_checkable, mypyc strips Protocol identity
+            "cpscheduler/environment/utils/protocols.py",
+        )
+    )
 
     for blacklisted in MYPYC_BLACKLIST:
         if not Path(blacklisted).exists():
-            sys.stderr.write(f"ERROR: Mypyc blacklist file '{blacklisted}' does not exist.\n")
+            sys.stderr.write(
+                f"ERROR: Mypyc blacklist file '{blacklisted}' does not exist.\n"
+            )
             sys.exit(1)
 
     mypyc_targets: list[str] = []
 
     for directory in MYPYC_DIRS:
         if not Path(directory).exists():
-            sys.stderr.write(f"ERROR: Mypyc target directory '{directory}' does not exist.\n")
+            sys.stderr.write(
+                f"ERROR: Mypyc target directory '{directory}' does not exist.\n"
+            )
             sys.exit(1)
-        
+
         for file in Path(directory).rglob("*.py"):
             if str(file) in MYPYC_BLACKLIST:
                 continue
@@ -55,7 +57,6 @@ if USE_MYPYC:
 
             mypyc_targets.append(str(file))
 
-
     opt_level = os.environ.get("MYPYC_OPT_LEVEL", "3")
     debug_level = os.environ.get("MYPYC_DEBUG_LEVEL", "1")
 
@@ -65,7 +66,7 @@ if USE_MYPYC:
         debug_level=debug_level,
         strict_dunder_typing=True,
         strip_asserts=True,
-        verbose=True
+        verbose=True,
     )
 
 setup(ext_modules=ext_modules)

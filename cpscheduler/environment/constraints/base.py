@@ -146,7 +146,9 @@ class PassiveConstraint(Constraint):
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> NoReturn:
         "Passive constraint does not handle assignment events."
-        raise RuntimeError("Passive constraint does not handle assignment events.")
+        raise RuntimeError(
+            "Passive constraint does not handle assignment events."
+        )
 
     @final
     def on_start_lb(
@@ -187,7 +189,9 @@ class PassiveConstraint(Constraint):
     @final
     def on_presence(self, task_id: TaskID, state: ScheduleState) -> NoReturn:
         "Passive constraint does not handle presence events."
-        raise RuntimeError("Passive constraint does not handle presence events.")
+        raise RuntimeError(
+            "Passive constraint does not handle presence events."
+        )
 
     @final
     def on_absence(self, task_id: TaskID, state: ScheduleState) -> NoReturn:
@@ -199,7 +203,9 @@ class PassiveConstraint(Constraint):
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> NoReturn:
         "Passive constraint does not handle infeasibility events."
-        raise RuntimeError("Passive constraint does not handle infeasibility events.")
+        raise RuntimeError(
+            "Passive constraint does not handle infeasibility events."
+        )
 
     @final
     def on_pause(

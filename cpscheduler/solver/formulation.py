@@ -1,15 +1,16 @@
-from typing import Any, TypeVar, ClassVar
-from typing_extensions import Self
-from collections.abc import Callable
 from abc import ABC, abstractmethod
+from collections.abc import Callable
+from typing import Any, ClassVar, TypeVar
 
-from cpscheduler.environment.state import ScheduleState
+from typing_extensions import Self
+
 from cpscheduler.environment import (
-    SchedulingEnv,
-    ScheduleSetup,
     Constraint,
     Objective,
+    ScheduleSetup,
+    SchedulingEnv,
 )
+from cpscheduler.environment.state import ScheduleState
 
 formulations: dict[str, type["Formulation"]] = {}
 
@@ -35,6 +36,18 @@ class Formulation(ABC):
     _objective_registry: ClassVar[
         dict[type[Objective], VariableExporter[Any, Any]]
     ]
+
+    @classmethod
+    def get_constraint_fn(
+        cls, constraint: type[Constraint]
+    ) -> Exporter[Any, Any]:
+        return cls._constraint_registry[constraint]
+
+    @classmethod
+    def get_objective_fn(
+        cls, objective: type[Objective]
+    ) -> VariableExporter[Any, Any]:
+        return cls._objective_registry[objective]
 
     def __init_subclass__(cls) -> None:
         cls._constraint_registry = {}
@@ -123,15 +136,6 @@ class Formulation(ABC):
 
         This should not add any constraints or objective to the model, but only
         initialize the variables based on the environment's setup.
-        """
-
-    def finalize_model(self, env: SchedulingEnv) -> None:
-        """
-        Finalize the model after all constraints and objective have been added.
-
-        This can be used to add any necessary constraints or modifications to the
-        model that depend on the complete set of constraints and objective being
-        defined.
         """
 
     @abstractmethod

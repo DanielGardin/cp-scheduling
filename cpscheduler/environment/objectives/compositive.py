@@ -111,13 +111,17 @@ class ComposedObjective(Objective):
     def get_entry(self) -> str:
         terms: list[str] = []
 
-        for coef, objective in zip(self.coefficients, self.objectives, strict=False):
+        for coef, objective in zip(
+            self.coefficients, self.objectives, strict=False
+        ):
             if coef == 0:
                 continue
 
             abs_coef = abs(coef)
             coef_str = (
-                str(int(abs_coef)) if abs_coef.is_integer() else f"{abs_coef:.2f}"
+                str(int(abs_coef))
+                if abs_coef.is_integer()
+                else f"{abs_coef:.2f}"
             )
             term = (
                 objective.get_entry()
@@ -126,7 +130,9 @@ class ComposedObjective(Objective):
             )
             sign = "-" if coef < 0 else "+"
             terms.append(
-                f"{sign} {term}" if terms else (f"- {term}" if coef < 0 else term)
+                f"{sign} {term}"
+                if terms
+                else (f"- {term}" if coef < 0 else term)
             )
 
         return " ".join(terms) if terms else "0"

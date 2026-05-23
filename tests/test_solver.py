@@ -1,10 +1,8 @@
-import pytest
-
+import logging
 from time import perf_counter
 
-from common import env_setup, TEST_INSTANCES
-
-import logging
+import pytest
+from common import TEST_INSTANCES, env_setup
 
 from cpscheduler.solver import get_formulations
 
@@ -22,7 +20,9 @@ def test_solve(instance_name: str, formulation: str) -> None:
 
     time = -perf_counter()
     solver = SchedulingSolver(env, formulation=formulation, horizon=10000)
-    solver.warm_start([("submit", task_id) for task_id in range(env.state.n_tasks)])
+    solver.warm_start(
+        [("submit", task_id) for task_id in range(env.state.n_tasks)]
+    )
     solver.build()
     time += perf_counter()
     logger.info(f"Initialized solver in {time:.2f} s")
@@ -59,7 +59,7 @@ def test_solve(instance_name: str, formulation: str) -> None:
         logger.info(
             f"Summary of instance {instance_name}: {optimal_value=}, {objective_value=}"
         )
-    
+
     else:
         logger.warning(f"Instance {instance_name} did not reach optimality.")
 

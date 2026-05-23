@@ -113,7 +113,9 @@ def _collect_fields(cls: type) -> tuple[str, ...]:
     result: list[str] = []
 
     for c in reversed(cls.__mro__):
-        annotations = cast(dict[str, type], c.__dict__.get("__annotations__", {}))
+        annotations = cast(
+            dict[str, type], c.__dict__.get("__annotations__", {})
+        )
 
         for name in annotations:
             if name.startswith("__") and name.endswith("__"):

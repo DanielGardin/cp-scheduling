@@ -60,7 +60,9 @@ class OpenShopSetup(ScheduleSetup):
         ):
             instance.set_processing_time(task_id, machine_id, p_time)
 
-    def setup_constraints(self, instance: ProblemInstance) -> tuple[Constraint, ...]:
+    def setup_constraints(
+        self, instance: ProblemInstance
+    ) -> tuple[Constraint, ...]:
         task_disjunction = NonOverlapConstraint(task_groups=instance.job_tasks)
 
         return (
@@ -140,12 +142,18 @@ class JobShopSetup(OpenShopSetup):
             self.operation_order,
         ]
 
-    def setup_constraints(self, instance: ProblemInstance) -> tuple[Constraint, ...]:
+    def setup_constraints(
+        self, instance: ProblemInstance
+    ) -> tuple[Constraint, ...]:
         precedence = build_job_precedence(
             instance, self.operation_order.value, "jobshop_chains"
         )
 
-        return (MachineConstraint(), precedence) if self.disjunctive else (precedence,)
+        return (
+            (MachineConstraint(), precedence)
+            if self.disjunctive
+            else (precedence,)
+        )
 
     def get_entry(self) -> str:
         if self.machines.loaded:
@@ -193,12 +201,18 @@ class FlexibleJobShopSetup(UnrelatedParallelMachineSetup):
             self.operation_order,
         ]
 
-    def setup_constraints(self, instance: ProblemInstance) -> tuple[Constraint, ...]:
+    def setup_constraints(
+        self, instance: ProblemInstance
+    ) -> tuple[Constraint, ...]:
         precedence = build_job_precedence(
             instance, self.operation_order.value, "flexible_jobshop_chains"
         )
 
-        return (MachineConstraint(), precedence) if self.disjunctive else (precedence,)
+        return (
+            (MachineConstraint(), precedence)
+            if self.disjunctive
+            else (precedence,)
+        )
 
     def get_entry(self) -> str:
         if self.processing_times.loaded:
@@ -257,12 +271,18 @@ class FlowShopSetup(ScheduleSetup):
             self.operation_order,
         ]
 
-    def setup_constraints(self, instance: ProblemInstance) -> tuple[Constraint, ...]:
+    def setup_constraints(
+        self, instance: ProblemInstance
+    ) -> tuple[Constraint, ...]:
         precedence = build_job_precedence(
             instance, self.operation_order.value, "flowshop_chains"
         )
 
-        return (MachineConstraint(), precedence) if self.disjunctive else (precedence,)
+        return (
+            (MachineConstraint(), precedence)
+            if self.disjunctive
+            else (precedence,)
+        )
 
     def initialize(self, instance: ProblemInstance) -> None:
         for task_id, (p_time, machine_id) in enumerate(

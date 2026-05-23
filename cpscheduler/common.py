@@ -1,19 +1,24 @@
-from typing import Any
 from importlib.machinery import EXTENSION_SUFFIXES
+from typing import Any
 
 from gymnasium import Env
 
 from cpscheduler.environment.env import SchedulingEnv
 from cpscheduler.gym.env import SchedulingEnvGym
 
+
 def is_compiled() -> bool:
     import cpscheduler.environment.env as env
 
     return any(env.__file__.endswith(suffix) for suffix in EXTENSION_SUFFIXES)
 
+
 AnySchedulingEnv = Env[Any, Any] | SchedulingEnvGym[Any] | SchedulingEnv[Any]
 
-def unwrap_env(env: AnySchedulingEnv, max_depth: int = 10) -> SchedulingEnv[Any]:
+
+def unwrap_env(
+    env: AnySchedulingEnv, max_depth: int = 10
+) -> SchedulingEnv[Any]:
     """
     Unwraps the environment to get the underlying SchedulingEnv instance.
 

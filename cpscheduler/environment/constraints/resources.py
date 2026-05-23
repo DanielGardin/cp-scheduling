@@ -106,7 +106,9 @@ class ResourceConstraint(Constraint):
             float,
             "cost",
             default=(
-                convert_to_list(resources, float) if resources is not None else UNSET
+                convert_to_list(resources, float)
+                if resources is not None
+                else UNSET
             ),
         )
 
@@ -157,7 +159,9 @@ class ResourceConstraint(Constraint):
             if resource_usage <= 0:
                 continue
 
-            idx = binary_search(available_resources, resource_usage, decreasing=True)
+            idx = binary_search(
+                available_resources, resource_usage, decreasing=True
+            )
 
             earliest_start = (
                 next_available_time[idx]
@@ -217,7 +221,9 @@ class NonRenewableResourceConstraint(Constraint):
             float,
             "cost",
             default=(
-                convert_to_list(resources, float) if resources is not None else UNSET
+                convert_to_list(resources, float)
+                if resources is not None
+                else UNSET
             ),
         )
 

@@ -1,22 +1,19 @@
 __all__ = [
-    "SchedulingSolver",
-    "Formulation",
     "DisjunctiveMILPFormulation",
+    "Formulation",
+    "SchedulingSolver",
     # "DisjunctiveCPFormulation",
 ]
 
-from .solver import SchedulingSolver
-from .formulation import (
-    Formulation,
-    register_formulation,
-    formulations
-)
-
+from .formulation import Formulation, formulations, register_formulation
 from .milp.disjunctive.formulation import DisjunctiveMILPFormulation
+from .solver import SchedulingSolver
+
 # from .cp import DisjunctiveCPFormulation
 
 register_formulation(DisjunctiveMILPFormulation, "disjunctive")
 # register_formulation(DisjunctiveCPFormulation, "disjunctive_cp")
+
 
 def get_formulations() -> list[str]:
     return list(formulations.keys())

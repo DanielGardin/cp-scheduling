@@ -25,6 +25,8 @@ class ScheduleSetup(Component):
         "Return the number of machines after the instance is loaded."
         return 0
 
-    def setup_constraints(self, instance: ProblemInstance) -> tuple[Constraint, ...]:
+    def setup_constraints(
+        self, instance: ProblemInstance
+    ) -> tuple[Constraint, ...]:
         "Build the constraints for that setup."
         return ()

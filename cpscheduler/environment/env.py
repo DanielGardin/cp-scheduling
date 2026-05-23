@@ -319,7 +319,10 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
         beta = ",".join(
             [constraint.get_entry() for constraint in self.constraints]
-            + [constraint.get_entry() for constraint in self.passive_constraints]
+            + [
+                constraint.get_entry()
+                for constraint in self.passive_constraints
+            ]
         )
 
         gamma = self.objective.get_entry()
@@ -461,7 +464,9 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             # In the current version, the event queue is not cleared to make
             # discovery easier, but it must not be the final behavior.
             elif field == STATE_INFEASIBLE:
-                assert state.infeasible, "STATE_INFEASIBLE event produced erroneously."
+                assert state.infeasible, (
+                    "STATE_INFEASIBLE event produced erroneously."
+                )
                 return False
 
             else:
@@ -499,7 +504,9 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
             elif kind == TASK_MACHINE_INFEASIBLE:
                 objective.on_task_machine_infeasible(task_id, machine_id, state)
-                observation.on_task_machine_infeasible(task_id, machine_id, state)
+                observation.on_task_machine_infeasible(
+                    task_id, machine_id, state
+                )
 
             else:
                 assert_never(kind)
@@ -518,7 +525,9 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             self.load_instance(generator.sample(self, seed=seed))
 
     # Environment API methods
-    def reset(self, *, options: Options | None = None) -> tuple[ObsT_co, InfoType]:
+    def reset(
+        self, *, options: Options | None = None
+    ) -> tuple[ObsT_co, InfoType]:
         if options is not None:
             self._handle_options(options)
 
@@ -606,6 +615,8 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
     def render(self) -> None:
         if self._status != RUNNING:
-            raise RuntimeError("Cannot render an environment during configuration.")
+            raise RuntimeError(
+                "Cannot render an environment during configuration."
+            )
 
         self.renderer.render(self.state)

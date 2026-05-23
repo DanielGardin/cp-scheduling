@@ -69,7 +69,9 @@ def parse_instruction(
         else:
             time = Time(s_args["time"]) if "time" in s_args else None
             priority = (
-                PriorityValue(s_args["priority"]) if "priority" in s_args else None
+                PriorityValue(s_args["priority"])
+                if "priority" in s_args
+                else None
             )
 
     else:

@@ -1,30 +1,28 @@
-from pathlib import Path
-
-from typing import Annotated, Literal, get_args
-from collections.abc import Sequence
-
 import gc
-
+from collections.abc import Sequence
 from math import exp
-
+from pathlib import Path
 from time import perf_counter
-from prettytable import PrettyTable, TableStyle
+from typing import Annotated, Literal, get_args
 
 import tyro
+from prettytable import PrettyTable, TableStyle
 from tyro.conf import arg
 
-from cpscheduler import SchedulingEnv, JobShopSetup, Makespan, __compiled__, __version__
-from cpscheduler.gym import SchedulingEnvGym
-
-from cpscheduler.instances import read_jsp_instance
-
+from cpscheduler import __compiled__, __version__
+from cpscheduler.environment import (
+    JobShopSetup,
+    Makespan,
+    SchedulingEnv,
+)
 from cpscheduler.heuristics.pdrs import (
+    MostOperationsRemaining,
+    MostWorkRemaining,
     PriorityDispatchingRule,
     RandomPriority,
     ShortestProcessingTime,
-    MostOperationsRemaining,
-    MostWorkRemaining,
 )
+from cpscheduler.instances import read_jsp_instance
 
 PDR_NAMES = Literal[
     "rng",
@@ -40,7 +38,9 @@ PDRS: dict[str, type[PriorityDispatchingRule]] = {
     "mwr": MostWorkRemaining,
 }
 
-assert set(PDRS.keys()) == set(get_args(PDR_NAMES)), "PDR_NAMES must match keys of pdrs dictionary"
+assert set(PDRS.keys()) == set(get_args(PDR_NAMES)), (
+    "PDR_NAMES must match keys of pdrs dictionary"
+)
 
 SCRIPT_PATH = Path(__file__).parent
 ROOT = SCRIPT_PATH.parent
@@ -74,16 +74,20 @@ COLORMAP = [
     [252, 254, 164],
 ]
 
+
 def ok_fail(condition: bool) -> str:
     return (OK + "[PASS]" if condition else FAIL + "[FAIL]") + RESET
+
 
 def get_gray_ansi(percentage: float) -> str:
     gray_value = int(128 + 127 * percentage)
     return f"\033[38;2;{gray_value};{gray_value};{gray_value}m"
 
+
 def to_ansi_color(rgb: Sequence[int]) -> str:
     r, g, b = rgb
     return f"\033[38;2;{r};{g};{b}m"
+
 
 # These times are based on the results of the CPEnv implementation by Tassel, Pierre
 # Environment compiled: https://github.com/ingambe/JobShopCPEnv
@@ -124,34 +128,40 @@ benchmark_times = {
     "ta60": 0.88,
     "ta70": 1.2,
     "ta80": 4.6,
-    "lta_j100_m100_10" : 90.0,
+    "lta_j100_m100_10": 90.0,
     "lta_j1000_m10_10": 90.0,
 }
 
+
 def mean(data: list[float]) -> float:
     return sum(data) / len(data) if data else 0.0
+
 
 def std(data: list[float]) -> float:
     if len(data) < 2:
         return 0.0
 
     mean_value = mean(data)
-    return float((sum(((x - mean_value) ** 2 for x in data)) / (len(data) - 1)) ** 0.5)
+    return float(
+        (sum(((x - mean_value) ** 2 for x in data)) / (len(data) - 1)) ** 0.5
+    )
+
+
+UNITS = ("", "K", "M", "B", "T")
+
 
 def format_big_number(num: list[float]) -> str:
     mean_value = mean(num)
     std_value = std(num) if len(num) > 1 else 0.0
 
-    for unit in ["", "K", "M"]:
-        if abs(mean_value) < 1000:
-            break
-
+    i = 0
+    while abs(mean_value) >= 1000 and i < len(UNITS) - 1:
         mean_value /= 1000
         std_value /= 1000
 
-    else:
-        unit = "B"
+        i += 1
 
+    unit = UNITS[i]
     if std_value == 0:
         if mean_value.is_integer():
             return f"{mean_value:>3.0f}{unit}"
@@ -163,29 +173,33 @@ def format_big_number(num: list[float]) -> str:
 
     return f"{mean_value:.2f} ± {std_value:.2f} {unit}"
 
-def format_memory(bytes_: float) -> str:
-    for unit in ["B", "KB", "MB", "GB"]:
-        if abs(bytes_) < 1024:
-            return f"{bytes_:.1f} {unit}"
 
+def format_memory(bytes_: float) -> str:
+    i = 0
+    while bytes_ >= 1024 and i < len(UNITS) - 1:
         bytes_ /= 1024
 
-    return f"{bytes_:.1f} TB"
+        i += 1
+
+    unit = f"{UNITS[i]}B"
+    return f"{bytes_:.1f} {unit}"
+
+
+TIMES = ("s ", "ms", "µs", "ns")
+
 
 def format_time(seconds: list[float]) -> str:
     mean_value = mean(seconds)
     std_val = std(seconds) if len(seconds) > 1 else 0.0
 
-    for unit in ("s ", "ms", "µs"):
-        if mean_value >= 1:
-            break
-        
+    i = 0
+    while mean_value < 1 and i < len(TIMES) - 1:
         mean_value *= 1000
         std_val *= 1000
 
-    else:
-        unit = "ns"
+        i += 1
 
+    unit = TIMES[i]
     if std_val > 0:
         return f"{mean_value:.2f} ± {std_val:.2f} {unit}"
 
@@ -197,9 +211,10 @@ def format_percentage(value: list[float]) -> str:
     std_val = std(value)
 
     if std_val > 0:
-        return f"({100*mean_value:.2f} ± {100*std_val:.2f})%"
+        return f"({100 * mean_value:.2f} ± {100 * std_val:.2f})%"
 
-    return f"{100*mean_value:.2f}%"
+    return f"{100 * mean_value:.2f}%"
+
 
 def format_stage_time(
     stage_times: list[float],
@@ -215,14 +230,20 @@ def format_stage_time(
 
     if str_size < 10:
         spacing = " " * (10 - str_size)
-    
+
     else:
         spacing = " " * (18 - len(stage_statistics))
 
     idx = int(len(COLORMAP) * pct)
     idx = max(0, min(len(COLORMAP) - 1, idx))
 
-    return stage_statistics + to_ansi_color(COLORMAP[idx]) + f"{spacing}({percentage})" + RESET
+    return (
+        stage_statistics
+        + to_ansi_color(COLORMAP[idx])
+        + f"{spacing}({percentage})"
+        + RESET
+    )
+
 
 class RunResult:
     MIN_SPEEDUP = 4
@@ -277,7 +298,6 @@ class RunResult:
         self.pdr_times[instance_name] = []
         self.step_times[instance_name] = []
         self.simulation_times[instance_name] = []
-    
 
     def log_run(
         self,
@@ -286,10 +306,11 @@ class RunResult:
         pdr_time: float,
         step_time: float,
         simulation_time: float,
-        
     ) -> None:
         if self.current_instance is None:
-            raise ValueError("No instance started. Call start_instance() before logging runs.")
+            raise ValueError(
+                "No instance started. Call start_instance() before logging runs."
+            )
 
         instance_name = self.current_instance
 
@@ -300,23 +321,31 @@ class RunResult:
         self.simulation_times[instance_name].append(simulation_time)
 
     def print_results(self, full: bool) -> None:
-        table = PrettyTable([
-            "Instance",
-            "Entry",
-            "Tasks",
-            "Simulation time",
-        ] + ([
-            "Initialization time",
-            "Reset time",
-            "PDR time",
-            "Step time",
-        ] if full else []) + [
-            "Time per task",
-            "Events",
-            "Events/task",
-            "Events/sec",
-            "Speedup"
-        ])
+        table = PrettyTable(
+            [
+                "Instance",
+                "Entry",
+                "Tasks",
+                "Simulation time",
+            ]
+            + (
+                [
+                    "Initialization time",
+                    "Reset time",
+                    "PDR time",
+                    "Step time",
+                ]
+                if full
+                else []
+            )
+            + [
+                "Time per task",
+                "Events",
+                "Events/task",
+                "Events/sec",
+                "Speedup",
+            ]
+        )
         table.set_style(TableStyle.MARKDOWN)
 
         for instance_name in self.instance_names:
@@ -325,59 +354,93 @@ class RunResult:
             simulation_time = format_time(self.simulation_times[instance_name])
 
             total_time = mean(self.simulation_times[instance_name])
-    
-            initialization_time = format_stage_time(self.initialization_times[instance_name], total_time)
-            reset_time = format_stage_time(self.reset_times[instance_name], total_time)
-            pdr_time = format_stage_time(self.pdr_times[instance_name], total_time)
-            step_time = format_stage_time(self.step_times[instance_name], total_time)
+
+            initialization_time = format_stage_time(
+                self.initialization_times[instance_name], total_time
+            )
+            reset_time = format_stage_time(
+                self.reset_times[instance_name], total_time
+            )
+            pdr_time = format_stage_time(
+                self.pdr_times[instance_name], total_time
+            )
+            step_time = format_stage_time(
+                self.step_times[instance_name], total_time
+            )
 
             time_per_task = format_time(
-                [t / self.n_tasks[instance_name] for t in self.simulation_times[instance_name]]
+                [
+                    t / self.n_tasks[instance_name]
+                    for t in self.simulation_times[instance_name]
+                ]
             )
             events = format_big_number([self.n_events[instance_name]])
-            events_per_task = format_big_number([self.n_events[instance_name] / self.n_tasks[instance_name]])
+            events_per_task = format_big_number(
+                [self.n_events[instance_name] / self.n_tasks[instance_name]]
+            )
             events_per_sec = format_big_number(
-                [self.n_events[instance_name] / t for t in self.simulation_times[instance_name]]
+                [
+                    self.n_events[instance_name] / t
+                    for t in self.simulation_times[instance_name]
+                ]
             )
 
             speedups = [
-                benchmark_times.get(instance_name, 0.) / t for t in self.simulation_times[instance_name]
+                benchmark_times.get(instance_name, 0.0) / t
+                for t in self.simulation_times[instance_name]
                 if t > 0
             ]
 
-            idx = int(len(COLORMAP) * (mean(speedups) - self.MIN_SPEEDUP) / (self.MAX_SPEEDUP - self.MIN_SPEEDUP))
+            idx = int(
+                len(COLORMAP)
+                * (mean(speedups) - self.MIN_SPEEDUP)
+                / (self.MAX_SPEEDUP - self.MIN_SPEEDUP)
+            )
             idx = max(0, min(len(COLORMAP) - 1, idx))
 
-            speedup = to_ansi_color(COLORMAP[idx]) + format_percentage(speedups) + RESET
+            speedup = (
+                to_ansi_color(COLORMAP[idx])
+                + format_percentage(speedups)
+                + RESET
+            )
 
-            table.add_row([
-                instance_name,
-                entry,
-                tasks,
-                simulation_time,
-            ] + ([
-                initialization_time,
-                reset_time,
-                pdr_time,
-                step_time,
-            ] if full else []) + [
-                time_per_task,
-                events,
-                events_per_task,
-                events_per_sec,
-                speedup
-            ])
+            table.add_row(
+                [
+                    instance_name,
+                    entry,
+                    tasks,
+                    simulation_time,
+                ]
+                + (
+                    [
+                        initialization_time,
+                        reset_time,
+                        pdr_time,
+                        step_time,
+                    ]
+                    if full
+                    else []
+                )
+                + [
+                    time_per_task,
+                    events,
+                    events_per_task,
+                    events_per_sec,
+                    speedup,
+                ]
+            )
 
         print("\n")
         print(table, flush=True)
 
     def plot_results(self) -> None:
-        from matplotlib.axes import Axes
-        import matplotlib.pyplot as plt
-        import seaborn as sns
-        import numpy as np
-        from scipy import stats
         from statistics import mean
+
+        import matplotlib.pyplot as plt
+        import numpy as np
+        import seaborn as sns
+        from matplotlib.axes import Axes
+        from scipy import stats
 
         sns.set_theme(style="whitegrid", palette="Set2")
 
@@ -396,8 +459,10 @@ class RunResult:
             sum(mean(self.__dict__[f"{stage}_times"][i]) for stage in stages)
             for i in self.instance_names
         ]
-        sorted_pairs = sorted(zip(totals, self.instance_names), reverse=True)
-        sorted_totals, sorted_instances = zip(*sorted_pairs)
+        sorted_pairs = sorted(
+            zip(totals, self.instance_names, strict=False), reverse=True
+        )
+        sorted_totals, sorted_instances = zip(*sorted_pairs, strict=False)
 
         bottom = [0.0] * len(sorted_instances)
         for stage in stages:
@@ -414,13 +479,17 @@ class RunResult:
                 bottom=bottom,
             )
 
-            bottom = [b + t for b, t in zip(bottom, stage_times)]
+            bottom = [b + t for b, t in zip(bottom, stage_times, strict=False)]
 
-        for i, (_, total) in enumerate(zip(sorted_instances, sorted_totals)):
+        for i, (_, total) in enumerate(
+            zip(sorted_instances, sorted_totals, strict=False)
+        ):
             ax[0].text(
                 i,
                 total + 0.01 * max(sorted_totals),
-                f"{1000 * total:.0f} ms" if total >= 0.001 else f"{total * 1e6:.0f} µs",
+                f"{1000 * total:.0f} ms"
+                if total >= 0.001
+                else f"{total * 1e6:.0f} µs",
                 ha="center",
                 va="bottom",
                 fontsize=5,
@@ -439,8 +508,13 @@ class RunResult:
         # --- Right plot ---
         fit_color = "#2563EB"
 
-        task_numbers = [self.n_tasks[instance] for instance in self.instance_names]
-        perf = [mean(self.simulation_times[instance]) for instance in self.instance_names]
+        task_numbers = [
+            self.n_tasks[instance] for instance in self.instance_names
+        ]
+        perf = [
+            mean(self.simulation_times[instance])
+            for instance in self.instance_names
+        ]
 
         slope, intercept, *_, std_err = stats.linregress(
             np.log(task_numbers), np.log(perf)
@@ -476,10 +550,17 @@ class RunResult:
             zorder=0,
         )
 
-        perf_err = [std(self.simulation_times[instance]) for instance in self.instance_names]
+        perf_err = [
+            std(self.simulation_times[instance])
+            for instance in self.instance_names
+        ]
 
-        yerr_lower = [p - p / np.exp(e / p) for p, e in zip(perf, perf_err)]
-        yerr_upper = [p * np.exp(e / p) - p for p, e in zip(perf, perf_err)]
+        yerr_lower = [
+            p - p / np.exp(e / p) for p, e in zip(perf, perf_err, strict=False)
+        ]
+        yerr_upper = [
+            p * np.exp(e / p) - p for p, e in zip(perf, perf_err, strict=False)
+        ]
 
         ax[1].errorbar(
             task_numbers,
@@ -517,7 +598,7 @@ def test_memory(pdr: PDR_NAMES, dynamic: bool, quiet: bool) -> None:
     table.set_style(TableStyle.MARKDOWN)
 
     if not quiet:
-        print(f"Running memory benchmark", end="")
+        print("Running memory benchmark", end="")
 
     dots = 0
     for instance_name in benchmark_times:
@@ -529,7 +610,7 @@ def test_memory(pdr: PDR_NAMES, dynamic: bool, quiet: bool) -> None:
             else:
                 print(
                     f"\r{' ' * 100}",
-                    end=f"\rRunning memory benchmark",
+                    end="\rRunning memory benchmark",
                     flush=True,
                 )
                 dots = 0
@@ -540,7 +621,7 @@ def test_memory(pdr: PDR_NAMES, dynamic: bool, quiet: bool) -> None:
 
         tracemalloc.start()
         env = SchedulingEnv(JobShopSetup())
-        env.set_instance(instance)
+        env.load_instance(instance)
 
         obs, _ = env.reset()
 
@@ -559,22 +640,25 @@ def test_memory(pdr: PDR_NAMES, dynamic: bool, quiet: bool) -> None:
         n_tasks = env.state.n_tasks
         per_task = peak_mem / n_tasks if n_tasks > 0 else 0
 
-        table.add_row([
-            instance_name,
-            format_big_number([n_tasks]),
-            format_memory(peak_mem),
-            format_memory(per_task),
-        ])
+        table.add_row(
+            [
+                instance_name,
+                format_big_number([n_tasks]),
+                format_memory(peak_mem),
+                format_memory(per_task),
+            ]
+        )
 
         del env
 
     print("\n")
     print(table, flush=True)
 
+
 def print_header() -> None:
     print(f"cpscheduler v{__version__}")
     print(f"{ok_fail(__compiled__)} compiled")
-    
+
     instance_present = (ROOT / "instances/jobshop").exists()
     print(f"{ok_fail(instance_present)} instance directory")
 
@@ -589,7 +673,6 @@ def print_header() -> None:
 def run_cli(
     n_runs: Annotated[int, arg(aliases=("-n",))] = 1,
     full: bool = False,
-    gym: Annotated[bool, arg(aliases=("-g",))] = False,
     pdr: Annotated[PDR_NAMES, arg(aliases=("-p",))] = "spt",
     quiet: Annotated[bool, arg(aliases=("-q",))] = False,
     plot: bool = False,
@@ -635,7 +718,6 @@ def run_cli(
         test_memory(pdr, dynamic, quiet)
         return
 
-
     print("Running bechmark: time")
     result = RunResult()
 
@@ -662,22 +744,18 @@ def run_cli(
                 )
                 dots = 0
 
-
         instance_path = ROOT / "instances/jobshop" / f"{instance_name}.txt"
         instance, _ = read_jsp_instance(instance_path)
         gc.collect()
         gc.freeze()
 
-        env: SchedulingEnv | SchedulingEnvGym
         for i in range(n_runs):
             gc.disable()
 
             global_tick = perf_counter()
-            if gym:
-                env = SchedulingEnvGym(JobShopSetup(), objective=Makespan(), instance=instance)
-            
-            else:
-                env = SchedulingEnv(JobShopSetup(), objective=Makespan(), instance=instance)
+            env = SchedulingEnv(
+                JobShopSetup(), objective=Makespan(), instance=instance
+            )
 
             initialization_times = perf_counter() - global_tick
 
@@ -686,8 +764,8 @@ def run_cli(
             reset_time = perf_counter() - tick
 
             if dynamic:
-                pdr_time = 0.
-                step_time = 0.
+                pdr_time = 0.0
+                step_time = 0.0
 
                 done = False
                 while not done:
@@ -695,12 +773,12 @@ def run_cli(
                     single_action = agent(obs)
                     pdr_time += perf_counter() - tick
 
-                    assert single_action is not None
+                    # assert single_action is not None
 
                     tick = perf_counter()
                     obs, _, done, *_ = env.step(single_action)
                     step_time += perf_counter() - tick
-            
+
             else:
                 tick = perf_counter()
                 action = agent.ranking(obs)
@@ -713,10 +791,7 @@ def run_cli(
             simulation_time = perf_counter() - global_tick
 
             if i == 0:
-                _env = env.core if isinstance(env, SchedulingEnvGym) else env
-
-                result.start_instance(instance_name, _env)
-
+                result.start_instance(instance_name, env)
 
             result.log_run(
                 initialization_times,

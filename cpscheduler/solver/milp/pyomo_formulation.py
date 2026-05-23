@@ -1,13 +1,21 @@
 import logging
-from typing import Final, TypeAlias, Literal
-from typing_extensions import assert_never
+from typing import Final, Literal, TypeAlias
 
-import pyomo.environ as pyo                                       # type: ignore[import-untyped]
-from pyomo.core.base.objective import ObjectiveSense              # type: ignore[import-untyped]
-from pyomo.core.expr.relational_expr import RelationalExpression  # type: ignore[import-untyped]
-from pyomo.opt.base.solvers import OptSolver                      # type: ignore[import-untyped]
-from pyomo.opt.results.results_ import SolverResults              # type: ignore[import-untyped]
-from pyomo.core.base.var import NumericValue, VarData             # type: ignore[import-untyped]
+import pyomo.environ as pyo
+from pyomo.core.base.objective import (
+    ObjectiveSense,
+)
+from pyomo.core.base.var import (
+    VarData,
+)
+from pyomo.core.expr.relational_expr import (
+    RelationalExpression,
+)
+from pyomo.opt.base.solvers import OptSolver
+from pyomo.opt.results.results_ import (
+    SolverResults,
+)
+from typing_extensions import assert_never
 
 from cpscheduler.solver.formulation import Formulation
 
@@ -73,7 +81,9 @@ def find_available_solver() -> str | None:
 
     return None
 
+
 DEFAULT_BIG_M: Final[float] = 1e6
+
 
 class PyomoFormulation(Formulation):
     model: pyo.ConcreteModel
@@ -154,7 +164,9 @@ class PyomoFormulation(Formulation):
 
         self.model.add_component(name, var)
 
-        assert isinstance(var, VarData), f"Unreachable code: {var} is not indexable."
+        assert isinstance(var, VarData), (
+            f"Unreachable code: {var} is not indexable."
+        )
         self._variables[name] = var
 
         return var
@@ -167,9 +179,7 @@ class PyomoFormulation(Formulation):
                 )
             return
 
-        self.model.add_component(
-            name, pyo.Constraint(expr=constraint)
-        )
+        self.model.add_component(name, pyo.Constraint(expr=constraint))
 
     def max_expr(
         self,
@@ -264,9 +274,8 @@ class PyomoFormulation(Formulation):
         elif operator == ">=":
             self.add_constraint(lhs >= rhs, name or "direct_ge")
 
-
     def get_value(self, param: PYOMO_PARAM) -> float:
-        if isinstance(param, (int, float)):
+        if isinstance(param, int | float):
             return float(param)
 
         value = param.value
@@ -279,7 +288,7 @@ class PyomoFormulation(Formulation):
         return float(value)
 
     def set_initial_value(self, param: PYOMO_PARAM, value: float | int) -> None:
-        if isinstance(param, (int, float)):
+        if isinstance(param, int | float):
             if param != value:
                 raise ValueError(
                     f"Cannot set initial value of constant {param} to {value}."
@@ -289,7 +298,7 @@ class PyomoFormulation(Formulation):
         param.set_value(value)
 
     def get_ub(self, param: PYOMO_PARAM) -> float:
-        if isinstance(param, (int, float)):
+        if isinstance(param, int | float):
             return float(param)
 
         ub = param.ub
@@ -299,13 +308,12 @@ class PyomoFormulation(Formulation):
         return float(ub)
 
     def get_lb(self, param: PYOMO_PARAM) -> float:
-        if isinstance(param, (int, float)):
+        if isinstance(param, int | float):
             return float(param)
 
         lb = param.lb
 
         assert lb is not None, f"Cannot obtain a lower bound for {param}."
-
 
         if hasattr(param, "lb") and param.lb is not None:
             return float(param.lb)
@@ -313,7 +321,7 @@ class PyomoFormulation(Formulation):
         return float(lb)
 
     def set_ub(self, param: PYOMO_PARAM, ub: float | int) -> None:
-        if isinstance(param, (int, float)):
+        if isinstance(param, int | float):
             if param > ub:
                 raise ValueError(
                     f"Cannot set upper bound of constant {param} to {ub}."
@@ -322,11 +330,13 @@ class PyomoFormulation(Formulation):
 
         param.setub(ub)
 
-    def _is_true(self, condition: PYOMO_CONSTRAINT | PYOMO_PARAM) -> bool | None:
+    def _is_true(
+        self, condition: PYOMO_CONSTRAINT | PYOMO_PARAM
+    ) -> bool | None:
         if isinstance(condition, bool):
             return condition
 
-        if isinstance(condition, (int, float)):
+        if isinstance(condition, int | float):
             return bool(condition)
 
         if isinstance(condition, RelationalExpression):

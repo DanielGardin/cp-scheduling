@@ -118,7 +118,9 @@ class WeightedTardyJobs(TotalTardyJobs):
             elem_type=float,
             semantic="continuous",
             default=(
-                [float(weight) for weight in weights] if weights is not None else UNSET
+                [float(weight) for weight in weights]
+                if weights is not None
+                else UNSET
             ),
         )
 

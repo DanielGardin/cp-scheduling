@@ -1,17 +1,15 @@
+import logging
+
 import pytest
+from common import env_setup
 
-from common import  env_setup
-
+from cpscheduler.environment import SchedulingEnv
 from cpscheduler.heuristics.pdrs import (
-    ShortestProcessingTime,
     MostOperationsRemaining,
     MostWorkRemaining,
     PriorityDispatchingRule,
+    ShortestProcessingTime,
 )
-
-from cpscheduler import SchedulingEnv
-
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +55,10 @@ def test_pdr(instance_name: str, heuristic: str) -> None:
     obs, _, terminated, _, info = env.step(action)
 
     assert terminated
-    assert info["current_time"] == pdr_expected_results[instance_name][heuristic]
+    assert (
+        info["current_time"] == pdr_expected_results[instance_name][heuristic]
+    )
+
 
 @pytest.mark.heuristics
 @pytest.mark.parametrize("instance_name", pdr_expected_results)
@@ -75,4 +76,6 @@ def test_dynamic(instance_name: str, heuristic: str) -> None:
         single_action = pdr(obs)
         obs, _, done, _, info = env.step(single_action)
 
-    assert info["current_time"] == pdr_expected_results[instance_name][heuristic]
+    assert (
+        info["current_time"] == pdr_expected_results[instance_name][heuristic]
+    )

@@ -46,7 +46,11 @@ class WeightedCompletionTime(TotalCompletionTime):
             name=weights_tag,
             elem_type=float,
             semantic="continuous",
-            default=(convert_to_list(weights, float) if weights is not None else UNSET),
+            default=(
+                convert_to_list(weights, float)
+                if weights is not None
+                else UNSET
+            ),
         )
 
     @property
@@ -69,7 +73,9 @@ class WeightedCompletionTime(TotalCompletionTime):
 
         return sum(
             weight * float(C_j)
-            for weight, C_j in zip(weights, self.completion_times(state), strict=False)
+            for weight, C_j in zip(
+                weights, self.completion_times(state), strict=False
+            )
         )
 
     @classmethod
@@ -105,7 +111,9 @@ class DiscountedTotalCompletionTime(RegularObjective):
     def __call__(self, state: ScheduleState) -> float:
         alpha = self.discount_factor.value
 
-        return -sum(expm1(-alpha * float(C_j)) for C_j in self.completion_times(state))
+        return -sum(
+            expm1(-alpha * float(C_j)) for C_j in self.completion_times(state)
+        )
 
     def get_entry(self) -> str:
         if self.discount_factor.loaded:

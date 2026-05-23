@@ -60,7 +60,9 @@ class ConstantProcessingTime(PassiveConstraint):
     def initialize(self, instance: ProblemInstance) -> None:
         for task_id in range(instance.n_tasks):
             for machine in instance.get_machines(task_id):
-                instance.set_processing_time(task_id, machine, self.processing_time)
+                instance.set_processing_time(
+                    task_id, machine, self.processing_time
+                )
 
     def get_entry(self) -> str:
         return f"p_j={self.processing_time}"

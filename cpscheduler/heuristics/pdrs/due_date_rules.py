@@ -1,6 +1,6 @@
 from cpscheduler.environment.observation import DefaultObservation
-
 from cpscheduler.heuristics.pdrs.base import PriorityDispatchingRule
+
 
 class ModifiedDueDate(PriorityDispatchingRule):
     """
@@ -11,7 +11,7 @@ class ModifiedDueDate(PriorityDispatchingRule):
         self,
         processing_time: str = "processing_time",
         due_date: str = "due_date",
-        seed: int | None = None
+        seed: int | None = None,
     ) -> None:
         super().__init__(seed)
 
@@ -25,7 +25,7 @@ class ModifiedDueDate(PriorityDispatchingRule):
 
         return [
             -max(t + p, d)
-            for p, d in zip(processing_times, due_dates)
+            for p, d in zip(processing_times, due_dates, strict=False)
         ]
 
 
@@ -39,7 +39,7 @@ class WeightedModifiedDueDate(PriorityDispatchingRule):
         processing_time: str = "processing_time",
         due_date: str = "due_date",
         weight: str = "weight",
-        seed: int | None = None
+        seed: int | None = None,
     ) -> None:
         super().__init__(seed)
 
@@ -55,8 +55,11 @@ class WeightedModifiedDueDate(PriorityDispatchingRule):
 
         return [
             -max(t + p, d) / w
-            for p, d, w in zip(processing_times, due_dates, weights)
+            for p, d, w in zip(
+                processing_times, due_dates, weights, strict=False
+            )
         ]
+
 
 class MinimumSlackTime(PriorityDispatchingRule):
     """
@@ -70,14 +73,14 @@ class MinimumSlackTime(PriorityDispatchingRule):
         due_date: str = "due_date",
         processing_time: str = "processing_time",
         release_time: str | None = None,
-        seed: int | None = None
+        seed: int | None = None,
     ):
         super().__init__(seed)
 
         self.due_date = due_date
         self.processing_time = processing_time
         self.release_time = release_time
-    
+
     def priority_score(self, obs: DefaultObservation) -> list[float]:
         t = obs.time
 
@@ -87,11 +90,13 @@ class MinimumSlackTime(PriorityDispatchingRule):
         if self.release_time is None:
             return [
                 t + p - d
-                for p, d in zip(processing_times, due_dates)
+                for p, d in zip(processing_times, due_dates, strict=False)
             ]
 
         release_times = obs.task[self.release_time]
         return [
             max(t, r) + p - d
-            for p, r, d in zip(processing_times, release_times, due_dates)
+            for p, r, d in zip(
+                processing_times, release_times, due_dates, strict=False
+            )
         ]
