@@ -19,9 +19,7 @@ class TotalTardiness(RegularObjective):
     ) -> None:
         super().__init__(minimize)
 
-        self.due_dates = JobFeature(
-            name=due_dates, elem_type=Time, semantic="time"
-        )
+        self.due_dates = JobFeature(name=due_dates, semantic="time")
 
     def get_features(self) -> list[JobFeature]:
         return [self.due_dates]
@@ -72,7 +70,6 @@ class WeightedTardiness(TotalTardiness):
 
         self.weights = JobFeature(
             name=job_weights,
-            elem_type=float,
             semantic="continuous",
         )
 

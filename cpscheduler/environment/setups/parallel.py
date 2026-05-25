@@ -38,7 +38,6 @@ class SingleMachineSetup(ScheduleSetup):
 
         self.processing_times = TaskFeature(
             name=processing_times,
-            elem_type=Time,
             semantic="duration",
         )
 
@@ -89,7 +88,6 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
 
         self.processing_times = TaskFeature(
             name=processing_times,
-            elem_type=Time,
             semantic="duration",
         )
 
@@ -144,13 +142,11 @@ class UniformParallelMachineSetup(ScheduleSetup):
 
         self.processing_times = TaskFeature(
             name=processing_times,
-            elem_type=Time,
             semantic="duration",
         )
 
         self.speed = MachineFeature(
             name=speed_tag,
-            elem_type=int,
             semantic="discrete",
             default=(
                 convert_to_list(speed, int) if speed is not None else UNSET
@@ -211,7 +207,6 @@ class UnrelatedParallelMachineSetup(ScheduleSetup):
 
         self.processing_times = TaskFeature(
             name=processing_times,
-            elem_type=list[Time],
             shape=("n_machines",),
             semantic="duration",
         )

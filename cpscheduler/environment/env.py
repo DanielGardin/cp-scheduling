@@ -16,6 +16,7 @@ from typing import Generic, Literal, cast
 
 from typing_extensions import TypeVar, assert_never
 
+from cpscheduler.environment.component import Component
 from cpscheduler.environment.constants import EzPickle
 from cpscheduler.environment.constraints import Constraint, PassiveConstraint
 from cpscheduler.environment.des import (
@@ -279,6 +280,9 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         """
         problem_instance = self._instance
 
+        for feature in self._observation.get_features():
+            problem_instance.register(feature)
+
         problem_instance.initialize(instance, self.setup)
         self.setup.initialize(problem_instance)
 
@@ -293,6 +297,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         self.setup_constraints = setup_constraints
         self._all_constraints = [*self.constraints, *setup_constraints]
 
+        component: Component
         for component in [
             *self.passive_constraints,
             *self.constraints,
@@ -301,6 +306,8 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             component.initialize(problem_instance)
 
         self._observation.initialize(problem_instance)
+
+        problem_instance.validate_instance("SchedulingEnv.load_instance")
 
         self.state = ScheduleState(problem_instance)
         self._status = LOADED

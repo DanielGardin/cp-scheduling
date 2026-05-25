@@ -24,7 +24,7 @@ class HorizonConstraint(Constraint):
 
     def __init__(self, horizon: Int = MAX_TIME):
         self.horizon = GlobalFeature(
-            name="horizon", pytype=Time, semantic="time", default=Time(horizon)
+            name="horizon", semantic="time", default=Time(horizon)
         )
 
     def set_horizon(self, horizon: Int) -> None:
@@ -63,7 +63,6 @@ class ReleaseDateConstraint(Constraint):
     ):
         self.release_dates = TaskFeature(
             name=release_tag,
-            elem_type=Time,
             semantic="time",
             default=(
                 convert_to_list(release_dates, Time)
@@ -108,7 +107,6 @@ class DeadlineConstraint(Constraint):
     ):
         self.due_dates = TaskFeature(
             name=due_tag,
-            elem_type=Time,
             semantic="time",
             default=(
                 convert_to_list(due_dates, Time)

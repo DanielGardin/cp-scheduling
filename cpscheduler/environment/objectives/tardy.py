@@ -31,7 +31,6 @@ class TotalTardyJobs(CompletionTimeObjective):
 
         self.due_dates = JobFeature(
             name=due_dates,
-            elem_type=Time,
             semantic="time",
         )
 
@@ -115,7 +114,6 @@ class WeightedTardyJobs(TotalTardyJobs):
 
         self.weights = JobFeature(
             name=job_weights,
-            elem_type=float,
             semantic="continuous",
             default=(
                 [float(weight) for weight in weights]

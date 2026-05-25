@@ -102,9 +102,8 @@ class ResourceConstraint(Constraint):
         self.capacity = capacity
 
         self.resources = TaskFeature(
-            resource_tag,
-            float,
-            "cost",
+            name=resource_tag,
+            semantic="cost",
             default=(
                 convert_to_list(resources, float)
                 if resources is not None
@@ -217,9 +216,8 @@ class NonRenewableResourceConstraint(Constraint):
         self.capacity = capacity
 
         self.resources = TaskFeature(
-            resource_tag,
-            float,
-            "cost",
+            name=resource_tag,
+            semantic="cost",
             default=(
                 convert_to_list(resources, float)
                 if resources is not None

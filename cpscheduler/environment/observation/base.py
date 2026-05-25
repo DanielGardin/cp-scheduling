@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from copy import deepcopy
 from typing import Any, Generic
 
@@ -5,7 +6,8 @@ from mypy_extensions import mypyc_attr
 from typing_extensions import TypeVar
 
 from cpscheduler.environment.constants import EzPickle, MachineID, TaskID
-from cpscheduler.environment.instance import ProblemInstance
+from cpscheduler.environment.instance import Feature, ProblemInstance
+from cpscheduler.environment.specs import ObservationSpec
 from cpscheduler.environment.state import ScheduleState
 
 Serialized_Obs = TypeVar("Serialized_Obs", default=Any)
@@ -18,6 +20,17 @@ class Observation(EzPickle, Generic[Serialized_Obs]):
     n_tasks: int
     n_jobs: int
     n_machines: int
+
+    def get_features(self) -> Sequence[Feature]:
+        """Return observation-defined features.
+
+        Altought the observation is not a component, it can require features to
+        be computed in the environment.
+
+        These feature have to be loaded during the `initialize` method,
+        and they will be available in the `update`.
+        """
+        return []
 
     def initialize(self, instance: ProblemInstance) -> None:
         """Initialize the observation with the scheduling instance."""
@@ -73,3 +86,13 @@ class Observation(EzPickle, Generic[Serialized_Obs]):
         this logic can be changed directly when required.
         """
         return deepcopy(self.serialize())
+
+    def get_spec(self) -> ObservationSpec:
+        """Return the specification of this observation structure.
+
+        Describes the layout, types, and metadata of the observation
+        without requiring serialized data.
+        """
+        raise NotImplementedError(
+            f"get_spec() was not implemented for {type(self).__name__}."
+        )

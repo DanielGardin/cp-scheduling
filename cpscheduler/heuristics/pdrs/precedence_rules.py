@@ -27,7 +27,7 @@ class MostWorkRemaining(PriorityDispatchingRule):
 
     def priority_score(self, obs: DefaultObservation) -> list[float]:
         operations: list[int] = obs.task[self.operation_label]
-        job_ids: list[int] = obs.task["job_id"]
+        job_ids: list[int] = obs.task["job"]
 
         processing_times: list[float] = obs.task[self.processing_time]
 
@@ -74,7 +74,7 @@ class MostOperationsRemaining(PriorityDispatchingRule):
     def priority_score(self, obs: DefaultObservation) -> list[float]:
         task_order: dict[TaskID, list[TaskID]] = {}
 
-        job_ids: list[TaskID] = obs.task["job_id"]
+        job_ids: list[TaskID] = obs.task["job"]
         operations: list[SupportsIndex] = obs.task[self.operation_label]
 
         for job_id in job_ids:

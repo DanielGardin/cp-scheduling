@@ -44,7 +44,6 @@ class WeightedCompletionTime(TotalCompletionTime):
 
         self.weights = JobFeature(
             name=weights_tag,
-            elem_type=float,
             semantic="continuous",
             default=(
                 convert_to_list(weights, float)
@@ -95,7 +94,6 @@ class DiscountedTotalCompletionTime(RegularObjective):
 
         self.discount_factor = GlobalFeature(
             name="discount_factor",
-            pytype=float,
             semantic="continuous",
             default=discount_factor,
         )
@@ -139,9 +137,7 @@ class TotalFlowTime(RegularObjective):
     ) -> None:
         super().__init__(minimize)
 
-        self.release_times = JobFeature(
-            name=release_times, elem_type=Time, semantic="time"
-        )
+        self.release_times = JobFeature(name=release_times, semantic="time")
 
     def get_features(self) -> list[JobFeature]:
         return [self.release_times]

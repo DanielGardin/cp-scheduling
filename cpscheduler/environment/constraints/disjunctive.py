@@ -23,9 +23,8 @@ class NonOverlapConstraint(Constraint):
         task_groups: Iterable[Iterable[Int]] | None = None,
     ):
         self.groups = GlobalFeature(
-            groups_tag,
-            list[list[TaskID]],
-            "task",
+            name=groups_tag,
+            semantic="task",
             default=(
                 [
                     convert_to_list(task_group, TaskID)

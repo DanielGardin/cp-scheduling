@@ -100,7 +100,6 @@ class PrecedenceConstraint(Constraint):
     ):
         self.parents = GlobalFeature(
             name=name,
-            pytype=dict[TaskID, list[TaskID]],
             semantic="adjacency",
             default=(
                 {

@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 # from mypy_extensions import mypyc_attr
 from cpscheduler.environment.constants import EzPickle, MachineID, TaskID, Time
 from cpscheduler.environment.instance.features import Feature, TaskFeature
-from cpscheduler.environment.utils.general import convert_to_list
+from cpscheduler.environment.specs.symbols import SymbolTable
 from cpscheduler.environment.utils.protocols import (
     InstanceTypes,
     prepare_instance,
@@ -12,47 +12,12 @@ from cpscheduler.environment.utils.protocols import (
 if TYPE_CHECKING:
     from cpscheduler.environment.setups import ScheduleSetup
 
-
-def check_instance_consistency(instance: dict[str, list[Any]]) -> int:
-    "Check if all lists in the instance have the same length."
-    it = iter(instance.values())
-    try:
-        first = len(next(it))
-
-    except StopIteration:
-        return 0
-
-    for v in it:
-        if len(v) != first:
-            raise ValueError(
-                "Inconsistent instance, all lists must have the same length, "
-                f"but got lengths {first} and {len(v)} for keys "
-                f"{list(instance.keys())}."
-            )
-
-    return first
-
-
-JOB_FEATURES = ["job", "job_id"]
-
-
-def get_job_ids(task_instance: dict[str, Any], n_tasks: int) -> list[TaskID]:
-    for feat_name in JOB_FEATURES:
-        if feat_name in task_instance:
-            return convert_to_list(task_instance[feat_name], TaskID)
-
-    return convert_to_list(range(n_tasks), TaskID)
-
-
 _T = TypeVar("_T")
 
 
 # TODO: Validate the features after read_instance
 class ProblemInstance(EzPickle):
-    n_tasks: int
-    n_jobs: int
-    n_machines: int
-
+    symbol_table: SymbolTable
     job_tasks: list[list[TaskID]]
     features: dict[str, list[Feature]]
 
@@ -70,34 +35,26 @@ class ProblemInstance(EzPickle):
     def __init__(self, debug_mode: bool) -> None:
         self._unused_features = {}
         self._providers = {}
-
+        self.symbol_table = SymbolTable()
         self._debug = debug_mode
 
-        self._preemptive = TaskFeature(
-            name="preemptive", elem_type=bool, semantic="binary"
-        )
+        self._preemptive = TaskFeature(name="preemptive", semantic="binary")
 
-        self._optional = TaskFeature(
-            name="optional", elem_type=bool, semantic="binary"
-        )
+        self._optional = TaskFeature(name="optional", semantic="binary")
 
         self._machine_mask = TaskFeature(
             name="machine_mask",
-            elem_type=list[bool],
             shape=("n_machines",),
             semantic="mask",
         )
 
         self._processing_times = TaskFeature(
             name="all_processing_times",
-            elem_type=list[Time],
             shape=("n_machines",),
             semantic="duration",
         )
 
-        self._job_ids = TaskFeature(
-            name="job_id", elem_type=TaskID, semantic="task"
-        )
+        self._job_ids = TaskFeature(name="job", semantic="task")
 
         # Setting features without self.register(...)
         self.features = {
@@ -105,12 +62,24 @@ class ProblemInstance(EzPickle):
             "optional": [self._optional],
             "all_processing_times": [self._processing_times],
             "machine_mask": [self._machine_mask],
-            "job_id": [self._job_ids],
+            "job": [self._job_ids],
         }
 
     @property
     def debug(self) -> bool:
         return self._debug
+
+    @property
+    def n_tasks(self) -> int:
+        return self.symbol_table.get("n_tasks")
+
+    @property
+    def n_jobs(self) -> int:
+        return self.symbol_table.get("n_jobs")
+
+    @property
+    def n_machines(self) -> int:
+        return self.symbol_table.get("n_machines")
 
     @property
     def preemptive(self) -> list[bool]:
@@ -183,17 +152,10 @@ class ProblemInstance(EzPickle):
 
         self.features.setdefault(name, []).append(feature)
 
-    def _validate_instance(self, origin: str) -> None:
-        for name, features in self.features.items():
+    def validate_instance(self, origin: str) -> None:
+        for features in self.features.values():
             for feat in features:
-                if feat.spec.optional or feat.loaded:
-                    # assert np.array(feat.value).shape == feat.spec.shape
-                    continue
-
-                raise ValueError(
-                    f"{origin}: Feature '{name}' is mandatory, but was not loaded. "
-                    "Check your instance specification, or your components."
-                )
+                feat.validate(self.symbol_table)
 
     def _set_instance_data(self, name: str, data: Any) -> None:
         if name in self._providers:
@@ -203,41 +165,6 @@ class ProblemInstance(EzPickle):
 
         for feature in self.features.get(name, ()):
             feature.set_data(data)
-
-    def _validate_features(self) -> None:
-        for name, features in self.features.items():
-            for feature in features:
-                spec = feature.spec
-
-                if feature.loaded:
-                    scope = spec.scope
-                    length = len(feature.value)
-
-                    if scope == "task":
-                        if length != self.n_tasks:
-                            raise ValueError(
-                                f"TaskFeature '{name}' is expected to have length "
-                                f"n_tasks, but {length} != {self.n_tasks}."
-                            )
-
-                    elif scope == "job":
-                        if length != self.n_jobs:
-                            raise ValueError(
-                                f"JobFeature '{name}' is expected to have length "
-                                f"n_jobs, but {length} != {self.n_jobs}."
-                            )
-
-                    elif scope == "machine" and length != self.n_machines:
-                        raise ValueError(
-                            f"MachineFeature '{name}' is expected to have length "
-                            f"n_machines, but {length} != {self.n_machines}."
-                        )
-
-                elif not spec.optional:
-                    raise ValueError(
-                        f"Feature '{name}' is mandatory, but was not loaded. "
-                        "Check your instance specification, or your components."
-                    )
 
     def initialize(
         self, instance: InstanceTypes, setup: "ScheduleSetup"
@@ -252,8 +179,9 @@ class ProblemInstance(EzPickle):
         task_instance = prepare_instance(task_raw_instance)
         job_instance = prepare_instance(job_raw_instance)
 
-        n_tasks = check_instance_consistency(task_instance)
-        check_instance_consistency(job_instance)
+        n_tasks = (
+            len(next(iter(task_instance.values()))) if task_instance else 0
+        )
 
         for feat, data in task_instance.items():
             self._set_instance_data(feat, data)
@@ -261,16 +189,19 @@ class ProblemInstance(EzPickle):
         for feat, data in job_instance.items():
             self._set_instance_data(feat, data)
 
-        job_ids = get_job_ids(task_instance, n_tasks)
+        if not self._job_ids.loaded:
+            self._job_ids.set_data(list(range(n_tasks)))
+
+        job_ids = self._job_ids.value
 
         n_jobs = max(job_ids) + 1 if job_ids else 0
         job_tasks: list[list[TaskID]] = [[] for _ in range(n_jobs)]
         for task_id, job_id in enumerate(job_ids):
             job_tasks[job_id].append(task_id)
 
-        self.n_tasks = n_tasks
-        self.n_jobs = n_jobs
-        self.n_machines = setup.n_machines
+        self.symbol_table.set("n_tasks", n_tasks)
+        self.symbol_table.set("n_jobs", n_jobs)
+        self.symbol_table.set("n_machines", setup.n_machines)
 
         self._preemptive.set_data([False] * n_tasks)
         self._optional.set_data([False] * n_tasks)
@@ -282,10 +213,7 @@ class ProblemInstance(EzPickle):
             [[False] * setup.n_machines for _ in range(n_tasks)]
         )
 
-        self._job_ids.set_data(job_ids)
         self.job_tasks = job_tasks
-
-        self._validate_features()
 
     def has_feature(self, feat_name: str) -> bool:
         return feat_name in self.features or feat_name in self._unused_features

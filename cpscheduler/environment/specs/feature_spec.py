@@ -1,8 +1,19 @@
-# from dataclasses import dataclass
-from collections.abc import Mapping
 from typing import Literal
 
 from cpscheduler.environment.constants import EzPickle
+from cpscheduler.environment.specs.symbols import (
+    BaseShapeDim,
+    ShapeDim,
+    SymbolicDim,
+    SymbolTable,
+)
+
+
+class ObservationSpec(EzPickle):
+    """
+    Base specification node for observation structures.
+    """
+
 
 SemanticType = Literal[
     # Numerical
@@ -27,8 +38,7 @@ SemanticType = Literal[
     "calendar",  # Sequence of intervals (start, end)
     # Structural
     "mask",  # Boolean mask
-    "set",  # Arbitrary set
-    "sequence",  # Arbitrary sequence
+    "set",  # Arbitrary set. Represented as a binary indicator vector of possible elements.
     # Graph
     "adjacency",  # Adjacency matrix
     # Unknown
@@ -42,51 +52,7 @@ Scope = Literal[
     "global",
 ]
 
-ShapeDim = (
-    int
-    | Literal[
-        "n_tasks",
-        "n_jobs",
-        "n_machines",
-    ]
-)
 
-DType = type[int] | type[float] | type[bool] | type[str]
-
-BOUNDS: dict[SemanticType, tuple[float | None, float | None]] = {
-    "continuous": (None, None),
-    "discrete": (None, None),
-    "binary": (0, 1),
-    "count": (0, None),
-    "cost": (0, None),
-    "probability": (0, 1),
-    "normalized": (0, 1),
-    "id": (0, None),
-    "order": (0, None),
-    "categorical": (None, None),
-    "task": (0, None),
-    "job": (0, None),
-    "machine": (0, None),
-    "time": (0, None),
-    "duration": (0, None),
-    "interval": (0, None),  # TODO: separate start/end bounds
-    "calendar": (0, None),  # TODO: separate start/end bounds
-    "mask": (0, 1),
-    "set": (None, None),
-    "sequence": (None, None),
-    "adjacency": (0, 1),
-    "unknown": (None, None),
-}
-
-
-class ObservationSpec(EzPickle):
-    """
-    Base specification node for observation structures.
-    """
-
-
-# FUTURE: Support sparse features, i.e. dict[SupportIndex, T]
-# Materialization then materialize a list[T].
 class FeatureSpec(ObservationSpec):
     scope: Scope
     semantic: SemanticType
@@ -94,8 +60,7 @@ class FeatureSpec(ObservationSpec):
     optional: bool
 
     # Feature metadata (used for ObservationSpec)
-    dtype: DType | None
-    shape: tuple[ShapeDim, ...]
+    shape: tuple[SymbolicDim, ...]
     n_categories: int | None
     low: float | None
     high: float | None
@@ -107,7 +72,6 @@ class FeatureSpec(ObservationSpec):
         sparse: bool = False,
         optional: bool = False,
         *,
-        dtype: DType | None = None,
         shape: tuple[ShapeDim, ...] = (),
         n_categories: int | None = None,
         low: float | None = None,
@@ -126,11 +90,50 @@ class FeatureSpec(ObservationSpec):
         self.sparse = sparse
         self.optional = optional
 
-        self.dtype = dtype
-        self.shape = shape
+        self.shape = tuple(
+            dim
+            if isinstance(dim, SymbolicDim)
+            else SymbolicDim.from_shapedim(dim)
+            for dim in shape
+        )
         self.n_categories = n_categories
         self.low = low
         self.high = high
+
+    @property
+    def raw_shape(self) -> tuple[BaseShapeDim, ...]:
+        return tuple(
+            dim.const if dim.is_constant() else str(dim) for dim in self.shape
+        )
+
+    def shareable_with(self, other: "FeatureSpec") -> bool:
+        """Check if this feature spec can share the same underlying data as
+        another spec.
+
+        To be shareable, both specs must have the same semantic and metadata
+        (shape, n_categories, low, high).
+        Additionally, the scopes must be compatible, i.e. one must be a subset
+        of the other.
+        The possible scope combinations are:
+        - S <-> S, for any scope S
+        - job -> task (job-level features can be shared with task-level features, but not vice versa)
+        - global -> S, for any scope S (global features can be shared with any scope, but not vice versa)
+        """
+        return (
+            self.semantic == other.semantic
+            and self.shape == other.shape
+            and self.n_categories == other.n_categories
+            and self.low == other.low
+            and self.high == other.high
+            and (
+                self.scope == other.scope
+                or (self.scope == "job" and other.scope == "task")
+                or self.scope == "global"
+            )
+        )
+
+    def resolve_shape(self, symbol_table: SymbolTable) -> tuple[int, ...]:
+        return tuple(dim.resolve(symbol_table) for dim in self.shape)
 
     def __eq__(self, value: object, /) -> bool:
         return (
@@ -139,43 +142,22 @@ class FeatureSpec(ObservationSpec):
             and self.semantic == value.semantic
             and self.sparse == value.sparse
             and self.optional == value.optional
-            and self.dtype == value.dtype
             and self.shape == value.shape
             and self.n_categories == value.n_categories
             and self.low == value.low
             and self.high == value.high
         )
 
-
-class DictSpec(ObservationSpec):
-    fields: dict[str, ObservationSpec]
-
-    def __init__(self, fields: Mapping[str, ObservationSpec]) -> None:
-        self.fields = dict(fields)
-
-
-class SequenceSpec(ObservationSpec):
-    element: ObservationSpec
-    length: int | None
-
-    def __init__(
-        self, element: ObservationSpec, length: int | None = None
-    ) -> None:
-        self.element = element
-        self.length = length
-
-
-class GraphSpec(ObservationSpec):
-    nodes: ObservationSpec
-    edges: ObservationSpec | None
-    graph: FeatureSpec
-
-    def __init__(
-        self,
-        nodes: ObservationSpec,
-        edges: ObservationSpec | None,
-        graph: FeatureSpec,
-    ) -> None:
-        self.nodes = nodes
-        self.edges = edges
-        self.graph = graph
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.scope,
+                self.semantic,
+                self.sparse,
+                self.optional,
+                self.shape,
+                self.n_categories,
+                self.low,
+                self.high,
+            )
+        )

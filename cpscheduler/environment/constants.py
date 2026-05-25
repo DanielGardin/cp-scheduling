@@ -44,8 +44,21 @@ GLOBAL_MACHINE_ID: MachineID = -1
 
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
 class Enum:
+    __enum_count__: ClassVar[int] = 0
+
     def __init__(self) -> None:
         raise ValueError(f"Cannot instantiate enum class {type(self).__name__}")
+
+    def __init_subclass__(cls) -> None:
+        cls.__enum_count__ = sum(
+            1
+            for k in vars(cls)
+            if not k.startswith("__") and not k.endswith("__")
+        )
+
+    @classmethod
+    def count(cls) -> int:
+        return cls.__enum_count__
 
 
 StatusType = Literal[0, 1, 2, 3]

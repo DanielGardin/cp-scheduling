@@ -96,7 +96,6 @@ class MachineBreakdownConstraint(Constraint):
     ):
         self.breakdowns = MachineFeature(
             name=name,
-            elem_type=list[tuple[Time, Time]],
             semantic="calendar",
         )
 
@@ -240,9 +239,7 @@ class BatchConstraint(Constraint):
         self.constant_capacity = None
 
         if capacity is None:
-            self.capacity = MachineFeature(
-                name=name, elem_type=int, semantic="count"
-            )
+            self.capacity = MachineFeature(name=name, semantic="count")
 
         else:
             if isinstance(capacity, Int):
@@ -253,7 +250,7 @@ class BatchConstraint(Constraint):
                 storage = convert_to_list(capacity, int)
 
             self.capacity = MachineFeature(
-                name=name, elem_type=int, semantic="count", default=storage
+                name=name, semantic="count", default=storage
             )
 
     def set_capacity(self, machine_id: Int, capacity: Int) -> None:

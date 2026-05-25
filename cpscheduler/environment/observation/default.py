@@ -1,9 +1,11 @@
-from typing import Any
+from collections.abc import Sequence
+from typing import Any, Literal, TypedDict, overload
 
 from mypy_extensions import mypyc_attr
 
-from cpscheduler.environment.constants import TaskID, Time
+from cpscheduler.environment.constants import Status, StatusType, TaskID, Time
 from cpscheduler.environment.instance import (
+    Feature,
     GlobalFeature,
     JobFeature,
     MachineFeature,
@@ -11,11 +13,22 @@ from cpscheduler.environment.instance import (
     TaskFeature,
 )
 from cpscheduler.environment.observation.base import Observation
+from cpscheduler.environment.specs import DictSpec, FeatureSpec
 from cpscheduler.environment.state import ScheduleState
+
+DefaultObsType = TypedDict(
+    "DefaultObsType",
+    {
+        "task": dict[str, list[Any]],
+        "job": dict[str, list[Any]],
+        "machine": dict[str, list[Any]],
+        "global": dict[str, Any],
+    },
+)
 
 
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=True)
-class DefaultObservation(Observation[dict[str, dict[str, Any]]]):
+class DefaultObservation(Observation[DefaultObsType]):
     """
     Lightweight default observation.
 
@@ -23,7 +36,12 @@ class DefaultObservation(Observation[dict[str, dict[str, Any]]]):
     Runtime buffers are updated in-place.
     """
 
-    time: Time
+    _exclude_features: set[str]
+    _specs: dict[str, FeatureSpec]
+
+    _time: GlobalFeature[Time]
+    _status: TaskFeature[StatusType]
+    _available: TaskFeature[bool]
 
     task: dict[str, Any]
     job: dict[str, Any]
@@ -32,10 +50,41 @@ class DefaultObservation(Observation[dict[str, dict[str, Any]]]):
 
     available_tasks: set[TaskID]
 
+    def __init__(self, exclude_features: set[str] | None = None) -> None:
+        self._exclude_features = exclude_features or set()
+
+        self._status = TaskFeature(
+            name="status", semantic="categorical", n_categories=Status.count()
+        )
+
+        self._available = TaskFeature(
+            name="available",
+            semantic="mask",
+        )
+
+        self._time = GlobalFeature(
+            "time", semantic="time", default=0, dynamic=True
+        )
+
+    @property
+    def time(self) -> Time:
+        return self._time.value
+
+    def get_features(self) -> Sequence[Feature]:
+        return [
+            self._time,
+            self._status,
+            self._available,
+        ]
+
     def initialize(self, instance: ProblemInstance) -> None:
         super().initialize(instance)
 
-        self.time = 0
+        self._time.set_data(0)
+        self._status.set_data([0] * self.n_tasks)
+        self._available.set_data(data=[False] * self.n_tasks)
+
+        self._specs = {}
 
         self.available_tasks = set()
 
@@ -44,43 +93,36 @@ class DefaultObservation(Observation[dict[str, dict[str, Any]]]):
         self.machine = {}
         self.global_state = {}
 
-        for features in instance.features.values():
-            if not features:
+        for feat_name, features in instance.features.items():
+            if feat_name in self._exclude_features or not features:
                 continue
 
             feature = features[0]
 
             if not feature.loaded:
-                continue
+                raise ValueError(
+                    f"Feature '{feat_name}' is not loaded in the instance."
+                )
+
+            self._specs[feat_name] = feature.spec
 
             if isinstance(feature, TaskFeature):
-                self.task[feature.name] = feature.value
+                self.task[feat_name] = feature.value
 
             elif isinstance(feature, JobFeature):
-                self.job[feature.name] = feature.value
+                self.job[feat_name] = feature.value
 
             elif isinstance(feature, MachineFeature):
-                self.machine[feature.name] = feature.value
+                self.machine[feat_name] = feature.value
 
             elif isinstance(feature, GlobalFeature):
-                self.global_state[feature.name] = feature.value
-
-        self.task["status"] = [0] * self.n_tasks
-        self.task["available"] = [False] * self.n_tasks
-
-        self.global_state["time"] = 0
-        self.global_state["infeasible"] = False
+                self.global_state[feat_name] = feature.value
 
     def update(self, state: ScheduleState) -> None:
-        self.time = state.time
+        self._time.set_data(state.time)
+        self._status.value[:] = state.runtime.status
 
-        self.global_state["time"] = state.time
-        self.global_state["infeasible"] = state.infeasible
-
-        status = self.task["status"]
-        status[:] = state.runtime.status
-
-        available = self.task["available"]
+        available = self._available.value
 
         self.available_tasks.clear()
 
@@ -95,7 +137,15 @@ class DefaultObservation(Observation[dict[str, dict[str, Any]]]):
             if is_available:
                 self.available_tasks.add(task_id)
 
-    def __getitem__(self, key: str) -> dict[str, Any]:
+    @overload
+    def __getitem__(
+        self, key: Literal["task", "job", "machine"]
+    ) -> dict[str, list[Any]]: ...
+
+    @overload
+    def __getitem__(self, key: Literal["global"]) -> dict[str, Any]: ...
+
+    def __getitem__(self, key: str) -> Any:
         if key == "task":
             return self.task
 
@@ -110,7 +160,7 @@ class DefaultObservation(Observation[dict[str, dict[str, Any]]]):
 
         raise KeyError(f"Unknown observation scope '{key}'.")
 
-    def serialize(self) -> dict[str, dict[str, Any]]:
+    def serialize(self) -> DefaultObsType:
         return {
             "task": self.task,
             "job": self.job,
@@ -121,9 +171,24 @@ class DefaultObservation(Observation[dict[str, dict[str, Any]]]):
     def __repr__(self) -> str:
         return (
             f"DefaultObservation("
-            f"time={self.time}, "
             f"n_tasks={self.n_tasks}, "
             f"n_jobs={self.n_jobs}, "
             f"n_machines={self.n_machines}"
             f")"
+        )
+
+    def get_spec(self) -> DictSpec:
+        return DictSpec(
+            {
+                "task": DictSpec(
+                    {name: self._specs[name] for name in self.task}
+                ),
+                "job": DictSpec({name: self._specs[name] for name in self.job}),
+                "machine": DictSpec(
+                    {name: self._specs[name] for name in self.machine}
+                ),
+                "global": DictSpec(
+                    {name: self._specs[name] for name in self.global_state}
+                ),
+            }
         )
