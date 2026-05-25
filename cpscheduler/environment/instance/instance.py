@@ -3,7 +3,6 @@ from typing import TYPE_CHECKING, Any, TypeVar
 # from mypy_extensions import mypyc_attr
 from cpscheduler.environment.constants import EzPickle, MachineID, TaskID, Time
 from cpscheduler.environment.instance.features import Feature, TaskFeature
-from cpscheduler.environment.specs.symbols import SymbolTable
 from cpscheduler.environment.utils.protocols import (
     InstanceTypes,
     prepare_instance,
@@ -17,11 +16,11 @@ _T = TypeVar("_T")
 
 # TODO: Validate the features after read_instance
 class ProblemInstance(EzPickle):
-    symbol_table: SymbolTable
     job_tasks: list[list[TaskID]]
     features: dict[str, list[Feature]]
 
     _providers: dict[str, Feature]
+    _symbol_values: dict[str, int]
 
     _unused_features: dict[str, Any]
     _debug: bool
@@ -35,7 +34,7 @@ class ProblemInstance(EzPickle):
     def __init__(self, debug_mode: bool) -> None:
         self._unused_features = {}
         self._providers = {}
-        self.symbol_table = SymbolTable()
+        self._symbol_values = {}
         self._debug = debug_mode
 
         self._preemptive = TaskFeature(name="preemptive", semantic="binary")
@@ -71,15 +70,15 @@ class ProblemInstance(EzPickle):
 
     @property
     def n_tasks(self) -> int:
-        return self.symbol_table.get("n_tasks")
+        return self._symbol_values.get("n_tasks", 0)
 
     @property
     def n_jobs(self) -> int:
-        return self.symbol_table.get("n_jobs")
+        return self._symbol_values.get("n_jobs", 0)
 
     @property
     def n_machines(self) -> int:
-        return self.symbol_table.get("n_machines")
+        return self._symbol_values.get("n_machines", 0)
 
     @property
     def preemptive(self) -> list[bool]:
@@ -155,7 +154,7 @@ class ProblemInstance(EzPickle):
     def validate_instance(self, origin: str) -> None:
         for features in self.features.values():
             for feat in features:
-                feat.validate(self.symbol_table)
+                feat.validate(**self._symbol_values)
 
     def _set_instance_data(self, name: str, data: Any) -> None:
         if name in self._providers:
@@ -199,9 +198,9 @@ class ProblemInstance(EzPickle):
         for task_id, job_id in enumerate(job_ids):
             job_tasks[job_id].append(task_id)
 
-        self.symbol_table.set("n_tasks", n_tasks)
-        self.symbol_table.set("n_jobs", n_jobs)
-        self.symbol_table.set("n_machines", setup.n_machines)
+        self._symbol_values["n_tasks"] = n_tasks
+        self._symbol_values["n_jobs"] = n_jobs
+        self._symbol_values["n_machines"] = setup.n_machines
 
         self._preemptive.set_data([False] * n_tasks)
         self._optional.set_data([False] * n_tasks)

@@ -64,6 +64,9 @@ class StackSpec(ObservationSpec):
             ]
         )
 
+    def resolve_shape(self, **symbol_values: int) -> tuple[int, ...]:
+        return tuple(dim.resolve(**symbol_values) for dim in self.shape)
+
 
 class DictSpec(ObservationSpec):
     fields: dict[str, ObservationSpec]

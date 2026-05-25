@@ -117,30 +117,6 @@ def _visit_mult(
     result[sym_node.id] += sign * coef.value
 
 
-class SymbolTable(EzPickle):
-    _values: dict[str, int]
-
-    def __init__(self) -> None:
-        self._values = {}
-
-    def set(self, symbol: str, value: int) -> None:
-        self._values[symbol] = value
-
-    def get(self, symbol: str) -> int:
-        value = self._values.get(symbol)
-
-        if value is None:
-            raise ValueError(
-                f"Missing value for symbol '{symbol}' when resolving {self}."
-            )
-
-        return value
-
-    @property
-    def symbols(self) -> frozenset[str]:
-        return frozenset(self._values.keys())
-
-
 class SymbolicDim(EzPickle):
     _coefs: dict[str, int]
     _const_value: int
@@ -164,14 +140,14 @@ class SymbolicDim(EzPickle):
         n_tasks: int = 0,
         n_jobs: int = 0,
         n_machines: int = 0,
-        **symbols: int,
+        **symbol_values: int,
     ) -> None:
         self._const_value = const
         coefs = {
             "n_tasks": n_tasks,
             "n_jobs": n_jobs,
             "n_machines": n_machines,
-            **symbols,
+            **symbol_values,
         }
 
         self._coefs = {sym: coef for sym, coef in coefs.items() if coef != 0}
@@ -192,11 +168,16 @@ class SymbolicDim(EzPickle):
     def is_symbolic(self) -> bool:
         return not self.is_constant()
 
-    def resolve(self, symbol_table: SymbolTable) -> int:
+    def resolve(self, **symbol_values: int) -> int:
         value = self._const_value
 
         for sym, coef in self._coefs.items():
-            value += coef * symbol_table.get(sym)
+            if sym not in symbol_values:
+                raise ValueError(
+                    f"Cannot resolve SymbolicDim: missing value for symbol '{sym}'."
+                )
+
+            value += coef * symbol_values[sym]
 
         return value
 

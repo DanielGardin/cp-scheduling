@@ -5,7 +5,6 @@ from cpscheduler.environment.specs.symbols import (
     BaseShapeDim,
     ShapeDim,
     SymbolicDim,
-    SymbolTable,
 )
 
 
@@ -132,8 +131,8 @@ class FeatureSpec(ObservationSpec):
             )
         )
 
-    def resolve_shape(self, symbol_table: SymbolTable) -> tuple[int, ...]:
-        return tuple(dim.resolve(symbol_table) for dim in self.shape)
+    def resolve_shape(self, **symbol_values: int) -> tuple[int, ...]:
+        return tuple(dim.resolve(**symbol_values) for dim in self.shape)
 
     def __eq__(self, value: object, /) -> bool:
         return (

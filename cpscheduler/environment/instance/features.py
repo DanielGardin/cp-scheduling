@@ -12,7 +12,6 @@ from cpscheduler.environment.specs.feature_spec import (
 from cpscheduler.environment.specs.symbols import (
     BaseShapeDim,
     ShapeDim,
-    SymbolTable,
 )
 
 
@@ -178,7 +177,7 @@ class Feature(EzPickle, Generic[_T]):
 
         self.set_data(source._data)
 
-    def validate(self, symbol_table: SymbolTable) -> None:
+    def validate(self, **symbol_values: int) -> None:
         if not self._loaded:
             if not self.spec.optional:
                 raise ValueError(
@@ -188,13 +187,22 @@ class Feature(EzPickle, Generic[_T]):
             return
 
         if self._observed_shape is not None:
-            target_shape = self.spec.resolve_shape(symbol_table)
+            target_shape = self.spec.resolve_shape(**symbol_values)
 
             if not compare_shapes(self._observed_shape, target_shape):
                 raise ValueError(
                     f"Feature {self.name} has invalid shape: "
                     f"expected {target_shape}, got {self._observed_shape}."
                 )
+
+    def __eq__(self, value: object, /) -> bool:
+        return (
+            isinstance(value, Feature)
+            and self.name == value.name
+            and self.spec == value.spec
+            and self._loaded == value._loaded
+            and self._observed_shape == value._observed_shape
+        )
 
 
 class TaskFeature(Feature[list[_T]]):
