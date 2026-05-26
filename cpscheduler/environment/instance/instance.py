@@ -36,6 +36,7 @@ class ProblemInstance(EzPickle):
         self._providers = {}
         self._symbol_values = {}
         self._debug = debug_mode
+        self.job_tasks = []
 
         self._preemptive = TaskFeature(
             name="preemptive", semantic="binary", shape=()
@@ -192,6 +193,7 @@ class ProblemInstance(EzPickle):
         """
         self._symbol_values.clear()
         self._unused_features.clear()
+        self.job_tasks.clear()
 
         # Reset loaded state for all features without defaults
         # (features with defaults can be updated in place)

@@ -88,7 +88,7 @@ class FeatureSpec(ObservationSpec):
         self.shape = None
         if shape is not None:
             self.shape = tuple(
-                SymbolicDim.from_shapedim(dim) if dim is not None else dim
+                SymbolicDim.from_shapedim(dim) if dim is not None else None
                 for dim in shape
             )
 
@@ -102,7 +102,7 @@ class FeatureSpec(ObservationSpec):
             return None
 
         return tuple(
-            dim.raw if isinstance(dim, SymbolicDim) else dim
+            dim.raw if isinstance(dim, SymbolicDim) else None
             for dim in self.shape
         )
 
@@ -141,7 +141,7 @@ class FeatureSpec(ObservationSpec):
         return tuple(
             dim.resolve(**symbol_values)
             if isinstance(dim, SymbolicDim)
-            else dim
+            else None
             for dim in self.shape
         )
 

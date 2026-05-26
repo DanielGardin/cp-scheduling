@@ -1,6 +1,6 @@
 from collections.abc import Iterator
 from heapq import heapify, heappop, heappush
-from typing import Any, ClassVar, TypeAlias
+from typing import ClassVar, TypeAlias
 
 from mypy_extensions import mypyc_attr
 
@@ -31,7 +31,7 @@ class SimulationEvent(EzPickle):
 
     _event_id: EventID
 
-    def __init__(self, *args: Any) -> None:
+    def __init__(self) -> None:
         global _global_event_id
 
         self._event_id = _global_event_id

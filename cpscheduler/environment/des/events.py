@@ -10,9 +10,7 @@ from cpscheduler.environment.des.base import Schedule, SimulationEvent
 from cpscheduler.environment.state import ScheduleState
 
 
-def select_machine(
-    state: ScheduleState, task_id: TaskID, machine_id: MachineID
-) -> int:
+def select_machine(state: ScheduleState, task_id: TaskID) -> MachineID:
     machines = state.get_machines(task_id)
 
     for machine in sorted(machines):
@@ -24,8 +22,6 @@ def select_machine(
 
 class ExecuteEvent(SimulationEvent):
     blocking = True
-
-    __args__ = ("task_id", "machine_id")
 
     task_id: TaskID
     machine_id: MachineID
@@ -65,7 +61,7 @@ class ExecuteEvent(SimulationEvent):
     def process(self, state: ScheduleState, schedule: Schedule) -> None:
         machine = self.machine_id
         if machine == GLOBAL_MACHINE_ID:
-            machine = select_machine(state, self.task_id, self.machine_id)
+            machine = select_machine(state, self.task_id)
 
         state.execute_task(self.task_id, machine)
 
@@ -76,8 +72,6 @@ class SubmitEvent(ExecuteEvent):
 
 class PauseEvent(SimulationEvent):
     blocking = True
-
-    __args__ = ("task_id",)
 
     task_id: TaskID
 
@@ -95,8 +89,6 @@ class PauseEvent(SimulationEvent):
 
 class ResumeEvent(SimulationEvent):
     blocking = True
-
-    __args__ = ("task_id",)
 
     task_id: TaskID
 
@@ -133,8 +125,6 @@ class InterruptEvent(SimulationEvent):
 class CompleteEvent(SimulationEvent):
     blocking = True
 
-    __args__ = ("task_id",)
-
     task_id: TaskID
 
     def __init__(self, task_id: int) -> None:
@@ -153,8 +143,6 @@ class CompleteEvent(SimulationEvent):
 
 class AdvanceTimeEvent(SimulationEvent):
     blocking = True
-
-    __args__ = ("dt",)
 
     dt: Time
 

@@ -79,7 +79,7 @@ class StackSpec(ObservationSpec):
         return tuple(
             dim.resolve(**symbol_values)
             if isinstance(dim, SymbolicDim)
-            else dim
+            else None
             for dim in self.shape
         )
 

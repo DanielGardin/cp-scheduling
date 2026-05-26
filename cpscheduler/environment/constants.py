@@ -6,14 +6,15 @@ from typing import (
     ClassVar,
     Final,
     Literal,
+    Self,
     SupportsFloat,
+    SupportsIndex,
     SupportsInt,
     cast,
     final,
 )
 
 from mypy_extensions import i16, i32, i64, mypyc_attr, u8
-from typing_extensions import Self
 
 # ------------------------------------------------------------------------------
 # Type aliases for commonly used types
@@ -85,7 +86,7 @@ class Status(Enum):
 
 
 class Singleton:
-    _created = False
+    _created: ClassVar[bool] = False
 
     def __new__(cls) -> Self:
         if cls._created:
@@ -106,7 +107,6 @@ class Singleton:
     def __hash__(self) -> int:
         return hash(type(self))
 
-    # copying return cls._singleton to preserve singleton property
     def __copy__(self) -> Self:
         return self
 
@@ -190,7 +190,8 @@ class EzPickle:
     - interpreted: __annotations__
     """
 
-    __args__: ClassVar[tuple[str, ...] | None] = None
+    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
+        return super().__new__(cls)
 
     @final
     def __getstate__(self) -> PickleState:
@@ -202,22 +203,14 @@ class EzPickle:
         for key, value in items:
             object.__setattr__(self, key, value)
 
-    # @final
-    # def __reduce__(self) -> tuple[type[Self], tuple[Any, ...], dict[str, Any]] | tuple[type[Self], tuple[()], PickleState]:
-    #     cls = type(self)
-    #     fields = _collect_fields(cls)
-    #     args_spec = cls.__args__
+    def __reduce_ex__(self, protocol: SupportsIndex) -> Any:
+        cls = type(self)
 
-    #     if args_spec is not None:
-    #         args = tuple(getattr(self, k) for k in args_spec)
-    #         state = {
-    #             k: getattr(self, k)
-    #             for k in fields
-    #             if k not in args_spec and hasattr(self, k)
-    #         }
-    #         return (cls, args, state)
-
-    #     return (cls, (), self.__getstate__())
+        return (
+            cls.__new__,
+            (cls,),
+            self.__getstate__(),
+        )
 
     def __repr__(self) -> str:
         cls = type(self)
@@ -229,13 +222,10 @@ class EzPickle:
 
         return f"{cls.__name__}({', '.join(parts)})"
 
-    def __hash__(self) -> int:
-        return hash(_to_hashable(self.__getstate__()))
-
     # FUTURE: Not sure why mypyC can't compile EzPickle with __eq__
     # but when we remove the implementation, everything works fine.
     # def __eq__(self, value: Any) -> bool:
-    #     if not isinstance(value, EzPickle):
-    #         return NotImplemented
-
-    #     return self.__getstate__() == value.__getstate__()
+    #     return (
+    #         isinstance(value, EzPickle)
+    #         and self.__getstate__() == value.__getstate__()
+    #     )
