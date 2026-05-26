@@ -8,15 +8,15 @@ from cpscheduler.environment.specs.symbols import ShapeDim, SymbolicDim
 
 
 def _remove_dim(
-    shape: tuple[SymbolicDim, ...],
+    shape: tuple[SymbolicDim | None, ...],
     feature_dim: int,
-) -> tuple[SymbolicDim, ...]:
+) -> tuple[SymbolicDim | None, ...]:
     return shape[:feature_dim] + shape[feature_dim + 1 :]
 
 
 class StackSpec(ObservationSpec):
     features: list[FeatureSpec]
-    shape: tuple[SymbolicDim, ...]
+    shape: tuple[SymbolicDim | None, ...]
 
     def __init__(
         self,
@@ -29,6 +29,12 @@ class StackSpec(ObservationSpec):
         self.features = features
 
         stack_shape = features[0].shape
+
+        if stack_shape is None:
+            raise ValueError(
+                f"Cannot stack shapeless features. Feature '{features[0]}'."
+            )
+
         rank = len(stack_shape)
 
         if feature_dim < 0:
@@ -40,9 +46,17 @@ class StackSpec(ObservationSpec):
             )
 
         base_shape = _remove_dim(stack_shape, feature_dim)
+        stacked_dim = SymbolicDim()
 
         for i, feature in enumerate(features[1:], start=1):
-            if _remove_dim(feature.shape, feature_dim) != base_shape:
+            shape = feature.shape
+
+            if shape is None:
+                raise ValueError(
+                    f"Cannot stack shapeless features. Feature '{features[0]}'."
+                )
+
+            if _remove_dim(shape, feature_dim) != base_shape:
                 raise ValueError(
                     "All features in a StackSpec must "
                     "match except for the stacked dimension. "
@@ -51,10 +65,7 @@ class StackSpec(ObservationSpec):
                     f"for feature {i}."
                 )
 
-        stacked_dim = sum(
-            (feature.shape[feature_dim] for feature in features),
-            start=SymbolicDim(0),
-        )
+            stacked_dim += shape[feature_dim]
 
         self.shape = tuple(
             [
@@ -64,8 +75,13 @@ class StackSpec(ObservationSpec):
             ]
         )
 
-    def resolve_shape(self, **symbol_values: int) -> tuple[int, ...]:
-        return tuple(dim.resolve(**symbol_values) for dim in self.shape)
+    def resolve_shape(self, **symbol_values: int) -> tuple[int | None, ...]:
+        return tuple(
+            dim.resolve(**symbol_values)
+            if isinstance(dim, SymbolicDim)
+            else dim
+            for dim in self.shape
+        )
 
 
 class DictSpec(ObservationSpec):

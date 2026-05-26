@@ -4,7 +4,7 @@ from typing import Final, Literal, TypeAlias
 from cpscheduler.environment.constants import EzPickle
 
 BuiltinSymbols = Literal["n_tasks", "n_jobs", "n_machines"]
-BaseShapeDim = int | BuiltinSymbols | str
+BaseShapeDim = int | BuiltinSymbols | str | None
 """Symbolic dimensions for shapes.
 
 Allows building features with dynamic shaping, such as ("n_tasks", 2).
@@ -153,7 +153,7 @@ class SymbolicDim(EzPickle):
         self._coefs = {sym: coef for sym, coef in coefs.items() if coef != 0}
 
     @classmethod
-    def from_shapedim(cls, dim: BaseShapeDim) -> "SymbolicDim":
+    def from_shapedim(cls, dim: int | str) -> "SymbolicDim":
         if isinstance(dim, int):
             return cls(const=dim)
 
@@ -161,6 +161,13 @@ class SymbolicDim(EzPickle):
         coefs = _parse_affine_expr(dim)
 
         return cls(**coefs)
+
+    @property
+    def raw(self) -> BaseShapeDim:
+        if self.is_constant():
+            return self._const_value
+
+        return str(self)
 
     def is_constant(self) -> bool:
         return not self._coefs
@@ -182,6 +189,11 @@ class SymbolicDim(EzPickle):
         return value
 
     def __add__(self, other: ShapeDim) -> "SymbolicDim":
+        if other is None:
+            raise ValueError(
+                "Cannot sum a symbolic dim with variadic None dimension."
+            )
+
         if not isinstance(other, SymbolicDim):
             other = self.from_shapedim(other)
 
@@ -198,6 +210,11 @@ class SymbolicDim(EzPickle):
         return self + other
 
     def __sub__(self, other: ShapeDim) -> "SymbolicDim":
+        if other is None:
+            raise ValueError(
+                "Cannot subtract a symbolic dim with variadic None dimension."
+            )
+
         if not isinstance(other, SymbolicDim):
             other = self.from_shapedim(other)
 

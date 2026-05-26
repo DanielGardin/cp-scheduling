@@ -190,6 +190,10 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
         self._observation = observation
 
+        # Register observation features once at initialization
+        for feature in self._observation.get_features():
+            problem_instance.register(feature)
+
         self.instance_generator = None
         if isinstance(instance, InstanceGenerator):
             self.instance_generator = instance
@@ -280,8 +284,11 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         """
         problem_instance = self._instance
 
-        for feature in self._observation.get_features():
-            problem_instance.register(feature)
+        for constraint in self.setup_constraints:
+            for feature in constraint.get_features():
+                problem_instance.unregister(feature)
+
+        problem_instance.reset()
 
         problem_instance.initialize(instance, self.setup)
         self.setup.initialize(problem_instance)

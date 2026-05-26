@@ -39,6 +39,7 @@ class SingleMachineSetup(ScheduleSetup):
         self.processing_times = TaskFeature(
             name=processing_times,
             semantic="duration",
+            shape=(),
         )
 
     @property
@@ -89,6 +90,7 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
         self.processing_times = TaskFeature(
             name=processing_times,
             semantic="duration",
+            shape=(),
         )
 
         self._n_machines = n_machines
@@ -143,6 +145,7 @@ class UniformParallelMachineSetup(ScheduleSetup):
         self.processing_times = TaskFeature(
             name=processing_times,
             semantic="duration",
+            shape=(),
         )
 
         self.speed = MachineFeature(

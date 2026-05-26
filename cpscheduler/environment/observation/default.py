@@ -54,16 +54,24 @@ class DefaultObservation(Observation[DefaultObsType]):
         self._exclude_features = exclude_features or set()
 
         self._status = TaskFeature(
-            name="status", semantic="categorical", n_categories=Status.count()
+            name="status",
+            semantic="categorical",
+            n_categories=Status.count(),
+            shape=(),
         )
 
         self._available = TaskFeature(
             name="available",
             semantic="mask",
+            shape=(),
         )
 
         self._time = GlobalFeature(
-            "time", semantic="time", default=0, dynamic=True
+            "time",
+            semantic="time",
+            default=0,
+            dynamic=True,
+            shape=(),
         )
 
     @property

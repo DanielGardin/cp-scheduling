@@ -37,9 +37,13 @@ class ProblemInstance(EzPickle):
         self._symbol_values = {}
         self._debug = debug_mode
 
-        self._preemptive = TaskFeature(name="preemptive", semantic="binary")
+        self._preemptive = TaskFeature(
+            name="preemptive", semantic="binary", shape=()
+        )
 
-        self._optional = TaskFeature(name="optional", semantic="binary")
+        self._optional = TaskFeature(
+            name="optional", semantic="binary", shape=()
+        )
 
         self._machine_mask = TaskFeature(
             name="machine_mask",
@@ -53,7 +57,7 @@ class ProblemInstance(EzPickle):
             semantic="duration",
         )
 
-        self._job_ids = TaskFeature(name="job", semantic="task")
+        self._job_ids = TaskFeature(name="job", semantic="task", shape=())
 
         # Setting features without self.register(...)
         self.features = {
@@ -151,10 +155,49 @@ class ProblemInstance(EzPickle):
 
         self.features.setdefault(name, []).append(feature)
 
+    def unregister(self, feature: Feature[Any]) -> None:
+        """Remove a previously registered feature from the instance.
+
+        This is used to clean up instance features that are no longer relevant
+        after loading a new instance, allowing features to be re-registered with
+        new data without conflicts.
+        """
+        name = feature.name
+
+        registered = self.features.get(name)
+        if not registered:
+            return
+
+        registered.remove(feature)
+
+        if not registered:
+            del self.features[name]
+
+        if self._providers.get(name) is feature:
+            del self._providers[name]
+
+        self._unused_features.pop(name, None)
+
     def validate_instance(self, origin: str) -> None:
         for features in self.features.values():
             for feat in features:
                 feat.validate(**self._symbol_values)
+
+    def reset(self) -> None:
+        """Reset instance-specific data for loading a new instance.
+
+        Clears loaded state from features and symbol values, allowing
+        features to accept new data via set_data() without raising errors.
+        Preserves feature registrations and providers.
+        """
+        self._symbol_values.clear()
+        self._unused_features.clear()
+
+        # Reset loaded state for all features without defaults
+        # (features with defaults can be updated in place)
+        for features in self.features.values():
+            for feature in features:
+                feature.reset()
 
     def _set_instance_data(self, name: str, data: Any) -> None:
         if name in self._providers:

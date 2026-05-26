@@ -1,11 +1,7 @@
 from typing import Literal
 
 from cpscheduler.environment.constants import EzPickle
-from cpscheduler.environment.specs.symbols import (
-    BaseShapeDim,
-    ShapeDim,
-    SymbolicDim,
-)
+from cpscheduler.environment.specs.symbols import BaseShapeDim, SymbolicDim
 
 
 class ObservationSpec(EzPickle):
@@ -59,7 +55,7 @@ class FeatureSpec(ObservationSpec):
     optional: bool
 
     # Feature metadata (used for ObservationSpec)
-    shape: tuple[SymbolicDim, ...]
+    shape: tuple[SymbolicDim | None, ...] | None
     n_categories: int | None
     low: float | None
     high: float | None
@@ -71,7 +67,7 @@ class FeatureSpec(ObservationSpec):
         sparse: bool = False,
         optional: bool = False,
         *,
-        shape: tuple[ShapeDim, ...] = (),
+        shape: tuple[BaseShapeDim, ...] | None = None,
         n_categories: int | None = None,
         low: float | None = None,
         high: float | None = None,
@@ -89,20 +85,25 @@ class FeatureSpec(ObservationSpec):
         self.sparse = sparse
         self.optional = optional
 
-        self.shape = tuple(
-            dim
-            if isinstance(dim, SymbolicDim)
-            else SymbolicDim.from_shapedim(dim)
-            for dim in shape
-        )
+        self.shape = None
+        if shape is not None:
+            self.shape = tuple(
+                SymbolicDim.from_shapedim(dim) if dim is not None else dim
+                for dim in shape
+            )
+
         self.n_categories = n_categories
         self.low = low
         self.high = high
 
     @property
-    def raw_shape(self) -> tuple[BaseShapeDim, ...]:
+    def raw_shape(self) -> tuple[BaseShapeDim, ...] | None:
+        if self.shape is None:
+            return None
+
         return tuple(
-            dim.const if dim.is_constant() else str(dim) for dim in self.shape
+            dim.raw if isinstance(dim, SymbolicDim) else dim
+            for dim in self.shape
         )
 
     def shareable_with(self, other: "FeatureSpec") -> bool:
@@ -131,8 +132,18 @@ class FeatureSpec(ObservationSpec):
             )
         )
 
-    def resolve_shape(self, **symbol_values: int) -> tuple[int, ...]:
-        return tuple(dim.resolve(**symbol_values) for dim in self.shape)
+    def resolve_shape(
+        self, **symbol_values: int
+    ) -> tuple[int | None, ...] | None:
+        if self.shape is None:
+            return None
+
+        return tuple(
+            dim.resolve(**symbol_values)
+            if isinstance(dim, SymbolicDim)
+            else dim
+            for dim in self.shape
+        )
 
     def __eq__(self, value: object, /) -> bool:
         return (

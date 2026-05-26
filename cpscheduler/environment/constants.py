@@ -12,8 +12,8 @@ from typing import (
     final,
 )
 
-# from typing_extensions import Self
 from mypy_extensions import i16, i32, i64, mypyc_attr, u8
+from typing_extensions import Self
 
 # ------------------------------------------------------------------------------
 # Type aliases for commonly used types
@@ -78,6 +78,40 @@ class Status(Enum):
 
     COMPLETED: Final[Literal[3]] = 3
     "Task has been completed and is no longer active in the schedule."
+
+
+# ------------------------------------------------------------------------------
+# Singletons
+
+
+class Singleton:
+    _created = False
+
+    def __new__(cls) -> Self:
+        if cls._created:
+            raise ValueError(
+                f"Singleton class {cls.__name__} can only be instantiated once."
+            )
+
+        instance = super().__new__(cls)
+        cls._created = True
+        return instance
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}()"
+
+    def __bool__(self) -> bool:
+        return False
+
+    def __hash__(self) -> int:
+        return hash(type(self))
+
+    # copying return cls._singleton to preserve singleton property
+    def __copy__(self) -> Self:
+        return self
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> Self:
+        return self
 
 
 # ------------------------------------------------------------------------------

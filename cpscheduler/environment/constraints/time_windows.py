@@ -64,6 +64,7 @@ class ReleaseDateConstraint(Constraint):
         self.release_dates = TaskFeature(
             name=release_tag,
             semantic="time",
+            shape=(),
             default=(
                 convert_to_list(release_dates, Time)
                 if release_dates is not None
@@ -108,6 +109,7 @@ class DeadlineConstraint(Constraint):
         self.due_dates = TaskFeature(
             name=due_tag,
             semantic="time",
+            shape=(),
             default=(
                 convert_to_list(due_dates, Time)
                 if due_dates is not None

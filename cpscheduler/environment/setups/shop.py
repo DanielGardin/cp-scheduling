@@ -35,11 +35,13 @@ class OpenShopSetup(ScheduleSetup):
         self.processing_times = TaskFeature(
             name=processing_times,
             semantic="duration",
+            shape=(),
         )
 
         self.machines = TaskFeature(
             name=machine_feature,
             semantic="machine",
+            shape=(),
         )
 
     @property
@@ -128,7 +130,7 @@ class JobShopSetup(OpenShopSetup):
         )
 
         self.operation_order = TaskFeature(
-            name=operation_order, semantic="order"
+            name=operation_order, semantic="order", shape=()
         )
 
     def get_features(self) -> list[TaskFeature]:
@@ -186,7 +188,7 @@ class FlexibleJobShopSetup(UnrelatedParallelMachineSetup):
         )
 
         self.operation_order = TaskFeature(
-            name=operation_order, semantic="order"
+            name=operation_order, semantic="order", shape=()
         )
 
     def get_features(self) -> list[TaskFeature]:
@@ -241,11 +243,11 @@ class FlowShopSetup(ScheduleSetup):
         self.disjunctive = disjunctive
 
         self.processing_times = TaskFeature(
-            name=processing_times, semantic="duration"
+            name=processing_times, semantic="duration", shape=()
         )
 
         self.operation_order = TaskFeature(
-            name=operation_order, semantic="order"
+            name=operation_order, semantic="order", shape=()
         )
 
     @property
