@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import Any, Generic
+from typing import Any, Generic, Literal
 
 from typing_extensions import Self, TypeIs, TypeVar
 
@@ -57,6 +57,8 @@ _T = TypeVar("_T", default=Any)
 class Feature(EzPickle, Generic[_T]):
     name: str
     spec: FeatureSpec
+    owner: bool
+
     _default: _T | _UnsetType
     _data: _T | _UnsetType
 
@@ -67,15 +69,30 @@ class Feature(EzPickle, Generic[_T]):
         name: str,
         scope: Scope,
         semantic: SemanticType,
+        *,
         optional: bool = False,
         default: _T | _UnsetType = UNSET,
+        owner: bool | None = None,
         dynamic: bool = False,
-        *,
         shape: tuple[BaseShapeDim, ...] | None = None,
         n_categories: int | None = None,
         low: float | None = None,
         high: float | None = None,
     ) -> None:
+        owns_data = not is_unset(default)
+
+        if owner is None:
+            self.owner = owns_data
+
+        elif not owner and owns_data:
+            raise ValueError(
+                f"Feature '{name}' is explicitly not an owner, but provides "
+                "default data. A non-provider must have the default data unset."
+            )
+
+        else:
+            self.owner = owner
+
         self.name = name
         self.spec = FeatureSpec(
             scope=scope,
@@ -139,21 +156,33 @@ class Feature(EzPickle, Generic[_T]):
     def shared_data(self, source: "Feature[_T]") -> None:
         if not source.spec.shareable_with(self.spec):
             raise ValueError(
-                f"Source feature '{source.name}' has different specs: "
+                f"Feature '{self.name}' has different specs from source: "
                 f"expected {self.spec}, got {source.spec}."
             )
 
+        if not source.owner:
+            raise RuntimeError(
+                f"Cannot share source feature '{source.name}' data, "
+                "it is not an owner of its data."
+            )
+
+        if self.owner:
+            raise RuntimeError(
+                f"Cannot gather data from other feature, feature '{self.name}' "
+                "is an owner."
+            )
+
         if is_unset(source._data):
-            raise ValueError(
+            raise RuntimeError(
                 f"Source feature '{source.name}' has no loaded data to share."
             )
 
-        self.set_data(data=source._data)
+        self._data = source._data
 
     def validate(self, **symbol_values: int) -> None:
         if not self.loaded:
             if not self.spec.optional:
-                raise ValueError(
+                raise RuntimeError(
                     f"Feature {self.name} is required but has no loaded data."
                 )
 
@@ -188,21 +217,25 @@ class TaskFeature(Feature[list[_T]]):
         self,
         name: str,
         semantic: SemanticType,
+        *,
         optional: bool = False,
         default: list[_T] | _UnsetType = UNSET,
+        owner: bool | None = None,
         dynamic: bool = False,
-        *,
         shape: tuple[BaseShapeDim, ...] | None = None,
         n_categories: int | None = None,
         low: float | None = None,
         high: float | None = None,
     ) -> None:
+        scope: Literal["task"] = "task"
+
         super().__init__(
             name=name,
-            scope="task",
+            scope=scope,
             semantic=semantic,
             optional=optional,
             default=default,
+            owner=owner,
             dynamic=dynamic,
             shape=expand_shape("n_tasks", shape),
             n_categories=n_categories,
@@ -217,6 +250,7 @@ class JobFeature(Feature[list[_T]]):
         name: str,
         semantic: SemanticType,
         optional: bool = False,
+        owner: bool | None = None,
         default: list[_T] | _UnsetType = UNSET,
         dynamic: bool = False,
         *,
@@ -225,11 +259,14 @@ class JobFeature(Feature[list[_T]]):
         low: float | None = None,
         high: float | None = None,
     ) -> None:
+        scope: Literal["job"] = "job"
+
         super().__init__(
             name=name,
-            scope="job",
+            scope=scope,
             semantic=semantic,
             optional=optional,
+            owner=owner,
             default=default,
             dynamic=dynamic,
             shape=expand_shape("n_jobs", shape),
@@ -245,6 +282,7 @@ class MachineFeature(Feature[list[_T]]):
         name: str,
         semantic: SemanticType,
         optional: bool = False,
+        owner: bool | None = None,
         default: list[_T] | _UnsetType = UNSET,
         dynamic: bool = False,
         *,
@@ -253,11 +291,14 @@ class MachineFeature(Feature[list[_T]]):
         low: float | None = None,
         high: float | None = None,
     ) -> None:
+        scope: Literal["machine"] = "machine"
+
         super().__init__(
             name=name,
-            scope="machine",
+            scope=scope,
             semantic=semantic,
             optional=optional,
+            owner=owner,
             default=default,
             dynamic=dynamic,
             shape=expand_shape("n_machines", shape),
@@ -273,17 +314,23 @@ class GlobalFeature(Feature[_T]):
         name: str,
         semantic: SemanticType,
         optional: bool = False,
+        owner: bool | None = None,
         default: _T | _UnsetType = UNSET,
         dynamic: bool = False,
         *,
         shape: tuple[BaseShapeDim, ...] | None = None,
         n_categories: int | None = None,
+        low: float | None = None,
+        high: float | None = None,
     ) -> None:
+        scope: Literal["global"] = "global"
+
         super().__init__(
             name=name,
-            scope="global",
+            scope=scope,
             semantic=semantic,
             optional=optional,
+            owner=owner,
             default=default,
             dynamic=dynamic,
             shape=shape,

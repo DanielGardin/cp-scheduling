@@ -19,6 +19,7 @@ class ProblemInstance(EzPickle):
     job_tasks: list[list[TaskID]]
     features: dict[str, list[Feature]]
 
+    _storage: dict[str, Any]
     _providers: dict[str, Feature]
     _symbol_values: dict[str, int]
 
@@ -33,34 +34,43 @@ class ProblemInstance(EzPickle):
 
     def __init__(self, debug_mode: bool) -> None:
         self._unused_features = {}
-        self._providers = {}
+        self._storage = {}
         self._symbol_values = {}
         self._debug = debug_mode
         self.job_tasks = []
 
         self._preemptive = TaskFeature(
-            name="preemptive", semantic="binary", shape=()
+            name="preemptive", semantic="binary", shape=(), owner=True
         )
 
         self._optional = TaskFeature(
-            name="optional", semantic="binary", shape=()
+            name="optional", semantic="binary", shape=(), owner=True
         )
 
         self._machine_mask = TaskFeature(
             name="machine_mask",
             shape=("n_machines",),
             semantic="mask",
+            owner=True,
         )
 
         self._processing_times = TaskFeature(
             name="all_processing_times",
             shape=("n_machines",),
             semantic="duration",
+            owner=True,
         )
 
         self._job_ids = TaskFeature(name="job", semantic="task", shape=())
 
         # Setting features without self.register(...)
+        self._providers = {
+            "preemptive": self._preemptive,
+            "optional": self._optional,
+            "all_processing_times": self._processing_times,
+            "machine_mask": self._machine_mask,
+        }
+
         self.features = {
             "preemptive": [self._preemptive],
             "optional": [self._optional],
@@ -75,63 +85,45 @@ class ProblemInstance(EzPickle):
 
     @property
     def n_tasks(self) -> int:
-        return self._symbol_values.get("n_tasks", 0)
+        return self._symbol_values["n_tasks"]
 
     @property
     def n_jobs(self) -> int:
-        return self._symbol_values.get("n_jobs", 0)
+        return self._symbol_values["n_jobs"]
 
     @property
     def n_machines(self) -> int:
-        return self._symbol_values.get("n_machines", 0)
+        return self._symbol_values["n_machines"]
 
     @property
     def preemptive(self) -> list[bool]:
-        if self._preemptive.loaded:
-            return self._preemptive.value
-
-        raise ValueError(
-            "ProblemInstance.preemptive: ProblemInstance have not been initialized yet."
-        )
+        return self._preemptive.value
 
     @property
     def optional(self) -> list[bool]:
-        if self._optional.loaded:
-            return self._optional.value
-
-        raise ValueError(
-            "ProblemInstance.optional: ProblemInstance have not been initialized yet."
-        )
+        return self._optional.value
 
     @property
     def machine_mask(self) -> list[list[bool]]:
-        if self._machine_mask.loaded:
-            return self._machine_mask.value
-
-        raise ValueError(
-            "ProblemInstance.machine_mask: ProblemInstance have not been initialized yet."
-        )
+        return self._machine_mask.value
 
     @property
     def processing_times(self) -> list[list[Time]]:
-        if self._processing_times.loaded:
-            return self._processing_times.value
-
-        raise ValueError(
-            "ProblemInstance.all_processing_times: ProblemInstance have not been initialized yet."
-        )
+        return self._processing_times.value
 
     @property
     def job_ids(self) -> list[TaskID]:
-        if self._job_ids.loaded:
-            return self._job_ids.value
-
-        raise ValueError(
-            "ProblemInstance.all_job_ids: ProblemInstance have not been initialized yet."
-        )
+        return self._job_ids.value
 
     def register(self, feature: Feature[Any]) -> None:
         name = feature.name
+
+        if name in {"all_processing_times", "machine_mask"}:
+            raise ValueError(
+                f"Name '{feature.name}' is a reserved keyword, if your "
+                "component requires access to machine information, retrieve it "
+                "directly using `get_processing_time`, and `has_processing_time`."
+            )
 
         registered = self.features.get(name)
 
@@ -141,18 +133,14 @@ class ProblemInstance(EzPickle):
             if ref.spec != feature.spec:
                 raise ValueError(f"Incompatible feature spec for '{name}'.")
 
-        if feature.loaded:
+        if feature.owner:
             if name in self._providers:
-                raise ValueError(f"Feature '{name}' already has a provider.")
+                raise ValueError(
+                    "Cannot have two Feature objects with the same name as "
+                    f"owners, Feature '{name}' already has a provider."
+                )
 
             self._providers[name] = feature
-
-            for consumer in self.features.get(name, ()):
-                consumer.shared_data(feature)
-
-        elif name in self._providers:
-            # TODO: FeatureSpec guardrails here.
-            feature.shared_data(self._providers[name])
 
         self.features.setdefault(name, []).append(feature)
 
@@ -192,6 +180,7 @@ class ProblemInstance(EzPickle):
         Preserves feature registrations and providers.
         """
         self._symbol_values.clear()
+        self._storage.clear()
         self._unused_features.clear()
         self.job_tasks.clear()
 
@@ -201,14 +190,25 @@ class ProblemInstance(EzPickle):
             for feature in features:
                 feature.reset()
 
-    def _set_instance_data(self, name: str, data: Any) -> None:
-        if name in self._providers:
-            raise ValueError(
-                f"Feature '{name}' in instance already has a provider."
-            )
+    def _load_data(self) -> None:
+        for name, provider in self._providers.items():
+            for feature in self.features[name]:
+                if feature is not provider:
+                    feature.shared_data(provider)
 
-        for feature in self.features.get(name, ()):
-            feature.set_data(data)
+        for name, data in self._storage.items():
+            if name in self._providers:
+                raise ValueError(
+                    f"Feature '{name}' in instance already has a provider."
+                )
+
+            features = self.features.get(name, ())
+
+            for feature in features:
+                feature.set_data(data)
+
+            if not features:
+                self._unused_features[name] = data
 
     def initialize(
         self, instance: InstanceTypes, setup: "ScheduleSetup"
@@ -228,13 +228,31 @@ class ProblemInstance(EzPickle):
         )
 
         for feat, data in task_instance.items():
-            self._set_instance_data(feat, data)
+            self._storage[feat] = data
 
         for feat, data in job_instance.items():
-            self._set_instance_data(feat, data)
+            self._storage[feat] = data
 
-        if not self._job_ids.loaded:
+        if self._job_ids.name not in self._storage:
             self._job_ids.set_data(list(range(n_tasks)))
+            self._job_ids.owner = True
+            self._providers[self._job_ids.name] = self._job_ids
+
+        self._preemptive.set_data([False] * n_tasks)
+        self._optional.set_data([False] * n_tasks)
+
+        self._load_data()
+
+        # NOTE: These features (machine related) are special, and must not be
+        # queried by features, but using the getters of this class.
+        # That is because all components have access to these standard
+        # information, and using a feature as an alias is a bad practice.
+        self._processing_times.set_data(
+            [[0] * setup.n_machines for _ in range(n_tasks)]
+        )
+        self._machine_mask.set_data(
+            [[False] * setup.n_machines for _ in range(n_tasks)]
+        )
 
         job_ids = self._job_ids.value
 
@@ -243,21 +261,11 @@ class ProblemInstance(EzPickle):
         for task_id, job_id in enumerate(job_ids):
             job_tasks[job_id].append(task_id)
 
+        self.job_tasks = job_tasks
+
         self._symbol_values["n_tasks"] = n_tasks
         self._symbol_values["n_jobs"] = n_jobs
         self._symbol_values["n_machines"] = setup.n_machines
-
-        self._preemptive.set_data([False] * n_tasks)
-        self._optional.set_data([False] * n_tasks)
-
-        self._processing_times.set_data(
-            [[0] * setup.n_machines for _ in range(n_tasks)]
-        )
-        self._machine_mask.set_data(
-            [[False] * setup.n_machines for _ in range(n_tasks)]
-        )
-
-        self.job_tasks = job_tasks
 
     def has_feature(self, feat_name: str) -> bool:
         return feat_name in self.features or feat_name in self._unused_features
