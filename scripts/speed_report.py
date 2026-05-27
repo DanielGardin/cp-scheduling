@@ -430,10 +430,9 @@ class RunResult:
                 ]
             )
 
-        print("\n")
         print(table, flush=True)
 
-    def plot_results(self) -> None:
+    def plot_results(self, filename: str) -> None:
         from statistics import mean
 
         import matplotlib.pyplot as plt
@@ -583,7 +582,7 @@ class RunResult:
 
         fig.suptitle("Speed Benchmark Report", fontweight="bold")
 
-        fig.savefig(ROOT / "report.pdf", dpi=300)
+        fig.savefig(ROOT / filename, dpi=300)
         plt.show()
 
 
@@ -598,7 +597,7 @@ def test_memory(pdr: PDR_NAMES, dynamic: bool, quiet: bool) -> None:
     table.set_style(TableStyle.MARKDOWN)
 
     if not quiet:
-        print("Running memory benchmark", end="")
+        print("Running bechmark: memory usage", end="")
 
     dots = 0
     for instance_name in benchmark_times:
@@ -610,7 +609,7 @@ def test_memory(pdr: PDR_NAMES, dynamic: bool, quiet: bool) -> None:
             else:
                 print(
                     f"\r{' ' * 100}",
-                    end="\rRunning memory benchmark",
+                    end="\rRunning bechmark: memory usage",
                     flush=True,
                 )
                 dots = 0
@@ -651,7 +650,9 @@ def test_memory(pdr: PDR_NAMES, dynamic: bool, quiet: bool) -> None:
 
         del env
 
-    print("\n")
+    if not quiet:
+        print()
+
     print(table, flush=True)
 
 
@@ -676,6 +677,7 @@ def run_cli(
     pdr: Annotated[PDR_NAMES, arg(aliases=("-p",))] = "spt",
     quiet: Annotated[bool, arg(aliases=("-q",))] = False,
     plot: bool = False,
+    output: str = "report.pdf",
     dynamic: bool = False,
     memory: bool = False,
 ) -> None:
@@ -709,22 +711,25 @@ def run_cli(
     plot: bool
         If True, plot the benchmark results.
     """
+    if not output.endswith(".pdf"):
+        raise ValueError(
+            f"Invalid extension in output, expected *.pdf, got {output}"
+        )
+
     if not quiet:
         print_header()
 
     if memory:
-        print("Running bechmark: memory usage")
-
         test_memory(pdr, dynamic, quiet)
         return
 
-    print("Running bechmark: time")
     result = RunResult()
 
     agent = PDRS[pdr]()
 
     dots = 0
     if not quiet:
+        print("Running bechmark: time")
         print(
             f"Running \033[;36m{n_runs}{RESET} iteration{'s' if n_runs > 1 else ''} per instance",
             end="",
@@ -807,10 +812,14 @@ def run_cli(
 
         gc.collect()
         gc.unfreeze()
+
+    if not quiet:
+        print()
+
     result.print_results(full=full)
 
     if plot:
-        result.plot_results()
+        result.plot_results(output)
 
 
 if __name__ == "__main__":
