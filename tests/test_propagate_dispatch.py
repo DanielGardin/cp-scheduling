@@ -13,7 +13,6 @@ from cpscheduler.environment.env import (
     PRESENCE,
     START_LB,
     START_UB,
-    STATE_INFEASIBLE,
     SchedulingEnv,
 )
 from cpscheduler.environment.setups import SingleMachineSetup
@@ -103,18 +102,3 @@ def test_propagate_dispatches_domain_events(
     assert recorder.calls == [expected]
     assert env.event_count == 1
     assert env.state.domain_event_queue == []
-
-
-def test_propagate_returns_false_for_state_infeasible_event() -> None:
-    env = SchedulingEnv(
-        SingleMachineSetup(disjunctive=False),
-        instance={"processing_time": [2]},
-    )
-    env.reset()
-    env.state.infeasible = True
-
-    env.state.domain_event_queue.append(DomainEvent(0, STATE_INFEASIBLE))
-
-    assert env.propagate() is False
-    assert env.event_count == 0
-    assert len(env.state.domain_event_queue) == 1

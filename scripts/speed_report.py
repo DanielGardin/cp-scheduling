@@ -381,7 +381,7 @@ class RunResult:
             events_per_sec = format_big_number(
                 [
                     self.n_events[instance_name] / t
-                    for t in self.simulation_times[instance_name]
+                    for t in self.step_times[instance_name]
                 ]
             )
 
