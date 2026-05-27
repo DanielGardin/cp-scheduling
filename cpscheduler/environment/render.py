@@ -309,7 +309,7 @@ class PlotlyRenderer(Renderer):
     render_name = "plotly"
 
     def build_gantt(self, state: ScheduleState) -> Any:
-        from plotly import graph_objects as go
+        from plotly import graph_objects as go  # type: ignore
 
         fig = go.Figure()
 
@@ -322,7 +322,6 @@ class PlotlyRenderer(Renderer):
             "Period: %{customdata[2]}-%{customdata[3]}<br>"
             "Machine: %{y}<extra></extra>"
         )
-
         instance = state.instance
         history = state.runtime.history
 

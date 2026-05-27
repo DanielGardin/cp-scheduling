@@ -6,7 +6,6 @@ from typing import (
     ClassVar,
     Final,
     Literal,
-    Self,
     SupportsFloat,
     SupportsIndex,
     SupportsInt,
@@ -15,6 +14,7 @@ from typing import (
 )
 
 from mypy_extensions import i32, mypyc_attr
+from typing_extensions import Self
 
 # ------------------------------------------------------------------------------
 # Type aliases for commonly used types

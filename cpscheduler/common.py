@@ -1,10 +1,7 @@
 from importlib.machinery import EXTENSION_SUFFIXES
 from typing import Any
 
-from gymnasium import Env
-
 from cpscheduler.environment.env import SchedulingEnv
-from cpscheduler.gym.env import SchedulingEnvGym
 
 
 def is_compiled() -> bool:
@@ -13,7 +10,7 @@ def is_compiled() -> bool:
     return any(env.__file__.endswith(suffix) for suffix in EXTENSION_SUFFIXES)
 
 
-AnySchedulingEnv = Env[Any, Any] | SchedulingEnvGym[Any] | SchedulingEnv[Any]
+AnySchedulingEnv = Any | SchedulingEnv[Any]
 
 
 def unwrap_env(
@@ -34,7 +31,13 @@ def unwrap_env(
     """
     depth = 0
     while not isinstance(env, SchedulingEnv) and depth < max_depth:
-        if isinstance(env, SchedulingEnvGym):
+        if not (hasattr(env, "unwrapped") or hasattr(env, "core")):
+            raise TypeError(
+                f"Expected env to have 'unwrapped' or 'core' attribute, "
+                f"got {type(env)} instead."
+            )
+
+        if hasattr(env, "core") and isinstance(env.core, SchedulingEnv):
             env = env.core
             break
 
