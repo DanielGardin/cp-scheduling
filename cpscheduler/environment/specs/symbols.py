@@ -258,7 +258,7 @@ class SymbolicDim(EzPickle):
         )
 
     def __hash__(self) -> int:
-        return hash((self._coefs, self._const_value))
+        return hash((tuple(self._coefs.items()), self._const_value))
 
     def __repr__(self) -> str:
         parts: list[str] = []

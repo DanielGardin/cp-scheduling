@@ -15,7 +15,7 @@ def _remove_dim(
 
 
 class StackSpec(ObservationSpec):
-    features: list[FeatureSpec]
+    features: tuple[FeatureSpec, ...]
     shape: tuple[SymbolicDim | None, ...]
 
     def __init__(
@@ -26,7 +26,7 @@ class StackSpec(ObservationSpec):
         if not features:
             raise ValueError("StackSpec requires at least one feature.")
 
-        self.features = features
+        self.features = tuple(features)
 
         stack_shape = features[0].shape
 
@@ -83,12 +83,24 @@ class StackSpec(ObservationSpec):
             for dim in self.shape
         )
 
+    def __eq__(self, value: object, /) -> bool:
+        return isinstance(value, StackSpec) and self.features == value.features
+
+    def __hash__(self) -> int:
+        return hash(self.features)
+
 
 class DictSpec(ObservationSpec):
     fields: dict[str, ObservationSpec]
 
     def __init__(self, fields: Mapping[str, ObservationSpec]) -> None:
         self.fields = dict(fields)
+
+    def __eq__(self, value: object, /) -> bool:
+        return isinstance(value, DictSpec) and self.fields == value.fields
+
+    def __hash__(self) -> int:
+        return hash(frozenset(self.fields.items()))
 
 
 class SequenceSpec(ObservationSpec):
@@ -109,6 +121,16 @@ class SequenceSpec(ObservationSpec):
             else None
         )
 
+    def __eq__(self, value: object, /) -> bool:
+        return (
+            isinstance(value, SequenceSpec)
+            and self.element == value.element
+            and self.length == value.length
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.element, self.length))
+
 
 class GraphSpec(ObservationSpec):
     nodes: StackSpec
@@ -121,3 +143,13 @@ class GraphSpec(ObservationSpec):
     ) -> None:
         self.nodes = nodes
         self.edges = edges
+
+    def __eq__(self, value: object, /) -> bool:
+        return (
+            isinstance(value, GraphSpec)
+            and self.nodes == value.nodes
+            and self.edges == value.edges
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.nodes, self.edges))

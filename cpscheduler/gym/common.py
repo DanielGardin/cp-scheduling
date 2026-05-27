@@ -1,9 +1,8 @@
+from gymnasium.spaces import Box, OneOf, Sequence, Text, Tuple
 from numpy import int64
 
-from gymnasium.spaces import Tuple, Text, Box, OneOf, Sequence
-
 from cpscheduler.environment.constants import MAX_TIME
-from cpscheduler.environment.utils.protocols import Options, InstanceConfig
+from cpscheduler.environment.utils.protocols import InstanceConfig, Options
 
 InstructionSpace = Text(max_length=10)
 IntSpace = Box(low=0, high=int(MAX_TIME), shape=(), dtype=int64)
@@ -21,7 +20,12 @@ SingleInstructionSpace = OneOf(
     ]
 )
 
-ActionSpace = Sequence(SingleInstructionSpace, stack=True)
+ActionSpace = OneOf(
+    [
+        SingleInstructionSpace,
+        Sequence(SingleInstructionSpace, stack=True),
+    ]
+)
 
 
 def get_instance_config(options: Options) -> InstanceConfig | None:

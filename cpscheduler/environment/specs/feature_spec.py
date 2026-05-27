@@ -9,6 +9,18 @@ class ObservationSpec(EzPickle):
     Base specification node for observation structures.
     """
 
+    def __eq__(self, value: object, /) -> bool:
+        raise NotImplementedError(
+            "Cannot compare custom specs."
+            f"Spec {type(self).__name__} does not implement equality. "
+        )
+
+    def __hash__(self) -> int:
+        raise NotImplementedError(
+            "Cannot hash custom specs."
+            f"Spec {type(self).__name__} does not implement hash. "
+        )
+
 
 SemanticType = Literal[
     # Numerical

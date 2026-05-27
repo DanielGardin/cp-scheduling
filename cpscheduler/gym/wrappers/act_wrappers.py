@@ -1,16 +1,14 @@
-from typing import Any, TypeVar
-from collections.abc import Iterable
-
 from abc import ABC, abstractmethod
-
-from numpy import int64
+from collections.abc import Iterable
+from typing import Any, TypeVar
 
 from gymnasium import ActionWrapper, Env
-from gymnasium.spaces import Space, Box, Sequence
+from gymnasium.spaces import Box, Sequence, Space
+from numpy import int64
 
-from cpscheduler.environment.utils.protocols import Options
-from cpscheduler.environment.des import ActionType
 from cpscheduler.environment.constants import Int
+from cpscheduler.environment.des import ActionType
+from cpscheduler.environment.utils.protocols import Options
 
 _Obs = TypeVar("_Obs")
 _Act = TypeVar("_Act")
@@ -29,7 +27,7 @@ class SchedulingActionWrapper(ActionWrapper[_Obs, _Act, ActionType], ABC):
         self,
         *,
         seed: int | None = None,
-        options: Options = None,
+        options: Options | None = None,
     ) -> tuple[_Obs, dict[str, Any]]:
         previously_loaded = self.get_wrapper_attr("loaded")
 

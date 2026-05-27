@@ -9,23 +9,20 @@ can import ready-to-use environment.
 It is meant to be imported using the `make` function provided by gymnasium
 """
 
-from typing import Any
 from collections.abc import Mapping
+from typing import Any
 
-from cpscheduler.environment.utils.protocols import InstanceTypes, Metric
-from cpscheduler.environment.schedule_setup import JobShopSetup
 from cpscheduler.environment.objectives import Makespan
+from cpscheduler.environment.setups import JobShopSetup
+from cpscheduler.environment.utils.protocols import InstanceTypes, Metric
 
 from .env import SchedulingEnvGym
 
 
 def make_jobshop(
     instance: InstanceTypes | None = None,
-    metrics: Mapping[str, Metric[Any]] | None = None
+    metrics: Mapping[str, Metric[Any]] | None = None,
 ) -> SchedulingEnvGym:
     return SchedulingEnvGym(
-        JobShopSetup(),
-        objective=Makespan(),
-        instance=instance,
-        metrics=metrics
+        JobShopSetup(), objective=Makespan(), instance=instance, metrics=metrics
     )

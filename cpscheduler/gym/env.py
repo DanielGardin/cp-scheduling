@@ -5,40 +5,68 @@ This module defines the `SchedulingEnvGym` class, which is a Gymnasium environme
 the CPScheduler scheduling environment.
 """
 
-from typing import Any
 from collections.abc import Iterable, Mapping
+from typing import Any, cast, overload
 
 from gymnasium import Env, Space
-
-from cpscheduler.environment.utils.protocols import Metric
+from typing_extensions import TypeVar
 
 from cpscheduler.environment import (
-    SchedulingEnv,
-    ScheduleSetup,
     Constraint,
     Objective,
+    ScheduleSetup,
+    SchedulingEnv,
 )
-from cpscheduler.environment.utils.protocols import InstanceTypes, Options
-
-from cpscheduler.environment.state import ObsType
 from cpscheduler.environment.des import ActionType
+from cpscheduler.environment.observation import Observation
+from cpscheduler.environment.observation.default import DefaultObsType
 from cpscheduler.environment.render import Renderer
+from cpscheduler.environment.utils.protocols import (
+    InstanceTypes,
+    Metric,
+    Options,
+)
+from cpscheduler.gym.common import ActionSpace
+from cpscheduler.gym.obs_spaces import observation_spec_to_gym_space
 
-from .gym_utils import infer_collection_space
-from .common import ActionSpace
+ObsType = TypeVar("ObsType", default=DefaultObsType)
 
 
 class SchedulingEnvGym(Env[ObsType, ActionType]):
-    metadata: dict[str, Any] = {
-        "render_modes": ["human"],
-        "render_fps": 50,
-    }
+    _core: SchedulingEnv[Observation[ObsType]]
+
+    @overload
+    def __init__(
+        self: "SchedulingEnvGym[DefaultObsType]",
+        machine_setup: ScheduleSetup,
+        constraints: Iterable[Constraint] | None = None,
+        objective: Objective | None = None,
+        observation: None = None,
+        instance: InstanceTypes | None = None,
+        metrics: Mapping[str, Metric[Any]] | None = None,
+        *,
+        render_mode: Renderer | str | None = None,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self,
+        machine_setup: ScheduleSetup,
+        constraints: Iterable[Constraint] | None = None,
+        objective: Objective | None = None,
+        *,
+        observation: Observation[ObsType],
+        instance: InstanceTypes | None = None,
+        metrics: Mapping[str, Metric[Any]] | None = None,
+        render_mode: Renderer | str | None = None,
+    ) -> None: ...
 
     def __init__(
         self,
         machine_setup: ScheduleSetup,
         constraints: Iterable[Constraint] | None = None,
         objective: Objective | None = None,
+        observation: Observation[ObsType] | None = None,
         instance: InstanceTypes | None = None,
         metrics: Mapping[str, Metric[Any]] | None = None,
         *,
@@ -46,49 +74,73 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
     ):
         self.action_space = ActionSpace
 
-        self._core = SchedulingEnv(
-            machine_setup=machine_setup,
-            constraints=constraints,
-            objective=objective,
-            instance=instance,
-            metrics=metrics,
-            render_mode=render_mode,
-        )
+        if observation is None:
+            _env = SchedulingEnv(
+                machine_setup=machine_setup,
+                constraints=constraints,
+                objective=objective,
+                instance=instance,
+                metrics=metrics,
+                render_mode=render_mode,
+            )
 
-        self._core.reset()
-        self.observation_space = self.get_observation_space()
+            self._core = cast(SchedulingEnv[Observation[ObsType]], _env)
 
-    def get_observation_space(self) -> Space[ObsType]:
-        return infer_collection_space(self._core.get_state())
+        else:
+            self._core = SchedulingEnv(
+                machine_setup=machine_setup,
+                constraints=constraints,
+                objective=objective,
+                observation=observation,
+                instance=instance,
+                metrics=metrics,
+                render_mode=render_mode,
+            )
+
+        self.observation_space = self._get_observation_space()
+        self.metadata = {
+            "render_modes": ["human"],
+            "render_fps": 50,
+        }
+
+    def _get_observation_space(self) -> Space[Any]:
+        return observation_spec_to_gym_space(self._core.observation)
 
     @classmethod
-    def from_env(cls, env: SchedulingEnv) -> "SchedulingEnvGym":
+    def from_env(
+        cls, env: SchedulingEnv[Observation[ObsType]]
+    ) -> "SchedulingEnvGym[ObsType]":
         "Create a `SchedulingEnvGym` instance from an existing `SchedulingEnv`."
         self = cls.__new__(cls)
+        super().__init__(self)
 
         self.action_space = ActionSpace
         self._core = env
 
+        self.observation_space = self._get_observation_space()
+        self.metadata = {
+            "render_modes": ["human"],
+            "render_fps": 50,
+        }
+
         return self
 
     @property
-    def core(self) -> SchedulingEnv:
+    def core(self) -> SchedulingEnv[Observation[ObsType]]:
         "Return the underlying `SchedulingEnv` instance."
         return self._core
 
     def reset(
-        self, *, seed: int | None = None, options: Options = None
+        self, *, seed: int | None = None, options: Options | None = None
     ) -> tuple[ObsType, dict[str, Any]]:
         super().reset(seed=seed)
 
-        previously_loaded = self._core.loaded
-
         obs, info = self._core.reset(options=options)
 
-        if options is not None or not previously_loaded:
-            self.observation_space = self.get_observation_space()
+        # FUTURE: This is expensive, highly unnecessary, but fine for now.
+        self.observation_space = self._get_observation_space()
 
-        return obs, {key: value for key, value in info.items()}
+        return obs.serialize(), {key: value for key, value in info.items()}
 
     def step(
         self, action: ActionType
@@ -96,22 +148,30 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         obs, reward, done, truncated, info = self._core.step(action)
 
         return (
-            obs,
+            obs.serialize(),
             reward,
             done,
             truncated,
             {key: value for key, value in info.items()},
         )
 
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._core, name)
-
     def __repr__(self) -> str:
         return self._core.__repr__()
 
     # Expose SchedulingEnv public methods
-    set_instance = SchedulingEnv.set_instance
-    add_constraint = SchedulingEnv.add_constraint
-    set_objective = SchedulingEnv.set_objective
-    add_metric = SchedulingEnv.add_metric
-    get_entry = SchedulingEnv.get_entry
+
+    def load_instance(self, instance: InstanceTypes) -> None:
+        """Set problem instance data."""
+        self._core.load_instance(instance)
+
+    def add_constraint(self, constraint: Constraint) -> None:
+        self._core.add_constraint(constraint)
+
+    def set_objective(self, objective: Objective) -> None:
+        self._core.set_objective(objective)
+
+    def add_metric(self, name: str, metric: Metric[Any]) -> None:
+        self._core.add_metric(name, metric)
+
+    def get_entry(self) -> str:
+        return self._core.get_entry()
