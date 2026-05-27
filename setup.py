@@ -3,8 +3,9 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
-from setuptools import Extension, setup
+from setuptools import setup
 
 USE_MYPYC = (
     os.environ.get("MYPYC_DISABLE", "0") != "1" and "--no-mypyc" not in sys.argv
@@ -13,7 +14,7 @@ USE_MYPYC = (
 if "--no-mypyc" in sys.argv:
     sys.argv.remove("--no-mypyc")
 
-ext_modules: list[Extension] = []
+ext_modules: list[Any] = []
 if USE_MYPYC:
     from mypyc.build import mypycify
 
