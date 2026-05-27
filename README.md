@@ -168,7 +168,7 @@ env = SchedulingEnv(
 
 ### Observation & Info
 
-`env.get_state()` returns a tuple of **(task_features, job_features)**, each as a dictionary of lists. The `info` dictionary returned by `step()` and `reset()` includes `current_time`, `objective_value`, `event_count`, and any custom metrics added via `env.add_metric()`.
+`env.observation.serialize()` returns a dictionary with `task`, `job`, `machine`, and `global` sections. The `info` dictionary returned by `step()` and `reset()` includes `current_time`, `objective_value`, `event_count`, and any custom metrics added via `env.add_metric()`.
 
 ---
 
@@ -193,17 +193,13 @@ env = gym.make("Jobshop-v0", instance=instance)
 
 | Wrapper | Description |
 |---|---|
-| `TabularObservationWrapper` | Merges task and job features into a single flat dict. |
-| `CPStateWrapper` | Exposes the underlying constraint-propagation state. |
-| `ArrayObservationWrapper` | Converts observations to NumPy arrays. |
 | `PermutationActionWrapper` | Accepts an ordered task/job sequence as the action. |
-| `InstancePoolWrapper` | Samples a new instance from a pool on each reset. |
 
 ```python
-from cpscheduler.gym import SchedulingEnvGym, PermutationActionWrapper, TabularObservationWrapper
+from cpscheduler.gym import SchedulingEnvGym
+from cpscheduler.gym.wrappers import PermutationActionWrapper
 
 gym_env = SchedulingEnvGym(JobShopSetup(), objective=Makespan(), instance=instance)
-gym_env = TabularObservationWrapper(gym_env)
 gym_env = PermutationActionWrapper(gym_env, strict=True)
 ```
 

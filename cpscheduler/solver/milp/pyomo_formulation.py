@@ -1,18 +1,18 @@
 import logging
 from typing import Final, Literal, TypeAlias
 
-import pyomo.environ as pyo
-from pyomo.core.base.objective import (
+import pyomo.environ as pyo  # type: ignore[import-untyped]
+from pyomo.core.base.objective import (  # type: ignore[import-untyped]
     ObjectiveSense,
 )
-from pyomo.core.base.var import (
+from pyomo.core.base.var import (  # type: ignore[import-untyped]
     VarData,
 )
-from pyomo.core.expr.relational_expr import (
+from pyomo.core.expr.relational_expr import (  # type: ignore[import-untyped]
     RelationalExpression,
 )
-from pyomo.opt.base.solvers import OptSolver
-from pyomo.opt.results.results_ import (
+from pyomo.opt.base.solvers import OptSolver  # type: ignore[import-untyped]
+from pyomo.opt.results.results_ import (  # type: ignore[import-untyped]
     SolverResults,
 )
 from typing_extensions import assert_never
