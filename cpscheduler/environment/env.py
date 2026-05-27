@@ -89,11 +89,10 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
     # Environment static variables
     setup: ScheduleSetup
     constraints: list[Constraint]
-    passive_constraints: list[PassiveConstraint]
     setup_constraints: tuple[Constraint, ...]
     objective: Objective
     instance_generator: InstanceGenerator | None
-    _all_constraints: list[Constraint]
+    _all_constraints: tuple[Constraint, ...]
     _observation: ObsT_co
 
     metrics: dict[str, Metric]
@@ -154,45 +153,43 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         self._status = UNLOADED
 
         problem_instance = ProblemInstance(debug_mode)
-        self._instance = problem_instance
 
         if machine_setup is None:
             machine_setup = ScheduleSetup()
 
-        for feature in machine_setup.get_features():
-            problem_instance.register(feature)
-
-        self.setup = machine_setup
-
-        self.schedule = Schedule()
-
-        self.constraints = []
-        self.passive_constraints = []
-        self.setup_constraints = ()
-        self._all_constraints = []
-
-        if constraints is not None:
-            for constraint in constraints:
-                self.add_constraint(constraint)
+        if constraints is None:
+            constraints = ()
 
         if objective is None:
             objective = Objective()
 
-        self.set_objective(objective)
-
-        self.metrics = {}
-        if metrics is not None:
-            for name, metric in metrics.items():
-                self.add_metric(name, metric)
-
         if observation is None:
             observation = cast(ObsT_co, DefaultObservation())
 
+        component: Component
+        for component in [
+            machine_setup,
+            *constraints,
+            objective,
+        ]:
+            for feature in component.get_features():
+                problem_instance.register(feature)
+
+        for feature in observation.get_features():
+            problem_instance.register(feature)
+
+        self._instance = problem_instance
+        self.setup = machine_setup
+        self.constraints = list(constraints)
+        self.objective = objective
         self._observation = observation
 
-        # Register observation features once at initialization
-        for feature in self._observation.get_features():
-            problem_instance.register(feature)
+        self.schedule = Schedule()
+
+        self.setup_constraints = ()
+        self._all_constraints = ()
+
+        self.metrics = dict(metrics) if metrics is not None else {}
 
         self.instance_generator = None
         if isinstance(instance, InstanceGenerator):
@@ -221,7 +218,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
     @property
     def all_constraints(self) -> tuple[Constraint, ...]:
-        return tuple(self._all_constraints)
+        return self._all_constraints
 
     def __repr__(self) -> str:
         entry = self.get_entry()
@@ -253,13 +250,10 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
     # Environment configuration public methods
     def add_constraint(self, constraint: Constraint) -> None:
         "Add a constraint to the environment."
-        self._status = UNLOADED
+        if self._status != UNLOADED:
+            self.reset_instance()
 
-        if isinstance(constraint, PassiveConstraint):
-            self.passive_constraints.append(constraint)
-
-        else:
-            self.constraints.append(constraint)
+        self.constraints.append(constraint)
 
         instance = self._instance
         for feature in constraint.get_features():
@@ -267,12 +261,33 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
     def set_objective(self, objective: Objective) -> None:
         "Set the objective function for the environment."
-        self._status = UNLOADED
-        self.objective = objective
+        if self._status != UNLOADED:
+            self.reset_instance()
 
         instance = self._instance
+        for prev_feature in self.objective.get_features():
+            instance.unregister(prev_feature)
+
         for feature in objective.get_features():
             instance.register(feature)
+
+        self.objective = objective
+
+    def reset_instance(self) -> None:
+        """Remove the instance and allow the configuration of the environment to
+        change.
+        """
+        instance = self._instance
+
+        for constraint in self.setup_constraints:
+            for feature in constraint.get_features():
+                instance.unregister(feature)
+
+        self.setup_constraints = ()
+        self._all_constraints = ()
+
+        instance.reset()
+        self._status = UNLOADED
 
     def load_instance(self, instance: InstanceTypes) -> None:
         """
@@ -282,13 +297,9 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             instance: InstanceTypes
                 The instance data for the scheduling problem, can be a DataFrame or a dictionary.
         """
+        self.reset_instance()
+
         problem_instance = self._instance
-
-        for constraint in self.setup_constraints:
-            for feature in constraint.get_features():
-                problem_instance.unregister(feature)
-
-        problem_instance.reset()
 
         problem_instance.initialize(instance, self.setup)
         self.setup.initialize(problem_instance)
@@ -298,15 +309,19 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             for feature in constraint.get_features():
                 problem_instance.register(feature)
 
-        for constraint in setup_constraints:
-            constraint.initialize(problem_instance)
-
         self.setup_constraints = setup_constraints
-        self._all_constraints = [*self.constraints, *setup_constraints]
+        self._all_constraints = (
+            *setup_constraints,
+            *(
+                constraint
+                for constraint in self.constraints
+                if not isinstance(constraint, PassiveConstraint)
+            ),
+        )
 
         component: Component
         for component in [
-            *self.passive_constraints,
+            *self.setup_constraints,
             *self.constraints,
             self.objective,
         ]:
@@ -333,10 +348,6 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
         beta = ",".join(
             [constraint.get_entry() for constraint in self.constraints]
-            + [
-                constraint.get_entry()
-                for constraint in self.passive_constraints
-            ]
         )
 
         gamma = self.objective.get_entry()
@@ -413,6 +424,8 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             if not consistent:
                 return False
 
+        # When the schedule is empty, the environment halts, expecting an action
+        # from the policy.
         return not schedule.is_empty()
 
     def propagate(self) -> bool:
@@ -425,6 +438,11 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         state = self.state
         event_queue = state.domain_event_queue
         constraints = self._all_constraints
+
+        # FUTURE: For performance, consider subscribing constraints such that,
+        # constraint.fields() -> Sequence[VarFieldType]
+        # then we cache which propagators are subscribed for a field, instead of
+        # iterating over all constraints.
 
         idx = 0
         while idx < len(event_queue):
@@ -481,6 +499,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
                 assert state.infeasible, (
                     "STATE_INFEASIBLE event produced erroneously."
                 )
+                self.event_count += idx + 1
                 return False
 
             else:
@@ -527,23 +546,26 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
         runtime_event_queue.clear()
 
-    def _handle_options(self, options: Options) -> None:
-        if "instance" in options:
-            self.load_instance(options["instance"])
-            return
-
-        generator = options.get("instance_generator", self.instance_generator)
-
-        if generator is not None:
-            seed = options.get("seed", None)
-            self.load_instance(generator.sample(self, seed=seed))
-
     # Environment API methods
     def reset(
         self, *, options: Options | None = None
     ) -> tuple[ObsT_co, InfoType]:
-        if options is not None:
-            self._handle_options(options)
+        options = options or {}
+
+        if "instance" in options:
+            self.load_instance(options["instance"])
+
+        else:
+            generator = options.get("instance_generator")
+            if isinstance(generator, InstanceGenerator):
+                self.instance_generator = generator
+
+            if self.instance_generator is not None:
+                self.load_instance(
+                    self.instance_generator.sample(
+                        self, seed=options.get("seed")
+                    )
+                )
 
         if self._status == UNLOADED:
             raise ValueError(
@@ -586,20 +608,23 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         if self._status != RUNNING:
             if self._status == UNLOADED:
                 raise RuntimeError(
-                    "Environment was not reset after loading an instance, or wasn't loaded. "
-                    "Please call reset(options={'instance':<instance>}) or load_instance(<instance>), then reset()."
+                    "Environment was not reset after loading an instance, or "
+                    "wasn't loaded. Please either call "
+                    "reset(options={'instance':<instance>}) or "
+                    "load_instance(<instance>), then reset()."
                 )
 
             raise RuntimeError(
-                "The instance configuration has changed, potentially invalidating the current "
-                "simulation step. Please call reset() for ensuring that the change is applied globally."
+                "An instance was loaded, but the environment has not been "
+                "initialized. Please call reset() before step()."
             )
 
         self.schedule_action(action)
 
         schedule = self.schedule
 
-        while not state.is_terminal() and self.advance_clock():
+        consistent = True
+        while consistent and not state.is_terminal() and self.advance_clock():
             for event in schedule.instruction_queue(state):
                 # After each instruction is processed, domains are updated until a fixed point.
                 event.process(state, schedule)
