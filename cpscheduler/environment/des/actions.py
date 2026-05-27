@@ -39,7 +39,7 @@ def is_single_action(
     if not isinstance(action, tuple):
         return False
 
-    spec = action[1] if isinstance(action[0], int | dict) else action[0]
+    spec = action[1] if isinstance(action[0], Int | dict) else action[0]
 
     if isinstance(spec, str):
         return True
@@ -58,7 +58,7 @@ def parse_instruction(
     time: Time | None = None
     priority: PriorityValue | None = None
 
-    if isinstance(instruction[0], int | dict):
+    if isinstance(instruction[0], Int | dict):
         instruction = cast(BAction, instruction)
 
         s_args, spec, *spec_args = instruction

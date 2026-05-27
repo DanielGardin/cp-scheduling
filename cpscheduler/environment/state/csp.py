@@ -184,57 +184,55 @@ class TaskDomains(EzPickle):
     start: Bounds
     end: Bounds
 
-    def __init__(self, instance: ProblemInstance | None = None) -> None:
-        if instance is not None:
-            n_tasks = instance.n_tasks
-            n_machines = instance.n_machines
+    def __init__(self, instance: ProblemInstance) -> None:
+        n_tasks = instance.n_tasks
+        n_machines = instance.n_machines
 
-            remaining_times = [0] * (n_tasks * n_machines)
+        remaining_times = [0] * (n_tasks * n_machines)
 
-            presence: list[PresenceType] = [
-                UNDEFINED if optional else PRESENT
-                for optional in instance.optional
-            ]
+        presence: list[PresenceType] = [
+            UNDEFINED if optional else PRESENT for optional in instance.optional
+        ]
 
-            feasible_machines: list[set[MachineID]] = [
-                set() for _ in range(n_tasks)
-            ]
+        feasible_machines: list[set[MachineID]] = [
+            set() for _ in range(n_tasks)
+        ]
 
-            start = Bounds(instance)
-            end = Bounds(instance)
+        start = Bounds(instance)
+        end = Bounds(instance)
 
-            processing_times = instance.processing_times
-            machine_mask = instance.machine_mask
+        processing_times = instance.processing_times
+        machine_mask = instance.machine_mask
 
-            for task_id in range(n_tasks):
-                p_times = processing_times[task_id]
-                mask = machine_mask[task_id]
+        for task_id in range(n_tasks):
+            p_times = processing_times[task_id]
+            mask = machine_mask[task_id]
 
-                eligible_machines = tuple(
-                    machine_id
-                    for machine_id in range(n_machines)
-                    if mask[machine_id]
-                )
-                feasible_machines[task_id].update(eligible_machines)
+            eligible_machines = tuple(
+                machine_id
+                for machine_id in range(n_machines)
+                if mask[machine_id]
+            )
+            feasible_machines[task_id].update(eligible_machines)
 
-                start_idx = task_id * n_machines
-                for machine_id in eligible_machines:
-                    idx = start_idx + machine_id
+            start_idx = task_id * n_machines
+            for machine_id in eligible_machines:
+                idx = start_idx + machine_id
 
-                    p_j = p_times[machine_id]
+                p_j = p_times[machine_id]
 
-                    remaining_times[idx] = p_j
-                    start.ubs[idx] = end.ubs[idx] - p_j
-                    end.lbs[idx] = start.lbs[idx] + p_j
+                remaining_times[idx] = p_j
+                start.ubs[idx] = end.ubs[idx] - p_j
+                end.lbs[idx] = start.lbs[idx] + p_j
 
-            self.feasible_machines = feasible_machines
-            self.remaining_times = remaining_times
+        self.feasible_machines = feasible_machines
+        self.remaining_times = remaining_times
 
-            self.assignment = [GLOBAL_MACHINE_ID] * n_tasks
-            self.presence = presence
+        self.assignment = [GLOBAL_MACHINE_ID] * n_tasks
+        self.presence = presence
 
-            self.start = start
-            self.end = end
+        self.start = start
+        self.end = end
 
     def get_feasible_machines(self, task_id: TaskID) -> tuple[MachineID, ...]:
         return tuple(self.feasible_machines[task_id])

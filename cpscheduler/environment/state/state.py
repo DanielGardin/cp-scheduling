@@ -146,8 +146,8 @@ class ScheduleState(EzPickle):
         self.infeasible = False
 
         self.instance = ProblemInstance(self._debug)
-        self.domains = TaskDomains()
-        self.runtime = RuntimeState()
+        self.domains = TaskDomains(self.instance)
+        self.runtime = RuntimeState(self.instance)
 
         self.domain_event_queue.clear()
         self.runtime_event_queue.clear()

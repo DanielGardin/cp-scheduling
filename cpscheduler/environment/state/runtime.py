@@ -62,21 +62,20 @@ class RuntimeState(EzPickle):
 
     last_completion_time: Time
 
-    def __init__(self, instance: ProblemInstance | None = None) -> None:
-        if instance is not None:
-            n_tasks = instance.n_tasks
+    def __init__(self, instance: ProblemInstance) -> None:
+        n_tasks = instance.n_tasks
 
-            self.history = [[] for _ in range(n_tasks)]
+        self.history = [[] for _ in range(n_tasks)]
 
-            self.dependencies = [set() for _ in range(n_tasks)]
-            self.status = [AWAITING] * n_tasks
+        self.dependencies = [set() for _ in range(n_tasks)]
+        self.status = [AWAITING] * n_tasks
 
-            self.awaiting_tasks = set(range(n_tasks))
-            self.unlocked_tasks = set(range(n_tasks))
-            self.executing_tasks = set()
-            self.completed_tasks = set()
+        self.awaiting_tasks = set(range(n_tasks))
+        self.unlocked_tasks = set(range(n_tasks))
+        self.executing_tasks = set()
+        self.completed_tasks = set()
 
-            self.last_completion_time = MIN_TIME
+        self.last_completion_time = MIN_TIME
 
     def __repr__(self) -> str:
         return (

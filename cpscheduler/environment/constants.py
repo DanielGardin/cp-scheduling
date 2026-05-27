@@ -14,7 +14,7 @@ from typing import (
     final,
 )
 
-from mypy_extensions import i16, i32, i64, mypyc_attr, u8
+from mypy_extensions import i32, mypyc_attr
 
 # ------------------------------------------------------------------------------
 # Type aliases for commonly used types
@@ -23,11 +23,15 @@ IndexType = i32
 
 MachineID = IndexType
 TaskID = IndexType
+JobID = IndexType
 
 Time = i32
 
 # Generic numeric types
-Int = SupportsInt | int | i64 | i32 | i16 | u8
+# Altought it seems redundant to union int and SupportsInt, for some reason,
+# mypy does not consider its own integer types (u8, i16, i32, i64) as subclasses
+# of SupportsInt.
+Int = SupportsInt | int
 Float = SupportsFloat | float
 
 # ------------------------------------------------------------------------------
@@ -47,14 +51,14 @@ GLOBAL_MACHINE_ID: MachineID = -1
 class Enum:
     __enum_count__: ClassVar[int] = 0
 
-    def __init__(self) -> None:
-        raise ValueError(f"Cannot instantiate enum class {type(self).__name__}")
+    def __new__(cls) -> Self:
+        raise TypeError(f"Cannot instantiate enum class {cls.__name__}")
 
     def __init_subclass__(cls) -> None:
         cls.__enum_count__ = sum(
             1
             for k in vars(cls)
-            if not k.startswith("__") and not k.endswith("__")
+            if not (k.startswith("__") and k.endswith("__"))
         )
 
     @classmethod

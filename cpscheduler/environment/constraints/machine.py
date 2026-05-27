@@ -148,14 +148,14 @@ class MachineBreakdownConstraint(Constraint):
         n_machines = max(int(count) for count in step_function.values())
 
         for time in sorted_times:
-            available_machines = int(step_function[Time(time)])
+            available_machines = int(step_function[time])
 
             for machine in range(available_machines):
                 if machine not in breakdowns:
                     continue
 
                 start, end = breakdowns[machine][-1]
-                if end == MAX_TIME:
+                if Time(end) == MAX_TIME:
                     breakdowns[machine][-1] = (start, time)
 
             for machine in range(available_machines, n_machines):
@@ -254,16 +254,16 @@ class BatchConstraint(Constraint):
             )
 
     def set_capacity(self, machine_id: Int, capacity: Int) -> None:
-        machine_id = MachineID(machine_id)
+        machine = MachineID(machine_id)
 
         if self.constant_capacity is not None:
             raise ValueError(
                 "Cannot add capacity to a batch constraint with constant capacity."
             )
 
-        extend_list(self.capacity.value, machine_id + 1, lambda: 1)
+        extend_list(self.capacity.value, machine + 1, lambda: 1)
 
-        self.capacity.value[machine_id] = int(capacity)
+        self.capacity.value[machine] = int(capacity)
 
     def get_features(self) -> list[Feature]:
         return [self.capacity]
