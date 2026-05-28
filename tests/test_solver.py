@@ -4,6 +4,8 @@ from time import perf_counter
 import pytest
 from common import TEST_INSTANCES, env_setup
 
+pytest.importorskip("pyomo")
+
 from cpscheduler.solver import get_formulations
 
 logger = logging.getLogger(__name__)
