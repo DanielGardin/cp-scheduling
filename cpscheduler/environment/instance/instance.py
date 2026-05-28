@@ -14,7 +14,6 @@ if TYPE_CHECKING:
 _T = TypeVar("_T")
 
 
-# TODO: Validate the features after read_instance
 class ProblemInstance(EzPickle):
     job_tasks: list[list[TaskID]]
     features: dict[str, list[Feature]]

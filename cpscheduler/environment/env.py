@@ -75,7 +75,6 @@ ObsT_co = TypeVar(
 )
 
 
-# @profile
 class SchedulingEnv(EzPickle, Generic[ObsT_co]):
     """
     SchedulingEnv is a custom environment for generic scheduling problems. It is designed to be

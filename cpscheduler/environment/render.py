@@ -309,7 +309,7 @@ class PlotlyRenderer(Renderer):
     render_name = "plotly"
 
     def build_gantt(self, state: ScheduleState) -> Any:
-        from plotly import graph_objects as go  # type: ignore
+        from plotly import graph_objects as go
 
         fig = go.Figure()
 
