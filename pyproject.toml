@@ -25,7 +25,8 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "mypy_extensions"
+    "mypy_extensions",
+    "typing-extensions",
 ]
 
 [tool.setuptools.packages.find]
