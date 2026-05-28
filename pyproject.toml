@@ -68,6 +68,7 @@ dev = [
     "mypy >= 1.13.0",
     "ruff",
     "types-setuptools",
+    "plotly-stubs",
 ]
 
 [tool.ruff]
