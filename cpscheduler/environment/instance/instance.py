@@ -1,8 +1,10 @@
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any
 
-# from mypy_extensions import mypyc_attr
+from mypy_extensions import mypyc_attr
+
 from cpscheduler.environment.constants import EzPickle, MachineID, TaskID, Time
 from cpscheduler.environment.instance.features import Feature, TaskFeature
+from cpscheduler.environment.specs.feature_spec import FeatureSpec
 from cpscheduler.environment.utils.protocols import (
     InstanceTypes,
     prepare_instance,
@@ -11,18 +13,32 @@ from cpscheduler.environment.utils.protocols import (
 if TYPE_CHECKING:
     from cpscheduler.environment.setups import ScheduleSetup
 
-_T = TypeVar("_T")
+
+def find_provider(features: list[Feature]) -> Feature | None:
+    provider: Feature | None = None
+    for feature in features:
+        if not feature.owner:
+            continue
+
+        if provider is not None:
+            raise ValueError(
+                f"Feature '{feature.name}' in instance already has a provider."
+            )
+
+        provider = feature
+
+    return provider
 
 
+@mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
 class ProblemInstance(EzPickle):
     job_tasks: list[list[TaskID]]
-    features: dict[str, list[Feature]]
 
+    features: dict[str, list[Feature]]
+    _feature_specs: dict[str, FeatureSpec]
     _storage: dict[str, Any]
-    _providers: dict[str, Feature]
     _symbol_values: dict[str, int]
 
-    _unused_features: dict[str, Any]
     _debug: bool
 
     _preemptive: TaskFeature[bool]
@@ -32,11 +48,13 @@ class ProblemInstance(EzPickle):
     _job_ids: TaskFeature[TaskID]
 
     def __init__(self, debug_mode: bool) -> None:
-        self._unused_features = {}
+        self.job_tasks = []
+        self._feature_specs = {}
+
         self._storage = {}
         self._symbol_values = {}
+
         self._debug = debug_mode
-        self.job_tasks = []
 
         self._preemptive = TaskFeature(
             name="preemptive", semantic="binary", shape=(), owner=True
@@ -63,19 +81,17 @@ class ProblemInstance(EzPickle):
         self._job_ids = TaskFeature(name="job", semantic="task", shape=())
 
         # Setting features without self.register(...)
-        self._providers = {
-            "preemptive": self._preemptive,
-            "optional": self._optional,
-            "all_processing_times": self._processing_times,
-            "machine_mask": self._machine_mask,
-        }
-
         self.features = {
             "preemptive": [self._preemptive],
             "optional": [self._optional],
             "all_processing_times": [self._processing_times],
             "machine_mask": [self._machine_mask],
             "job": [self._job_ids],
+        }
+
+        self._feature_specs = {
+            feature_name: features[0].spec
+            for feature_name, features in self.features.items()
         }
 
     @property
@@ -114,6 +130,13 @@ class ProblemInstance(EzPickle):
     def job_ids(self) -> list[TaskID]:
         return self._job_ids.value
 
+    def required_features(self) -> dict[str, FeatureSpec]:
+        return {
+            name: feature
+            for name, feature in self._feature_specs.items()
+            if find_provider(self.features[name]) is None
+        }
+
     def register(self, feature: Feature[Any]) -> None:
         name = feature.name
 
@@ -124,22 +147,13 @@ class ProblemInstance(EzPickle):
                 "directly using `get_processing_time`, and `has_processing_time`."
             )
 
-        registered = self.features.get(name)
+        registered_spec = self._feature_specs.get(name)
 
-        if registered:
-            ref = registered[0]
+        if registered_spec is None:
+            self._feature_specs[name] = feature.spec
 
-            if ref.spec != feature.spec:
-                raise ValueError(f"Incompatible feature spec for '{name}'.")
-
-        if feature.owner:
-            if name in self._providers:
-                raise ValueError(
-                    "Cannot have two Feature objects with the same name as "
-                    f"owners, Feature '{name}' already has a provider."
-                )
-
-            self._providers[name] = feature
+        elif registered_spec != feature.spec:
+            raise ValueError(f"Incompatible feature spec for '{name}'.")
 
         self.features.setdefault(name, []).append(feature)
 
@@ -160,11 +174,7 @@ class ProblemInstance(EzPickle):
 
         if not registered:
             del self.features[name]
-
-        if self._providers.get(name) is feature:
-            del self._providers[name]
-
-        self._unused_features.pop(name, None)
+            del self._feature_specs[name]
 
     def validate_instance(self, origin: str) -> None:
         for features in self.features.values():
@@ -178,10 +188,9 @@ class ProblemInstance(EzPickle):
         features to accept new data via set_data() without raising errors.
         Preserves feature registrations and providers.
         """
-        self._symbol_values.clear()
-        self._storage.clear()
-        self._unused_features.clear()
         self.job_tasks.clear()
+        self._storage.clear()
+        self._symbol_values.clear()
 
         # Reset loaded state for all features without defaults
         # (features with defaults can be updated in place)
@@ -190,24 +199,21 @@ class ProblemInstance(EzPickle):
                 feature.reset()
 
     def _load_data(self) -> None:
-        for name, provider in self._providers.items():
-            for feature in self.features[name]:
-                if feature is not provider:
+        for name, features in self.features.items():
+            provider = find_provider(features)
+
+            if provider is not None:
+                for feature in self.features[name]:
+                    if feature is provider:
+                        continue
+
                     feature.shared_data(provider)
 
-        for name, data in self._storage.items():
-            if name in self._providers:
-                raise ValueError(
-                    f"Feature '{name}' in instance already has a provider."
-                )
+            elif name in self._storage:
+                data = self._storage[name]
 
-            features = self.features.get(name, ())
-
-            for feature in features:
-                feature.set_data(data)
-
-            if not features:
-                self._unused_features[name] = data
+                for feature in features:
+                    feature.set_data(data)
 
     def initialize(
         self, instance: InstanceTypes, setup: "ScheduleSetup"
@@ -232,13 +238,11 @@ class ProblemInstance(EzPickle):
         for feat, data in job_instance.items():
             self._storage[feat] = data
 
-        if self._job_ids.name not in self._storage:
-            self._job_ids.set_data(list(range(n_tasks)))
-            self._job_ids.owner = True
-            self._providers[self._job_ids.name] = self._job_ids
-
         self._preemptive.set_data([False] * n_tasks)
         self._optional.set_data([False] * n_tasks)
+
+        if self._job_ids.name not in self._storage:
+            self._storage[self._job_ids.name] = list(range(n_tasks))
 
         self._load_data()
 
@@ -253,7 +257,7 @@ class ProblemInstance(EzPickle):
             [[False] * setup.n_machines for _ in range(n_tasks)]
         )
 
-        job_ids = self._job_ids.value
+        job_ids = self.job_ids
 
         n_jobs = max(job_ids) + 1 if job_ids else 0
         job_tasks: list[list[TaskID]] = [[] for _ in range(n_jobs)]
@@ -261,21 +265,20 @@ class ProblemInstance(EzPickle):
             job_tasks[job_id].append(task_id)
 
         self.job_tasks = job_tasks
-
         self._symbol_values["n_tasks"] = n_tasks
         self._symbol_values["n_jobs"] = n_jobs
         self._symbol_values["n_machines"] = setup.n_machines
 
     def has_feature(self, feat_name: str) -> bool:
-        return feat_name in self.features or feat_name in self._unused_features
+        return feat_name in self.features
 
     def get_feature(self, feat_name: str) -> Feature:
-        if feat_name not in self.features:
-            raise KeyError(
-                f"Feature {feat_name} was never registered in the instance."
-            )
+        if feat_name in self.features:
+            return self.features[feat_name][0]
 
-        return self.features[feat_name][0]
+        raise KeyError(
+            f"Feature {feat_name} was never registered in the instance."
+        )
 
     def get_machines(self, task_id: TaskID) -> list[MachineID]:
         return [

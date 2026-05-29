@@ -1,5 +1,5 @@
 from collections.abc import Hashable, Iterable, Iterator, Mapping
-from typing import TYPE_CHECKING, Any, Protocol, overload, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from typing_extensions import TypedDict, TypeVar
 
@@ -38,15 +38,7 @@ InstanceTypes = Instance_T | tuple[Instance_T, Instance_T]  # Task-instance data
 class InstanceGenerator(Protocol):
     """Protocol for components that can sample a new random instance from an environment spec."""
 
-    @overload
-    def sample(self, env: Any, *, seed: int | None = None) -> InstanceTypes: ...
-
-    @overload
-    def sample(self, *, seed: int | None = None) -> InstanceTypes: ...
-
-    def sample(
-        self, env: Any = None, *, seed: int | None = None
-    ) -> InstanceTypes: ...
+    def sample(self, seed: int | None = None) -> InstanceTypes: ...
 
 
 InfoType = dict[str, Any]

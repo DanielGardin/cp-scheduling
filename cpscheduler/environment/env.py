@@ -30,6 +30,7 @@ from cpscheduler.environment.objectives import Objective
 from cpscheduler.environment.observation import DefaultObservation, Observation
 from cpscheduler.environment.render import Renderer
 from cpscheduler.environment.setups import ScheduleSetup
+from cpscheduler.environment.specs.feature_spec import FeatureSpec
 from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.state.events import RuntimeEventKind, VarField
 from cpscheduler.environment.utils.protocols import (
@@ -288,6 +289,9 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         instance.reset()
         self._status = UNLOADED
 
+    def required_features(self) -> dict[str, FeatureSpec]:
+        return self._instance.required_features()
+
     def load_instance(self, instance: InstanceTypes) -> None:
         """
         Set the instance data for the environment.
@@ -306,6 +310,14 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         setup_constraints = self.setup.setup_constraints(problem_instance)
         for constraint in setup_constraints:
             for feature in constraint.get_features():
+                if not feature.owner:
+                    raise ValueError(
+                        f"Setup '{self.setup}' produced a non-owner feature "
+                        f"'{feature.name}' from setup constraint '{constraint}'. "
+                        f"Setup constraints must be built entirely from the "
+                        "instance, and not require any additional features."
+                    )
+
                 problem_instance.register(feature)
 
         self.setup_constraints = setup_constraints
@@ -560,11 +572,8 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
                 self.instance_generator = generator
 
             if self.instance_generator is not None:
-                self.load_instance(
-                    self.instance_generator.sample(
-                        self, seed=options.get("seed")
-                    )
-                )
+                seed = options.get("seed")
+                self.load_instance(self.instance_generator.sample(seed))
 
         if self._status == UNLOADED:
             raise ValueError(
