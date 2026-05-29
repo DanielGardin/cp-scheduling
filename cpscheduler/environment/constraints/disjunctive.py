@@ -37,7 +37,7 @@ class NonOverlapConstraint(Constraint):
 
     def add_task(self, group_id: Int, task: Int) -> None:
         if not self.groups.loaded:
-            self.groups.set_data([])
+            self.groups.own_data([])
 
         group = int(group_id)
 
@@ -47,7 +47,7 @@ class NonOverlapConstraint(Constraint):
 
     def add_group(self, task_group: Iterable[Int]) -> None:
         if not self.groups.loaded:
-            self.groups.set_data([])
+            self.groups.own_data([])
 
         self.groups.value.append(convert_to_list(task_group, TaskID))
 

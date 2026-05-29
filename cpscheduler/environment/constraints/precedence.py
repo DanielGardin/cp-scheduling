@@ -136,7 +136,7 @@ class PrecedenceConstraint(Constraint):
 
     def add_precedence(self, parent_id: Int, child_id: Int) -> None:
         if not self.parents.loaded:
-            self.parents.set_data({})
+            self.parents.own_data({})
 
         parent, child = TaskID(parent_id), TaskID(child_id)
 
@@ -158,7 +158,7 @@ class PrecedenceConstraint(Constraint):
 
     def add_chain(self, chain: Sequence[Int]) -> None:
         if not self.parents.loaded:
-            self.parents.set_data({})
+            self.parents.own_data({})
 
         if not chain:
             raise ValueError("Invalid empty chain in precedence.")

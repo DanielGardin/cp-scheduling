@@ -58,12 +58,14 @@ class DefaultObservation(Observation[DefaultObsType]):
             semantic="categorical",
             n_categories=Status.count(),
             shape=(),
+            owner=True,
         )
 
         self._available = TaskFeature(
             name="available",
             semantic="mask",
             shape=(),
+            owner=True,
         )
 
         self._time = GlobalFeature(
@@ -72,6 +74,7 @@ class DefaultObservation(Observation[DefaultObsType]):
             default=0,
             dynamic=True,
             shape=(),
+            owner=True,
         )
 
     @property

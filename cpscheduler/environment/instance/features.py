@@ -57,6 +57,7 @@ _T = TypeVar("_T", default=Any)
 class Feature(EzPickle, Generic[_T]):
     name: str
     spec: FeatureSpec
+    optional: bool
     owner: bool
 
     _default: _T | _UnsetType
@@ -93,11 +94,11 @@ class Feature(EzPickle, Generic[_T]):
         else:
             self.owner = owner
 
+        self.optional = optional
         self.name = name
         self.spec = FeatureSpec(
             scope=scope,
             semantic=semantic,
-            optional=optional,
             shape=shape,
             n_categories=n_categories,
             low=low,
@@ -111,13 +112,18 @@ class Feature(EzPickle, Generic[_T]):
 
     @classmethod
     def from_spec(
-        cls, name: str, spec: FeatureSpec, default: _T | _UnsetType = UNSET
+        cls,
+        name: str,
+        spec: FeatureSpec,
+        *,
+        optional: bool = False,
+        default: _T | _UnsetType = UNSET,
     ) -> Self:
         return cls(
             name=name,
             scope=spec.scope,
             semantic=spec.semantic,
-            optional=spec.optional,
+            optional=optional,
             default=default,
             shape=spec.raw_shape,
             n_categories=spec.n_categories,
@@ -140,18 +146,33 @@ class Feature(EzPickle, Generic[_T]):
     def shape(self) -> tuple[BaseShapeDim, ...] | None:
         return self.spec.raw_shape
 
-    def set_data(self, data: _T) -> None:
-        if not self.dynamic and self.loaded:
-            raise RuntimeError(
-                f"Feature {self.name} already has loaded data: {self._data}."
-            )
-
-        self._data = data
-
     def reset(self) -> None:
         default = self._default
 
         self._data = default
+
+    def own_data(self, data: _T) -> None:
+        """Tells the instance that the data being loaded is owned by this
+        feature.
+
+        Use it when you need to set data, but want to avoid being overwritten
+        by user instance data.
+        """
+        if self.owner:
+            raise ValueError(
+                f"Feature '{self.name}' already is an owner, use `set_data` instead."
+            )
+
+        self.owner = True
+        self._data = data
+
+    def set_data(self, data: _T) -> None:
+        if not self.dynamic and self.loaded:
+            raise RuntimeError(
+                f"Feature '{self.name}' already has loaded data: {self._data}."
+            )
+
+        self._data = data
 
     def shared_data(self, source: "Feature[_T]") -> None:
         if not source.spec.shareable_with(self.spec):
@@ -181,7 +202,7 @@ class Feature(EzPickle, Generic[_T]):
 
     def validate(self, **symbol_values: int) -> None:
         if not self.loaded:
-            if not self.spec.optional:
+            if not self.optional:
                 raise RuntimeError(
                     f"Feature {self.name} is required but has no loaded data."
                 )

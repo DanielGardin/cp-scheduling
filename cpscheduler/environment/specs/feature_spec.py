@@ -52,7 +52,6 @@ class FeatureSpec(ObservationSpec):
     scope: Scope
     semantic: SemanticType
     sparse: bool
-    optional: bool
 
     # Feature metadata (used for ObservationSpec)
     shape: tuple[SymbolicDim | None, ...] | None
@@ -65,7 +64,6 @@ class FeatureSpec(ObservationSpec):
         scope: Scope,
         semantic: SemanticType,
         sparse: bool = False,
-        optional: bool = False,
         *,
         shape: tuple[BaseShapeDim, ...] | None = None,
         n_categories: int | None = None,
@@ -83,7 +81,6 @@ class FeatureSpec(ObservationSpec):
         self.scope = scope
         self.semantic = semantic
         self.sparse = sparse
-        self.optional = optional
 
         self.shape = None
         if shape is not None:
@@ -106,12 +103,13 @@ class FeatureSpec(ObservationSpec):
             for dim in self.shape
         )
 
+    # FUTURE: Implement broadcasted views for shareable features
     def shareable_with(self, other: "FeatureSpec") -> bool:
         """Check if this feature spec can share the same underlying data as
         another spec.
 
         To be shareable, both specs must have the same semantic and metadata
-        (shape, n_categories, low, high).
+        ( n_categories, low, high).
         Additionally, the scopes must be compatible, i.e. one must be a subset
         of the other.
         The possible scope combinations are:
@@ -121,7 +119,6 @@ class FeatureSpec(ObservationSpec):
         """
         return (
             self.semantic == other.semantic
-            and self.shape == other.shape
             and self.n_categories == other.n_categories
             and self.low == other.low
             and self.high == other.high
@@ -151,7 +148,6 @@ class FeatureSpec(ObservationSpec):
             and self.scope == value.scope
             and self.semantic == value.semantic
             and self.sparse == value.sparse
-            and self.optional == value.optional
             and self.shape == value.shape
             and self.n_categories == value.n_categories
             and self.low == value.low
@@ -164,7 +160,6 @@ class FeatureSpec(ObservationSpec):
                 self.scope,
                 self.semantic,
                 self.sparse,
-                self.optional,
                 self.shape,
                 self.n_categories,
                 self.low,
