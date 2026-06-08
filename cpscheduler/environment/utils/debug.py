@@ -1,3 +1,10 @@
+"""Debugging utilities for validating instance and domain bounds.
+
+The helpers in this module raise descriptive exceptions when indices or
+domain bounds are invalid, making it easier to pinpoint invariants that were
+violated during constraint propagation or scheduling.
+"""
+
 from typing import TYPE_CHECKING
 
 from cpscheduler.environment.constants import (
@@ -12,11 +19,49 @@ if TYPE_CHECKING:
 
 
 def job_bounds(job: TaskID, instance: "ProblemInstance", origin: str) -> None:
+    """Validate that a job index is in bounds.
+
+    Parameters
+    ----------
+    job : TaskID
+        Job identifier to validate.
+
+    instance : ProblemInstance
+        Instance providing `n_jobs`.
+
+    origin : str
+        Caller identifier for error context.
+
+    Raises
+    ------
+    ValueError
+        If `job` is outside [0, n_jobs).
+
+    """
     if not (0 <= job < instance.n_jobs):
         raise ValueError(f"{origin}: invalid job {job}")
 
 
 def task_bounds(task: TaskID, instance: "ProblemInstance", origin: str) -> None:
+    """Validate that a task index is in bounds.
+
+    Parameters
+    ----------
+    task : TaskID
+        Task identifier to validate.
+
+    instance : ProblemInstance
+        Instance providing `n_tasks`.
+
+    origin : str
+        Caller identifier for error context.
+
+    Raises
+    ------
+    ValueError
+        If `task` is outside [0, n_tasks).
+
+    """
     if not (0 <= task < instance.n_tasks):
         raise ValueError(f"{origin}: invalid task {task}")
 
@@ -24,6 +69,25 @@ def task_bounds(task: TaskID, instance: "ProblemInstance", origin: str) -> None:
 def machine_bounds(
     machine: MachineID, instance: "ProblemInstance", origin: str
 ) -> None:
+    """Validate that a machine index is in bounds.
+
+    Parameters
+    ----------
+    machine : MachineID
+        Machine identifier to validate.
+
+    instance : ProblemInstance
+        Instance providing `n_machines`.
+
+    origin : str
+        Caller identifier for error context.
+
+    Raises
+    ------
+    ValueError
+        If `machine` is outside [0, n_machines).
+
+    """
     if not (0 <= machine < instance.n_machines):
         raise ValueError(f"{origin}: invalid machine {machine}")
 
@@ -36,34 +100,35 @@ def validate_machine_id(
     *,
     allow_global: bool = False,
 ) -> None:
-    """
-    Validate that a machine identifier is well-formed and admissible for a task.
+    """Validate that a machine identifier is admissible for a task.
 
     This check enforces three invariants:
     1. The machine index lies within the valid range [0, n_machines).
-
-    2. The machine is allowed for the given task according to the instance
-       (i.e., it appears in the processing time map).
-
-    3. Optionally, a special GLOBAL_MACHINE_ID is accepted when `allow_global=True`.
+    2. The machine is allowed for the task (appears in its processing map).
+    3. Optionally, GLOBAL_MACHINE_ID is accepted when `allow_global=True`.
 
     Parameters
     ----------
     task_id : TaskID
         Task whose machine assignment is being validated.
+
     machine_id : MachineID
         Machine identifier to validate.
-    state : "ScheduleState"
-        Provides problem dimensions and processing-time feasibility.
-    allow_global : bool, optional
-        If True, allows `machine_id == GLOBAL_MACHINE_ID` to bypass checks.
+
+    instance : ProblemInstance
+        Instance providing machine counts and feasibility.
+
     origin : str
         Identifier of the caller, used to contextualize error messages.
+
+    allow_global : bool, optional
+        If True, allows `machine_id == GLOBAL_MACHINE_ID` to bypass checks.
 
     Raises
     ------
     RuntimeError
         If the machine identifier is out of bounds or not feasible for the task.
+
     """
     if machine_id == GLOBAL_MACHINE_ID:
         if not allow_global:
@@ -93,8 +158,7 @@ def validate_domain_bounds(
     machine_id: MachineID = GLOBAL_MACHINE_ID,
     origin: str,
 ) -> None:
-    """
-    Validate temporal domain consistency for a task across one or more machines.
+    """Validate temporal domain consistency for a task across one or more machines.
 
     This check enforces per-(task, machine) invariants on the current domain:
     1. Start bounds are ordered: start_lb <= start_ub.
@@ -112,10 +176,13 @@ def validate_domain_bounds(
     ----------
     task_id : TaskID
         Task whose temporal domains are being checked.
-    state : "ScheduleState"
+
+    state : ScheduleState
         Provides access to domain arrays and feasibility information.
+
     machine_id : MachineID, optional
         Target machine. If GLOBAL_MACHINE_ID, all feasible machines are checked.
+
     origin : str
         Identifier of the caller, used to contextualize error messages.
 
@@ -123,8 +190,9 @@ def validate_domain_bounds(
     ------
     RuntimeError
         If any bound ordering or processing-time consistency invariant is violated.
-    """
 
+
+    """
     domains = state.domains
     intance = state.instance
     row = task_id * intance.n_machines

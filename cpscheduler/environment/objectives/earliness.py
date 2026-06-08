@@ -1,3 +1,7 @@
+"""Earliness-based objectives."""
+
+from typing import override
+
 from cpscheduler.environment.constants import Time
 from cpscheduler.environment.instance import JobFeature
 from cpscheduler.environment.objectives.base import CompletionTimeObjective
@@ -5,11 +9,11 @@ from cpscheduler.environment.state import ScheduleState
 
 
 class TotalEarliness(CompletionTimeObjective):
-    """
-    The total earliness objective function, which aims to minimize the sum of
-    earliness of all jobs.
-    Earliness is defined as the difference between the due date and the
-    completion time, if the job is completed early.
+    """Total Earliness objective.
+
+    This objective function aims to minimize the sum of earliness of all jobs.
+    Earliness of a job is defined as the amount of time by which its completion time
+    is earlier than its due date, i.e., E_j = max(d_j - C_j, 0)
     """
 
     due_dates: JobFeature[Time]
@@ -17,13 +21,27 @@ class TotalEarliness(CompletionTimeObjective):
     def __init__(
         self, due_dates: str = "due_date", minimize: bool = True
     ) -> None:
+        """Initialize the Total Earliness objective.
+
+        Parameters
+        ----------
+        due_dates: str, optional
+            The name of the job feature that contains the due dates.
+
+        minimize: bool, optional
+            Whether to minimize or maximize the objective.
+            Default is True (i.e., minimize).
+
+        """
         super().__init__(minimize)
 
-        self.due_dates = JobFeature(name=due_dates, semantic="time")
+        self.due_dates = JobFeature(name=due_dates, semantic="time", shape=())
 
+    @override
     def get_features(self) -> list[JobFeature]:
         return [self.due_dates]
 
+    @override
     def get_current(self, state: ScheduleState) -> float:
         return float(
             sum(
@@ -34,6 +52,7 @@ class TotalEarliness(CompletionTimeObjective):
             )
         )
 
+    @override
     def __call__(self, state: ScheduleState) -> float:
         return float(
             sum(
@@ -47,14 +66,18 @@ class TotalEarliness(CompletionTimeObjective):
         )
 
     @classmethod
+    @override
     def get_general_entry(cls) -> str:
         return "ΣE_j"
 
 
 class WeightedEarliness(TotalEarliness):
-    """
-    The weighted earliness objective function, which aims to minimize the
-    weighted sum of earliness of all jobs.
+    """Weighted Earliness objective.
+
+    This objective function aims to minimize the weighted sum of earliness of all jobs.
+    Earliness of a job is defined as the amount of time by which its completion time
+    is earlier than its due date, i.e., E_j = max(d_j - C_j, 0).
+    The weighted variant optimizes Σw_jE_j, where w_j is the weight of job j.
     """
 
     weights: JobFeature[float]
@@ -65,6 +88,21 @@ class WeightedEarliness(TotalEarliness):
         job_weights: str = "weight",
         minimize: bool = True,
     ):
+        """Initialize the Weighted Earliness objective.
+
+        Parameters
+        ----------
+        due_dates: str, optional
+            The name of the job feature that contains the due dates.
+
+        job_weights: str, optional
+            The name of the job feature that contains the weights for each job.
+
+        minimize: bool, optional
+            Whether to minimize or maximize the objective.
+            Default is True (i.e., minimize).
+
+        """
         super().__init__(due_dates, minimize)
 
         self.weights = JobFeature(
@@ -73,12 +111,15 @@ class WeightedEarliness(TotalEarliness):
         )
 
     @property
+    @override
     def regular(self) -> bool:
         return all(weight >= 0 for weight in self.weights.value)
 
+    @override
     def get_features(self) -> list[JobFeature]:
         return [self.due_dates, self.weights]
 
+    @override
     def get_current(self, state: ScheduleState) -> float:
         return float(
             sum(
@@ -92,6 +133,7 @@ class WeightedEarliness(TotalEarliness):
             )
         )
 
+    @override
     def __call__(self, state: ScheduleState) -> float:
         return float(
             sum(
@@ -106,5 +148,6 @@ class WeightedEarliness(TotalEarliness):
         )
 
     @classmethod
+    @override
     def get_general_entry(cls) -> str:
         return "Σw_jE_j"

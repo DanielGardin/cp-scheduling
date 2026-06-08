@@ -10,9 +10,14 @@ class DisjunctiveConstraint(Constraint):
     For every edge (i, j) in the disjunctive graph, ensure that
         (S_i >= C_j) OR (S_j >= C_i)
 
-    Attributes:
-        disjunctive_tag: Feature to be imported/exported to the task instance.
-        edges: Iterable containing pairs of disjunctive tasks (i, j).
+    Attributes
+    ----------
+        disjunctive_tag: str
+            Feature to be imported/exported to the task instance.
+
+        edges: Iterable[tuple[int, int]] | None = None
+            Iterable containing pairs of disjunctive tasks (i, j).
+
     """
 
     adjacency: dict[TaskID, set[TaskID]]

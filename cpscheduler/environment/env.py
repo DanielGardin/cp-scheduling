@@ -1,22 +1,16 @@
-"""
-env.py
+"""Discrete-event environment for constraint-based scheduling problems.
 
-This component defines the SchedulingEnv class, which is a custom environment for generic
-scheduling problems.
-It is designed to be modular and extensible, allowing users to define their own scheduling
-problems by specifying the machine setup, constraints, objectives, and instances.
-
-The environment is based on the OpenAI Gym interface, making it compatible with various
-reinforcement learning libraries. It provides methods for resetting the environment, taking
-steps, rendering the environment, and exporting the scheduling model.
+The environment composes a machine setup (alpha), constraints (beta), and an objective (gamma)
+under a Graham-style scheduling formulation.
+It exposes a Gymnasium-like interface over an event-driven simulation kernel
+with constraint propagation.
 """
 
 from collections.abc import Iterable, Mapping
-from typing import Generic, Literal, cast
+from typing import TYPE_CHECKING, Generic, Literal, cast
 
 from typing_extensions import TypeVar, assert_never
 
-from cpscheduler.environment.component import Component
 from cpscheduler.environment.constants import EzPickle
 from cpscheduler.environment.constraints import Constraint, PassiveConstraint
 from cpscheduler.environment.des import (
@@ -41,18 +35,21 @@ from cpscheduler.environment.utils.protocols import (
     Options,
 )
 
+if TYPE_CHECKING:
+    from cpscheduler.environment.component import Component
+
 # Event fields and kinds
 
 EnvStatusType = Literal[0, 1, 2]
 
+# No instance loaded. Constraints and Objectives can be added
 UNLOADED: Literal[0] = 0
-"No instance loaded. Constraints and Objectives can be added."
 
+# Instance loaded and components initialized, configuration frozen
 LOADED: Literal[1] = 1
-"Instance loaded and components initialized, configuration frozen"
 
+# State globally consistent, instance frozen
 RUNNING: Literal[2] = 2
-"State globally consistent, instance frozen."
 
 ASSIGNMENT = VarField.ASSIGNMENT
 START_LB = VarField.START_LB
@@ -77,13 +74,37 @@ ObsT_co = TypeVar(
 
 
 class SchedulingEnv(EzPickle, Generic[ObsT_co]):
-    """
-    SchedulingEnv is a custom environment for generic scheduling problems. It is designed to be
-    modular and extensible, allowing users to define their own scheduling problems by specifying
-    the machine setup, constraints, objectives, and instances.
+    """Discrete-event environment for scheduling problems with constraint propagation.
 
-    The environment is based on the OpenAI Gym interface, making it compatible with various
-    reinforcement learning libraries.
+    SchedulingEnv combines a machine setup (alpha), constraints (beta), and objectives (gamma) following
+    the Graham scheduling notation. The environment enforces feasibility via constraint
+    propagation and provides a Gymnasium-like interface for RL integration.
+
+    State Machine
+    -------------
+    UNLOADED
+        No instance loaded; configuration is mutable.
+
+    LOADED
+        Instance loaded and components initialized.
+        Configuration is frozen, ready for reset.
+
+    RUNNING
+        Episode active; simulation advances via step().
+
+    Simulation Loop (in `step()`)
+    ----------------------------
+    1. Accept action from policy (task assignment or batch).
+    2. Advance simulation time to next event horizon determined by schedule or state.
+    3. Process events (constraint propagation until fixed-point).
+    4. Update runtime (callbacks for task start/completion).
+    5. Return observation, reward, terminated, and info.
+
+    Invariants
+    ----------
+    - After `load_instance()`: state is globally consistent (propagation completed).
+    - Features are immutable after `initialize()`. Use `reset()` to load a new instance.
+
     """
 
     # Environment static variables
@@ -150,6 +171,47 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         render_mode: Renderer | str | None = None,
         debug_mode: bool = False,
     ):
+        """Initialize the scheduling environment.
+
+        Defines the parameterized environment, composing machine_setup,
+        constraints and objective.
+
+        If `instance` is an `InstanceGenerator`, it is stored for deferred
+        sampling after each `reset()` call.
+        If it is concrete instance data, `load_instance()` is called immediately.
+
+        Parameters
+        ----------
+        machine_setup : ScheduleSetup, optional
+            Alpha component in Graham notation. Defines machine topology and
+            availability. Defaults to a bare `ScheduleSetup` (no machines).
+
+        constraints : Iterable[Constraint], optional
+            Beta components. Applied during constraint propagation.
+            Defaults to an empty tuple.
+
+        objective : Objective, optional
+            Gamma component. Defines the reward signal. Defaults to a no-op
+            `Objective`.
+
+        observation : ObsT_co, optional
+            Observation class used to build RL observations. Defaults to
+            `DefaultObservation`.
+
+        instance : InstanceTypes or InstanceGenerator, optional
+            Either concrete instance data or a generator stored for lazy sampling.
+
+        metrics : Mapping[str, Metric], optional
+            Performance metrics to be added to the info dictionary.
+
+        render_mode : Renderer or str, optional
+            Renderer instance or mode string. Defaults to a no-op renderer.
+
+        debug_mode : bool, optional
+            Enables additional runtime assertions during simulation.
+            Defaults to False.
+
+        """
         self._status = UNLOADED
 
         problem_instance = ProblemInstance(debug_mode)
@@ -164,7 +226,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             objective = Objective()
 
         if observation is None:
-            observation = cast(ObsT_co, DefaultObservation())
+            observation = cast("ObsT_co", DefaultObservation())
 
         component: Component
         for component in [
@@ -206,21 +268,26 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
     @property
     def loaded(self) -> bool:
+        """Indicates whether an instance has been loaded and the environment is initialized."""
         return self._status != UNLOADED
 
     @property
     def running(self) -> bool:
+        """Indicates whether the environment is currently running an episode."""
         return self._status == RUNNING
 
     @property
     def observation(self) -> ObsT_co:
+        """Access the current observation object."""
         return self._observation
 
     @property
     def all_constraints(self) -> tuple[Constraint, ...]:
+        """Access all active constraints used during propagation."""
         return self._all_constraints
 
     def __repr__(self) -> str:
+        """Return a string representation of the environment's configuration and state."""
         entry = self.get_entry()
 
         if self._status == UNLOADED:
@@ -249,7 +316,18 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
     # Environment configuration public methods
     def add_constraint(self, constraint: Constraint) -> None:
-        "Add a constraint to the environment."
+        """Add a constraint to the environment.
+
+        Parameters
+        ----------
+        constraint : Constraint
+            The constraint to add.
+
+        Notes
+        -----
+        Resets any loaded instance to allow configuration changes.
+
+        """
         if self._status != UNLOADED:
             self.reset_instance()
 
@@ -260,7 +338,18 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             instance.register(feature)
 
     def set_objective(self, objective: Objective) -> None:
-        "Set the objective function for the environment."
+        """Replace the objective function.
+
+        Parameters
+        ----------
+        objective : Objective
+            The new objective function.
+
+        Notes
+        -----
+        Resets any loaded instance to allow configuration changes.
+
+        """
         if self._status != UNLOADED:
             self.reset_instance()
 
@@ -274,8 +363,10 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         self.objective = objective
 
     def reset_instance(self) -> None:
-        """Remove the instance and allow the configuration of the environment to
-        change.
+        """Unload the current instance and restore configuration mutability.
+
+        Returns the environment to UNLOADED state, allowing setup, constraints,
+        and objective modifications.
         """
         instance = self._instance
 
@@ -290,15 +381,28 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         self._status = UNLOADED
 
     def required_features(self) -> dict[str, FeatureSpec]:
+        """Return a dictionary of all required features from the setup, constraints, and objective."""
         return self._instance.required_features()
 
     def load_instance(self, instance: InstanceTypes) -> None:
-        """
-        Set the instance data for the environment.
+        """Load a scheduling instance and initialize the environment.
 
-        Parameters:
-            instance: InstanceTypes
-                The instance data for the scheduling problem, can be a DataFrame or a dictionary.
+        Prepares the environment for simulation by loading instance data,
+        validating constraints, and propagating domain bounds.
+
+        Parameters
+        ----------
+        instance : InstanceTypes
+            Instance data (DataFrame or dict) with task/job columns.
+
+        Raises
+        ------
+        ValueError
+            If setup constraints produce invalid features.
+
+        RuntimeError
+            If constraint propagation detects initial infeasibility.
+
         """
         self.reset_instance()
 
@@ -346,15 +450,15 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         self._status = LOADED
 
     def add_metric(self, name: str, metric: Metric) -> None:
-        "Add a metric to the environment."
+        """Add a metric to the environment."""
         self.metrics[name] = metric
 
     def clear_metrics(self) -> None:
-        "Clear all metrics from the environment."
+        """Clear all metrics from the environment."""
         self.metrics.clear()
 
     def get_entry(self) -> str:
-        "Get a string representation of the environment's configuration."
+        """Get a string representation of the environment's configuration."""
         alpha = self.setup.get_entry()
 
         beta = ",".join(
@@ -367,7 +471,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
     # Environment state retrieval methods
     def get_info(self) -> InfoType:
-        "Retrieve additional information about the environment."
+        """Retrieve additional information about the environment."""
         info = {
             "current_time": self.state.time,
             "objective_value": self._prev_obj_value,
@@ -393,7 +497,11 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
     # Environment internal methods for simulation
     def schedule_action(self, action: ActionType) -> None:
-        "Consume an action by adding the corresponding instruction(s) to the schedule."
+        """Parse action and add instruction(s) to the event schedule.
+
+        Handles both single actions and batch actions, converting them into
+        instructions for the simulation.
+        """
         if action is None:
             return
 
@@ -410,6 +518,29 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             self.schedule.add_event(instruction, state, time, priority)
 
     def advance_clock(self) -> bool:
+        """Advance simulation time to the next event horizon.
+
+        Determines the next time step based on scheduled instructions or state,
+        updates all constraints, and triggers propagation.
+        Halts when the schedule is empty, awaiting the next policy action.
+
+        The next time is determined by the following logic:
+        - If the schedule has pending instructions, advance to the next instruction time.
+        - If the schedule is empty but there are unlocked tasks, advance to the earliest start_lb
+            among unlocked tasks.
+        - If the schedule is empty and no unlocked tasks, advance to the last completion time.
+
+        This logic ensures that the simulation advances to the next decision
+        point where the state may change, either due to scheduled events or
+        lower bounds for next possible instructions.
+
+        Returns
+        -------
+        bool
+            True if schedule is not empty (more events to process).
+            False if inconsistency detected or schedule is empty.
+
+        """
         schedule = self.schedule
         state = self.state
 
@@ -435,17 +566,22 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             if not consistent:
                 return False
 
-        # When the schedule is empty, the environment halts, expecting an action
-        # from the policy.
         return not schedule.is_empty()
 
     def propagate(self) -> bool:
-        """
-        Propagate the new bounds through the constraints until a fixed-point is reached.
+        """Execute constraint propagation to fixed-point.
 
-        Returns whether the propagation has run without producing an infeasible state.
-        """
+        Processes all domain events in the queue, invoking constraint callbacks
+        (assignment, bounds updates, presence/absence, etc.) until the queue is
+        exhausted or infeasibility is detected.
 
+        Returns
+        -------
+        bool
+            True if propagation reached fixed-point.
+            False if state is infeasible.
+
+        """
         state = self.state
         event_queue = state.domain_event_queue
         constraints = self._all_constraints
@@ -524,6 +660,11 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         return True
 
     def update_runtime(self) -> None:
+        """Process runtime events and trigger callbacks.
+
+        Dequeues task events (started, completed, paused, infeasible) and
+        invokes callbacks on the objective and observation modules.
+        """
         state = self.state
         runtime_event_queue = state.runtime_event_queue
         objective = self.objective
@@ -561,6 +702,36 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
     def reset(
         self, *, options: Options | None = None
     ) -> tuple[ObsT_co, InfoType]:
+        """Reset the environment to its initial state for a new episode.
+
+        Clears the schedule, resets all state variables, and performs initial
+        constraint propagation. Optionally loads a new instance via generator.
+
+        Parameters
+        ----------
+        options : dict, optional
+            Configuration options including:
+            - 'instance': Load a specific instance.
+            - 'instance_generator': Replace the instance generator.
+            - 'seed': Seed for the generator.
+
+        Returns
+        -------
+        observation : ObsT_co
+            Initial observation.
+
+        info : dict[str, Any]
+            Environment info (time, objective value, event count, etc.).
+
+        Raises
+        ------
+        ValueError
+            If no instance is loaded.
+
+        RuntimeError
+            If propagation detects initial inconsistency.
+
+        """
         options = options or {}
 
         if "instance" in options:
@@ -611,6 +782,48 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
     def step(
         self, action: ActionType = None
     ) -> tuple[ObsT_co, float, bool, bool, InfoType]:
+        """Execute one simulation step.
+
+        Schedules the action, advances time, processes instructions, and updates
+        the observation and reward.
+        Note that a step in the environment can correspond to many unit time
+        steps in the environment's clock.
+
+        A step here is defined as the state advancement where one of the
+        following conditions is met first:
+        - The instruction queue is executed entirely.
+        - A terminal state is reached.
+        - A infeasibility is detected (a bad action caused a contradiction)
+
+        Parameters
+        ----------
+        action : ActionType, optional
+            Task assignment(s) or None.
+
+        Returns
+        -------
+        observation : ObsT_co
+            Current observation.
+
+        reward : float
+            Signed reward (Delta objective value).
+
+        terminated : bool
+            Whether all tasks are completed.
+
+        truncated : bool
+            Whether the episode reached an infeasible state.
+
+        info : dict[str, Any]
+            Environment info (time, objective, event count, etc.).
+
+        Raises
+        ------
+        RuntimeError
+            If environment is not in RUNNING state.
+            Ensure you called `reset()` before `step()`.
+
+        """
         state = self.state
 
         if self._status != RUNNING:
@@ -634,7 +847,6 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         consistent = True
         while consistent and not state.is_terminal() and self.advance_clock():
             for event in schedule.instruction_queue(state):
-                # After each instruction is processed, domains are updated until a fixed point.
                 event.process(state, schedule)
 
                 consistent = self.propagate()
@@ -654,13 +866,21 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         if self.objective.minimize:
             reward = -reward
 
-        truncated = False
+        truncated = state.infeasible
         terminal = state.is_terminal()
         info = self.get_info()
 
         return self._observation, reward, terminal, truncated, info
 
     def render(self) -> None:
+        """Render the current environment state.
+
+        Raises
+        ------
+        RuntimeError
+            If environment is not in RUNNING state.
+
+        """
         if self._status != RUNNING:
             raise RuntimeError(
                 "Cannot render an environment during configuration."

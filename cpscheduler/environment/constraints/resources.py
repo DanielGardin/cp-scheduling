@@ -1,5 +1,7 @@
+"""Resource constraints for the scheduling environment."""
+
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar, override
 
 from cpscheduler.environment.constants import MAX_TIME, Float, Time
 from cpscheduler.environment.constraints.base import Constraint
@@ -24,8 +26,7 @@ def binary_search(
     right: int = -1,
     decreasing: bool = False,
 ) -> int:
-    """
-    Perform a binary search on a sorted array.
+    """Perform a binary search on a sorted array.
 
     Parameters
     ----------
@@ -41,10 +42,15 @@ def binary_search(
     right: int, optional
         The right index of the search interval.
 
+    decreasing: bool, optional
+        Whether the array is sorted in decreasing order.
+        Default is False (i.e., increasing order is assumed).
+
     Returns
     -------
     int
         The index of the inclusion (to the right) of the target value in the array.
+
     """
     if right < 0:
         right = len(array) + right
@@ -73,7 +79,12 @@ def binary_search(
 
 
 class ResourceConstraint(Constraint):
-    __args__ = ("capacity",)
+    """Resource constraint for the scheduling environment.
+
+    This constraint defines the renewable resources available for tasks and their usage.
+    Whenever a task is scheduled, it consumes a certain amount of resources for
+    the duration of its processing time, and releases them once it finishes.
+    """
 
     resources: TaskFeature[float]
     capacity: float
@@ -99,6 +110,23 @@ class ResourceConstraint(Constraint):
         resource_tag: str = "resource",
         resources: Iterable[Float] | None = None,
     ) -> None:
+        """Initialize the Resource Constraint.
+
+        Parameters
+        ----------
+        capacity: float
+            The total capacity of the resource.
+
+        resource_tag: str, optional
+            The name of the task feature that contains the resource usage for each task.
+            Default is "resource".
+
+        resources: Iterable[float], optional
+            An iterable of floats that define the resource usage for each task.
+            If None, the resource usage must be provided in the instance data.
+            Default to None.
+
+        """
         self.capacity = capacity
 
         self.resources = TaskFeature(
@@ -112,13 +140,16 @@ class ResourceConstraint(Constraint):
             ),
         )
 
+    @override
     def get_features(self) -> list[TaskFeature]:
         return [self.resources]
 
+    @override
     def initialize(self, instance: ProblemInstance) -> None:
         self._next_available_time = []
         self._available_resources = []
 
+    @override
     def reset(self, state: ScheduleState) -> None:
         self._next_available_time.clear()
         self._available_resources.clear()
@@ -131,6 +162,7 @@ class ResourceConstraint(Constraint):
             if resource > capacity:
                 state.forbid_task(task_id)
 
+    @override
     def on_assignment(
         self, task_id: Time, machine_id: Time, state: ScheduleState
     ) -> None:
@@ -153,7 +185,7 @@ class ResourceConstraint(Constraint):
         for j in range(idx, len(available_resources)):
             available_resources[j] -= resource_usage
 
-        for other_task in state.runtime.get_awaiting_tasks():
+        for other_task in state.get_awaiting_tasks():
             resource_usage = resources[other_task]
 
             if resource_usage <= 0:
@@ -171,6 +203,7 @@ class ResourceConstraint(Constraint):
 
             state.tight_start_lb(other_task, earliest_start)
 
+    @override
     def on_time_update(self, time: Time, state: ScheduleState) -> None:
         next_available_time = self._next_available_time
         available_resources = self._available_resources
@@ -181,11 +214,16 @@ class ResourceConstraint(Constraint):
             next_available_time.pop()
             available_resources.pop()
 
+    @override
+    @classmethod
+    def get_general_entry(cls) -> str:
+        return "res"
+
 
 # TODO: Convert external information as Features
 class NonRenewableResourceConstraint(Constraint):
-    """
-    Resource constraint for the scheduling environment.
+    """Resource constraint for the scheduling environment.
+
     This constraint defines the non-renewable resources available for tasks and their usage.
     The resources can be defined as a list of capacities and a list of resource usage for each task.
 
@@ -201,6 +239,7 @@ class NonRenewableResourceConstraint(Constraint):
 
         name: Optional[str] = None
             An optional name for the constraint.
+
     """
 
     resources: TaskFeature[float]
@@ -214,6 +253,23 @@ class NonRenewableResourceConstraint(Constraint):
         resource_tag: str = "resource",
         resources: Iterable[Float] | None = None,
     ) -> None:
+        """Initialize the Non-Renewable Resource Constraint.
+
+        Parameters
+        ----------
+        capacity: float
+            The total capacity of the non-renewable resource.
+
+        resource_tag: str, optional
+            The name of the task feature that contains the resource usage for each task.
+            Default is "resource".
+
+        resources: Iterable[float], optional
+            An iterable of floats that define the resource usage for each task.
+            If None, the resource usage must be provided in the instance data.
+            Default to None.
+
+        """
         self.capacity = capacity
 
         self.resources = TaskFeature(
@@ -227,15 +283,19 @@ class NonRenewableResourceConstraint(Constraint):
             ),
         )
 
+    @override
     def get_features(self) -> list[TaskFeature]:
         return [self.resources]
 
+    @override
     def initialize(self, instance: ProblemInstance) -> None:
         self._current_capacity = self.capacity
 
+    @override
     def reset(self, state: ScheduleState) -> None:
         self._current_capacity = self.capacity
 
+    @override
     def on_assignment(
         self, task_id: Time, machine_id: Time, state: ScheduleState
     ) -> None:
@@ -248,7 +308,7 @@ class NonRenewableResourceConstraint(Constraint):
         current_capacity = self._current_capacity - resource_usage
         self._current_capacity = current_capacity
 
-        for other_task in state.runtime.get_awaiting_tasks():
+        for other_task in state.get_awaiting_tasks():
             other_usage = resources[other_task]
 
             if other_usage <= 0:

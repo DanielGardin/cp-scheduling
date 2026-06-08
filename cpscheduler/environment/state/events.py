@@ -1,3 +1,5 @@
+"""Event containers and helpers for the scheduling state."""
+
 from typing import Final, Literal
 
 from mypy_extensions import mypyc_attr
@@ -15,38 +17,40 @@ VarFieldType = Literal[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
 
 class VarField(Enum):
+    """Domain change event kinds used to trigger propagator callbacks."""
+
     ASSIGNMENT: Final[Literal[0]] = 0
-    "A task have its domain colapsed to a single machine and l = u = start time."
+    """A task was committed to a single machine and start time (assignment)."""
 
     START_LB: Final[Literal[1]] = 1
-    "A task have its start interval changed from [l, u) to [l', u), where l' > l."
+    """The start lower bound for a task increased."""
 
     START_UB: Final[Literal[2]] = 2
-    "A task have its start interval changed from [l, u) to [l, u'), where u' < u."
+    """The start upper bound for a task decreased."""
 
     END_LB: Final[Literal[3]] = 3
-    "A task have its end interval changed from [l, u) to [l', u), where l' > l."
+    """The end lower bound for a task increased."""
 
     END_UB: Final[Literal[4]] = 4
-    "A task have its end interval changed from [l, u) to [l, u'), where u' < u."
+    """The end upper bound for a task decreased."""
 
     PRESENCE: Final[Literal[5]] = 5
-    "A task have its presence changed from absent to mandatory."
+    """The presence domain changed to 'present' for a task."""
 
     ABSENCE: Final[Literal[6]] = 6
-    "A task have its presence changed from mandatory to absent."
+    """The presence domain changed to 'absent' for a task."""
 
     MACHINE_INFEASIBLE: Final[Literal[7]] = 7
-    "A task has been  in some machine."
+    """A machine became infeasible for the given task."""
 
     PAUSE: Final[Literal[8]] = 8
-    "A task have been paused and its bounds reset."
+    """A running task was paused; its remaining time and bounds were updated."""
 
     BOUNDS_RESET: Final[Literal[9]] = 9
-    "A task have its start interval set to [current_time, MAX_INT]."
+    """Task bounds were reset to the current time horizon."""
 
     STATE_INFEASIBLE: Final[Literal[10]] = 10
-    "Flag indicating global infeasibility, it is not handled by constraints."
+    """Global infeasibility flag signalled by a propagator."""
 
 
 ASSIGNMENT = VarField.ASSIGNMENT
@@ -63,6 +67,19 @@ STATE_INFEASIBLE = VarField.STATE_INFEASIBLE
 
 
 def field_to_str(field: VarFieldType) -> str:
+    """Return a short string name for a VarField value.
+
+    Parameters
+    ----------
+    field : VarFieldType
+        Event kind to stringify.
+
+    Returns
+    -------
+    str
+        Uppercase name of the event kind.
+
+    """
     if field == START_LB:
         return "START_LB"
 
@@ -99,13 +116,23 @@ def field_to_str(field: VarFieldType) -> str:
     assert_never(field)
 
 
+# FUTURE: Change this event struct to a struct of list of events
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
 class DomainEvent(EzPickle):
-    """
-    Container for CP events in the scheduling environment.
-    """
+    """Lightweight value object for CP domain events.
 
-    __args__ = ("task_id", "field", "machine_id")
+    Attributes
+    ----------
+    task_id : TaskID
+        Identifier of the affected task.
+
+    field : VarFieldType
+        Kind of domain change.
+
+    machine_id : MachineID
+        Machine identifier associated with the event (or GLOBAL_MACHINE_ID).
+
+    """
 
     task_id: TaskID
     field: VarFieldType
@@ -117,11 +144,26 @@ class DomainEvent(EzPickle):
         field: VarFieldType,
         machine_id: MachineID = GLOBAL_MACHINE_ID,
     ) -> None:
+        """Initialize a DomainEvent.
+
+        Parameters
+        ----------
+        task_id : TaskID
+            Identifier of the affected task.
+
+        field : VarFieldType
+            Kind of domain change.
+
+        machine_id : MachineID, optional
+            Machine identifier associated with the event, or GLOBAL_MACHINE_ID (default).
+
+        """
         self.task_id = task_id
         self.field = field
         self.machine_id = machine_id
 
     def __eq__(self, value: object, /) -> bool:
+        """Check equality of DomainEvent containers."""
         if not isinstance(value, DomainEvent):
             return False
 
@@ -136,6 +178,8 @@ EventKindType = Literal[0, 1, 2, 3]
 
 
 class RuntimeEventKind(Enum):
+    """Runtime event kinds used to trigger objective and observation callbacks."""
+
     TASK_STARTED: Final[Literal[0]] = 0
     TASK_PAUSED: Final[Literal[1]] = 1
     TASK_COMPLETED: Final[Literal[2]] = 2
@@ -149,6 +193,19 @@ TASK_MACHINE_INFEASIBLE = RuntimeEventKind.TASK_MACHINE_INFEASIBLE
 
 
 def kind_to_str(kind: EventKindType) -> str:
+    """Return a short string name for a RuntimeEventKind value.
+
+    Parameters
+    ----------
+    kind : EventKindType
+        Runtime event kind to stringify.
+
+    Returns
+    -------
+    str
+        Uppercase name of the runtime event kind.
+
+    """
     if kind == TASK_STARTED:
         return "TASK_STARTED"
 
@@ -166,11 +223,7 @@ def kind_to_str(kind: EventKindType) -> str:
 
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
 class RuntimeEvent(EzPickle):
-    """
-    Container for runtime events in the scheduling environment.
-    """
-
-    __args__ = ("task_id", "kind", "machine_id")
+    """Value object for runtime lifecycle events."""
 
     task_id: TaskID
     kind: EventKindType
@@ -182,11 +235,26 @@ class RuntimeEvent(EzPickle):
         kind: EventKindType,
         machine_id: MachineID = GLOBAL_MACHINE_ID,
     ) -> None:
+        """Initialize a RuntimeEvent.
+
+        Parameters
+        ----------
+        task_id : TaskID
+            Affected task identifier.
+
+        kind : EventKindType
+            Specific runtime event (started, paused, completed, machine infeasible).
+
+        machine_id : MachineID, optional
+            Machine identifier related to the event, or GLOBAL_MACHINE_ID (default).
+
+        """
         self.task_id = task_id
         self.kind = kind
         self.machine_id = machine_id
 
     def __eq__(self, value: object, /) -> bool:
+        """Check equality of RuntimeEvent containers."""
         return (
             isinstance(value, RuntimeEvent)
             and self.task_id == value.task_id

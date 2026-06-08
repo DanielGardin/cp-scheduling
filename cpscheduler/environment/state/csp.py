@@ -1,3 +1,5 @@
+"""CSP domain containers for scheduling variables."""
+
 from typing import Final, Literal
 
 from mypy_extensions import mypyc_attr
@@ -19,34 +21,33 @@ PresenceType = Literal[0b00, 0b01, 0b10, 0b11]
 
 
 class Presence(Enum):
-    """
-    Presence is a domain for optional tasks, when they can be either present or
-    absent from the schedule.
+    """Domain values for optional task presence.
 
-    It can be represented as a two bit integer
-    XY
+    The presence domain is represented by a two bit integer XY,
     where:
-    X = 1 if the task can be present in the schedule, 0 otherwise
-    Y = 1 if the task can be absent from the schedule, 0 otherwise
+
+    X = 1 if the task can be present in the schedule, 0 otherwise.
+    Y = 1 if the task can be absent from the schedule, 0 otherwise.
 
     In this sense, the possible domain values are:
-    00 = {}, infeasible domain, the task cannot be present nor absent.
-    01 = {present}, the task has to be present in the schedule to satisfy the constraints.
-    10 = {absent}, the task has to be absent from the schedule to satisfy the constraints.
-    11 = {present, absent}, the task can be either present or absent.
+    - 00 = {}, infeasible domain, the task cannot be present nor absent.
+    - 01 = {present}, the task has to be present in the schedule to satisfy the constraints.
+    - 10 = {absent}, the task has to be absent from the schedule to satisfy the constraints
+    - 11 = {present, absent}, the task can be either present or absent.
+
     """
 
     INFEASIBLE: Final[Literal[0b00]] = 0b00
-    "Task is not consistent with the constraints and cannot be scheduled."
+    "Task cannot be present nor absent, domain wipeout (infeasible)."
 
     PRESENT: Final[Literal[0b01]] = 0b01
-    "Task has to be present in the schedule to satisfy the constraints."
+    "Task must be present in the final schedule."
 
     ABSENT: Final[Literal[0b10]] = 0b10
-    "Task has to be absent from the schedule to satisfy the constraints."
+    "Task must be absent from the final schedule."
 
     UNDEFINED: Final[Literal[0b11]] = 0b11
-    "Task presence has not been determined yet. Initial value for optional tasks."
+    "Task may be present or absent (initial value for optional tasks)."
 
 
 INFEASIBLE = Presence.INFEASIBLE
@@ -56,6 +57,7 @@ UNDEFINED = Presence.UNDEFINED
 
 
 def presence_to_str(presence: PresenceType) -> str:
+    """Return the string name for a presence flag."""
     if presence == INFEASIBLE:
         return "INFEASIBLE"
 
@@ -71,25 +73,21 @@ def presence_to_str(presence: PresenceType) -> str:
     assert_never(presence)
 
 
+# FUTURE: Consider going back to store bounds in nested lists (list[list[Time]])
+# The access pattern is almost always task_id -> machine_id, which is trivialized
+# by tlb = lb[task_id], and then tlb[machine_id].
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
 class Bounds(EzPickle):
-    """
-    Container for integer bounds in the scheduling environment.
+    """Integer bound container used for start/end variables.
 
-    Each variable (e.g., start time, end time) in a Constraint Programming model
-    has a domain set of values that are consistent with the constraints of the
-    problem.
+    The container stores per-(task,machine) lower/upper bounds as flat lists
+    (row-major by task) as well as cached global bounds for fast queries.
 
-    The Bounds class maintains interval domains for each variable, managing both
-    lower and upper bounds for each task-machine pair, as well as global bounds
-    for each task, defined as
+    Notes
+    -----
+    Do not mutate these lists directly, use :class:`ScheduleState` APIs which
+    ensure correctness and emit domain events.
 
-    - global_lb(task) = min(lb(task, machine) for machine in machines)
-    - global_ub(task) = max(ub(task, machine) for machine in machines)
-
-    ## IMPORTANT
-    Never acess or modify the bounds directly outside of ScheduleState to ensure
-    consistency.
     """
 
     n_machines: int
@@ -100,64 +98,74 @@ class Bounds(EzPickle):
     ubs: list[Time]
     global_ubs: list[Time]
 
-    def __init__(self, instance: ProblemInstance | None = None) -> None:
-        if instance is not None:
-            n_tasks = instance.n_tasks
-            n_machines = instance.n_machines
+    def __init__(self, instance: ProblemInstance) -> None:
+        """Initialize the Bounds container with a problem instance.
 
-            lbs = [MAX_TIME] * (n_tasks * n_machines)
-            global_lbs = [MAX_TIME] * n_tasks
+        Parameters
+        ----------
+        instance: ProblemInstance
+            The problem instance containing tasks, machines, processing times, etc.
 
-            ubs = [MIN_TIME] * (n_tasks * n_machines)
-            global_ubs = [MIN_TIME] * n_tasks
+        """
+        n_tasks = instance.n_tasks
+        n_machines = instance.n_machines
 
-            machine_mask = instance.machine_mask
+        lbs = [MAX_TIME] * (n_tasks * n_machines)
+        global_lbs = [MAX_TIME] * n_tasks
 
-            for task_id in range(n_tasks):
-                mask = machine_mask[task_id]
+        ubs = [MIN_TIME] * (n_tasks * n_machines)
+        global_ubs = [MIN_TIME] * n_tasks
 
-                start_idx = task_id * n_machines
+        machine_mask = instance.machine_mask
 
-                for machine_id in range(n_machines):
-                    if mask[machine_id]:
-                        idx = start_idx + machine_id
+        for task_id in range(n_tasks):
+            mask = machine_mask[task_id]
 
-                        lbs[idx] = MIN_TIME
-                        global_lbs[task_id] = MIN_TIME
+            start_idx = task_id * n_machines
 
-                        ubs[idx] = MAX_TIME
-                        global_ubs[task_id] = MAX_TIME
+            for machine_id in range(n_machines):
+                if mask[machine_id]:
+                    idx = start_idx + machine_id
 
-            self.n_machines = n_machines
-            self.lbs = lbs
-            self.global_lbs = global_lbs
-            self.ubs = ubs
-            self.global_ubs = global_ubs
+                    lbs[idx] = MIN_TIME
+                    global_lbs[task_id] = MIN_TIME
+
+                    ubs[idx] = MAX_TIME
+                    global_ubs[task_id] = MAX_TIME
+
+        self.n_machines = n_machines
+        self.lbs = lbs
+        self.global_lbs = global_lbs
+        self.ubs = ubs
+        self.global_ubs = global_ubs
 
     def get_global_lb(self, task_id: TaskID) -> Time:
+        """Get the global lower bound for a task."""
         return self.global_lbs[task_id]
 
     def get_global_ub(self, task_id: TaskID) -> Time:
+        """Get the global upper bound for a task."""
         return self.global_ubs[task_id]
 
     def get_lb(self, task_id: TaskID, machine_id: MachineID) -> Time:
+        """Get the lower bound for a task on a specific machine."""
         if machine_id == GLOBAL_MACHINE_ID:
             return self.global_lbs[task_id]
 
         return self.lbs[task_id * self.n_machines + machine_id]
 
     def get_ub(self, task_id: TaskID, machine_id: MachineID) -> Time:
+        """Get the upper bound for a task on a specific machine."""
         if machine_id == GLOBAL_MACHINE_ID:
             return self.global_ubs[task_id]
 
         return self.ubs[task_id * self.n_machines + machine_id]
 
     def __eq__(self, value: object, /) -> bool:
-        if not isinstance(value, Bounds):
-            return False
-
+        """Check equality of Bounds containers."""
         return (
-            self.n_machines == value.n_machines
+            isinstance(value, Bounds)
+            and self.n_machines == value.n_machines
             and self.lbs == value.lbs
             and self.global_lbs == value.global_lbs
             and self.ubs == value.ubs
@@ -167,13 +175,7 @@ class Bounds(EzPickle):
 
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
 class TaskDomains(EzPickle):
-    """
-    Container for the task variables in the scheduling environment.
-
-    Do not modify these variables directly, use the appropriate methods in
-    ScheduleState to ensure consistency and proper updates of the bounds and
-    feasibility checks.
-    """
+    """Aggregate container for task variables used by the CSP kernel."""
 
     feasible_machines: list[set[MachineID]]
     remaining_times: list[Time]
@@ -185,6 +187,14 @@ class TaskDomains(EzPickle):
     end: Bounds
 
     def __init__(self, instance: ProblemInstance) -> None:
+        """Initialize the TaskDomains with a problem instance.
+
+        Parameters
+        ----------
+        instance: ProblemInstance
+            The problem instance containing tasks, machines, processing times, etc.
+
+        """
         n_tasks = instance.n_tasks
         n_machines = instance.n_machines
 
@@ -235,9 +245,11 @@ class TaskDomains(EzPickle):
         self.end = end
 
     def get_feasible_machines(self, task_id: TaskID) -> tuple[MachineID, ...]:
+        """Return the tuple of currently feasible machines for a task."""
         return tuple(self.feasible_machines[task_id])
 
     def __eq__(self, value: object, /) -> bool:
+        """Check equality of TaskDomains containers."""
         return (
             isinstance(value, TaskDomains)
             and self.feasible_machines == value.feasible_machines

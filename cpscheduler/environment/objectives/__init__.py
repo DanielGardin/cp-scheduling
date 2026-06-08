@@ -1,3 +1,13 @@
+"""Module for defining scheduling objectives.
+
+Objectives are gamma components inside the environment, they react to the changes
+in the schedule state and compute a numerical value that represents the quality
+of the schedule.
+
+You can define your own objectives by subclassing the `Objective` class and
+implementing the required methods.
+"""
+
 __all__ = [
     "CompletionTimeObjective",
     "ComposedObjective",

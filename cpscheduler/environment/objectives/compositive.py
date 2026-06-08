@@ -1,4 +1,7 @@
+"""Composed objective functions."""
+
 from collections.abc import Iterable
+from typing import override
 
 from cpscheduler.environment.constants import Float, MachineID, TaskID
 from cpscheduler.environment.instance import ProblemInstance
@@ -8,20 +11,11 @@ from cpscheduler.environment.utils.general import convert_to_list
 
 
 class ComposedObjective(Objective):
-    """
-    A composed objective function that combines multiple objectives with coefficients.
+    """A composed objective function that combines multiple objectives with coefficients.
 
     The overall objective value is a weighted sum of the individual objectives.
     A composed objective is regular if all non-zero-coefficient components are regular
     and no regular component has a negative coefficient.
-
-    Arguments:
-        objectives: Iterable[Objective]
-            An iterable of `Objective` instances to be combined.
-        coefficients: Iterable[float], optional
-            Coefficients for each objective. Defaults to 1.0 for all.
-        minimize: bool, default=True
-            Whether to minimize or maximize the objective function.
     """
 
     objectives: list[Objective]
@@ -29,14 +23,28 @@ class ComposedObjective(Objective):
 
     def __init__(
         self,
-        objectives: Iterable[Objective] | None = None,
+        objectives: Iterable[Objective],
         coefficients: Iterable[Float] | None = None,
         minimize: bool = True,
     ):
-        super().__init__(minimize)
+        """Initialize the ComposedObjective.
 
-        if objectives is None:
-            objectives = []
+        Parameters
+        ----------
+        objectives: Iterable[Objective]
+            The list of objective components to be combined.
+
+        coefficients: Iterable[Float] | None, optional
+            The coefficients for each objective component.
+            If None is provided, all coefficients will be set to 1.0.
+            Default to None.
+
+        minimize: bool, optional
+            Whether the composed objective should be minimized (True) or maximized (False).
+            Default is True (i.e., minimize).
+
+        """
+        super().__init__(minimize)
 
         self.objectives = list(objectives)
         self.coefficients = (
@@ -51,6 +59,7 @@ class ComposedObjective(Objective):
             )
 
     @property
+    @override
     def regular(self) -> bool:
         return all(
             (coefficient == 0 or objective.regular)
@@ -60,38 +69,45 @@ class ComposedObjective(Objective):
             )
         )
 
+    @override
     def reset(self, state: ScheduleState) -> None:
         for objective in self.objectives:
             objective.reset(state)
 
+    @override
     def initialize(self, instance: ProblemInstance) -> None:
         for objective in self.objectives:
             objective.initialize(instance)
 
+    @override
     def on_task_started(
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:
         for objective in self.objectives:
             objective.on_task_started(task_id, machine_id, state)
 
+    @override
     def on_task_paused(
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:
         for objective in self.objectives:
             objective.on_task_paused(task_id, machine_id, state)
 
+    @override
     def on_task_completed(
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:
         for objective in self.objectives:
             objective.on_task_completed(task_id, machine_id, state)
 
+    @override
     def on_task_machine_infeasible(
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:
         for objective in self.objectives:
             objective.on_task_machine_infeasible(task_id, machine_id, state)
 
+    @override
     def get_current(self, state: ScheduleState) -> float:
         return sum(
             coefficient * objective.get_current(state)
@@ -100,6 +116,7 @@ class ComposedObjective(Objective):
             )
         )
 
+    @override
     def __call__(self, state: ScheduleState) -> float:
         return sum(
             coefficient * objective(state)
@@ -108,6 +125,7 @@ class ComposedObjective(Objective):
             )
         )
 
+    @override
     def get_entry(self) -> str:
         terms: list[str] = []
 

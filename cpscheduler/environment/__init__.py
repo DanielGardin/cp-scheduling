@@ -1,6 +1,5 @@
-"""
-This module contains the main environment class and all the components that are
-used to define a scheduling problem.
+"""Main environment class and all the components used to define a scheduling problem.
+
 An environment is defined as a triplet of (alpha, beta, gamma), which corresponds
 to the following components:
 
@@ -13,6 +12,15 @@ to the following components:
 
 3. Gamma objectives: These define the objective function that we want to optimize,
     such as makespan, total completion time, and total tardiness.
+
+Examples
+--------
+>>> SchedulingEnv(JobShopSetup(), objective=Makespan())
+SchedulingEnv(Jm||C_max, n_tasks=0)
+
+>>> SchedulingEnv(SingleMachineSetup(), [ReleaseDateConstraint()], WeightedCompletionTime())
+SchedulingEnv(1|r_j|Σw_jC_j, n_tasks=0)
+
 """
 
 __all__ = [  # noqa: RUF022

@@ -1,3 +1,12 @@
+"""Module for defining scheduling setups.
+
+Setups are alpha comonents in a scheduling environment, they define the machine
+topology, basic constraints and how tasks interact with the machines.
+
+You can define your own setups by subclassing the `ScheduleSetup` class and
+implementing the required methods.
+"""
+
 __all__ = [
     "FlexibleJobShopSetup",
     "FlowShopSetup",

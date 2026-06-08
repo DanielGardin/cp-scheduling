@@ -1,3 +1,11 @@
+"""Metrics utilities for scheduling environments.
+
+This module provides commonly used performance metrics for scheduling
+experiments.
+These metrics are not exhaustive, any function that takes the current
+`ScheduleState` and returns a scalar value can be used as a metric.
+"""
+
 from collections import Counter
 from copy import deepcopy
 from math import sqrt
@@ -10,8 +18,7 @@ from cpscheduler.environment.state import ScheduleState
 
 
 def machine_utilization(state: ScheduleState) -> float:
-    """
-    Calculate the percentage of time that machines are utilized during the scheduling period.
+    """Calculate the percentage of time that machines are utilized during the scheduling period.
 
     When time is 0, the utilization is defined as 100% utilization.
     """
@@ -32,7 +39,7 @@ def machine_utilization(state: ScheduleState) -> float:
 
 
 def num_preemptions(state: ScheduleState) -> int:
-    "Calculate the total number of preemption switches that occurred during the scheduling period."
+    """Calculate the total number of preemption switches that occurred during the scheduling period."""
     total_switches = 0
 
     for task_id in state.runtime.completed_tasks:
@@ -43,7 +50,7 @@ def num_preemptions(state: ScheduleState) -> int:
 
 
 def max_preemptions(state: ScheduleState) -> int:
-    "Calculate the maximum number of preemption switches that occurred during the scheduling period."
+    """Calculate the maximum number of preemption switches that occurred during the scheduling period."""
     max_switches = 0
     for task_id in state.runtime.completed_tasks:
         history = state.runtime.history[task_id]
@@ -82,27 +89,15 @@ def _count_inversions(arr: list[Any]) -> int:
 
 
 class ReferenceScheduleMetrics:
-    """
-    Calculates disparity metrics between the reference schedule and the actual schedule.
-    These metrics evaluate how closely the constructed schedule follows the reference.
+    """Compute comparison metrics between a reference and executed schedule.
 
-    For now, preemption is not considered in the reference schedule, and only the last start
-    and assignment of each task are considered for the metrics.
+    The class captures the reference schedule by executing it on a copy of the
+    provided `SchedulingEnv` and recording each task's final start time and
+    machine assignment (preemption is not modeled in the reference).
 
-    The available metrics include:
-    > Time reference metrics
-    - mean_displacement_distance: The mean distance between the scheduled and actual start times of tasks.
-    - early_displacement_ratio: The ratio of tasks that start earlier than in the reference schedule.
-    - late_displacement_ratio: The ratio of tasks that start later than in the reference schedule
-
-    > Order reference metrics
-    - order_preservation: The ratio of tasks that maintain their order in the reference schedule.
-    - hamming_accuracy: The ratio of tasks that are in the same position as in the reference schedule.
-    - kendall_tau: The Kendall Tau distance between the reference schedule and the actual schedule.
-
-    > Machine assignment metrics
-    - machine_accuracy: The ratio of tasks that are assigned to the same machine as in the reference schedule.
-
+    After construction, calling the instance with a `ScheduleState` returns a
+    dictionary of numeric metrics comparing the reference against the provided
+    state's completed tasks.
     """
 
     start_times: dict[TaskID, Time]
@@ -111,6 +106,18 @@ class ReferenceScheduleMetrics:
     sorted_start_times: list[tuple[TaskID, Time]]
 
     def __init__(self, env: SchedulingEnv, reference_schedule: ActionType):
+        """Record the reference start times and assignments.
+
+        Parameters
+        ----------
+        env : SchedulingEnv
+            Environment used to execute the reference schedule (will be deep-
+            copied to avoid modifying the original).
+
+        reference_schedule : ActionType
+            A single action or batch representing the reference schedule.
+
+        """
         self.start_times = {}
         self.assignments = {}
 
@@ -130,9 +137,9 @@ class ReferenceScheduleMetrics:
             key=lambda x: x[1],
         )
 
-    # Collect all metrics automatically in a single call to avoid redundant calculations
     def __call__(self, state: ScheduleState) -> dict[str, float]:
-        metrics = {
+        """Return a dictionary of reference comparison metrics for `state`."""
+        return {
             "mean_displacement_distance": self.mean_displacement_distance(
                 state
             ),
@@ -142,13 +149,11 @@ class ReferenceScheduleMetrics:
             "machine_accuracy": self.machine_accuracy(state),
         }
 
-        return metrics
-
     # Time reference metrics
 
     def mean_displacement_distance(self, state: ScheduleState) -> float:
-        """
-        Calculate the mean displacement distance of the reference schedule.
+        """Calculate the mean displacement distance of the reference schedule.
+
         The displacement distance is the sum of the absolute differences between
         the scheduled and actual start times of each task.
         """
@@ -173,8 +178,8 @@ class ReferenceScheduleMetrics:
         return distance / count if count > 0 else 0.0
 
     def early_displacement_ratio(self, state: ScheduleState) -> float:
-        """
-        Calculate the early displacement ratio of the reference schedule.
+        """Calculate the early displacement ratio of the reference schedule.
+
         This metric is the ratio of tasks that start earlier than in the reference schedule
         to the total number of tasks.
         """
@@ -197,8 +202,8 @@ class ReferenceScheduleMetrics:
         return early_count / count if count > 0 else 1.0
 
     def late_displacement_ratio(self, state: ScheduleState) -> float:
-        """
-        Calculate the late displacement ratio of the reference schedule.
+        """Calculate the late displacement ratio of the reference schedule.
+
         This metric is the ratio of tasks that start later than in the reference schedule
         to the total number of tasks.
         """
@@ -223,12 +228,11 @@ class ReferenceScheduleMetrics:
     # Order reference metrics
 
     def order_preservation(self, state: ScheduleState) -> float:
-        """
-        Calculate the order preservation metric based on the reference schedule.
+        """Calculate the order preservation metric based on the reference schedule.
+
         This metric is the ratio of the number of tasks that maintain their order
         in the reference schedule to the total number of tasks.
         """
-
         runtime = state.runtime
         actual_times = [
             runtime.get_start(task_id)
@@ -246,6 +250,11 @@ class ReferenceScheduleMetrics:
         return (total_pairs - inversions) / total_pairs
 
     def hamming_accuracy(self, state: ScheduleState) -> float:
+        """Compute the Hamming-style accuracy of task positions.
+
+        Returns the fraction of tasks whose position in the executed order
+        matches their position in the reference order.
+        """
         ref_order = [
             task_id
             for task_id, _ in self.sorted_start_times
@@ -265,6 +274,12 @@ class ReferenceScheduleMetrics:
         return matches / len(actual_order) if actual_order else 1.0
 
     def kendall_tau(self, state: ScheduleState) -> float:
+        """Compute Kendall Tau correlation between reference and executed order.
+
+        Returns a normalized Kendall Tau-like score in [-1, 1], with 1.0
+        indicating identical order and values closer to -1 indicating
+        strong disagreement.
+        """
         runtime = state.runtime
 
         actual_times = [
@@ -295,6 +310,7 @@ class ReferenceScheduleMetrics:
     # Machine assignment metrics
 
     def machine_accuracy(self, state: ScheduleState) -> float:
+        """Return the fraction of completed tasks assigned to the same machine as in the reference schedule."""
         matches = 0
         count = 0
 

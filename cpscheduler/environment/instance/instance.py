@@ -1,3 +1,11 @@
+"""Instance class definition.
+
+Includes the ProblemInstance class, which represents a scheduling problem instance,
+and manages its features and data.
+The instance provides methods for feature registration, data loading, and validation,
+allowing components to interact with the instance's features and data in a structured way.
+"""
+
 from typing import TYPE_CHECKING, Any
 
 from mypy_extensions import mypyc_attr
@@ -14,7 +22,7 @@ if TYPE_CHECKING:
     from cpscheduler.environment.setups import ScheduleSetup
 
 
-def find_provider(features: list[Feature]) -> Feature | None:
+def _find_provider(features: list[Feature]) -> Feature | None:
     provider: Feature | None = None
     for feature in features:
         if not feature.owner:
@@ -32,6 +40,35 @@ def find_provider(features: list[Feature]) -> Feature | None:
 
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
 class ProblemInstance(EzPickle):
+    """Class representing a scheduling problem instance.
+
+    The ProblemInstance class manages the features and data of a scheduling
+    problem instance.
+    It is deeply coupled with the core environment, sharing its state machine:
+
+    State machine
+    -------------
+    UNLOADED
+        During this state, the instance only accepts feature registrations, whose
+        specs are unchanged, but data ownership is not yet established.
+        This allows components to register features during initialization, without
+        needing to know when their features will be loaded with data.
+
+    LOADED
+        During this state, the instance accepts data for registered features, and
+        shares the loaded data with all consumers.
+        The environment transitions to this state when `initialize()` is called, and the
+        instance is loaded with data from a new problem instance.
+
+    RUNNING
+        While running, the instance is assumed to be frozen.
+        Changing instance data during this state may lead to undefined behavior.
+        It is not supposed to have the instance as a first-class object during this
+        state, instead, the instance is meant to be interacted with via the
+        `ScheduleState` class.
+
+    """
+
     job_tasks: list[list[TaskID]]
 
     features: dict[str, list[Feature]]
@@ -48,6 +85,22 @@ class ProblemInstance(EzPickle):
     _job_ids: TaskFeature[TaskID]
 
     def __init__(self, debug_mode: bool) -> None:
+        """Initialize an empty ProblemInstance.
+
+        Parameters
+        ----------
+        debug_mode : bool
+            If True, the instance will perform additional checks and validations,
+            which may impact performance.
+
+        Notes
+        -----
+        The instance starts in an unloaded state, where it only accepts feature
+        registrations. Data can only be loaded after the instance is initialized with
+        an instance using the `initialize()` method, only through the environment's
+        loading process, which ensures proper state transitions and data management.
+
+        """
         self.job_tasks = []
         self._feature_specs = {}
 
@@ -96,48 +149,103 @@ class ProblemInstance(EzPickle):
 
     @property
     def debug(self) -> bool:
+        """Whether the instance is in debug mode."""
         return self._debug
 
     @property
     def n_tasks(self) -> int:
+        """Number of tasks in the instance."""
         return self._symbol_values["n_tasks"]
 
     @property
     def n_jobs(self) -> int:
+        """Number of jobs in the instance."""
         return self._symbol_values["n_jobs"]
 
     @property
     def n_machines(self) -> int:
+        """Number of machines in the instance."""
         return self._symbol_values["n_machines"]
 
     @property
     def preemptive(self) -> list[bool]:
+        """Preemptivity of each task in the instance.
+
+        Gathered from the `preemptive` feature, has shape (n_tasks,).
+        """
         return self._preemptive.value
 
     @property
     def optional(self) -> list[bool]:
+        """Optional status of each task in the instance.
+
+        Gathered from the `optional` feature, has shape (n_tasks,).
+        """
         return self._optional.value
 
     @property
     def machine_mask(self) -> list[list[bool]]:
+        """Eligibility mask of machines for each task in the instance.
+
+        Gathered from the `machine_mask` feature, has shape (n_tasks, n_machines).
+        Each entry indicates whether the corresponding machine is eligible for the task.
+        """
         return self._machine_mask.value
 
     @property
     def processing_times(self) -> list[list[Time]]:
+        """Processing times of each task on each machine in the instance.
+
+        Gathered from the `all_processing_times` feature, has shape (n_tasks, n_machines).
+        """
         return self._processing_times.value
 
     @property
     def job_ids(self) -> list[TaskID]:
+        """Job ID of each task in the instance.
+
+        Gathered from the `job` feature, has shape (n_tasks,).
+        """
         return self._job_ids.value
 
     def required_features(self) -> dict[str, FeatureSpec]:
+        """Return a dictionary of required features for the instance.
+
+        Required features are those that have no provider among the registered
+        features, and thus must be provided with data during instance initialization.
+        """
         return {
             name: feature
             for name, feature in self._feature_specs.items()
-            if find_provider(self.features[name]) is None
+            if _find_provider(self.features[name]) is None
         }
 
     def register(self, feature: Feature[Any]) -> None:
+        """Register a feature to the instance.
+
+        Registration is a step required after defining a feature inside a component, and
+        before loading data into the instance.
+        This allows the instance to have static knowledge of all features that
+        will be present in the instance, befone any data is provided, and to
+        manage data ownership and sharing between features.
+
+        This way, components can define their features, expose them using
+        `get_feature()`, and expect data to be available after the instance is
+        initialized, without needing to know when or how the data will be loaded,
+        as long as the feature is registered before initialization.
+
+        Parameters
+        ----------
+        feature : Feature[Any]
+            The feature to be registered.
+
+        Raises
+        ------
+        ValueError
+            If the feature name is a reserved keyword, or if the feature spec is
+            incompatible with a previously registered feature with the same name.
+
+        """
         name = feature.name
 
         if name in {"all_processing_times", "machine_mask"}:
@@ -177,6 +285,7 @@ class ProblemInstance(EzPickle):
             del self._feature_specs[name]
 
     def validate_instance(self, origin: str) -> None:
+        """Validate the instance's features and data."""
         for features in self.features.values():
             for feat in features:
                 feat.validate(**self._symbol_values)
@@ -192,15 +301,13 @@ class ProblemInstance(EzPickle):
         self._storage.clear()
         self._symbol_values.clear()
 
-        # Reset loaded state for all features without defaults
-        # (features with defaults can be updated in place)
         for features in self.features.values():
             for feature in features:
                 feature.reset()
 
     def _load_data(self) -> None:
         for name, features in self.features.items():
-            provider = find_provider(features)
+            provider = _find_provider(features)
 
             if provider is not None:
                 for feature in self.features[name]:
@@ -215,9 +322,32 @@ class ProblemInstance(EzPickle):
                 for feature in features:
                     feature.set_data(data)
 
+    # FUTURE: Memory allocation is currently the major bottleneck during
+    # initialization (processing_times and machine_mask).
+    # Consider a cached version, which only triggers when the n_tasks, or
+    # n_machines in the incoming instance is different from the previous one.
     def initialize(
         self, instance: InstanceTypes, setup: "ScheduleSetup"
     ) -> None:
+        """Initialize the instance with data from a new problem instance.
+
+        This is the main entry point for loading a new problem instance into the
+        environment.
+
+        Parameters
+        ----------
+        instance : InstanceTypes
+            The raw instance data, which can be in various formats (e.g., dict, tuple
+            of dicts, etc.). The instance will be processed and prepared using the
+            `prepare_instance` function, which standardizes the format and extracts
+            the relevant features and data for the environment.
+
+        setup : ScheduleSetup
+            The schedule setup, which provides information about the scheduling
+            environment, such as the number of machines, and other relevant
+            parameters that may be needed during instance initialization.
+
+        """
         if isinstance(instance, tuple):
             task_raw_instance, job_raw_instance = instance
 
@@ -270,17 +400,11 @@ class ProblemInstance(EzPickle):
         self._symbol_values["n_machines"] = setup.n_machines
 
     def has_feature(self, feat_name: str) -> bool:
+        """Check if a feature with the given name is registered in the instance."""
         return feat_name in self.features
 
-    def get_feature(self, feat_name: str) -> Feature:
-        if feat_name in self.features:
-            return self.features[feat_name][0]
-
-        raise KeyError(
-            f"Feature {feat_name} was never registered in the instance."
-        )
-
     def get_machines(self, task_id: TaskID) -> list[MachineID]:
+        """Get the list of eligible machines for a given task."""
         return [
             m_id
             for m_id, eligible in enumerate(self._machine_mask.value[task_id])
@@ -290,6 +414,7 @@ class ProblemInstance(EzPickle):
     def set_processing_time(
         self, task_id: TaskID, machine_id: MachineID, time: Time
     ) -> None:
+        """Set the processing time of a task on a specific machine."""
         if time < 0:
             raise ValueError("Processing time cannot be negative.")
 
@@ -303,17 +428,21 @@ class ProblemInstance(EzPickle):
         self._machine_mask.value[task_id][machine_id] = True
 
     def remove_machine(self, task_id: TaskID, machine_id: MachineID) -> None:
+        """Remove a machine from the eligibility list of a task, making it ineligible for that task."""
         self._machine_mask.value[task_id][machine_id] = False
 
     def set_preemption(
         self, task_id: TaskID, allow_preemption: bool = True
     ) -> None:
+        """Set the preemptivity of a task in the instance."""
         self._preemptive.value[task_id] = allow_preemption
 
     def set_optionality(self, task_id: TaskID, optional: bool = True) -> None:
+        """Set the optional status of a task in the instance."""
         self._optional.value[task_id] = optional
 
     def __repr__(self) -> str:
+        """Return a string representation of the instance, including its main features and dimensions."""
         features = ", ".join(self.features.keys())
 
         return (
@@ -325,6 +454,7 @@ class ProblemInstance(EzPickle):
         )
 
     def __eq__(self, value: object, /) -> bool:
+        """Check for equality for ProblemInstance objects."""
         return (
             isinstance(value, ProblemInstance)
             and self.features == value.features

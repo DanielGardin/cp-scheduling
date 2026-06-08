@@ -1,5 +1,7 @@
+"""Default observation for scheduling environments."""
+
 from collections.abc import Sequence
-from typing import Any, Literal, TypedDict, overload
+from typing import Any, Literal, TypedDict, overload, override
 
 from mypy_extensions import mypyc_attr
 
@@ -29,11 +31,18 @@ DefaultObsType = TypedDict(
 
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=True)
 class DefaultObservation(Observation[DefaultObsType]):
-    """
-    Lightweight default observation.
+    """Lightweight default observation.
 
-    Static instance features are copied once during initialization.
-    Runtime buffers are updated in-place.
+    This is the default observation returned by the environment when none is
+    explicitly selected.
+    It provides a simple way of accessing the features defined in every component
+    of the environment, without the need of defining a custom observation class.
+
+    The features are organized in four scopes: "task", "job", "machine" and "global",
+    which can be accessed as dictionaries of feature name to feature value.
+
+    Because it is too general, it is not recommended for training agents,
+    but it can be useful for debugging and testing purposes.
     """
 
     _exclude_features: set[str]
@@ -51,6 +60,15 @@ class DefaultObservation(Observation[DefaultObsType]):
     available_tasks: set[TaskID]
 
     def __init__(self, exclude_features: set[str] | None = None) -> None:
+        """Initialize the DefaultObservation.
+
+        Parameters
+        ----------
+        exclude_features: set[str] | None
+            A set of feature names to exclude from the observation.
+            If None, all features will be included.
+
+        """
         self._exclude_features = exclude_features or set()
 
         self._status = TaskFeature(
@@ -79,8 +97,10 @@ class DefaultObservation(Observation[DefaultObsType]):
 
     @property
     def time(self) -> Time:
+        """Return the current time in the schedule."""
         return self._time.value
 
+    @override
     def get_features(self) -> Sequence[Feature]:
         return [
             self._time,
@@ -88,6 +108,7 @@ class DefaultObservation(Observation[DefaultObsType]):
             self._available,
         ]
 
+    @override
     def initialize(self, instance: ProblemInstance) -> None:
         super().initialize(instance)
 
@@ -129,24 +150,22 @@ class DefaultObservation(Observation[DefaultObsType]):
             elif isinstance(feature, GlobalFeature):
                 self.global_state[feat_name] = feature.value
 
+    @override
     def update(self, state: ScheduleState) -> None:
         self._time.set_data(state.time)
         self._status.value[:] = state.runtime.status
 
         available = self._available.value
+        for task_id in range(self.n_tasks):
+            available[task_id] = False
+
+        available_tasks = state.get_available_tasks()
+        for task_id in available_tasks:
+            available[task_id] = True
+            self.available_tasks.add(task_id)
 
         self.available_tasks.clear()
-
-        for task_id in range(self.n_tasks):
-            is_available = (
-                task_id in state.runtime.unlocked_tasks
-                and state.is_available(task_id)
-            )
-
-            available[task_id] = is_available
-
-            if is_available:
-                self.available_tasks.add(task_id)
+        self.available_tasks.update(available_tasks)
 
     @overload
     def __getitem__(
@@ -157,6 +176,7 @@ class DefaultObservation(Observation[DefaultObsType]):
     def __getitem__(self, key: Literal["global"]) -> dict[str, Any]: ...
 
     def __getitem__(self, key: str) -> Any:
+        """Get the features of the specified scope."""
         if key == "task":
             return self.task
 
@@ -171,6 +191,7 @@ class DefaultObservation(Observation[DefaultObsType]):
 
         raise KeyError(f"Unknown observation scope '{key}'.")
 
+    @override
     def serialize(self) -> DefaultObsType:
         return {
             "task": self.task,
@@ -179,6 +200,7 @@ class DefaultObservation(Observation[DefaultObsType]):
             "global": self.global_state,
         }
 
+    @override
     def __repr__(self) -> str:
         return (
             f"DefaultObservation("
@@ -188,6 +210,7 @@ class DefaultObservation(Observation[DefaultObsType]):
             f")"
         )
 
+    @override
     def get_spec(self) -> DictSpec:
         return DictSpec(
             {

@@ -1,15 +1,17 @@
-"""
-This module contains all the components related to the state of the scheduling
-environment.
+"""State components for the scheduling environment.
 
-The full state is represented by the ScheduleState class, which aggregates
-instance information, variable assignments, and the current runtime state of the
-tasks.
+This submodule exposes the core data structures used to represent the
+constraint-propagation and discrete-event simulation state of a scheduling
+problem. The primary entrypoint is `ScheduleState`, which bundles the
+following concerns:
 
-This state only exposes the necessary API for constraints, objectives and setups
-to interact with, enabling the environment to orchestrate the simulation and
-accept changes from the scheduler without exposing the internal details of the
-state representation.
+- Instance view: read-only problem parameters (from :class:`ProblemInstance`).
+- CSP domains: per-(task,machine) variable domains and presence flags.
+- DES runtime: execution history, task statuses and runtime event queues.
+
+The public API is intentionally small: constraints, objectives and setups use
+the methods exposed by ``ScheduleState`` and the event containers rather than
+directly manipulating internal structures.
 """
 
 __all__ = ["ScheduleState"]

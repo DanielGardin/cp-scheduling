@@ -1,4 +1,7 @@
+"""Setup Constraint for the scheduling environment."""
+
 from collections.abc import Mapping
+from typing import override
 
 from cpscheduler.environment.constants import Int, MachineID, TaskID, Time
 from cpscheduler.environment.constraints.base import Constraint
@@ -7,21 +10,12 @@ from cpscheduler.environment.state import ScheduleState
 
 # TODO: Convert external information as Features
 class SetupConstraint(Constraint):
-    """
-    Setup constraint for the scheduling environment.
+    """Setup constraint for the scheduling environment.
 
     This constraint is used to define the setup time between tasks.
     The setup times can be defined as a mapping of task IDs to a mapping of child task IDs
     and their respective setup times, or as a string that refers to a column in the tasks data.
 
-    Arguments:
-        setup_times: Mapping[int, Mapping[int, int]] | Callable[[int, int, ScheduleState], int]
-            A mapping of task IDs to a mapping of child task IDs and their respective setup times.
-            Alternatively, a callable function that takes in two task IDs and the scheduling data,
-            and returns the setup time between the two tasks.
-
-        name: Optional[str] = None
-            An optional name for the constraint.
     """
 
     setup_times: dict[TaskID, dict[TaskID, Time]]
@@ -30,6 +24,15 @@ class SetupConstraint(Constraint):
     def __init__(
         self, setup_times: Mapping[Int, Mapping[Int, Int]] | None = None
     ) -> None:
+        """Initialize the Setup Constraint.
+
+        Parameters
+        ----------
+        setup_times: Mapping[Int, Mapping[Int, Int]] | None, optional
+            A mapping of task IDs to a mapping of child task IDs and their respective setup times.
+            If None, no setup times are defined.
+
+        """
         if setup_times is None:
             setup_times = {}
 
@@ -43,6 +46,7 @@ class SetupConstraint(Constraint):
     def add_setup_time(
         self, task_id: Int, child_id: Int, setup_time: Int
     ) -> None:
+        """Add a setup time between two tasks."""
         task = TaskID(task_id)
         child = TaskID(child_id)
 
@@ -52,6 +56,7 @@ class SetupConstraint(Constraint):
         self.setup_times[task][child] = Time(setup_time)
 
     def remove_setup_time(self, task_id: Int, child_id: Int) -> None:
+        """Remove a setup time between two tasks."""
         task = TaskID(task_id)
         child = TaskID(child_id)
 
@@ -61,12 +66,14 @@ class SetupConstraint(Constraint):
             if not self.setup_times[task]:
                 del self.setup_times[task]
 
+    @override
     def reset(self, state: ScheduleState) -> None:
         self.current_setup_times = {
             task_id: children.copy()
             for task_id, children in self.setup_times.items()
         }
 
+    @override
     def on_assignment(
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:

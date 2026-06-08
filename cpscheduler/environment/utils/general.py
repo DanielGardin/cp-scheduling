@@ -1,40 +1,47 @@
+"""General helper utilities for environment code."""
+
 from collections.abc import Callable, Iterable
 from typing import Any, TypeVar, overload
 
+from cpscheduler.environment.utils.protocols import ArrayLike
+
 _T = TypeVar("_T")
 
-
-@overload
-def convert_to_list(array: Iterable[Any], dtype: type[_T]) -> list[_T]: ...
+_IterableOrArray = Iterable[_T] | ArrayLike[_T]
 
 
 @overload
-def convert_to_list(array: Iterable[_T], dtype: None = ...) -> list[_T]: ...
+def convert_to_list(
+    array: _IterableOrArray[Any], dtype: type[_T]
+) -> list[_T]: ...
+
+
+@overload
+def convert_to_list(
+    array: _IterableOrArray[_T], dtype: None = ...
+) -> list[_T]: ...
 
 
 def convert_to_list(
-    array: Iterable[Any], dtype: type[Any] | None = None
+    array: _IterableOrArray[Any], dtype: type[Any] | None = None
 ) -> list[Any]:
-    """
-    Convert an iterable to a list. If a dtype is provided, the elements of the list will be casted
-    to that type.
+    """Convert an iterable to a list, optionally casting element types.
 
     Parameters
     ----------
-    array: Iterable | None
-        The iterable to be converted to a list.
+    array : Iterable[Any]
+        Iterable or ArrayLike to be converted to a list.
 
-    dtype: type, optional
-        The type to which the elements of the list will be casted to.
+    dtype : type, optional
+        Type used to cast each element in the list.
 
     Returns
     -------
-    list
-        A list containing the elements of the iterable. If the array is None, initializes a new
-        empty list of that given type.
-    """
+    list[Any]
+        List of elements from `array` (optionally cast to `dtype`).
 
-    if hasattr(array, "tolist"):
+    """
+    if isinstance(array, ArrayLike):
         array = array.tolist()
 
     try:
@@ -49,4 +56,18 @@ def convert_to_list(
 
 
 def extend_list(lst: list[_T], size: int, default: Callable[[], _T]) -> None:
+    """Extend a list to `size` using values from `default`.
+
+    Parameters
+    ----------
+    lst : list[_T]
+        List to be extended in-place.
+
+    size : int
+        Target length for `lst`.
+
+    default : Callable[[], _T]
+        Factory used to produce new elements.
+
+    """
     lst.extend([default() for _ in range(size - len(lst))])

@@ -1,3 +1,5 @@
+"""Base observation class for scheduling environments."""
+
 from collections.abc import Sequence
 from copy import deepcopy
 from typing import Any, Generic

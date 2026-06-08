@@ -1,3 +1,12 @@
+"""Scheduling Environment State Module.
+
+This module provides ScheduleState, the core kernel for maintaining and querying
+the state of a constraint satisfaction problem (CSP) combined with discrete event
+simulation (DES). The state objects coordinate between domain constraints
+(e.g., task start/end time bounds, machine feasibility) and runtime simulation
+(e.g., task execution, completion events).
+"""
+
 from typing import Any, Literal, cast
 
 from mypy_extensions import mypyc_attr
@@ -38,10 +47,12 @@ INFEASIBLE = Presence.INFEASIBLE
 
 
 def can_be_present(presence: PresenceType) -> bool:
+    """Check if presence is undecided, or present."""
     return (presence & PRESENT) != 0
 
 
 def can_be_absent(presence: PresenceType) -> bool:
+    """Check if presence is undecided, or absent."""
     return (presence & ABSENT) != 0
 
 
@@ -80,18 +91,26 @@ UNKNOWN_TASK: TaskID = -1
 
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
 class ScheduleState(EzPickle):
-    """
-    ScheduleState represents the current state of the scheduling environment,
-    working as both a Discrete Event Simulation (DES) state and a Constraint
-    Satisfaction Problem (CSP) state.
+    """Core CSP/DES state kernel for scheduling problems.
 
-    It has no simulation logic itself, instead, it provides an API to read and
-    modify the current state of the problem. The actual kernel is implemented in
-    the SchedulingEnv class, which knows the constraints and how to propagate
-    changes through them.
-    """
+    ScheduleState maintains the constraint satisfaction problem (CSP) state
+    (variable domains) and discrete event simulation (DES) state (task execution
+    and completion) for a scheduling environment.
+    It provides a API to read and mutate state, delegating constraint
+    propagation logic to the environment via event queues.
 
-    __args__ = ("instance", "_debug")
+    The state maintains two views:
+
+    1. **CSP View (Domains)**: Represents the feasible space containing the domain variables:
+        - Start/End time bounds (per task and machine)
+        - Machine feasibility sets (which machines can process each task)
+        - Presence bitfield (whether each task can be present, absent, or is infeasible)
+
+    2. **DES View (Runtime)**: Represents the dynamic execution state of the schedule:
+       - Task scheduling history (machine assignment, start/end times)
+       - Task dependencies and lock status
+       - Current task statuses (AWAITING, EXECUTING, PAUSED, COMPLETED)
+    """
 
     instance: ProblemInstance
 
@@ -109,6 +128,14 @@ class ScheduleState(EzPickle):
     _debug: bool
 
     def __init__(self, instance: ProblemInstance) -> None:
+        """Initialize the ScheduleState with a problem instance.
+
+        Parameters
+        ----------
+        instance: ProblemInstance
+            The problem instance containing tasks, machines, processing times, etc.
+
+        """
         self.instance = instance
 
         self.time = 0
@@ -126,33 +153,27 @@ class ScheduleState(EzPickle):
 
     @property
     def n_machines(self) -> int:
+        """Return the number of machines in the problem instance."""
         return self.instance.n_machines
 
     @property
     def n_tasks(self) -> int:
+        """Return the number of tasks in the problem instance."""
         return self.instance.n_tasks
 
     @property
     def n_jobs(self) -> int:
+        """Return the number of jobs in the problem instance."""
         return self.instance.n_jobs
 
     @property
     def debug(self) -> bool:
+        """Return whether debug mode is enabled for the state."""
         return self._debug
 
     # Flow control methods
-    def clear(self) -> None:
-        self.time = 0
-        self.infeasible = False
-
-        self.instance = ProblemInstance(self._debug)
-        self.domains = TaskDomains(self.instance)
-        self.runtime = RuntimeState(self.instance)
-
-        self.domain_event_queue.clear()
-        self.runtime_event_queue.clear()
-
     def reset(self) -> None:
+        """Reset state to initial condition while preserving the problem instance."""
         self.time = 0
         self.infeasible = False
 
@@ -167,15 +188,25 @@ class ScheduleState(EzPickle):
         self.runtime_event_queue.clear()
 
     def is_terminal(self) -> bool:
-        if self.infeasible:
-            return True
-
-        awaiting = self.runtime.awaiting_tasks
-        executing = self.runtime.executing_tasks
-
-        return not awaiting and not executing
+        """Return True if the problem is infeasible or all tasks are completed/absent."""
+        return self.infeasible or (
+            not self.runtime.awaiting_tasks and not self.runtime.executing_tasks
+        )
 
     def advance_time_(self, new_time: Time) -> None:
+        """Advance simulation time.
+
+        Moves the simulation clock forward (must be monotonically increasing) and
+        marks any executing tasks that have reached their planned end times as
+        completed.
+        Queues TASK_COMPLETED events for each completed task.
+
+        Parameters
+        ----------
+        new_time : Time
+            New simulation time (must be > current time).
+
+        """
         assert new_time > self.time, (
             "Advance time must be monotonic increasing."
         )
@@ -183,8 +214,7 @@ class ScheduleState(EzPickle):
         self.time = new_time
 
         runtime = self.runtime
-        executing_tasks = runtime.get_executing_tasks()
-        for task_id in executing_tasks:
+        for task_id in self.get_executing_tasks():
             assignment = runtime.get_assignment(task_id)
             end_time = runtime.get_end(task_id)
 
@@ -201,22 +231,23 @@ class ScheduleState(EzPickle):
 
     ## Getter methods for instance parameters
     def is_preemptive(self, task_id: TaskID) -> bool:
-        "Check if a task allows preemption."
+        """Return whether a task allows preemption."""
         return self.instance.preemptive[task_id]
 
     def is_optional(self, task_id: TaskID) -> bool:
-        "Check if a task is optional."
+        """Return whether a task is optional (can be left unassigned)."""
         return self.instance.optional[task_id]
 
     def has_processing_time(
         self, task_id: TaskID, machine_id: MachineID
     ) -> bool:
+        """Return whether a task can be processed on a given machine."""
         return self.instance.machine_mask[task_id][machine_id]
 
     def get_processing_time(
         self, task_id: TaskID, machine_id: MachineID
     ) -> Time:
-        "Get the processing time for a given task and machine."
+        """Return the processing time for a task on a machine."""
         if self.has_processing_time(task_id, machine_id):
             return self.instance.processing_times[task_id][machine_id]
 
@@ -225,7 +256,7 @@ class ScheduleState(EzPickle):
         )
 
     def get_original_machines(self, task_id: TaskID) -> list[MachineID]:
-        "Get the set of machines that can process a given task."
+        """Return a list of all machines that can process a task."""
         return self.instance.get_machines(task_id)
 
     # Constraint propagation API methods
@@ -234,48 +265,59 @@ class ScheduleState(EzPickle):
     def get_start_lb(
         self, task_id: TaskID, machine_id: MachineID = GLOBAL_MACHINE_ID
     ) -> Time:
+        """Return the lower bound of the task start time."""
         return self.domains.start.get_lb(task_id, machine_id)
 
     def get_start_ub(
         self, task_id: TaskID, machine_id: MachineID = GLOBAL_MACHINE_ID
     ) -> Time:
+        """Return the upper bound of the task start time."""
         return self.domains.start.get_ub(task_id, machine_id)
 
     def get_end_lb(
         self, task_id: TaskID, machine_id: MachineID = GLOBAL_MACHINE_ID
     ) -> Time:
+        """Return the lower bound of the task end time."""
         return self.domains.end.get_lb(task_id, machine_id)
 
     def get_end_ub(
         self, task_id: TaskID, machine_id: MachineID = GLOBAL_MACHINE_ID
     ) -> Time:
+        """Return the upper bound of the task end time."""
         return self.domains.end.get_ub(task_id, machine_id)
 
     def get_remaining_time(
         self, task_id: TaskID, machine_id: MachineID
     ) -> Time:
+        """Return the remaining processing time for a task on a machine."""
         idx = task_id * self.instance.n_machines + machine_id
 
         return self.domains.remaining_times[idx]
 
     def get_assignment(self, task_id: TaskID) -> MachineID:
+        """Return the machine assigned to a task, or GLOBAL_MACHINE_ID if unassigned."""
         return self.domains.assignment[task_id]
 
     def get_machines(self, task_id: TaskID) -> tuple[MachineID, ...]:
+        """Return the tuple of currently feasible machines for a task."""
         return self.domains.get_feasible_machines(task_id)
 
     def is_fixed(self, task_id: TaskID) -> bool:
+        """Return whether a task have been assigned to a specific machine."""
         return self.domains.assignment[task_id] != GLOBAL_MACHINE_ID
 
     def is_present(self, task_id: TaskID) -> bool:
+        """Return whether a task is required to execute."""
         return self.domains.presence[task_id] == PRESENT
 
     def is_absent(self, task_id: TaskID) -> bool:
+        """Return whether a task is forbidden from executing."""
         return self.domains.presence[task_id] == ABSENT
 
     def is_feasible(
         self, task_id: TaskID, machine_id: MachineID = GLOBAL_MACHINE_ID
     ) -> bool:
+        """Return whether a task is feasible executing on the given machine."""
         if self.domains.presence[task_id] == INFEASIBLE:
             return False
 
@@ -290,6 +332,10 @@ class ScheduleState(EzPickle):
     def _recompute_global_bound(
         self, task_id: TaskID, var: IntervalEnd, bound: Bound
     ) -> None:
+        # FUTURE: This method is called very often, maybe more often than
+        # needed. As this is part of a hot loop, this implementation should be
+        # revisited in the future.
+
         domains = self.domains
 
         variable = domains.start if var else domains.end
@@ -323,6 +369,7 @@ class ScheduleState(EzPickle):
             variable.global_ubs[task_id] = best
 
     def _recompute_all_bounds(self, task_id: TaskID) -> None:
+        """Recompute all four global bounds (start/end, lb/ub) for a task."""
         self._recompute_global_bound(task_id, START, LB)
         self._recompute_global_bound(task_id, START, UB)
         self._recompute_global_bound(task_id, END, LB)
@@ -337,7 +384,7 @@ class ScheduleState(EzPickle):
         old_presence = domains.presence[task_id]
         # Bitwise operations on Literal unions are inferred as int by type checkers.
         # Explicitly narrow back to PresenceType.
-        new_presence = cast(PresenceType, old_presence & mask)
+        new_presence = cast("PresenceType", old_presence & mask)
 
         field: VarFieldType
         if new_presence == old_presence:
@@ -371,12 +418,19 @@ class ScheduleState(EzPickle):
         self.domain_event_queue.append(DomainEvent(task_id, field))
 
     def require_task(self, task_id: TaskID) -> None:
+        """Force a task to be present in the schedule."""
         self._restrict_presence(task_id, PRESENT)
 
     def forbid_task(self, task_id: TaskID) -> None:
+        """Force a task to be absent in the schedule."""
         self._restrict_presence(task_id, ABSENT)
 
     def restrict_machine(self, task_id: TaskID, machine_id: MachineID) -> None:
+        """Remove a machine from the feasible set for a task.
+
+        If all machines are removed, marks the task as ABSENT.
+        Otherwise, queues a MACHINE_INFEASIBLE event.
+        """
         domains = self.domains
 
         feasible_machines = domains.feasible_machines[task_id]
@@ -386,18 +440,18 @@ class ScheduleState(EzPickle):
 
         feasible_machines.remove(machine_id)
 
-        if not feasible_machines:
+        if feasible_machines:
+            self._recompute_all_bounds(task_id)
+
+            self.domain_event_queue.append(
+                DomainEvent(task_id, MACHINE_INFEASIBLE, machine_id)
+            )
+            self.runtime_event_queue.append(
+                RuntimeEvent(task_id, TASK_MACHINE_INFEASIBLE, machine_id)
+            )
+
+        else:
             self._restrict_presence(task_id, ABSENT)
-            return
-
-        self._recompute_all_bounds(task_id)
-
-        self.domain_event_queue.append(
-            DomainEvent(task_id, MACHINE_INFEASIBLE, machine_id)
-        )
-        self.runtime_event_queue.append(
-            RuntimeEvent(task_id, TASK_MACHINE_INFEASIBLE, machine_id)
-        )
 
     def tight_start_lb(
         self,
@@ -405,6 +459,13 @@ class ScheduleState(EzPickle):
         value: Time,
         machine_id: MachineID = GLOBAL_MACHINE_ID,
     ) -> None:
+        """Raise the lower bound of task start time (earliest start constraint).
+
+        Tightens the start time lower bound, queues START_LB domain events.
+        If bounds become inconsistent, removes the machine from feasible set.
+
+        Supports global (all machines) tightening via GLOBAL_MACHINE_ID.
+        """
         domains = self.domains
 
         if value <= domains.start.get_lb(task_id, machine_id):
@@ -464,6 +525,13 @@ class ScheduleState(EzPickle):
         value: Time,
         machine_id: MachineID = GLOBAL_MACHINE_ID,
     ) -> None:
+        """Lower the upper bound of task start time (latest start constraint).
+
+        Tightens the start time upper bound, queues START_UB domain events.
+        If bounds become inconsistent, removes the machine from feasible set.
+
+        Supports global (all machines) tightening via GLOBAL_MACHINE_ID.
+        """
         domains = self.domains
 
         if value >= domains.start.get_ub(task_id, machine_id):
@@ -523,6 +591,13 @@ class ScheduleState(EzPickle):
         value: Time,
         machine_id: MachineID = GLOBAL_MACHINE_ID,
     ) -> None:
+        """Raise the lower bound of task end time (earliest completion constraint).
+
+        Tightens the end time lower bound, queues END_LB domain events.
+        If bounds become inconsistent, removes the machine from feasible set.
+
+        Supports global (all machines) tightening via GLOBAL_MACHINE_ID.
+        """
         domains = self.domains
 
         if value <= domains.end.get_lb(task_id, machine_id):
@@ -582,6 +657,13 @@ class ScheduleState(EzPickle):
         value: Time,
         machine_id: MachineID = GLOBAL_MACHINE_ID,
     ) -> None:
+        """Lower the upper bound of task end time (latest completion constraint).
+
+        Tightens the end time upper bound, queues END_UB domain events.
+        If bounds become inconsistent, removes the machine from feasible set.
+
+        Supports global (all machines) tightening via GLOBAL_MACHINE_ID.
+        """
         domains = self.domains
 
         if value >= domains.end.get_ub(task_id, machine_id):
@@ -639,9 +721,11 @@ class ScheduleState(EzPickle):
         self.domain_event_queue.append(DomainEvent(task_id, END_UB, machine_id))
 
     def forbid_machine(self, task_id: TaskID, machine_id: MachineID) -> None:
+        """Remove a machine from the feasible set of a task."""
         self.restrict_machine(task_id, machine_id)
 
     def require_machine(self, task_id: TaskID, machine_id: MachineID) -> None:
+        """Fix a task to run on a specific machine by forbidding all others."""
         for other_machine in self.domains.feasible_machines[task_id]:
             if other_machine != machine_id:
                 self.forbid_machine(task_id, other_machine)
@@ -649,6 +733,12 @@ class ScheduleState(EzPickle):
     def reset_bounds(
         self, task_id: TaskID, machine_id: MachineID = GLOBAL_MACHINE_ID
     ) -> None:
+        """Reset start/end time bounds to allow rescheduling from current time.
+
+        Relaxes domain bounds to [current_time, MAX_TIME] interval and adds the
+        machine(s) back to feasible set.
+        Used after pausing or to recover from constraint conflicts.
+        """
         domains = self.domains
         time = self.time
 
@@ -661,9 +751,7 @@ class ScheduleState(EzPickle):
                 allow_global=True,
             )
 
-        if self.is_fixed(task_id) or not can_be_present(
-            domains.presence[task_id]
-        ):
+        if task_id not in self.runtime.awaiting_tasks:
             return
 
         start = domains.start
@@ -719,21 +807,11 @@ class ScheduleState(EzPickle):
             validate_domain_bounds(task_id, self, origin="reset_bounds")
 
     def fail(self, task_id: TaskID = UNKNOWN_TASK) -> None:
-        """
-        Marks the current state as infeasible.
+        """Mark the problem as infeasible.
 
-        In this CSP kernel, propagation is synchronous and domain updates are applied
-        atomically. As a design invariant, all inconsistencies are expected to be
-        reducible to domain contradictions (i.e., domain wipeout or forbidden
-        assignments) through propagation or at assignment time.
-
-        Therefore, well-formed propagators should express violations via domain
-        reductions on individual tasks, making explicit failure signaling typically
-        unnecessary.
-
-        This method is reserved for cases where a constraint detects an inconsistency
-        that cannot be reduced to any single task's domain under the current
-        propagation model, or as a defensive safeguard during development.
+        Constraints should prefer domain reductions via restrict_machine or
+        tight_* methods instead of this method.
+        It is reserved for hard global conflicts or defensive safeguards.
         """
         self.infeasible = True
         self.runtime.awaiting_tasks.clear()
@@ -746,26 +824,38 @@ class ScheduleState(EzPickle):
     ## Getter methods for variable values
 
     def get_awaiting_tasks(self) -> list[TaskID]:
+        """Return a list of awaiting task IDs (unlocked, feasible, not started)."""
         return list(self.runtime.awaiting_tasks)
 
     def get_unlocked_tasks(self) -> list[TaskID]:
+        """Return a list of unlocked task IDs (all dependencies resolved)."""
         return list(self.runtime.unlocked_tasks)
 
     def get_executing_tasks(self) -> list[TaskID]:
+        """Return a list of currently executing task IDs."""
         return list(self.runtime.executing_tasks)
 
     def get_completed_tasks(self) -> list[TaskID]:
+        """Return a list of completed task IDs."""
         return list(self.runtime.completed_tasks)
 
     def get_history(self, task_id: TaskID, segment: int = -1) -> TaskHistory:
+        """Return the scheduling history entry for a task (most recent by default)."""
         return self.runtime.history[task_id][segment]
 
     def is_awaiting(self, task_id: TaskID) -> bool:
+        """Return whether a task is in the awaiting queue."""
         return task_id in self.runtime.awaiting_tasks
 
     def is_available(
         self, task_id: TaskID, machine_id: MachineID = GLOBAL_MACHINE_ID
     ) -> bool:
+        """Return whether a task can be scheduled now on the given machine.
+
+        A task is available if it is unlocked (all dependencies resolved) and the
+        current time falls within the feasible start window [start_lb, start_ub)
+        on the machine(s).
+        """
         if task_id not in self.runtime.unlocked_tasks:
             return False
 
@@ -794,24 +884,30 @@ class ScheduleState(EzPickle):
         return t < start.ubs[idx]
 
     def is_paused(self, task_id: TaskID) -> bool:
+        """Return whether a task is paused."""
         return self.runtime.status[task_id] == PAUSED
 
     def is_executing(self, task_id: TaskID) -> bool:
+        """Return whether a task is currently executing."""
         return self.runtime.status[task_id] == EXECUTING
 
     def is_completed(self, task_id: TaskID) -> bool:
+        """Return whether a task is completed."""
         return self.runtime.status[task_id] == COMPLETED
 
     def is_locked(self, task_id: TaskID) -> bool:
+        """Return whether a task has unresolved dependencies."""
         return bool(self.runtime.dependencies[task_id])
 
     def get_end(self, task_id: TaskID) -> Time:
+        """Return the end time of a fixed task; raises RuntimeError if task not assigned."""
         if not self.is_fixed(task_id):
             raise RuntimeError(f"Task {task_id} has not been commited yet.")
 
         return self.runtime.get_end(task_id)
 
     def get_start(self, task_id: TaskID) -> Time:
+        """Return the start time of a fixed task; raises RuntimeError if task not assigned."""
         if not self.is_fixed(task_id):
             raise RuntimeError(f"Task {task_id} has not been commited yet.")
 
@@ -819,10 +915,12 @@ class ScheduleState(EzPickle):
 
     ## Setter methods for variable values, triggering constraint propagation through events
     def add_dependency(self, task_id: TaskID, name: str) -> None:
+        """Add a named dependency to lock a task (remove from unlocked_tasks)."""
         self.runtime.dependencies[task_id].add(name)
         self.runtime.unlocked_tasks.discard(task_id)
 
     def resolve_dependency(self, task_id: TaskID, name: str) -> None:
+        """Remove a named dependency from a task; add to unlocked if all resolved."""
         dependencies = self.runtime.dependencies[task_id]
 
         dependencies.discard(name)
@@ -830,6 +928,29 @@ class ScheduleState(EzPickle):
             self.runtime.unlocked_tasks.add(task_id)
 
     def execute_task(self, task_id: TaskID, machine_id: MachineID) -> None:
+        """Commit a task to a machine and begin executing it at current time.
+
+        Major DES operation: fixes the task assignment to the given machine,
+        transitions the task to EXECUTING and queues TASK_STARTED and ASSIGNMENT
+        events.
+
+        Parameters
+        ----------
+        task_id : TaskID
+            Task identifier.
+
+        machine_id : MachineID
+            Machine to execute on (must be a real machine, not GLOBAL_MACHINE_ID).
+
+        Raises
+        ------
+        ValueError
+            If machine_id == GLOBAL_MACHINE_ID.
+
+        RuntimeError
+            If task not available, machine infeasible, or presence prohibits execution.
+
+        """
         if machine_id == GLOBAL_MACHINE_ID:
             raise ValueError(
                 f"Cannot assign to the global machine {GLOBAL_MACHINE_ID}."
@@ -914,6 +1035,24 @@ class ScheduleState(EzPickle):
             )
 
     def pause_task(self, task_id: TaskID) -> None:
+        """Suspend an executing task and allow rescheduling with reduced work.
+
+        Major DES operation for preemption: computes work done proportionally to
+        elapsed time, reduces remaining_time on all machines, and resets bounds to
+        allow rescheduling from current time.
+        Queues PAUSE and TASK_PAUSED events.
+
+        Parameters
+        ----------
+        task_id : TaskID
+            Executing task identifier.
+
+        Raises
+        ------
+        RuntimeError
+            If task is not currently executing.
+
+        """
         pause_time = self.time
 
         if not self.is_executing(task_id):
@@ -998,6 +1137,7 @@ class ScheduleState(EzPickle):
     # Runtime utils
 
     def get_next_start_lb(self) -> Time:
+        """Return the minimum start lower bound among unlocked tasks, or current time if any task available now."""
         min_lb = MAX_TIME
 
         global_lbs = self.domains.start.global_lbs
@@ -1016,9 +1156,11 @@ class ScheduleState(EzPickle):
         return min_lb
 
     def get_last_completion_time(self) -> Time:
+        """Return the latest completion time seen so far in the schedule."""
         return self.runtime.last_completion_time
 
     def get_machine_execution(self) -> dict[MachineID, list[TaskID]]:
+        """Return a dict mapping each machine to its currently executing task IDs."""
         assignments: dict[MachineID, list[TaskID]] = {
             machine_id: [] for machine_id in range(self.instance.n_machines)
         }
@@ -1031,6 +1173,7 @@ class ScheduleState(EzPickle):
         return assignments
 
     def __eq__(self, value: Any) -> bool:
+        """Return equality based on all state attributes (instance, time, domains, runtime, events)."""
         return (
             isinstance(value, ScheduleState)
             and self.instance == value.instance

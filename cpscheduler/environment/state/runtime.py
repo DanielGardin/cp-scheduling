@@ -1,3 +1,5 @@
+"""Runtime containers for the scheduling DES."""
+
 from mypy_extensions import mypyc_attr
 
 from cpscheduler.environment.constants import (
@@ -16,25 +18,41 @@ AWAITING = Status.AWAITING
 
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
 class TaskHistory(EzPickle):
-    "A record of a task execution, (machine_id, start_time, end_time)"
+    """Record of a task execution segment.
 
-    __args__ = ("machine_id", "start_time", "end_time")
+    A task can be executed multiple times in preemptive problems.
+    Each history entry records the machine, start and end times for one execution segment.
+
+    """
 
     machine_id: MachineID
     start_time: Time
     end_time: Time
 
     def __init__(self, machine_id: MachineID, start_time: Time, end_time: Time):
+        """Initialize a TaskHistory entry.
+
+        Parameters
+        ----------
+        machine_id : MachineID
+            Machine where the segment executed.
+
+        start_time : Time
+            Inclusive start time of the segment.
+
+        end_time : Time
+            Exclusive end time of the segment.
+
+        """
         self.machine_id = machine_id
         self.start_time = start_time
         self.end_time = end_time
 
     def __eq__(self, value: object, /) -> bool:
-        if not isinstance(value, TaskHistory):
-            return False
-
+        """Check equality of TaskHistory containers."""
         return (
-            self.machine_id == value.machine_id
+            isinstance(value, TaskHistory)
+            and self.machine_id == value.machine_id
             and self.start_time == value.start_time
             and self.end_time == value.end_time
         )
@@ -42,13 +60,7 @@ class TaskHistory(EzPickle):
 
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
 class RuntimeState(EzPickle):
-    """
-    Container for the runtime state of the scheduling environment.
-
-    This class is used to store any additional state information that may be
-    needed by constraints or other components of the environment. It is designed
-    to be flexible and can be extended with additional attributes as needed.
-    """
+    """Aggregate container for runtime variables used during simulation."""
 
     history: list[list[TaskHistory]]
 
@@ -63,6 +75,14 @@ class RuntimeState(EzPickle):
     last_completion_time: Time
 
     def __init__(self, instance: ProblemInstance) -> None:
+        """Initialize the RuntimeState with a problem instance.
+
+        Parameters
+        ----------
+        instance: ProblemInstance
+            The problem instance containing tasks, machines, processing times, etc.
+
+        """
         n_tasks = instance.n_tasks
 
         self.history = [[] for _ in range(n_tasks)]
@@ -77,42 +97,24 @@ class RuntimeState(EzPickle):
 
         self.last_completion_time = MIN_TIME
 
-    def __repr__(self) -> str:
-        return (
-            f"RuntimeState(history={self.history}, "
-            f"executing_tasks={self.executing_tasks}, "
-            f"completed_tasks={self.completed_tasks})"
-        )
-
     def get_assignment(self, task_id: TaskID, page: int = -1) -> MachineID:
-        "Get the machine assignment of the current execution of a given task."
+        """Return the machine assignment for the current execution page of a task."""
         return self.history[task_id][page].machine_id
 
     def get_start(self, task_id: TaskID, page: int = -1) -> Time:
-        "Get the start time of the current execution of a given task."
+        """Return the start time for the given history page."""
         return self.history[task_id][page].start_time
 
     def get_end(self, task_id: TaskID, page: int = -1) -> Time:
-        "Get the end time of the current execution of a given task."
+        """Return the end time for the given history page."""
         return self.history[task_id][page].end_time
 
     def get_history(self, task_id: TaskID, page: int = -1) -> TaskHistory:
-        "Get the execution history for a given task and page."
+        """Return the TaskHistory for the given page."""
         return self.history[task_id][page]
 
-    def get_awaiting_tasks(self) -> list[TaskID]:
-        return list(self.awaiting_tasks)
-
-    def get_unlocked_tasks(self) -> list[TaskID]:
-        return list(self.unlocked_tasks)
-
-    def get_executing_tasks(self) -> list[TaskID]:
-        return list(self.executing_tasks)
-
-    def get_completed_tasks(self) -> list[TaskID]:
-        return list(self.completed_tasks)
-
     def recompute_last_completion_time(self) -> None:
+        """Recompute `last_completion_time` from currently executing tasks."""
         best = MIN_TIME
 
         for task_id in self.executing_tasks:
@@ -124,6 +126,7 @@ class RuntimeState(EzPickle):
         self.last_completion_time = best
 
     def __eq__(self, value: object, /) -> bool:
+        """Check equality of RuntimeState containers."""
         return (
             isinstance(value, RuntimeState)
             and self.history == value.history

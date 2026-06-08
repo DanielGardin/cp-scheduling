@@ -80,24 +80,35 @@ exclude = [
     ".venv",
     "build",
     "dist",
-    "instances",
+    "instances"
 ]
 
 [tool.ruff.lint]
 select = [
-    "E",
-    "F",
-    "W",
-    "I",
-    "B",
-    "UP",
-    "SIM",
-    "RUF",
+    "B",   # flake8-bugbear,
+    "C4",  # Helps you write better list/set/dict comprehensions
+    "D",   # documentation
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "I",   # isort - Import sorting
+    "PT",  # flake8-pytest-style
+    "RET", # flake8-return
+    "RUF", # Ruff lint
+    "SIM", # flake8-simplify
+    "TC",  # flake8-type-checking
+    "TID", # flake8-tidy-imports
+    "UP",  # pyupgrade
+    "W",   # pycodestyle warnings 
 ]
+extend-select = ["D417"]
 
 ignore = [
-    "E501",
+    "E501", # Line too long is already handled by ruff format.
 ]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
 
 [tool.mypy]
 exclude = [

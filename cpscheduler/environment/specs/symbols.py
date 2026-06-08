@@ -1,30 +1,38 @@
+"""Symbolic algebra for features with variable shape dimensions.
+
+This module introduces string-based symbolic dimensions for static specification
+of features with dynamic shaping, such as ("n_tasks", 2).
+Affine expressions are also allowed, where shapes like ("n_tasks", "2*n_jobs+1")
+are allowed, and parsed as SymbolicDim objects.
+Symbol values are resolved during runtime.
+"""
+
+from __future__ import annotations
+
 import ast
-from typing import Final, Literal, TypeAlias
+from typing import Literal, TypeAlias
 
 from cpscheduler.environment.constants import EzPickle
 
 BuiltinSymbols = Literal["n_tasks", "n_jobs", "n_machines"]
 BaseShapeDim = int | BuiltinSymbols | str | None
-"""Symbolic dimensions for shapes.
-
-Allows building features with dynamic shaping, such as ("n_tasks", 2).
-Symbolic dimensions are resolved in runtime.
-"""
 
 ShapeDim: TypeAlias = "BaseShapeDim | SymbolicDim"
 
 # FUTURE: Extend this to user-defined symbols
+# Allow, for example, a group constraint to parameterize its feature with
+# ("n_groups", ...), and then solving what n_groups mean during validation.
 VALID_SYMBOLS: frozenset[BuiltinSymbols] = frozenset(
     ["n_tasks", "n_jobs", "n_machines"]
 )
 
 
 def _parse_affine_expr(expr: str) -> dict[str, int]:
-    """
-    Parse a string affine expression into a coefficient dict.
+    """Parse a string affine expression into a coefficient dict.
 
-    Returns keys for all symbols, with 0 for missing symbols.
+    Returns keys for all valid symbols, with 0 for missing symbols.
     Always includes an "const" key for the constant term.
+
     Raises ValueError on any invalid or unsupported expression.
     """
     try:
@@ -33,7 +41,7 @@ def _parse_affine_expr(expr: str) -> dict[str, int]:
     except SyntaxError as e:
         raise ValueError(f"Invalid expression: '{expr}'.") from e
 
-    result: dict[str, int] = {symbol: 0 for symbol in VALID_SYMBOLS}
+    result: dict[str, int] = dict.fromkeys(VALID_SYMBOLS, 0)
     result["const"] = 0
 
     _visit(tree.body, result, sign=1)
@@ -118,20 +126,14 @@ def _visit_mult(
 
 
 class SymbolicDim(EzPickle):
+    """Represents a symbolic shape dimension as an affine expression of known symbols.
+
+    For example, "2*n_tasks + 3" would be represented as a SymbolicDim with
+    coefs {"n_tasks": 2} and const 3.
+    """
+
     _coefs: dict[str, int]
     _const_value: int
-
-    @property
-    def const(self) -> int:
-        return self._const_value
-
-    @property
-    def coefs(self) -> dict[str, int]:
-        return {symbol: coef for symbol, coef in self._coefs.items()}
-
-    @property
-    def symbols(self) -> frozenset[str]:
-        return frozenset(self._coefs.keys())
 
     def __init__(
         self,
@@ -142,6 +144,7 @@ class SymbolicDim(EzPickle):
         n_machines: int = 0,
         **symbol_values: int,
     ) -> None:
+        """Initialize a SymbolicDim with a constant term and symbol coefficients."""
         self._const_value = const
         coefs = {
             "n_tasks": n_tasks,
@@ -153,7 +156,8 @@ class SymbolicDim(EzPickle):
         self._coefs = {sym: coef for sym, coef in coefs.items() if coef != 0}
 
     @classmethod
-    def from_shapedim(cls, dim: int | str) -> "SymbolicDim":
+    def from_shapedim(cls, dim: int | str) -> SymbolicDim:
+        """Create a SymbolicDim from a dimension specification, parsing strings as affine expressions."""
         if isinstance(dim, int):
             return cls(const=dim)
 
@@ -164,18 +168,42 @@ class SymbolicDim(EzPickle):
 
     @property
     def raw(self) -> BaseShapeDim:
+        """The raw dimension specification, as provided by the user."""
         if self.is_constant():
             return self._const_value
 
         return str(self)
 
+    @property
+    def const(self) -> int:
+        """The constant term of the symbolic dimension."""
+        return self._const_value
+
+    @property
+    def coefs(self) -> dict[str, int]:
+        """The symbol coefficients of the symbolic dimension."""
+        return dict(self._coefs.items())
+
+    @property
+    def symbols(self) -> frozenset[str]:
+        """The set of symbols involved in the symbolic dimension."""
+        return frozenset(self._coefs.keys())
+
+    @property
+    def n_symbols(self) -> int:
+        """The number of symbols involved in the symbolic dimension."""
+        return len(self._coefs)
+
     def is_constant(self) -> bool:
+        """Whether this symbolic dimension is actually a constant (i.e. has no symbols)."""
         return not self._coefs
 
-    def is_symbolic(self) -> bool:
-        return not self.is_constant()
+    def is_atomic(self) -> bool:
+        """Whether this symbolic dimension is atomic (i.e. of the form 'n_tasks' with coef 1)."""
+        return len(self._coefs) == 1 and next(iter(self._coefs.values())) == 1
 
     def resolve(self, **symbol_values: int) -> int:
+        """Resolve the symbolic dimension to an integer value, given values for the symbols."""
         value = self._const_value
 
         for sym, coef in self._coefs.items():
@@ -188,7 +216,8 @@ class SymbolicDim(EzPickle):
 
         return value
 
-    def __add__(self, other: ShapeDim) -> "SymbolicDim":
+    def __add__(self, other: ShapeDim) -> SymbolicDim:
+        """Add another shape dimension to this symbolic dimension, returning a new SymbolicDim."""
         if other is None:
             raise ValueError(
                 "Cannot sum a symbolic dim with variadic None dimension."
@@ -206,10 +235,12 @@ class SymbolicDim(EzPickle):
             },
         )
 
-    def __radd__(self, other: ShapeDim) -> "SymbolicDim":
+    def __radd__(self, other: ShapeDim) -> SymbolicDim:
+        """Right-add another shape dimension to this symbolic dimension, returning a new SymbolicDim."""
         return self + other
 
-    def __sub__(self, other: ShapeDim) -> "SymbolicDim":
+    def __sub__(self, other: ShapeDim) -> SymbolicDim:
+        """Subtract another shape dimension from this symbolic dimension, returning a new SymbolicDim."""
         if other is None:
             raise ValueError(
                 "Cannot subtract a symbolic dim with variadic None dimension."
@@ -227,40 +258,54 @@ class SymbolicDim(EzPickle):
             },
         )
 
-    def __rsub__(self, other: ShapeDim) -> "SymbolicDim":
+    def __rsub__(self, other: ShapeDim) -> SymbolicDim:
+        """Right-subtract another shape dimension from this symbolic dimension, returning a new SymbolicDim."""
         return (-self) + other
 
-    def __mul__(self, other: int) -> "SymbolicDim":
+    def __mul__(self, other: int) -> SymbolicDim:
+        """Multiply this symbolic dimension by an integer constant, returning a new SymbolicDim."""
         return SymbolicDim(
             const=self._const_value * other,
             **{sym: coef * other for sym, coef in self._coefs.items()},
         )
 
-    def __rmul__(self, other: int) -> "SymbolicDim":
+    def __rmul__(self, other: int) -> SymbolicDim:
+        """Right-multiply this symbolic dimension by an integer constant, returning a new SymbolicDim."""
         return self * other
 
-    def __neg__(self) -> "SymbolicDim":
+    def __neg__(self) -> SymbolicDim:
+        """Negate this symbolic dimension, returning a new SymbolicDim."""
         return SymbolicDim(
             const=-self._const_value,
             **{sym: -coef for sym, coef in self._coefs.items()},
         )
 
     def __eq__(self, value: object, /) -> bool:
-        if not isinstance(value, SymbolicDim):
-            if not isinstance(value, int | str):
-                return NotImplemented
+        """Check equality with another symbolic dimension or shape dim specification."""
+        if isinstance(value, SymbolicDim):
+            return (
+                self._coefs == value._coefs
+                and self._const_value == value._const_value
+            )
 
-            value = self.from_shapedim(value)
+        if isinstance(value, int):
+            return self.is_constant() and self._const_value == value
 
-        return (
-            self._coefs == value._coefs
-            and self._const_value == value._const_value
-        )
+        if isinstance(value, str):
+            try:
+                return self == self.from_shapedim(value)
+
+            except ValueError:
+                return False
+
+        return NotImplemented
 
     def __hash__(self) -> int:
+        """Hash based on the coefficients and constant value."""
         return hash((tuple(self._coefs.items()), self._const_value))
 
     def __repr__(self) -> str:
+        """Return a string representation of the symbolic dimension, reconstructing the affine expression."""
         parts: list[str] = []
 
         for sym, coef in self._coefs.items():
@@ -284,8 +329,3 @@ class SymbolicDim(EzPickle):
                 result += f" + {part}"
 
         return result
-
-
-N_TASKS: Final = SymbolicDim(n_tasks=1)
-N_JOBS: Final = SymbolicDim(n_jobs=1)
-N_MACHINES: Final = SymbolicDim(n_machines=1)

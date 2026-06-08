@@ -1,12 +1,12 @@
-"""
-This module defines the base class for all constraints in the scheduling environment.
-It provides a common interface for any piece in the scheduling environment that
-interacts with the tasks by limiting when they can be executed, how they are assigned to
-machines, etc.
+"""Module for defining scheduling constraints.
+
+Constraints are beta componentes inside the environment, they interact with the
+environment by changing the domains inside the constraint propagator kernel.
+In high-level, constraints define how tasks interact with all other environment
+features, such as machines, other tasks, resources, etc.
 
 You can define your own constraints by subclassing the `Constraint` class and
 implementing the required methods.
-
 """
 
 __all__ = [

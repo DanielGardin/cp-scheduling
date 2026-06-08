@@ -1,3 +1,10 @@
+"""Module for discrete event simulation (DES) components of the environment.
+
+This module contains the core components for the discrete event simulation (DES)
+of the environment, including the event types, the schedule, and the instruction
+parsing utilities.
+"""
+
 __all__ = [  # noqa: RUF022
     # Parsing / utilities
     "instructions",
@@ -13,7 +20,6 @@ __all__ = [  # noqa: RUF022
     "CheckpointEvent",
     "CompleteEvent",
     "ExecuteEvent",
-    "InterruptEvent",
     "PauseEvent",
     "ResumeEvent",
     "SubmitEvent",
@@ -36,7 +42,6 @@ from cpscheduler.environment.des.events import (
     CheckpointEvent,
     CompleteEvent,
     ExecuteEvent,
-    InterruptEvent,
     PauseEvent,
     ResumeEvent,
     SubmitEvent,
