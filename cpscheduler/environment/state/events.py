@@ -3,7 +3,6 @@
 from typing import Final, Literal
 
 from mypy_extensions import mypyc_attr
-from typing_extensions import assert_never
 
 from cpscheduler.environment.constants import (
     GLOBAL_MACHINE_ID,
@@ -53,125 +52,44 @@ class VarField(Enum):
     """Global infeasibility flag signalled by a propagator."""
 
 
-ASSIGNMENT = VarField.ASSIGNMENT
-START_LB = VarField.START_LB
-START_UB = VarField.START_UB
-END_LB = VarField.END_LB
-END_UB = VarField.END_UB
-PRESENCE = VarField.PRESENCE
-ABSENCE = VarField.ABSENCE
-MACHINE_INFEASIBLE = VarField.MACHINE_INFEASIBLE
-PAUSE = VarField.PAUSE
-BOUNDS_RESET = VarField.BOUNDS_RESET
-STATE_INFEASIBLE = VarField.STATE_INFEASIBLE
-
-
-def field_to_str(field: VarFieldType) -> str:
-    """Return a short string name for a VarField value.
-
-    Parameters
-    ----------
-    field : VarFieldType
-        Event kind to stringify.
-
-    Returns
-    -------
-    str
-        Uppercase name of the event kind.
-
-    """
-    if field == START_LB:
-        return "START_LB"
-
-    if field == START_UB:
-        return "START_UB"
-
-    if field == END_LB:
-        return "END_LB"
-
-    if field == END_UB:
-        return "END_UB"
-
-    if field == ASSIGNMENT:
-        return "ASSIGNMENT"
-
-    if field == PRESENCE:
-        return "PRESENCE"
-
-    if field == ABSENCE:
-        return "ABSENCE"
-
-    if field == MACHINE_INFEASIBLE:
-        return "MACHINE_INFEASIBLE"
-
-    if field == PAUSE:
-        return "PAUSE"
-
-    if field == BOUNDS_RESET:
-        return "BOUNDS_RESET"
-
-    if field == STATE_INFEASIBLE:
-        return "STATE_INFEASIBLE"
-
-    assert_never(field)
-
-
-# FUTURE: Change this event struct to a struct of list of events
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
-class DomainEvent(EzPickle):
-    """Lightweight value object for CP domain events.
+class DomainEventQueue(EzPickle):
+    """Container for domain events generated during constraint propagation."""
 
-    Attributes
-    ----------
-    task_id : TaskID
-        Identifier of the affected task.
+    task_ids: list[TaskID]
+    fields: list[VarFieldType]
+    machine_ids: list[MachineID]
 
-    field : VarFieldType
-        Kind of domain change.
+    def __init__(self) -> None:
+        """Initialize an empty DomainEventQueue."""
+        self.task_ids = []
+        self.fields = []
+        self.machine_ids = []
 
-    machine_id : MachineID
-        Machine identifier associated with the event (or GLOBAL_MACHINE_ID).
-
-    """
-
-    task_id: TaskID
-    field: VarFieldType
-    machine_id: MachineID
-
-    def __init__(
+    def add_event(
         self,
         task_id: TaskID,
         field: VarFieldType,
         machine_id: MachineID = GLOBAL_MACHINE_ID,
     ) -> None:
-        """Initialize a DomainEvent.
+        """Add a domain event to the queue."""
+        self.task_ids.append(task_id)
+        self.fields.append(field)
+        self.machine_ids.append(machine_id)
 
-        Parameters
-        ----------
-        task_id : TaskID
-            Identifier of the affected task.
+    def __len__(self) -> int:
+        """Return the number of events in the queue."""
+        return len(self.task_ids)
 
-        field : VarFieldType
-            Kind of domain change.
+    def clear(self) -> None:
+        """Clear all events from the queue."""
+        self.task_ids.clear()
+        self.fields.clear()
+        self.machine_ids.clear()
 
-        machine_id : MachineID, optional
-            Machine identifier associated with the event, or GLOBAL_MACHINE_ID (default).
-
-        """
-        self.task_id = task_id
-        self.field = field
-        self.machine_id = machine_id
-
-    def __eq__(self, value: object, /) -> bool:
-        """Check equality of DomainEvent containers."""
-        if not isinstance(value, DomainEvent):
-            return False
-
-        return (
-            self.task_id == value.task_id
-            and self.field == value.field
-            and self.machine_id == value.machine_id
-        )
+    def __repr__(self) -> str:
+        """Return a string representation of the DomainEventQueue."""
+        return f"DomainEventQueue(num_events={len(self.task_ids)})"
 
 
 EventKindType = Literal[0, 1, 2, 3]
@@ -186,78 +104,41 @@ class RuntimeEventKind(Enum):
     TASK_MACHINE_INFEASIBLE: Final[Literal[3]] = 3
 
 
-TASK_STARTED = RuntimeEventKind.TASK_STARTED
-TASK_PAUSED = RuntimeEventKind.TASK_PAUSED
-TASK_COMPLETED = RuntimeEventKind.TASK_COMPLETED
-TASK_MACHINE_INFEASIBLE = RuntimeEventKind.TASK_MACHINE_INFEASIBLE
-
-
-def kind_to_str(kind: EventKindType) -> str:
-    """Return a short string name for a RuntimeEventKind value.
-
-    Parameters
-    ----------
-    kind : EventKindType
-        Runtime event kind to stringify.
-
-    Returns
-    -------
-    str
-        Uppercase name of the runtime event kind.
-
-    """
-    if kind == TASK_STARTED:
-        return "TASK_STARTED"
-
-    if kind == TASK_PAUSED:
-        return "TASK_PAUSED"
-
-    if kind == TASK_COMPLETED:
-        return "TASK_COMPLETED"
-
-    if kind == TASK_MACHINE_INFEASIBLE:
-        return "TASK_MACHINE_INFEASIBLE"
-
-    assert_never(kind)
-
-
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
-class RuntimeEvent(EzPickle):
-    """Value object for runtime lifecycle events."""
+class RuntimeEventQueue(EzPickle):
+    """Container for runtime events generated during schedule execution."""
 
-    task_id: TaskID
-    kind: EventKindType
-    machine_id: MachineID
+    task_ids: list[TaskID]
+    kinds: list[EventKindType]
+    machine_ids: list[MachineID]
 
-    def __init__(
+    def __init__(self) -> None:
+        """Initialize an empty RuntimeEventQueue."""
+        self.task_ids = []
+        self.kinds = []
+        self.machine_ids = []
+
+    def add_event(
         self,
         task_id: TaskID,
         kind: EventKindType,
         machine_id: MachineID = GLOBAL_MACHINE_ID,
     ) -> None:
-        """Initialize a RuntimeEvent.
+        """Add a runtime event to the queue."""
+        self.task_ids.append(task_id)
+        self.kinds.append(kind)
+        self.machine_ids.append(machine_id)
 
-        Parameters
-        ----------
-        task_id : TaskID
-            Affected task identifier.
+    def __len__(self) -> int:
+        """Return the number of events in the queue."""
+        return len(self.task_ids)
 
-        kind : EventKindType
-            Specific runtime event (started, paused, completed, machine infeasible).
+    def clear(self) -> None:
+        """Clear all events from the queue."""
+        self.task_ids.clear()
+        self.kinds.clear()
+        self.machine_ids.clear()
 
-        machine_id : MachineID, optional
-            Machine identifier related to the event, or GLOBAL_MACHINE_ID (default).
-
-        """
-        self.task_id = task_id
-        self.kind = kind
-        self.machine_id = machine_id
-
-    def __eq__(self, value: object, /) -> bool:
-        """Check equality of RuntimeEvent containers."""
-        return (
-            isinstance(value, RuntimeEvent)
-            and self.task_id == value.task_id
-            and self.kind == value.kind
-            and self.machine_id == value.machine_id
-        )
+    def __repr__(self) -> str:
+        """Return a string representation of the RuntimeEventQueue."""
+        return f"RuntimeEventQueue(num_events={len(self.task_ids)})"

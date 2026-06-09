@@ -588,12 +588,15 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         # then we cache which propagators are subscribed for a field, instead of
         # iterating over all constraints.
 
+        task_ids = event_queue.task_ids
+        fields = event_queue.fields
+        machine_ids = event_queue.machine_ids
+
         idx = 0
         while idx < len(event_queue):
-            event = event_queue[idx]
-            task_id = event.task_id
-            machine_id = event.machine_id
-            field = event.field
+            task_id = task_ids[idx]
+            field = fields[idx]
+            machine_id = machine_ids[idx]
 
             if field == ASSIGNMENT:
                 for constraint in constraints:
@@ -665,10 +668,14 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         objective = self.objective
         observation = self._observation
 
-        for event in runtime_event_queue:
-            task_id = event.task_id
-            kind = event.kind
-            machine_id = event.machine_id
+        task_ids = runtime_event_queue.task_ids
+        kinds = runtime_event_queue.kinds
+        machine_ids = runtime_event_queue.machine_ids
+
+        for i in range(len(runtime_event_queue)):
+            task_id = task_ids[i]
+            kind = kinds[i]
+            machine_id = machine_ids[i]
 
             if kind == TASK_STARTED:
                 objective.on_task_started(task_id, machine_id, state)
