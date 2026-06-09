@@ -91,6 +91,19 @@ class DomainEventQueue(EzPickle):
         """Return a string representation of the DomainEventQueue."""
         return f"DomainEventQueue(num_events={len(self.task_ids)})"
 
+    def __eq__(self, other: object) -> bool:
+        """Check equality of two DomainEventQueue instances."""
+        return (
+            isinstance(other, DomainEventQueue)
+            and self.task_ids == other.task_ids
+            and self.fields == other.fields
+            and self.machine_ids == other.machine_ids
+        )
+
+    def __bool__(self) -> bool:
+        """Return True if the queue has any events, False otherwise."""
+        return bool(self.task_ids)
+
 
 EventKindType = Literal[0, 1, 2, 3]
 
@@ -142,3 +155,16 @@ class RuntimeEventQueue(EzPickle):
     def __repr__(self) -> str:
         """Return a string representation of the RuntimeEventQueue."""
         return f"RuntimeEventQueue(num_events={len(self.task_ids)})"
+
+    def __eq__(self, other: object) -> bool:
+        """Check equality of two RuntimeEventQueue instances."""
+        return (
+            isinstance(other, RuntimeEventQueue)
+            and self.task_ids == other.task_ids
+            and self.kinds == other.kinds
+            and self.machine_ids == other.machine_ids
+        )
+
+    def __bool__(self) -> bool:
+        """Return True if the queue has any events, False otherwise."""
+        return bool(self.task_ids)

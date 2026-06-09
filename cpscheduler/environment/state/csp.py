@@ -98,40 +98,25 @@ class Bounds(EzPickle):
     ubs: list[Time]
     global_ubs: list[Time]
 
-    def __init__(self, instance: ProblemInstance) -> None:
+    def __init__(self, n_tasks: int, n_machines: int) -> None:
         """Initialize the Bounds container with a problem instance.
 
         Parameters
         ----------
-        instance: ProblemInstance
-            The problem instance containing tasks, machines, processing times, etc.
+        n_tasks: int
+            The number of tasks in the problem instance.
+
+        n_machines: int
+            The number of machines in the problem instance.
 
         """
-        n_tasks = instance.n_tasks
-        n_machines = instance.n_machines
+        nm = n_tasks * n_machines
 
-        lbs = [MAX_TIME] * (n_tasks * n_machines)
+        lbs = [MAX_TIME] * (nm)
         global_lbs = [MAX_TIME] * n_tasks
 
-        ubs = [MIN_TIME] * (n_tasks * n_machines)
+        ubs = [MIN_TIME] * (nm)
         global_ubs = [MIN_TIME] * n_tasks
-
-        machine_mask = instance.machine_mask
-
-        for task_id in range(n_tasks):
-            mask = machine_mask[task_id]
-
-            start_idx = task_id * n_machines
-
-            for machine_id in range(n_machines):
-                if mask[machine_id]:
-                    idx = start_idx + machine_id
-
-                    lbs[idx] = MIN_TIME
-                    global_lbs[task_id] = MIN_TIME
-
-                    ubs[idx] = MAX_TIME
-                    global_ubs[task_id] = MAX_TIME
 
         self.n_machines = n_machines
         self.lbs = lbs
@@ -198,51 +183,112 @@ class TaskDomains(EzPickle):
         n_tasks = instance.n_tasks
         n_machines = instance.n_machines
 
-        remaining_times = [0] * (n_tasks * n_machines)
+        feasible_machines = [
+            {
+                machine_id
+                for machine_id, is_feasible in enumerate(machine_mask)
+                if is_feasible
+            }
+            for machine_mask in instance.machine_mask
+        ]
+        remaining_times = [MAX_TIME] * (n_tasks * n_machines)
 
+        assignment = [GLOBAL_MACHINE_ID] * n_tasks
         presence: list[PresenceType] = [
             UNDEFINED if optional else PRESENT for optional in instance.optional
         ]
 
-        feasible_machines: list[set[MachineID]] = [
-            set() for _ in range(n_tasks)
-        ]
-
-        start = Bounds(instance)
-        end = Bounds(instance)
-
-        processing_times = instance.processing_times
-        machine_mask = instance.machine_mask
-
-        for task_id in range(n_tasks):
-            p_times = processing_times[task_id]
-            mask = machine_mask[task_id]
-
-            eligible_machines = tuple(
-                machine_id
-                for machine_id in range(n_machines)
-                if mask[machine_id]
-            )
-            feasible_machines[task_id].update(eligible_machines)
-
-            start_idx = task_id * n_machines
-            for machine_id in eligible_machines:
-                idx = start_idx + machine_id
-
-                p_j = p_times[machine_id]
-
-                remaining_times[idx] = p_j
-                start.ubs[idx] = end.ubs[idx] - p_j
-                end.lbs[idx] = start.lbs[idx] + p_j
+        start = Bounds(n_tasks, n_machines)
+        end = Bounds(n_tasks, n_machines)
 
         self.feasible_machines = feasible_machines
         self.remaining_times = remaining_times
 
-        self.assignment = [GLOBAL_MACHINE_ID] * n_tasks
+        self.assignment = assignment
         self.presence = presence
 
         self.start = start
         self.end = end
+
+        processing_times = instance.processing_times
+
+        for task_id in range(n_tasks):
+            p_times = processing_times[task_id]
+
+            start_idx = task_id * n_machines
+            for machine_id in feasible_machines[task_id]:
+                idx = start_idx + machine_id
+
+                p = p_times[machine_id]
+
+                start.lbs[idx] = MIN_TIME
+                start.ubs[idx] = MAX_TIME - p
+                end.lbs[idx] = MIN_TIME + p
+                end.ubs[idx] = MAX_TIME
+                remaining_times[idx] = p
+
+            start.global_lbs[task_id] = MIN_TIME
+            self.recompute_global_start_ubs(task_id)
+            self.recompute_global_end_lbs(task_id)
+            end.global_ubs[task_id] = MAX_TIME
+
+    def recompute_global_start_lbs(self, task_id: TaskID) -> None:
+        """Recompute the global lower bound for the start variable of a task."""
+        start = self.start
+        row = task_id * start.n_machines
+
+        global_lb = MAX_TIME
+        for machine_id in self.feasible_machines[task_id]:
+            lb = start.lbs[row + machine_id]
+            if lb < global_lb:
+                global_lb = lb
+
+        start.global_lbs[task_id] = global_lb
+
+    def recompute_global_start_ubs(self, task_id: TaskID) -> None:
+        """Recompute the global upper bound for the start variable of a task."""
+        start = self.start
+        row = task_id * start.n_machines
+
+        global_ub = MIN_TIME
+        for machine_id in self.feasible_machines[task_id]:
+            ub = start.ubs[row + machine_id]
+            if ub > global_ub:
+                global_ub = ub
+
+        start.global_ubs[task_id] = global_ub
+
+    def recompute_global_end_lbs(self, task_id: TaskID) -> None:
+        """Recompute the global lower bound for the end variable of a task."""
+        end = self.end
+        row = task_id * end.n_machines
+
+        global_lb = MAX_TIME
+        for machine_id in self.feasible_machines[task_id]:
+            lb = end.lbs[row + machine_id]
+            if lb < global_lb:
+                global_lb = lb
+
+        end.global_lbs[task_id] = global_lb
+
+    def recompute_global_end_ubs(self, task_id: TaskID) -> None:
+        """Recompute the global upper bound for the end variable of a task."""
+        end = self.end
+        row = task_id * end.n_machines
+
+        global_ub = MIN_TIME
+        for machine_id in self.feasible_machines[task_id]:
+            ub = end.ubs[row + machine_id]
+            if ub > global_ub:
+                global_ub = ub
+
+        end.global_ubs[task_id] = global_ub
+
+    def is_machine_feasible(
+        self, task_id: TaskID, machine_id: MachineID
+    ) -> bool:
+        """Check if a machine is currently feasible for a task."""
+        return machine_id in self.feasible_machines[task_id]
 
     def get_feasible_machines(self, task_id: TaskID) -> tuple[MachineID, ...]:
         """Return the tuple of currently feasible machines for a task."""

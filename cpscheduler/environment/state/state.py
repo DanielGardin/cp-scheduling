@@ -14,7 +14,6 @@ from mypy_extensions import mypyc_attr
 from cpscheduler.environment.constants import (
     GLOBAL_MACHINE_ID,
     MAX_TIME,
-    MIN_TIME,
     EzPickle,
     MachineID,
     Status,
@@ -45,17 +44,6 @@ PRESENT = Presence.PRESENT
 ABSENT = Presence.ABSENT
 INFEASIBLE = Presence.INFEASIBLE
 
-
-def can_be_present(presence: PresenceType) -> bool:
-    """Check if presence is undecided, or present."""
-    return (presence & PRESENT) != 0
-
-
-def can_be_absent(presence: PresenceType) -> bool:
-    """Check if presence is undecided, or absent."""
-    return (presence & ABSENT) != 0
-
-
 AWAITING = Status.AWAITING
 PAUSED = Status.PAUSED
 EXECUTING = Status.EXECUTING
@@ -77,14 +65,6 @@ TASK_STARTED = RuntimeEventKind.TASK_STARTED
 TASK_PAUSED = RuntimeEventKind.TASK_PAUSED
 TASK_COMPLETED = RuntimeEventKind.TASK_COMPLETED
 TASK_MACHINE_INFEASIBLE = RuntimeEventKind.TASK_MACHINE_INFEASIBLE
-
-IntervalEnd = bool
-START: IntervalEnd = True
-END: IntervalEnd = False
-
-Bound = bool
-LB: Bound = True
-UB: Bound = False
 
 UNKNOWN_TASK: TaskID = -1
 
@@ -113,6 +93,9 @@ class ScheduleState(EzPickle):
     """
 
     instance: ProblemInstance
+    n_tasks: int
+    n_jobs: int
+    n_machines: int
 
     time: Time
 
@@ -137,6 +120,9 @@ class ScheduleState(EzPickle):
 
         """
         self.instance = instance
+        self.n_tasks = instance.n_tasks
+        self.n_jobs = instance.n_jobs
+        self.n_machines = instance.n_machines
 
         self.time = 0
 
@@ -150,22 +136,6 @@ class ScheduleState(EzPickle):
         self.runtime_event_queue = RuntimeEventQueue()
 
     # Properties
-
-    @property
-    def n_machines(self) -> int:
-        """Return the number of machines in the problem instance."""
-        return self.instance.n_machines
-
-    @property
-    def n_tasks(self) -> int:
-        """Return the number of tasks in the problem instance."""
-        return self.instance.n_tasks
-
-    @property
-    def n_jobs(self) -> int:
-        """Return the number of jobs in the problem instance."""
-        return self.instance.n_jobs
-
     @property
     def debug(self) -> bool:
         """Return whether debug mode is enabled for the state."""
@@ -179,10 +149,6 @@ class ScheduleState(EzPickle):
 
         self.domains = TaskDomains(self.instance)
         self.runtime = RuntimeState(self.instance)
-
-        for task_id in range(self.n_tasks):
-            self._recompute_global_bound(task_id, END, LB)
-            self._recompute_global_bound(task_id, START, UB)
 
         self.domain_event_queue.clear()
         self.runtime_event_queue.clear()
@@ -214,15 +180,21 @@ class ScheduleState(EzPickle):
         self.time = new_time
 
         runtime = self.runtime
-        for task_id in self.get_executing_tasks():
-            assignment = runtime.get_assignment(task_id)
-            end_time = runtime.get_end(task_id)
+
+        executing_tasks = runtime.executing_tasks
+        completed_tasks = runtime.completed_tasks
+        status = runtime.status
+
+        for task_id in list(executing_tasks):
+            history = runtime.history[task_id]
+            end_time = history[-1].end_time
+            assignment = history[-1].machine_id
 
             if end_time <= new_time:
-                runtime.executing_tasks.remove(task_id)
-                runtime.completed_tasks.add(task_id)
+                executing_tasks.remove(task_id)
+                completed_tasks.add(task_id)
 
-                runtime.status[task_id] = COMPLETED
+                status[task_id] = COMPLETED
                 self.runtime_event_queue.add_event(
                     task_id, TASK_COMPLETED, assignment
                 )
@@ -329,51 +301,14 @@ class ScheduleState(EzPickle):
         return machine_id in machines
 
     ## Setter methods for variable values, triggering constraint propagation through events
-    def _recompute_global_bound(
-        self, task_id: TaskID, var: IntervalEnd, bound: Bound
-    ) -> None:
-        # FUTURE: This method is called very often, maybe more often than
-        # needed. As this is part of a hot loop, this implementation should be
-        # revisited in the future.
-
-        domains = self.domains
-
-        variable = domains.start if var else domains.end
-        row = task_id * variable.n_machines
-
-        feasible_machines = domains.feasible_machines[task_id]
-
-        best = MAX_TIME if bound else MIN_TIME
-        if bound:  # bound == LB:
-            lbs = variable.lbs
-
-            for m_id in feasible_machines:
-                idx = row + m_id
-
-                value = lbs[idx]
-                if value < best:
-                    best = value
-
-            variable.global_lbs[task_id] = best
-
-        else:  # bound == UB:
-            ubs = variable.ubs
-
-            for m_id in feasible_machines:
-                idx = row + m_id
-
-                value = ubs[idx]
-                if value > best:
-                    best = value
-
-            variable.global_ubs[task_id] = best
-
     def _recompute_all_bounds(self, task_id: TaskID) -> None:
         """Recompute all four global bounds (start/end, lb/ub) for a task."""
-        self._recompute_global_bound(task_id, START, LB)
-        self._recompute_global_bound(task_id, START, UB)
-        self._recompute_global_bound(task_id, END, LB)
-        self._recompute_global_bound(task_id, END, UB)
+        domains = self.domains
+
+        domains.recompute_global_start_ubs(task_id)
+        domains.recompute_global_start_lbs(task_id)
+        domains.recompute_global_end_ubs(task_id)
+        domains.recompute_global_end_lbs(task_id)
 
     def _restrict_presence(
         self, task_id: TaskID, mask: Literal[0b01, 0b10]
@@ -473,47 +408,45 @@ class ScheduleState(EzPickle):
         start_ubs = domains.start.ubs
         end_lbs = domains.end.lbs
         end_ubs = domains.end.ubs
-        remaining_times = domains.remaining_times
 
-        if machine_id == GLOBAL_MACHINE_ID:
-            row = task_id * self.n_machines
+        if machine_id != GLOBAL_MACHINE_ID:
+            idx = task_id * self.n_machines + machine_id
 
-            feasible_machines = domains.get_feasible_machines(task_id)
-            for m_id in feasible_machines:
-                idx = row + m_id
+            old_lb = start_lbs[idx]
+            end_lb = value + domains.remaining_times[idx]
 
-                if start_lbs[idx] < value:
-                    start_lbs[idx] = value
-                    end_lbs[idx] = value + remaining_times[idx]
+            start_lbs[idx] = value
+            end_lbs[idx] = end_lb
 
-                    if value > start_ubs[idx] or end_lbs[idx] > end_ubs[idx]:
-                        self.restrict_machine(task_id, m_id)
+            if value > start_ubs[idx] or end_lb > end_ubs[idx]:
+                self.restrict_machine(task_id, machine_id)
+                return
 
-            self._recompute_global_bound(task_id, START, LB)
-            self._recompute_global_bound(task_id, END, LB)
+            if old_lb == domains.start.global_lbs[task_id]:
+                domains.recompute_global_start_lbs(task_id)
+                domains.recompute_global_end_lbs(task_id)
 
-            if feasible_machines:
-                self.domain_event_queue.add_event(task_id, START_LB)
-
+            self.domain_event_queue.add_event(task_id, START_LB, machine_id)
             return
 
-        idx = task_id * self.n_machines + machine_id
+        row = task_id * self.n_machines
+        for machine_id in domains.get_feasible_machines(task_id):
+            idx = row + machine_id
 
-        old_lb = start_lbs[idx]
-        end_lb = value + remaining_times[idx]
+            if value > start_lbs[idx]:
+                end_lb = value + domains.remaining_times[idx]
 
-        start_lbs[idx] = value
-        end_lbs[idx] = end_lb
+                start_lbs[idx] = value
+                end_lbs[idx] = end_lb
 
-        if value > start_ubs[idx] or end_lb > end_ubs[idx]:
-            self.restrict_machine(task_id, machine_id)
-            return
+                if value > start_ubs[idx] or end_lb > end_ubs[idx]:
+                    self.restrict_machine(task_id, machine_id)
 
-        if old_lb == domains.start.global_lbs[task_id]:
-            self._recompute_global_bound(task_id, START, LB)
-            self._recompute_global_bound(task_id, END, LB)
+        domains.recompute_global_start_lbs(task_id)
+        domains.recompute_global_end_lbs(task_id)
 
-        self.domain_event_queue.add_event(task_id, START_LB, machine_id)
+        if domains.feasible_machines[task_id]:
+            self.domain_event_queue.add_event(task_id, START_LB)
 
     def tight_start_ub(
         self,
@@ -535,49 +468,48 @@ class ScheduleState(EzPickle):
 
         start_lbs = domains.start.lbs
         start_ubs = domains.start.ubs
+        end_lbs = domains.end.lbs
         end_ubs = domains.end.ubs
-        remaining_times = domains.remaining_times
 
-        if machine_id == GLOBAL_MACHINE_ID:
-            row = task_id * self.n_machines
+        if machine_id != GLOBAL_MACHINE_ID:
+            idx = task_id * self.n_machines + machine_id
 
-            feasible_machines = domains.get_feasible_machines(task_id)
-            for m_id in feasible_machines:
-                idx = row + m_id
+            old_ub = start_ubs[idx]
+            end_ub = value + domains.remaining_times[idx]
 
-                if start_ubs[idx] > value:
-                    start_ubs[idx] = value
-                    end_ubs[idx] = value + remaining_times[idx]
+            start_ubs[idx] = value
+            end_ubs[idx] = end_ub
 
-                    if (
-                        value < start_lbs[idx]
-                        or end_ubs[idx] < domains.end.lbs[idx]
-                    ):
-                        self.restrict_machine(task_id, m_id)
+            if start_lbs[idx] > value or end_lbs[idx] > end_ub:
+                self.restrict_machine(task_id, machine_id)
+                return
 
-            self._recompute_global_bound(task_id, START, UB)
-            self._recompute_global_bound(task_id, END, UB)
+            if old_ub == domains.start.global_ubs[task_id]:
+                domains.recompute_global_start_ubs(task_id)
+                domains.recompute_global_end_ubs(task_id)
 
-            if feasible_machines:
-                self.domain_event_queue.add_event(task_id, START_UB)
-
+            self.domain_event_queue.add_event(task_id, START_UB, machine_id)
             return
 
-        idx = task_id * self.n_machines + machine_id
+        row = task_id * self.n_machines
 
-        old_ub = start_ubs[idx]
-        start_ubs[idx] = value
-        end_ubs[idx] = value + remaining_times[idx]
+        for machine_id in domains.get_feasible_machines(task_id):
+            idx = row + machine_id
 
-        if value < start_lbs[idx] or end_ubs[idx] < domains.end.lbs[idx]:
-            self.restrict_machine(task_id, machine_id)
-            return
+            if value < start_ubs[idx]:
+                end_ub = value + domains.remaining_times[idx]
 
-        if old_ub == domains.start.global_ubs[task_id]:
-            self._recompute_global_bound(task_id, START, UB)
-            self._recompute_global_bound(task_id, END, UB)
+                start_ubs[idx] = value
+                end_ubs[idx] = end_ub
 
-        self.domain_event_queue.add_event(task_id, START_UB, machine_id)
+                if start_lbs[idx] > value or end_lbs[idx] > end_ub:
+                    self.restrict_machine(task_id, machine_id)
+
+        domains.recompute_global_start_ubs(task_id)
+        domains.recompute_global_end_ubs(task_id)
+
+        if domains.feasible_machines[task_id]:
+            self.domain_event_queue.add_event(task_id, START_UB)
 
     def tight_end_lb(
         self,
@@ -601,49 +533,46 @@ class ScheduleState(EzPickle):
         start_ubs = domains.start.ubs
         end_lbs = domains.end.lbs
         end_ubs = domains.end.ubs
-        remaining_times = domains.remaining_times
 
-        if machine_id == GLOBAL_MACHINE_ID:
-            row = task_id * self.n_machines
+        if machine_id != GLOBAL_MACHINE_ID:
+            idx = task_id * self.n_machines + machine_id
 
-            feasible_machines = domains.get_feasible_machines(task_id)
-            for m_id in feasible_machines:
-                idx = row + m_id
+            old_lb = end_lbs[idx]
+            start_lb = value - domains.remaining_times[idx]
 
-                if end_lbs[idx] < value:
-                    end_lbs[idx] = value
-                    derived_start_lb = value - remaining_times[idx]
-                    if start_lbs[idx] < derived_start_lb:
-                        start_lbs[idx] = derived_start_lb
+            end_lbs[idx] = value
+            start_lbs[idx] = start_lb
 
-                    if value > end_ubs[idx] or start_lbs[idx] > start_ubs[idx]:
-                        self.restrict_machine(task_id, m_id)
+            if start_lb > start_ubs[idx] or value > end_ubs[idx]:
+                self.restrict_machine(task_id, machine_id)
+                return
 
-            self._recompute_global_bound(task_id, END, LB)
-            self._recompute_global_bound(task_id, START, LB)
+            if old_lb == domains.end.global_lbs[task_id]:
+                domains.recompute_global_end_lbs(task_id)
+                domains.recompute_global_start_lbs(task_id)
 
-            if feasible_machines:
-                self.domain_event_queue.add_event(task_id, END_LB)
-
+            self.domain_event_queue.add_event(task_id, END_LB, machine_id)
             return
 
-        idx = task_id * self.n_machines + machine_id
+        row = task_id * self.n_machines
 
-        old_lb = end_lbs[idx]
-        start_lb = value - remaining_times[idx]
+        for machine_id in domains.get_feasible_machines(task_id):
+            idx = row + machine_id
 
-        end_lbs[idx] = value
-        start_lbs[idx] = start_lb
+            if value > end_lbs[idx]:
+                start_lb = value - domains.remaining_times[idx]
 
-        if value > end_ubs[idx] or start_lb > start_ubs[idx]:
-            self.restrict_machine(task_id, machine_id)
-            return
+                end_lbs[idx] = value
+                start_lbs[idx] = start_lb
 
-        if old_lb == domains.end.global_lbs[task_id]:
-            self._recompute_global_bound(task_id, END, LB)
-            self._recompute_global_bound(task_id, START, LB)
+                if start_lb > start_ubs[idx] or value > end_ubs[idx]:
+                    self.restrict_machine(task_id, machine_id)
 
-        self.domain_event_queue.add_event(task_id, END_LB, machine_id)
+        domains.recompute_global_end_lbs(task_id)
+        domains.recompute_global_start_lbs(task_id)
+
+        if domains.feasible_machines[task_id]:
+            self.domain_event_queue.add_event(task_id, END_LB)
 
     def tight_end_ub(
         self,
@@ -663,56 +592,51 @@ class ScheduleState(EzPickle):
         if value >= domains.end.get_ub(task_id, machine_id):
             return
 
+        start_lbs = domains.start.lbs
         start_ubs = domains.start.ubs
         end_lbs = domains.end.lbs
         end_ubs = domains.end.ubs
-        remaining_times = domains.remaining_times
 
-        if machine_id == GLOBAL_MACHINE_ID:
-            row = task_id * self.n_machines
+        if machine_id != GLOBAL_MACHINE_ID:
+            idx = task_id * self.n_machines + machine_id
 
-            feasible_machines = domains.get_feasible_machines(task_id)
-            for m_id in feasible_machines:
-                idx = row + m_id
+            old_ub = end_ubs[idx]
+            start_ub = value - domains.remaining_times[idx]
 
-                if end_ubs[idx] > value:
-                    end_ubs[idx] = value
-                    derived_start_ub = value - remaining_times[idx]
-                    if start_ubs[idx] > derived_start_ub:
-                        start_ubs[idx] = derived_start_ub
+            end_ubs[idx] = value
+            start_ubs[idx] = start_ub
 
-                    if (
-                        value < end_lbs[idx]
-                        or start_ubs[idx] < domains.start.lbs[idx]
-                    ):
-                        self.restrict_machine(task_id, m_id)
+            if start_lbs[idx] > start_ub or end_lbs[idx] > value:
+                self.restrict_machine(task_id, machine_id)
+                return
 
-            self._recompute_global_bound(task_id, END, UB)
-            self._recompute_global_bound(task_id, START, UB)
+            if old_ub == domains.end.global_ubs[task_id]:
+                domains.recompute_global_end_ubs(task_id)
+                domains.recompute_global_start_ubs(task_id)
 
-            if feasible_machines:
-                self.domain_event_queue.add_event(task_id, END_UB)
+            self.domain_event_queue.add_event(task_id, END_UB, machine_id)
 
             return
 
-        idx = task_id * self.n_machines + machine_id
+        row = task_id * self.n_machines
 
-        old_ub = end_ubs[idx]
-        derived_start_ub = value - remaining_times[idx]
+        for machine_id in domains.get_feasible_machines(task_id):
+            idx = row + machine_id
 
-        end_ubs[idx] = value
-        if start_ubs[idx] > derived_start_ub:
-            start_ubs[idx] = derived_start_ub
+            if end_ubs[idx] > value:
+                start_ub = value - domains.remaining_times[idx]
 
-        if value < end_lbs[idx] or start_ubs[idx] < domains.start.lbs[idx]:
-            self.restrict_machine(task_id, machine_id)
-            return
+                end_ubs[idx] = value
+                start_ubs[idx] = start_ub
 
-        if old_ub == domains.end.global_ubs[task_id]:
-            self._recompute_global_bound(task_id, END, UB)
-            self._recompute_global_bound(task_id, START, UB)
+                if start_lbs[idx] > start_ub or end_lbs[idx] > value:
+                    self.restrict_machine(task_id, machine_id)
 
-        self.domain_event_queue.add_event(task_id, END_UB, machine_id)
+        domains.recompute_global_end_ubs(task_id)
+        domains.recompute_global_start_ubs(task_id)
+
+        if domains.feasible_machines[task_id]:
+            self.domain_event_queue.add_event(task_id, END_UB)
 
     def forbid_machine(self, task_id: TaskID, machine_id: MachineID) -> None:
         """Remove a machine from the feasible set of a task."""
@@ -767,9 +691,9 @@ class ScheduleState(EzPickle):
             feasible_machines.add(machine_id)
 
             start.global_lbs[task_id] = time
-            self._recompute_global_bound(task_id, START, UB)
+            domains.recompute_global_start_ubs(task_id)
 
-            self._recompute_global_bound(task_id, END, LB)
+            domains.recompute_global_end_lbs(task_id)
             end.global_ubs[task_id] = MAX_TIME
 
             if self._debug:
@@ -790,9 +714,9 @@ class ScheduleState(EzPickle):
             feasible_machines.add(m_id)
 
         start.global_lbs[task_id] = time
-        self._recompute_global_bound(task_id, START, UB)
+        self.domains.recompute_global_start_ubs(task_id)
 
-        self._recompute_global_bound(task_id, END, LB)
+        self.domains.recompute_global_end_lbs(task_id)
         end.global_ubs[task_id] = MAX_TIME
 
         self.domain_event_queue.add_event(task_id, BOUNDS_RESET)
@@ -867,23 +791,16 @@ class ScheduleState(EzPickle):
         if machine_id == GLOBAL_MACHINE_ID:
             row = task_id * self.n_machines
 
-            for machine in self.domains.feasible_machines[task_id]:
-                idx = row + machine
-
-                if t >= start.lbs[idx] and t < start.ubs[idx]:
-                    return True
-
-            return False
+            return any(
+                start.lbs[row + m_id] <= t < start.ubs[row + m_id]
+                for m_id in self.domains.feasible_machines[task_id]
+            )
 
         if machine_id not in self.domains.feasible_machines[task_id]:
             return False
 
         idx = task_id * self.n_machines + machine_id
-        lb = start.lbs[idx]
-        if t < lb:
-            return False
-
-        return t < start.ubs[idx]
+        return start.lbs[idx] <= t < start.ubs[idx]
 
     def is_paused(self, task_id: TaskID) -> bool:
         """Return whether a task is paused."""
@@ -962,30 +879,33 @@ class ScheduleState(EzPickle):
         domains = self.domains
         runtime = self.runtime
 
-        if not self.is_available(task_id, machine_id):
-            raise RuntimeError(
-                f"Cannot assign task {task_id} to machine {machine_id} at time "
-                f"{start_time}, the task is not available at the current time."
+        if self.debug:
+            validate_machine_id(
+                task_id,
+                machine_id,
+                self.instance,
+                origin="execute_task",
+                allow_global=False,
             )
 
-        feasible_machines = domains.feasible_machines[task_id]
-        if machine_id not in feasible_machines:
-            lb = domains.start.get_lb(task_id, machine_id)
-            ub = domains.start.get_ub(task_id, machine_id)
+            feasible_machines = domains.feasible_machines[task_id]
+            if machine_id not in feasible_machines:
+                lb = domains.start.get_lb(task_id, machine_id)
+                ub = domains.start.get_ub(task_id, machine_id)
 
-            raise RuntimeError(
-                f"Cannot assign task {task_id} to machine {machine_id} at time "
-                f"{start_time}, because this machine is not feasible. "
-                f"Start Interval = [{lb}, {ub}]."
-            )
+                raise RuntimeError(
+                    f"Cannot assign task {task_id} to machine {machine_id} at time "
+                    f"{start_time}, because this machine is not feasible. "
+                    f"Start Interval = [{lb}, {ub}]."
+                )
 
-        presence = domains.presence[task_id]
-        if not can_be_present(presence):
-            raise RuntimeError(
-                f"Cannot assign task {task_id} to machine {machine_id} at time "
-                f"{start_time}, it violates the presence constraints for that "
-                f"task: presence = {presence_to_str(presence)}."
-            )
+            presence = domains.presence[task_id]
+            if (presence & PRESENT) == 0:
+                raise RuntimeError(
+                    f"Cannot assign task {task_id} to machine {machine_id} at time "
+                    f"{start_time}, it violates the presence constraints for that "
+                    f"task: presence = {presence_to_str(presence)}."
+                )
 
         row = task_id * self.n_machines
         idx = row + machine_id
@@ -1097,9 +1017,9 @@ class ScheduleState(EzPickle):
             feasible_machines.add(m_id)
 
         start.global_lbs[task_id] = pause_time
-        self._recompute_global_bound(task_id, START, UB)
+        domains.recompute_global_start_ubs(task_id)
 
-        self._recompute_global_bound(task_id, END, LB)
+        domains.recompute_global_end_lbs(task_id)
         end.global_ubs[task_id] = MAX_TIME
 
         domains.assignment[task_id] = GLOBAL_MACHINE_ID
