@@ -262,7 +262,7 @@ class ScheduleState(EzPickle):
         self, task_id: TaskID, machine_id: MachineID
     ) -> Time:
         """Return the remaining processing time for a task on a machine."""
-        idx = task_id * self.instance.n_machines + machine_id
+        idx = task_id * self.n_machines + machine_id
 
         return self.domains.remaining_times[idx]
 
@@ -907,8 +907,7 @@ class ScheduleState(EzPickle):
                     f"task: presence = {presence_to_str(presence)}."
                 )
 
-        row = task_id * self.n_machines
-        idx = row + machine_id
+        idx = task_id * self.n_machines + machine_id
         duration = domains.remaining_times[idx]
 
         end_time = start_time + duration
@@ -1004,15 +1003,16 @@ class ScheduleState(EzPickle):
         for m_id in self.instance.get_machines(task_id):
             idx = row + m_id
 
-            work_done = ((actual_duration) * remaining_times[idx]) // (
+            remaining_time = remaining_times[idx]
+            remaining_time -= (actual_duration * remaining_time) // (
                 expected_duration
             )
-            remaining_times[idx] -= work_done
 
             start.lbs[idx] = pause_time
-            start.ubs[idx] = MAX_TIME - remaining_times[idx]
-            end.lbs[idx] = pause_time + remaining_times[idx]
+            start.ubs[idx] = MAX_TIME - remaining_time
+            end.lbs[idx] = pause_time + remaining_time
             end.ubs[idx] = MAX_TIME
+            remaining_times[idx] -= remaining_time
 
             feasible_machines.add(m_id)
 
@@ -1054,12 +1054,11 @@ class ScheduleState(EzPickle):
 
     def get_next_start_lb(self) -> Time:
         """Return the minimum start lower bound among unlocked tasks, or current time if any task available now."""
-        min_lb = MAX_TIME
-
         global_lbs = self.domains.start.global_lbs
         unlocked_tasks = self.runtime.unlocked_tasks
         current_time = self.time
 
+        min_lb = MAX_TIME
         for task_id in unlocked_tasks:
             lb = global_lbs[task_id]
 
@@ -1078,7 +1077,7 @@ class ScheduleState(EzPickle):
     def get_machine_execution(self) -> dict[MachineID, list[TaskID]]:
         """Return a dict mapping each machine to its currently executing task IDs."""
         assignments: dict[MachineID, list[TaskID]] = {
-            machine_id: [] for machine_id in range(self.instance.n_machines)
+            machine_id: [] for machine_id in range(self.n_machines)
         }
 
         runtime = self.runtime

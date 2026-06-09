@@ -250,28 +250,29 @@ class Schedule(EzPickle):
         time = event.earliest_time(state)
         current_time = state.time
 
-        if time == current_time:
-            if not event.is_ready(state):
-                # This guardrail is stronger than we need, it will block
-                # feasible paths that use non-timed and timed events together
-                raise RuntimeError(
-                    f"Event {event} is potentially deadlocking the event "
-                    "queue due to an action-dependent dependency that may "
-                    "never happen."
-                )
+        if time > current_time:
+            self._create_time_slot(time)
+            heappush(self.non_timed_events[time], entry)
+            self._event_time_cache[event.event_id] = time
 
-        elif time < current_time:
-            raise ValueError(
-                f"Cannot reschedule events triggered by {event} to the past: "
-                f"{time} < {state.time}."
+            if event.blocking and (self._tail is None or time > self._tail):
+                self._tail = time
+
+            return
+
+        if time == current_time:
+            # This guardrail is stronger than we need, it will block
+            # feasible paths that use non-timed and timed events together
+            raise RuntimeError(
+                f"Event {event} is potentially deadlocking the event "
+                "queue due to an action-dependent dependency that may "
+                "never happen."
             )
 
-        self._create_time_slot(time)
-        heappush(self.non_timed_events[time], entry)
-        self._event_time_cache[event.event_id] = time
-
-        if event.blocking and (self._tail is None or time > self._tail):
-            self._tail = time
+        raise ValueError(
+            f"Cannot reschedule events triggered by {event} to the past: "
+            f"{time} < {state.time}."
+        )
 
     def _reschedule_blocking_event(
         self, entries: list[_Entry], idx: int, state: ScheduleState
