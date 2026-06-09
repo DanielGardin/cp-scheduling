@@ -561,14 +561,11 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             for constraint in self._all_constraints:
                 constraint.on_time_update(next_time, self.state)
 
-            consistent = self.propagate()
-
-            if not consistent:
-                return False
+            self.propagate()
 
         return not schedule.is_empty()
 
-    def propagate(self) -> bool:
+    def propagate(self) -> None:
         """Execute constraint propagation to fixed-point.
 
         Processes all domain events in the queue, invoking constraint callbacks
@@ -647,7 +644,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
                     "STATE_INFEASIBLE event produced erroneously."
                 )
                 self.event_count += idx + 1
-                return False
+                return
 
             else:
                 assert_never(field)
@@ -656,8 +653,6 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
         self.event_count += idx
         event_queue.clear()
-
-        return True
 
     def update_runtime(self) -> None:
         """Process runtime events and trigger callbacks.
@@ -762,9 +757,9 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             component.reset(state)
 
         self.event_count = 0
-        consistent = self.propagate()
+        self.propagate()
 
-        if not consistent:
+        if state.infeasible:
             raise RuntimeError(
                 "A stale state was produced after reset. Perhaps produced by "
                 "contradictory constraints included in your schedule problem."
@@ -844,14 +839,13 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
         schedule = self.schedule
 
-        consistent = True
-        while consistent and not state.is_terminal() and self.advance_clock():
+        while not state.is_terminal() and self.advance_clock():
             for event in schedule.instruction_queue(state):
                 event.process(state, schedule)
 
-                consistent = self.propagate()
+                self.propagate()
 
-                if not consistent:
+                if state.infeasible:
                     break
 
         # Gymnasium-like step return

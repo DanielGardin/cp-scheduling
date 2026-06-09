@@ -831,6 +831,14 @@ class ScheduleState(EzPickle):
         """Return a list of unlocked task IDs (all dependencies resolved)."""
         return list(self.runtime.unlocked_tasks)
 
+    def get_available_tasks(self) -> list[TaskID]:
+        """Return a list of available task IDs (can be executed now)."""
+        return [
+            task_id
+            for task_id in self.runtime.unlocked_tasks
+            if self.is_available(task_id)
+        ]
+
     def get_executing_tasks(self) -> list[TaskID]:
         """Return a list of currently executing task IDs."""
         return list(self.runtime.executing_tasks)
