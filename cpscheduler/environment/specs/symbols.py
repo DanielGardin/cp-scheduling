@@ -10,7 +10,7 @@ Symbol values are resolved during runtime.
 from __future__ import annotations
 
 import ast
-from typing import Literal, TypeAlias
+from typing import Literal, TypeAlias, overload
 
 from cpscheduler.environment.constants import EzPickle
 
@@ -329,3 +329,49 @@ class SymbolicDim(EzPickle):
                 result += f" + {part}"
 
         return result
+
+
+@overload
+def symbolic_shape(
+    raw_shape: tuple[BaseShapeDim, ...],
+) -> tuple[SymbolicDim | None, ...]: ...
+
+
+@overload
+def symbolic_shape(raw_shape: None) -> None: ...
+
+
+def symbolic_shape(
+    raw_shape: tuple[BaseShapeDim, ...] | None,
+) -> tuple[SymbolicDim | None, ...] | None:
+    """Turn a shape object into a tuple of SymbolicDims."""
+    if raw_shape is None:
+        return None
+
+    return tuple(
+        SymbolicDim.from_shapedim(dim) if dim is not None else None
+        for dim in raw_shape
+    )
+
+
+@overload
+def resolve_shape(
+    shape: tuple[SymbolicDim | None, ...],
+) -> tuple[int | None, ...]: ...
+
+
+@overload
+def resolve_shape(shape: None) -> None: ...
+
+
+def resolve_shape(
+    shape: tuple[SymbolicDim | None, ...] | None, **symbol_values: int
+) -> tuple[int | None, ...] | None:
+    """Materizalize the shape defined by SimbolicDims."""
+    if shape is None:
+        return None
+
+    return tuple(
+        dim.resolve(**symbol_values) if isinstance(dim, SymbolicDim) else None
+        for dim in shape
+    )

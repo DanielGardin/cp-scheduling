@@ -36,7 +36,10 @@ class ScheduleSetup(Component):
 
     @property
     def n_machines(self) -> int:
-        """Return the number of machines after the instance is loaded."""
+        """Return the number of machines after the instance is loaded.
+
+        If the number of machines is not fixed by the setup, return 0.
+        """
         return 0
 
     def setup_constraints(

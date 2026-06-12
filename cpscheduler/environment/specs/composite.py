@@ -15,7 +15,11 @@ from cpscheduler.environment.specs.feature_spec import (
     FeatureSpec,
     ObservationSpec,
 )
-from cpscheduler.environment.specs.symbols import ShapeDim, SymbolicDim
+from cpscheduler.environment.specs.symbols import (
+    ShapeDim,
+    SymbolicDim,
+    resolve_shape,
+)
 
 
 def _remove_dim(
@@ -113,12 +117,7 @@ class StackSpec(ObservationSpec):
 
     def resolve_shape(self, **symbol_values: int) -> tuple[int | None, ...]:
         """Resolve the symbolic dimensions in the shape to concrete integers using the provided symbol values."""
-        return tuple(
-            dim.resolve(**symbol_values)
-            if isinstance(dim, SymbolicDim)
-            else None
-            for dim in self.shape
-        )
+        return resolve_shape(self.shape, **symbol_values)
 
     def __eq__(self, value: object, /) -> bool:
         """Check equality of StackSpecs."""

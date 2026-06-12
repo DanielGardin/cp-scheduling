@@ -3,7 +3,12 @@
 from typing import Literal
 
 from cpscheduler.environment.constants import EzPickle
-from cpscheduler.environment.specs.symbols import BaseShapeDim, SymbolicDim
+from cpscheduler.environment.specs.symbols import (
+    BaseShapeDim,
+    SymbolicDim,
+    resolve_shape,
+    symbolic_shape,
+)
 
 
 class ObservationSpec(EzPickle):
@@ -120,12 +125,7 @@ class FeatureSpec(ObservationSpec):
         self.semantic = semantic
         self.sparse = sparse
 
-        self.shape = None
-        if shape is not None:
-            self.shape = tuple(
-                SymbolicDim.from_shapedim(dim) if dim is not None else None
-                for dim in shape
-            )
+        self.shape = symbolic_shape(shape)
 
         self.n_categories = n_categories
         self.low = low
@@ -176,15 +176,7 @@ class FeatureSpec(ObservationSpec):
         self, **symbol_values: int
     ) -> tuple[int | None, ...] | None:
         """Resolve the symbolic dimensions in the shape to concrete integers using the provided symbol values."""
-        if self.shape is None:
-            return None
-
-        return tuple(
-            dim.resolve(**symbol_values)
-            if isinstance(dim, SymbolicDim)
-            else None
-            for dim in self.shape
-        )
+        return resolve_shape(self.shape, **symbol_values)
 
     def __eq__(self, value: object, /) -> bool:
         """Check equality of FeatureSpecs."""
