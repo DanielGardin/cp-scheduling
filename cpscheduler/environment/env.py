@@ -384,6 +384,13 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         """Return a dictionary of all required features from the setup, constraints, and objective."""
         return self._instance.required_features()
 
+    def set_generator(self, instance_generator: InstanceGenerator) -> None:
+        """Set the instance generator.
+
+        The instance generator will sample a new instance for every reset call
+        """
+        self.instance_generator = instance_generator
+
     def load_instance(self, instance: InstanceTypes) -> None:
         """Load a scheduling instance and initialize the environment.
 
