@@ -90,15 +90,13 @@ def env_setup(
 
         raise e
 
-    env = SchedulingEnv(
+    return SchedulingEnv(
         machine_setup=JobShopSetup(),
         constraints=(PreemptionConstraint(),) if allow_preemption else (),
         objective=Makespan(),
         instance=instance,
         debug_mode=True,
     )
-
-    return env
 
 
 ENV_CASES: dict[str, EnvFactory] = {

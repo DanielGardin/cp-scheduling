@@ -197,7 +197,8 @@ def test_machine_eligibility_constraint() -> None:
 
     env.reset()
 
-    assert env.state.is_feasible(0, 1) and not env.state.is_feasible(0, 0)
+    assert env.state.is_feasible(0, 1)
+    assert not env.state.is_feasible(0, 0)
 
 
 def test_constant_processing_time_overrides_processing_times() -> None:

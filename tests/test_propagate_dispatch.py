@@ -17,7 +17,7 @@ from cpscheduler.environment.env import (
 )
 from cpscheduler.environment.setups import SingleMachineSetup
 from cpscheduler.environment.state import ScheduleState
-from cpscheduler.environment.state.events import DomainEvent, VarFieldType
+from cpscheduler.environment.state.events import VarFieldType
 
 
 class RecordingConstraint(Constraint):
@@ -70,7 +70,7 @@ class RecordingConstraint(Constraint):
 
 
 @pytest.mark.parametrize(
-    "field, machine_id, expected",
+    ("field", "machine_id", "expected"),
     [
         (ASSIGNMENT, 1, ("assignment", 0, 1)),
         (START_LB, 2, ("start_lb", 0, 2)),
@@ -96,9 +96,10 @@ def test_propagate_dispatches_domain_events(
     )
     env.reset()
 
-    env.state.domain_event_queue.append(DomainEvent(0, field, machine_id))
+    env.state.domain_event_queue.add_event(0, field, machine_id)
+    env.propagate()
 
-    assert env.propagate() is True
+    assert not env.state.infeasible
     assert recorder.calls == [expected]
     assert env.event_count == 1
-    assert env.state.domain_event_queue == []
+    assert len(env.state.domain_event_queue) == 0
