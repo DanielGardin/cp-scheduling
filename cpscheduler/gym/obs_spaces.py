@@ -1,3 +1,5 @@
+"""Module for converting ObservationSpecs to Gymnasium spaces."""
+
 from typing import Any, cast
 
 import numpy as np
@@ -55,7 +57,7 @@ BOUNDS: dict[SemanticType, tuple[float, float]] = {
 }
 
 
-def resolve_shape(
+def _resolve_shape(
     spec: FeatureSpec | StackSpec, symbols: dict[str, int]
 ) -> tuple[int, ...]:
     shape = spec.resolve_shape(**symbols)
@@ -68,16 +70,16 @@ def resolve_shape(
             f"Cannot build space with variadic shape: {shape} from spec {spec}."
         )
 
-    return cast(tuple[int, ...], shape)
+    return cast("tuple[int, ...]", shape)
 
 
 def feature_spec_to_gym_space(
     spec: FeatureSpec, symbols: dict[str, int]
 ) -> Space[Any]:
-    "Convert a FeatureSpec to a corresponding Gymnasium space."
+    """Convert a FeatureSpec to a corresponding Gymnasium space."""
     low, high = spec.low, spec.high
     semantic = spec.semantic
-    shape = resolve_shape(spec, symbols)
+    shape = _resolve_shape(spec, symbols)
 
     match semantic:
         case "binary" | "mask":
@@ -147,11 +149,11 @@ def feature_spec_to_gym_space(
 
 
 def convert_stack_to_gym_space(spec: StackSpec, symbols: dict[str, int]) -> Box:
-    "Convert a StackSpec to a corresponding Gymnasium space."
+    """Convert a StackSpec to a corresponding Gymnasium space."""
     return Box(
         low=MIN_FLOAT,
         high=MAX_FLOAT,
-        shape=resolve_shape(spec, symbols),
+        shape=_resolve_shape(spec, symbols),
         dtype=np.float32,
     )
 
@@ -160,7 +162,6 @@ def _convert_spec_to_gym_space(
     spec: ObservationSpec, symbols: dict[str, int]
 ) -> Space[Any]:
     """Recursively convert an ObservationSpec to a corresponding Gymnasium space."""
-
     if isinstance(spec, FeatureSpec):
         return feature_spec_to_gym_space(spec, symbols)
 
@@ -171,7 +172,7 @@ def _convert_spec_to_gym_space(
         return Dict(
             {
                 key: _convert_spec_to_gym_space(field_spec, symbols)
-                for key, field_spec in spec.fields.items()
+                for key, field_spec in spec.items()
             }
         )
 
@@ -193,10 +194,7 @@ def _convert_spec_to_gym_space(
 
 
 def observation_spec_to_gym_space(obs: Observation) -> Space[Any]:
-    """Convert an Observation's spec to a corresponding Gymnasium space.
-
-    Supports all spec types: FeatureSpec, SequenceSpec, and GraphSpec.
-    """
+    """Convert an Observation's spec to a corresponding Gymnasium space."""
     spec = obs.get_spec()
 
     # Extract symbols from observation attributes

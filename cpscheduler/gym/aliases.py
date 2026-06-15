@@ -1,5 +1,4 @@
-"""
-    aliases.py
+"""Pre-defined environment configurations with name aliases.
 
 This module contains environment aliases to simplify the creation of scheduling environments.
 Instead of importing the `SchedulingEnv` class directly and working with the available building
@@ -23,6 +22,7 @@ def make_jobshop(
     instance: InstanceTypes | None = None,
     metrics: Mapping[str, Metric[Any]] | None = None,
 ) -> SchedulingEnvGym:
+    """Return a SchedulingEnvGym for the classic jobshop problem."""
     return SchedulingEnvGym(
         JobShopSetup(), objective=Makespan(), instance=instance, metrics=metrics
     )

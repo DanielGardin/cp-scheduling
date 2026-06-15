@@ -1,3 +1,5 @@
+"""Common constants and methods used in the gymnasium wrapper."""
+
 from gymnasium.spaces import Box, OneOf, Sequence, Text, Tuple
 from numpy import int64
 
@@ -29,7 +31,7 @@ ActionSpace = OneOf(
 
 
 def get_instance_config(options: Options) -> InstanceConfig | None:
-    "Construct an instance configuration from the options."
+    """Construct an instance configuration from the options."""
     if not options:
         return None
 

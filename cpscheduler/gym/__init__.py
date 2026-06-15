@@ -1,3 +1,5 @@
+"""Gymnasium environments for scheduling problems."""
+
 from gymnasium import register
 
 __all__ = ["SchedulingEnvGym"]
