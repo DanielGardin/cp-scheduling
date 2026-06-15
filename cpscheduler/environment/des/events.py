@@ -1,8 +1,6 @@
 """Implementation of events for the discrete event simulation environment."""
 
-from typing import override
-
-from typing_extensions import Self
+from typing_extensions import Self, override
 
 from cpscheduler.environment.constants import (
     GLOBAL_MACHINE_ID,

@@ -1,9 +1,8 @@
 """Machine-related constraints for the scheduling environment."""
 
 from collections.abc import Iterable, Mapping
-from typing import override
 
-from typing_extensions import Self
+from typing_extensions import Self, override
 
 from cpscheduler.environment.constants import (
     MAX_TIME,

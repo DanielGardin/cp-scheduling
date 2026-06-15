@@ -5,7 +5,8 @@ overlap in time.
 """
 
 from collections.abc import Iterable
-from typing import override
+
+from typing_extensions import override
 
 import cpscheduler.environment.utils.debug as debug
 from cpscheduler.environment.constants import Int, MachineID, TaskID

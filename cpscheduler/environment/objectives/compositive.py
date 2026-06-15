@@ -1,7 +1,8 @@
 """Composed objective functions."""
 
 from collections.abc import Iterable
-from typing import override
+
+from typing_extensions import override
 
 from cpscheduler.environment.constants import Float, MachineID, TaskID
 from cpscheduler.environment.instance import ProblemInstance

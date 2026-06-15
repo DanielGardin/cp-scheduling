@@ -1,7 +1,9 @@
 """Structured samplers used in scheduling instances."""
 
 from random import Random
-from typing import Any, override
+from typing import Any
+
+from typing_extensions import override
 
 from cpscheduler.environment.specs.symbols import BaseShapeDim
 from cpscheduler.instances.distributions.base import Process
@@ -31,11 +33,7 @@ class PoissonProcess(Process[list[int]]):
     rate: float
     loc: int | None
 
-    def __init__(
-        self,
-        rate: float,
-        loc: int | None = None
-    ) -> None:
+    def __init__(self, rate: float, loc: int | None = None) -> None:
         """Initialize a PoissonProcess.
 
         Parameters
@@ -66,7 +64,11 @@ class PoissonProcess(Process[list[int]]):
 
     @override
     def sample(self, rng: Random, *, n_tasks: int, **context: Any) -> list[int]:
-        t: float = float(self.loc) if self.loc is not None else rng.expovariate(self.rate)
+        t: float = (
+            float(self.loc)
+            if self.loc is not None
+            else rng.expovariate(self.rate)
+        )
 
         arrivals: list[int] = [int(t)]
 
@@ -80,6 +82,7 @@ class PoissonProcess(Process[list[int]]):
     @override
     def __repr__(self) -> str:
         return f"PoissonProcess(rate={self.rate}, loc={self.loc})"
+
 
 class UniformMachineEligibility(Process[list[list[bool]]]):
     """Generate a uniform machine eligibility selection.
@@ -132,7 +135,6 @@ class UniformMachineEligibility(Process[list[list[bool]]]):
     @override
     def __repr__(self) -> str:
         return f"MachineEligibilityMask(p={self.p})"
-
 
 
 class BernoulliPrecedence(Process[dict[int, list[int]]]):
@@ -212,7 +214,9 @@ class JobAssignmentProcess(Process[list[int]]):
     def sample(
         self, rng: Random, *, n_tasks: int, n_jobs: int, **context: Any
     ) -> list[int]:
-        multinomial_sampler = Multinomial(n_tasks-n_jobs, [1/n_jobs] * n_jobs)
+        multinomial_sampler = Multinomial(
+            n_tasks - n_jobs, [1 / n_jobs] * n_jobs
+        )
 
         job_counts = multinomial_sampler.sample(rng)
 

@@ -8,7 +8,7 @@ and the goal is to optimize a scheduling objective by selecting the start times
 of each task while respecting the constraints of the problem.
 """
 
-from typing import override
+from typing_extensions import override
 
 from cpscheduler.environment.constants import MachineID, Time
 from cpscheduler.environment.constraints import (

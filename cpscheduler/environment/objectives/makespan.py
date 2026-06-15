@@ -1,6 +1,6 @@
 """Makespan and maximum lateness objectives."""
 
-from typing import override
+from typing_extensions import override
 
 from cpscheduler.environment.constants import MAX_TIME, MachineID, TaskID, Time
 from cpscheduler.environment.instance import JobFeature

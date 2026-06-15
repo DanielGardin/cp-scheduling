@@ -15,7 +15,8 @@ times for each task-machine pair.
 """
 
 from collections.abc import Iterable
-from typing import override
+
+from typing_extensions import override
 
 from cpscheduler.environment.constants import Int, Time
 from cpscheduler.environment.constraints import Constraint, MachineConstraint

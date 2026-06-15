@@ -1,9 +1,10 @@
 """Default observation for scheduling environments."""
 
 from collections.abc import Sequence
-from typing import Any, Literal, TypedDict, overload, override
+from typing import Any, Literal, TypedDict, overload
 
 from mypy_extensions import mypyc_attr
+from typing_extensions import override
 
 from cpscheduler.environment.constants import Status, StatusType, TaskID, Time
 from cpscheduler.environment.instance import (

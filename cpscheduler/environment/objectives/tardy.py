@@ -1,6 +1,6 @@
 """Tardy jobs objectives."""
 
-from typing import override
+from typing_extensions import override
 
 from cpscheduler.environment.constants import (
     Float,

@@ -1,7 +1,8 @@
 """Completion time related objective functions."""
 
 from math import expm1
-from typing import override
+
+from typing_extensions import override
 
 from cpscheduler.environment.constants import Float, Time
 from cpscheduler.environment.instance import UNSET, GlobalFeature, JobFeature

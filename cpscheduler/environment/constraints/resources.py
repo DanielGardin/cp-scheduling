@@ -1,7 +1,9 @@
 """Resource constraints for the scheduling environment."""
 
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any, TypeVar, override
+from typing import TYPE_CHECKING, Any, TypeVar
+
+from typing_extensions import override
 
 from cpscheduler.environment.constants import MAX_TIME, Float, Time
 from cpscheduler.environment.constraints.base import Constraint

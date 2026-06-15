@@ -1,8 +1,9 @@
 """Base constraint class for scheduling environments."""
 
-from typing import NoReturn, final, override
+from typing import NoReturn, final
 
 from mypy_extensions import mypyc_attr
+from typing_extensions import override
 
 from cpscheduler.environment.component import Component
 from cpscheduler.environment.constants import MachineID, TaskID, Time

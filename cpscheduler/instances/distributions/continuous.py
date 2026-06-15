@@ -1,7 +1,8 @@
 """Continuous distributions commonly used in scheduling instance generation."""
 
 from random import Random
-from typing import override
+
+from typing_extensions import override
 
 from cpscheduler.instances.distributions.base import Distribution, Sampler
 
@@ -30,9 +31,7 @@ class Uniform(Distribution[float]):
 
         """
         if low > high:
-            raise ValueError(
-                f"Expected low <= high, received {low} > {high}."
-            )
+            raise ValueError(f"Expected low <= high, received {low} > {high}.")
 
         self.low = float(low)
         self.high = float(high)
@@ -70,9 +69,7 @@ class Normal(Distribution[float]):
 
         """
         if stdev <= 0:
-            raise ValueError(
-                f"Expected stdev > 0, received {stdev}."
-            )
+            raise ValueError(f"Expected stdev > 0, received {stdev}.")
 
         self.mean = float(mean)
         self.stdev = float(stdev)
@@ -83,11 +80,8 @@ class Normal(Distribution[float]):
 
     @override
     def __repr__(self) -> str:
-        return (
-            f"Normal("
-            f"mean={self.mean}, "
-            f"stdev={self.stdev})"
-        )
+        return f"Normal(mean={self.mean}, stdev={self.stdev})"
+
 
 class Exponential(Distribution[float]):
     """
@@ -112,9 +106,7 @@ class Exponential(Distribution[float]):
             If `scale` is not > 0.
         """
         if scale <= 0:
-            raise ValueError(
-                f"Expected scale > 0, received {scale}."
-            )
+            raise ValueError(f"Expected scale > 0, received {scale}.")
 
         self.scale = float(scale)
 
@@ -125,6 +117,7 @@ class Exponential(Distribution[float]):
     @override
     def __repr__(self) -> str:
         return f"Exponential({self.scale})"
+
 
 class Beta(Distribution[float]):
     """Beta distribution scaled to [low, high]."""
@@ -164,19 +157,13 @@ class Beta(Distribution[float]):
 
         """
         if alpha <= 0:
-            raise ValueError(
-                f"Expected alpha > 0, received {alpha}."
-            )
+            raise ValueError(f"Expected alpha > 0, received {alpha}.")
 
         if beta <= 0:
-            raise ValueError(
-                f"Expected beta > 0, received {beta}."
-            )
+            raise ValueError(f"Expected beta > 0, received {beta}.")
 
         if low >= high:
-            raise ValueError(
-                f"Expected low < high, received {low} >= {high}."
-            )
+            raise ValueError(f"Expected low < high, received {low} >= {high}.")
 
         self.alpha = float(alpha)
         self.beta = float(beta)
@@ -190,9 +177,7 @@ class Beta(Distribution[float]):
             self.beta,
         )
 
-        return self.low + value * (
-            self.high - self.low
-        )
+        return self.low + value * (self.high - self.low)
 
     @override
     def __repr__(self) -> str:
@@ -242,4 +227,3 @@ class Dirichlet(Sampler[list[float]]):
         sum_k_gamma = sum(k_gamma)
 
         return [x / sum_k_gamma for x in k_gamma]
-

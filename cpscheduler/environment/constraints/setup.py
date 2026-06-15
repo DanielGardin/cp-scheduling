@@ -1,7 +1,8 @@
 """Setup Constraint for the scheduling environment."""
 
 from collections.abc import Mapping
-from typing import override
+
+from typing_extensions import override
 
 from cpscheduler.environment.constants import Int, MachineID, TaskID, Time
 from cpscheduler.environment.constraints.base import Constraint

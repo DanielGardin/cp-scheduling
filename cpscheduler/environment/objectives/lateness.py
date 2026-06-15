@@ -1,6 +1,6 @@
 """Lateness-based objectives."""
 
-from typing import override
+from typing_extensions import override
 
 from cpscheduler.environment.constants import Time
 from cpscheduler.environment.instance import JobFeature

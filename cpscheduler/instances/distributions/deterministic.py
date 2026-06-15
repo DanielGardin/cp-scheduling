@@ -1,7 +1,9 @@
 """Deterministic processes for scheduling problems."""
 
 from random import Random
-from typing import Any, override
+from typing import Any
+
+from typing_extensions import override
 
 from cpscheduler.environment.specs.symbols import BaseShapeDim
 from cpscheduler.instances.distributions.base import Process
@@ -32,7 +34,9 @@ class DeterministicJobAssignment(Process[list[int]]):
         return ("n_tasks",)
 
     @override
-    def sample(self, rng: Random, *, n_tasks: int, n_jobs: int, **context: Any) -> list[int]:
+    def sample(
+        self, rng: Random, *, n_tasks: int, n_jobs: int, **context: Any
+    ) -> list[int]:
         q, r = divmod(n_tasks, n_jobs)
 
         assignments: list[int] = [-1] * n_tasks

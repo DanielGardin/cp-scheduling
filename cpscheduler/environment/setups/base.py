@@ -1,8 +1,7 @@
 """Base class for scheduling setups."""
 
-from typing import override
-
 from mypy_extensions import mypyc_attr
+from typing_extensions import override
 
 from cpscheduler.environment.component import Component
 from cpscheduler.environment.constraints import Constraint

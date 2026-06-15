@@ -4,7 +4,9 @@ import math
 from bisect import bisect
 from collections.abc import Iterable
 from random import Random
-from typing import TypeVar, override
+from typing import TypeVar
+
+from typing_extensions import override
 
 from cpscheduler.instances.distributions.base import Distribution, Sampler
 
@@ -33,9 +35,7 @@ class UniformInt(Distribution[int]):
 
         """
         if low > high:
-            raise ValueError(
-                f"Expected low <= high, received {low} > {high}."
-            )
+            raise ValueError(f"Expected low <= high, received {low} > {high}.")
 
         self.low = low
         self.high = high
@@ -69,9 +69,7 @@ class Bernoulli(Distribution[bool]):
 
         """
         if not 0.0 <= p <= 1.0:
-            raise ValueError(
-                f"Expected p in [0, 1], received {p}."
-            )
+            raise ValueError(f"Expected p in [0, 1], received {p}.")
 
         self.p = p
 
@@ -83,7 +81,9 @@ class Bernoulli(Distribution[bool]):
     def __repr__(self) -> str:
         return f"Bernoulli({self.p})"
 
+
 _T = TypeVar("_T")
+
 
 class Choice(Sampler[_T]):
     """Uniform sampling from a finite collection."""
@@ -92,9 +92,7 @@ class Choice(Sampler[_T]):
     weights: tuple[float, ...]
 
     def __init__(
-        self,
-        values: Iterable[_T],
-        weights: Iterable[float] | None = None
+        self, values: Iterable[_T], weights: Iterable[float] | None = None
     ) -> None:
         """Initialize a Choice distribution.
 
@@ -136,15 +134,14 @@ class Choice(Sampler[_T]):
     def __repr__(self) -> str:
         return f"Choice({list(self.values)!r})"
 
+
 class Categorical(Choice[int]):
     """Uniform categorical distribution."""
 
     n_categories: int
 
     def __init__(
-        self,
-        n_categories: int,
-        weights: Iterable[float] | None = None
+        self, n_categories: int, weights: Iterable[float] | None = None
     ) -> None:
         """Initialize a Categorical distribution.
 
@@ -170,6 +167,7 @@ class Categorical(Choice[int]):
     def __repr__(self) -> str:
         return f"Categorical({self.n_categories})"
 
+
 class Geometric(Distribution[int]):
     """Geometric distribution."""
 
@@ -190,9 +188,7 @@ class Geometric(Distribution[int]):
 
         """
         if not 0.0 < p <= 1.0:
-            raise ValueError(
-                f"Expected p in (0, 1], received {p}."
-            )
+            raise ValueError(f"Expected p in (0, 1], received {p}.")
 
         self.p = p
 
@@ -201,10 +197,7 @@ class Geometric(Distribution[int]):
         if self.p == 1.0:
             return 0
 
-        return math.floor(
-                math.log(rng.random()) /
-                math.log(1.0 - self.p)
-            )
+        return math.floor(math.log(rng.random()) / math.log(1.0 - self.p))
 
     @override
     def __repr__(self) -> str:
@@ -232,9 +225,7 @@ class Poisson(Distribution[int]):
 
         """
         if rate <= 0:
-            raise ValueError(
-                f"Expected rate > 0, received {rate}."
-            )
+            raise ValueError(f"Expected rate > 0, received {rate}.")
 
         self.rate = rate
         self._exp_neg_rate = math.exp(-rate)

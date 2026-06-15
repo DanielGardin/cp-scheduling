@@ -1,6 +1,6 @@
 """Time window constraints for the scheduling environment."""
 
-from typing import override
+from typing_extensions import override
 
 from cpscheduler.environment.constants import MAX_TIME, Int, Time
 from cpscheduler.environment.constraints.base import Constraint

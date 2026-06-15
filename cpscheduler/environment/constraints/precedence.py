@@ -1,9 +1,8 @@
 """Precedence constraints for the scheduling environment."""
 
 from collections.abc import Iterable, Mapping, Sequence
-from typing import override
 
-from typing_extensions import Self
+from typing_extensions import Self, override
 
 from cpscheduler.environment.constants import Int, MachineID, TaskID
 from cpscheduler.environment.constraints.base import Constraint

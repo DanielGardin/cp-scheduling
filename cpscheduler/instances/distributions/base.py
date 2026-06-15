@@ -9,10 +9,13 @@ generation subsystem. The design intentionally separates:
 All randomness is externally controlled through explicit RNG injection,
 ensuring reproducibility and composability.
 """
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Generic, TypeVar, final, override
+from typing import TYPE_CHECKING, Any, Generic, TypeVar, final
+
+from typing_extensions import override
 
 if TYPE_CHECKING:
     from collections.abc import Callable, MutableSequence, Sequence
@@ -23,6 +26,7 @@ if TYPE_CHECKING:
 
 _T_co = TypeVar("_T_co", covariant=True)
 _U = TypeVar("_U")
+
 
 class Sampler(ABC, Generic[_T_co]):
     """Base stochastic sampling interface.
@@ -167,9 +171,7 @@ class Mapped(Sampler[_T_co]):
         rng: Random,
         **context: Any,
     ) -> _T_co:
-        return self.transform(
-            self.sampler.sample(rng, **context)
-        )
+        return self.transform(self.sampler.sample(rng, **context))
 
     @override
     def __repr__(self) -> str:
@@ -179,11 +181,7 @@ class Mapped(Sampler[_T_co]):
             self.transform.__class__.__name__,
         )
 
-        return (
-            f"Mapped("
-            f"{self.sampler!r}, "
-            f"{transform_name})"
-        )
+        return f"Mapped({self.sampler!r}, {transform_name})"
 
 
 class RejectionSampler(Sampler[_T_co]):
@@ -223,9 +221,7 @@ class RejectionSampler(Sampler[_T_co]):
 
         """
         if max_attempts <= 0:
-            raise ValueError(
-                "max_attempts must be positive."
-            )
+            raise ValueError("max_attempts must be positive.")
 
         self.sampler = sampler
         self.predicate = predicate
@@ -291,16 +287,16 @@ class RejectionSampler(Sampler[_T_co]):
         return f"Filtered({self.sampler!r})"
 
 
-
 # Distributions
 # ------------------------------------------------------------------------------
 
 NumericType = int | float | bool
 
-_N_co = TypeVar('_N_co', bound=NumericType)
-_N = TypeVar('_N', bound=NumericType)
-_M = TypeVar('_M', bound=NumericType)
-_O = TypeVar('_O', bound=NumericType)
+_N_co = TypeVar("_N_co", bound=NumericType)
+_N = TypeVar("_N", bound=NumericType)
+_M = TypeVar("_M", bound=NumericType)
+_O = TypeVar("_O", bound=NumericType)
+
 
 class Distribution(Sampler[_N_co], ABC):
     """Base class for scalar numeric probability distributions.
@@ -378,9 +374,7 @@ class MappedDistribution(Distribution[_O]):
         rng: Random,
         **context: Any,
     ) -> _O:
-        return self.transform(
-            self.distribution.sample(rng, **context)
-        )
+        return self.transform(self.distribution.sample(rng, **context))
 
     @override
     def __repr__(self) -> str:
@@ -390,18 +384,14 @@ class MappedDistribution(Distribution[_O]):
             self.transform.__class__.__name__,
         )
 
-        return (
-            f"MappedDistribution("
-            f"{self.distribution!r}, "
-            f"{transform_name})"
-        )
-
+        return f"MappedDistribution({self.distribution!r}, {transform_name})"
 
 
 # Processes
 # ------------------------------------------------------------------------------
 
 _MS = TypeVar("_MS", bound="MutableSequence[Any]")
+
 
 class Process(Sampler[_T_co], ABC):
     """Base class for structured stochastic processes.
@@ -479,7 +469,9 @@ class Shuffled(Process[_MS]):
     def __repr__(self) -> str:
         return f"Shuffled({self.process!r})"
 
+
 _T = TypeVar("_T")
+
 
 class JobPartitionProcess(Process[list[_T]]):
     """Samples from a process identically and independently for each job.
@@ -565,7 +557,7 @@ class JobPartitionProcess(Process[list[_T]]):
             if not (0 <= job_id < n_jobs):
                 raise ValueError(
                     f"Invalid job ID {job_id} in context 'job'. "
-                    f"Expected values in [0, {n_jobs-1}]."
+                    f"Expected values in [0, {n_jobs - 1}]."
                 )
 
             counts[job_id] += 1
@@ -581,7 +573,8 @@ class JobPartitionProcess(Process[list[_T]]):
                 job_context["job"] = [0] * count
 
                 job_values = self.process.sample(
-                    rng, **job_context,
+                    rng,
+                    **job_context,
                 )
 
                 if self.shuffle_tasks:
@@ -598,8 +591,8 @@ class JobPartitionProcess(Process[list[_T]]):
         # [job0_task0, job0_task1, ..., job1_task0, job1_task1, ...]
         #  ^ job_cursor[0],             ^ job_cursor[1]         ...]
         job_cursor = [0] * n_jobs
-        for i in range(n_jobs-1):
-            job_cursor[i+1] = job_cursor[i] + counts[i]
+        for i in range(n_jobs - 1):
+            job_cursor[i + 1] = job_cursor[i] + counts[i]
 
         result: list[_T] = [None] * n_tasks  # type: ignore[list-item]
         for task_id, job_id in enumerate(job):
