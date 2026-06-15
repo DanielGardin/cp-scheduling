@@ -1,3 +1,5 @@
+"""Renderer for visualizing task schedules using the Plotly backend."""
+
 from typing import TYPE_CHECKING, Any
 
 from cpscheduler.environment.render import GLASBEY_BW_PALETTE, Renderer
@@ -8,11 +10,12 @@ if TYPE_CHECKING:
 
 
 class PlotlyRenderer(Renderer):
-    "Renderer for visualizing task schedules using the Plotly backend."
+    """Renderer for visualizing task schedules using the Plotly backend."""
 
     render_name = "plotly"
 
     def build_gantt(self, state: ScheduleState) -> "Figure":
+        """Build a Gantt chart representing the schedule using Plotly."""
         try:
             from plotly.graph_objects import Bar, Figure
 
@@ -36,6 +39,11 @@ class PlotlyRenderer(Renderer):
         history = state.runtime.history
 
         for job_id, job_tasks in enumerate(instance.job_tasks):
+            start_times.clear()
+            durations.clear()
+            machines.clear()
+            task_ids.clear()
+
             for task_id in job_tasks:
                 for entry in history[task_id]:
                     start_times.append(entry.start_time)
@@ -62,10 +70,10 @@ class PlotlyRenderer(Renderer):
                     name=f"Job {job_id}",
                     customdata=customdata,
                     hovertemplate=template,
-                    marker=dict(
-                        color=GLASBEY_BW_PALETTE[job_id % 256],
-                        line=dict(color="white", width=0.5),
-                    ),
+                    marker={
+                        "color": GLASBEY_BW_PALETTE[job_id % 256],
+                        "line": {"color": "white", "width": 0.5},
+                    },
                 )
             )
 
@@ -75,17 +83,17 @@ class PlotlyRenderer(Renderer):
             width=1600,
             height=800,
             barmode="overlay",
-            yaxis=dict(
-                title="Assignment",
-                tickvals=list(range(state.n_machines)),
-                autorange="reversed",
-            ),
-            xaxis=dict(
-                title="Time",
-                range=(0, max_time),
-                showgrid=True,
-                gridcolor="rgba(0,0,0,0.4)",
-            ),
+            yaxis={
+                "title": "Assignment",
+                "tickvals": list(range(state.n_machines)),
+                "autorange": "reversed",
+            },
+            xaxis={
+                "title": "Time",
+                "range": (0, max_time),
+                "showgrid": True,
+                "gridcolor": "rgba(0,0,0,0.4)",
+            },
         )
 
         if state.n_jobs <= 30:
@@ -94,5 +102,6 @@ class PlotlyRenderer(Renderer):
         return fig
 
     def render(self, state: ScheduleState) -> None:
+        """Render the schedule state using Plotly."""
         fig = self.build_gantt(state)
         fig.show()

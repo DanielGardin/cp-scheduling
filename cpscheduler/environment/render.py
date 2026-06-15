@@ -9,12 +9,15 @@ consistent job coloring across renderers.
 
 from typing import Any, ClassVar
 
+from mypy_extensions import mypyc_attr
+
 from cpscheduler.environment.constants import EzPickle
 from cpscheduler.environment.state import ScheduleState
 
 renderers: dict[str, "Renderer"] = {}
 
 
+@mypyc_attr(native_class=True, allow_interpreted_subclasses=True)
 class Renderer(EzPickle):
     """Base renderer for visualizing schedules.
 
