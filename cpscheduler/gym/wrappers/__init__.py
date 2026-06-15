@@ -1,3 +1,5 @@
+"""Wrappers for Gymnasium environments."""
+
 __all__ = [
     "PermutationActionWrapper",
 ]
