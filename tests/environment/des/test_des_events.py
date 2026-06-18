@@ -1,5 +1,4 @@
 import pytest
-from common import env_setup
 
 from cpscheduler.environment.constraints import ReleaseDateConstraint
 from cpscheduler.environment.des.base import Schedule, instructions
@@ -17,6 +16,7 @@ from cpscheduler.environment.setups import (
     IdenticalParallelMachineSetup,
     SingleMachineSetup,
 )
+from tests.conftest import env_setup
 
 
 def _single_task_env_single_machine(processing_time: int = 5) -> SchedulingEnv:

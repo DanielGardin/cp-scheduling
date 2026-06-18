@@ -1,12 +1,14 @@
 import logging
 from time import perf_counter
+from typing import Any
 
 import pytest
-from common import TEST_INSTANCES, env_setup
-
-pytest.importorskip("pyomo")
 
 from cpscheduler.solver import get_formulations
+from tests.conftest import TEST_INSTANCES, env_setup
+
+pyomo = pytest.importorskip("pyomo")
+
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +23,9 @@ def test_solve(instance_name: str, formulation: str) -> None:
     env.reset()
 
     time = -perf_counter()
-    solver = SchedulingSolver(env, formulation=formulation, horizon=10000)
+    solver: SchedulingSolver[Any] = SchedulingSolver(
+        env, formulation=formulation, horizon=10000
+    )
     solver.warm_start(
         [("submit", task_id) for task_id in range(env.state.n_tasks)]
     )
@@ -30,7 +34,7 @@ def test_solve(instance_name: str, formulation: str) -> None:
     logger.info(f"Initialized solver in {time:.2f} s")
 
     try:
-        action, optimal_value, optimal = solver.solve(
+        action, value, _ = solver.solve(
             time_limit=10,
             keep_files=False,
         )
@@ -52,12 +56,8 @@ def test_solve(instance_name: str, formulation: str) -> None:
 
     objective_value = info["objective_value"]
 
-    if optimal:
-        logger.info(
-            f"Summary of instance {instance_name}: {optimal_value=}, {objective_value=}"
-        )
+    logger.info(
+        f"Summary of instance {instance_name}: {value=}, {objective_value=}"
+    )
 
-    else:
-        logger.warning(f"Instance {instance_name} did not reach optimality.")
-
-    assert abs(objective_value - optimal_value) < 1e-5
+    assert abs(objective_value - value) < 1e-5

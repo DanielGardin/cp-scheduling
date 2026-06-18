@@ -1,7 +1,6 @@
 import logging
 
 import pytest
-from common import env_setup
 
 from cpscheduler.environment import SchedulingEnv
 from cpscheduler.heuristics.pdrs import (
@@ -10,6 +9,7 @@ from cpscheduler.heuristics.pdrs import (
     PriorityDispatchingRule,
     ShortestProcessingTime,
 )
+from tests.conftest import env_setup
 
 logger = logging.getLogger(__name__)
 

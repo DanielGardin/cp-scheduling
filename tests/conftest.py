@@ -12,7 +12,7 @@ from cpscheduler.environment import (
     SingleMachineSetup,
 )
 from cpscheduler.environment.constraints import PreemptionConstraint
-from cpscheduler.instances import read_jsp_instance
+from cpscheduler.instances.jobshop import read_jsp_instance
 
 TEST_INSTANCES = [
     "dmu04",

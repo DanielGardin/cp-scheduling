@@ -1,12 +1,12 @@
 from copy import deepcopy
 
 import pytest
-from common import ENV_CASES, TEST_INSTANCES, env_setup
 
 from cpscheduler.environment import IdenticalParallelMachineSetup, SchedulingEnv
 from cpscheduler.environment.constants import Status
 from cpscheduler.environment.des import Schedule
 from cpscheduler.environment.des.events import CheckpointEvent, SubmitEvent
+from tests.conftest import ENV_CASES, TEST_INSTANCES, env_setup
 
 ENV_CASE_KEYS: list[str] = list(ENV_CASES)
 

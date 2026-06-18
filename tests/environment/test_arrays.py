@@ -1,5 +1,6 @@
 import pytest
-from common import env_setup
+
+from tests.conftest import env_setup
 
 
 def test_numpy_scalar() -> None:
