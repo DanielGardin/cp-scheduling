@@ -24,6 +24,7 @@ from cpscheduler.environment.observation.default import DefaultObsType
 from cpscheduler.environment.render import Renderer
 from cpscheduler.environment.utils import InstanceGenerator
 from cpscheduler.environment.utils.protocols import (
+    Instance_T,
     InstanceTypes,
     Metric,
     Options,
@@ -291,7 +292,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         """
         self._core.set_generator(instance)
 
-    def load_instance(self, instance: InstanceTypes) -> None:
+    def load_instance(self, *instances: Instance_T) -> None:
         """Load a scheduling instance and initialize the environment.
 
         Prepares the environment for simulation by loading instance data,
@@ -299,8 +300,10 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
 
         Parameters
         ----------
-        instance : InstanceTypes
-            Instance data (DataFrame or dict) with task/job columns.
+        *instances : InstanceTypes
+            One or more instance data objects to load.
+            If multiple instances are provided, they are merged.
+            Allows for heterogeneous instance data sources.
 
         Raises
         ------
@@ -311,7 +314,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
             If constraint propagation detects initial infeasibility.
 
         """
-        self._core.load_instance(instance)
+        self._core.load_instance(*instances)
 
     def add_constraint(self, constraint: Constraint) -> None:
         """Add a constraint to the environment.

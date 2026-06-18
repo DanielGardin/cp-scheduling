@@ -27,12 +27,14 @@ from cpscheduler.environment.setups import ScheduleSetup
 from cpscheduler.environment.specs.feature_spec import FeatureSpec
 from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.state.events import RuntimeEventKind, VarField
-from cpscheduler.environment.utils.protocols import (
+from cpscheduler.environment.utils import (
     InfoType,
+    Instance_T,
     InstanceGenerator,
     InstanceTypes,
     Metric,
     Options,
+    ensure_iterable,
 )
 
 if TYPE_CHECKING:
@@ -258,7 +260,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             self.instance_generator = instance
 
         elif instance is not None:
-            self.load_instance(instance)
+            self.load_instance(*ensure_iterable(instance))
 
         self.renderer = (
             render_mode
@@ -391,7 +393,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         """
         self.instance_generator = instance_generator
 
-    def load_instance(self, instance: InstanceTypes) -> None:
+    def load_instance(self, *instances: Instance_T) -> None:
         """Load a scheduling instance and initialize the environment.
 
         Prepares the environment for simulation by loading instance data,
@@ -399,8 +401,10 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
         Parameters
         ----------
-        instance : InstanceTypes
-            Instance data (DataFrame or dict) with task/job columns.
+        *instances : InstanceTypes
+            One or more instance data objects to load.
+            If multiple instances are provided, they are merged.
+            Allows for heterogeneous instance data sources.
 
         Raises
         ------
@@ -415,7 +419,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
         problem_instance = self._instance
 
-        problem_instance.initialize(instance, self.setup)
+        problem_instance.initialize(instances, self.setup)
         self.setup.initialize(problem_instance)
 
         setup_constraints = self.setup.setup_constraints(problem_instance)
@@ -744,7 +748,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         options = options or {}
 
         if "instance" in options:
-            self.load_instance(options["instance"])
+            self.load_instance(*ensure_iterable(options["instance"]))
 
         else:
             generator = options.get("instance_generator")
@@ -752,8 +756,9 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
                 self.instance_generator = generator
 
             if self.instance_generator is not None:
-                seed = options.get("seed")
-                self.load_instance(self.instance_generator.sample(seed))
+                sample = self.instance_generator.sample(options.get("seed"))
+
+                self.load_instance(*ensure_iterable(sample))
 
         if self._status == UNLOADED:
             raise ValueError(
