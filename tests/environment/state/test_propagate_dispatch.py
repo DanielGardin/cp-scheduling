@@ -20,7 +20,7 @@ from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.state.events import VarFieldType
 
 
-class RecordingConstraint(Constraint):
+class _RecordingConstraint(Constraint):
     def __init__(self) -> None:
         self.calls: list[tuple[str, int, int | None]] = []
 
@@ -87,7 +87,7 @@ class RecordingConstraint(Constraint):
 def test_propagate_dispatches_domain_events(
     field: VarFieldType, machine_id: int, expected: tuple[str, int, int | None]
 ) -> None:
-    recorder = RecordingConstraint()
+    recorder = _RecordingConstraint()
 
     env = SchedulingEnv(
         SingleMachineSetup(disjunctive=False),

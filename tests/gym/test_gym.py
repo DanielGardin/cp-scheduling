@@ -143,10 +143,14 @@ def test_observation_space_matches_core_observation_structure() -> None:
         instance={"processing_time": [1, 2, 3]},
     )
 
+    obs_space = env.observation_space
+
+    env.reset()
+
     # observation_space is inferred from core observation.to_tuple()
     serialized_obs = env.core.observation.serialize()
     # The space should accept the current observation
-    assert env.observation_space.contains(serialized_obs)
+    assert obs_space.contains(serialized_obs)
 
 
 def test_observation_space_updates_on_load_instance_and_reset_options() -> None:
