@@ -1,6 +1,5 @@
 """Base observation class for scheduling environments."""
 
-from collections.abc import Sequence
 from copy import deepcopy
 from typing import Any, Generic
 
@@ -8,7 +7,7 @@ from mypy_extensions import mypyc_attr
 from typing_extensions import TypeVar
 
 from cpscheduler.environment.constants import EzPickle, MachineID, TaskID
-from cpscheduler.environment.instance import Feature, ProblemInstance
+from cpscheduler.environment.instance import ProblemInstance
 from cpscheduler.environment.specs import ObservationSpec
 from cpscheduler.environment.state import ScheduleState
 
@@ -22,23 +21,17 @@ class Observation(EzPickle, Generic[Serialized_Obs]):
     n_tasks: int
     n_jobs: int
     n_machines: int
-
-    def get_features(self) -> Sequence[Feature]:
-        """Return observation-defined features.
-
-        Altought the observation is not a component, it can require features to
-        be computed in the environment.
-
-        These feature have to be loaded during the `initialize` method,
-        and they will be available in the `update`.
-        """
-        return []
+    symbols: dict[str, int]
 
     def initialize(self, instance: ProblemInstance) -> None:
         """Initialize the observation with the scheduling instance."""
         self.n_tasks = instance.n_tasks
         self.n_jobs = instance.n_jobs
         self.n_machines = instance.n_machines
+        self.symbols = instance.symbol_values
+
+    def reset(self, state: ScheduleState) -> None:
+        """Reset the observation to the initial state of the scheduling environment."""
 
     def update(self, state: ScheduleState) -> None:
         """Update the observation from the current stable scheduling state.

@@ -19,11 +19,9 @@ BaseShapeDim = int | BuiltinSymbols | str | None
 
 ShapeDim: TypeAlias = "BaseShapeDim | SymbolicDim"
 
-# FUTURE: Extend this to user-defined symbols
-# Allow, for example, a group constraint to parameterize its feature with
-# ("n_groups", ...), and then solving what n_groups mean during validation.
-VALID_SYMBOLS: frozenset[BuiltinSymbols] = frozenset(
-    ["n_tasks", "n_jobs", "n_machines"]
+
+REQUIRED_SYMBOLS: frozenset[str] = frozenset(
+    ["const", "n_tasks", "n_jobs", "n_machines"]
 )
 
 
@@ -41,9 +39,7 @@ def _parse_affine_expr(expr: str) -> dict[str, int]:
     except SyntaxError as e:
         raise ValueError(f"Invalid expression: '{expr}'.") from e
 
-    result: dict[str, int] = dict.fromkeys(VALID_SYMBOLS, 0)
-    result["const"] = 0
-
+    result: dict[str, int] = {"const": 0}
     _visit(tree.body, result, sign=1)
 
     return result
@@ -59,11 +55,7 @@ def _visit(node: ast.expr, result: dict[str, int], sign: int) -> None:
         result["const"] += sign * node.value
 
     elif isinstance(node, ast.Name):
-        if node.id not in VALID_SYMBOLS:
-            raise ValueError(
-                f"Unknown symbol: '{node.id}'. Must be one of {VALID_SYMBOLS}."
-            )
-
+        result.setdefault(node.id, 0)
         result[node.id] += sign
 
     elif isinstance(node, ast.BinOp):
@@ -117,11 +109,7 @@ def _visit_mult(
             f"Coefficient must be an integer, got: {coef.value!r}."
         )
 
-    if sym_node.id not in VALID_SYMBOLS:
-        raise ValueError(
-            f"Unknown symbol: '{sym_node.id}'. Must be one of {VALID_SYMBOLS}."
-        )
-
+    result.setdefault(sym_node.id, 0)
     result[sym_node.id] += sign * coef.value
 
 
@@ -201,6 +189,34 @@ class SymbolicDim(EzPickle):
     def is_atomic(self) -> bool:
         """Whether this symbolic dimension is atomic (i.e. of the form 'n_tasks' with coef 1)."""
         return len(self._coefs) == 1 and next(iter(self._coefs.values())) == 1
+
+    def solve_symbol(self, value: int) -> dict[str, int]:
+        """Solve for the value of the single symbol in this dimension, given the total value."""
+        if self.is_constant():
+            raise ValueError("Cannot solve a constant dimension.")
+
+        if self.n_symbols > 1:
+            raise ValueError(
+                f"Cannot solve a symbolic dimension for {self} "
+                "because it has multiple symbols."
+            )
+
+        sym, coef = next(iter(self._coefs.items()))
+
+        if coef == 0:
+            raise ValueError(
+                "Invalid symbolic dimension with zero coefficient."
+            )
+
+        div, mod = divmod(value - self._const_value, coef)
+
+        if mod != 0:
+            raise ValueError(
+                f"Cannot solve for symbol '{sym}' in {self} with value {value}. "
+                "The value does not satisfy the affine equation."
+            )
+
+        return {sym: div}
 
     def resolve(self, **symbol_values: int) -> int:
         """Resolve the symbolic dimension to an integer value, given values for the symbols."""

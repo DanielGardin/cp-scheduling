@@ -1,6 +1,7 @@
 """Feature classes for scheduling instance specifications and data management."""
 
 from collections.abc import Sequence
+from copy import deepcopy
 from typing import Any, Generic, Literal
 
 from typing_extensions import Self, TypeIs, TypeVar
@@ -11,7 +12,7 @@ from cpscheduler.environment.specs.feature_spec import (
     Scope,
     SemanticType,
 )
-from cpscheduler.environment.specs.symbols import BaseShapeDim
+from cpscheduler.environment.specs.symbols import BaseShapeDim, SymbolicDim
 
 
 # This is used to distinguish between features that have no data loaded and those
@@ -28,32 +29,69 @@ def is_unset(value: object) -> TypeIs[_UnsetType]:
     return value is UNSET
 
 
-def has_shape(data: Any, shape: tuple[int | None, ...]) -> bool:
-    """Check if the data has the specified shape.
+def merge_symbols(
+    main: dict[str, int], *symbol_dicts: dict[str, int]
+) -> dict[str, int]:
+    """Merge multiple symbol dictionaries into one, ensuring no conflicts."""
+    for symbol_dict in symbol_dicts:
+        for k, v in symbol_dict.items():
+            if k not in main:
+                main[k] = v
 
-    If data implements the `shape` attribute, it is used to check the shape.
-    Otherwise, recursive checks are performed for sequences, treating None
-    in the shape as a wildcard that matches any size in that dimension.
+            elif main[k] != v:
+                raise ValueError(
+                    f"Conflicting values for symbol '{k}': {main[k]} vs {v}."
+                )
+
+    return main
+
+
+def solve_shape(
+    shape: tuple[SymbolicDim | None, ...], data: Any, depth: int = 0
+) -> dict[str, int]:
+    """Solve symbolic dimensions in the shape to concrete integers.
+
+    This function recursively checks the shape of the data against the provided
+    symbolic shape, and extracts the values of the symbolic dimensions based on
+    the actual shape of the data.
     """
     if hasattr(data, "shape"):
-        return tuple(data.shape) == shape
+        data_shape = data.shape
+        if len(data_shape) != len(shape):
+            raise ValueError(
+                f"Data has shape {data_shape} but expected {shape}."
+            )
 
-    if shape and shape[0] is None:
-        return True
+        return merge_symbols(
+            {},
+            *(
+                dim.solve_symbol(int(data_dim))
+                for dim, data_dim in zip(shape, data_shape, strict=True)
+                if dim is not None
+            ),
+        )
+
+    if depth >= len(shape):
+        if isinstance(data, Sequence) and not isinstance(data, str):
+            raise ValueError(
+                f"Data has more dimensions than expected by shape {shape}."
+            )
+
+        return {}
 
     if isinstance(data, Sequence) and not isinstance(data, str):
-        if len(data) == 0:
-            return True
+        first_dim = shape[depth]
+        symbols: dict[str, int] = (
+            {} if first_dim is None else first_dim.solve_symbol(len(data))
+        )
 
-        if len(shape) == 0:
-            return False
+        return merge_symbols(
+            symbols, *(solve_shape(shape, item, depth + 1) for item in data)
+        )
 
-        if len(data) != shape[0]:
-            return False
-
-        return has_shape(data[0], shape[1:])
-
-    return len(shape) == 0
+    raise ValueError(
+        f"Data at depth {depth} is not a sequence, cannot match shape {shape}."
+    )
 
 
 _T = TypeVar("_T", default=Any)
@@ -182,7 +220,9 @@ class Feature(EzPickle, Generic[_T]):
         self._storage = default
 
         self.dynamic = dynamic
-        self._data = default
+        self.default = UNSET
+
+        self._data = deepcopy(default)
 
     @classmethod
     def from_spec(
@@ -261,7 +301,11 @@ class Feature(EzPickle, Generic[_T]):
 
         When the feature is a consumer, resetting will clear any shared data.
         """
-        self._data = self._storage
+        self._data = (
+            deepcopy(self._storage)
+            if self.owner and not is_unset(self._storage)
+            else UNSET
+        )
 
     def own_data(self, data: _T) -> None:
         """Set the feature's data as the owner of the data.
@@ -277,7 +321,7 @@ class Feature(EzPickle, Generic[_T]):
 
         self.owner = True
         self._storage = data
-        self._data = data
+        self._data = deepcopy(data)
 
     def set_data(self, data: _T) -> None:
         """Set the feature's data."""
@@ -321,21 +365,25 @@ class Feature(EzPickle, Generic[_T]):
 
         self._data = source._data
 
-    def validate(self, **symbol_values: int) -> None:
-        """Validate the feature's loaded data against its specification."""
+    def solve_symbols(self) -> dict[str, int]:
+        """Solve the symbolic dimensions in the feature's shape to concrete integers."""
         if not self.loaded:
-            if not self.optional:
-                raise RuntimeError(
-                    f"Feature {self.name} is required but has no loaded data."
-                )
-
-            return
-
-        target_shape = self.spec.resolve_shape(**symbol_values)
-        if target_shape is not None and not has_shape(self._data, target_shape):
             raise ValueError(
-                f"Feature {self.name} has invalid shape: "
-                f"expected {target_shape}, got {self._data}."
+                f"Feature {self.name} has no loaded data to solve symbols."
+            )
+
+        shape = self.spec.shape
+
+        if shape is None:
+            return {}
+
+        return solve_shape(shape, self._data)
+
+    def validate(self) -> None:
+        """Validate the feature's loaded data against its specification."""
+        if not self.loaded and not self.optional:
+            raise RuntimeError(
+                f"Feature {self.name} is required but has no loaded data."
             )
 
     def __eq__(self, value: object, /) -> bool:
@@ -345,6 +393,38 @@ class Feature(EzPickle, Generic[_T]):
             and self.name == value.name
             and self.spec == value.spec
         )
+
+    def __repr__(self) -> str:
+        """Return a string representation of the feature."""
+        attrs = [
+            f"name={self.name!r}",
+            f"scope={self.spec.scope!r}",
+            f"semantic={self.spec.semantic!r}",
+            f"loaded={self.loaded}",
+        ]
+
+        if self.spec.shape is not None:
+            attrs.append(f"shape={self.spec.shape!r}")
+
+        if self.spec.n_categories is not None:
+            attrs.append(f"n_categories={self.spec.n_categories!r}")
+
+        if self.spec.low is not None:
+            attrs.append(f"low={self.spec.low!r}")
+
+        if self.spec.high is not None:
+            attrs.append(f"high={self.spec.high!r}")
+
+        if self.optional:
+            attrs.append("optional=True")
+
+        if self.owner:
+            attrs.append("owner=True")
+
+        if self.dynamic:
+            attrs.append("dynamic=True")
+
+        return f"Feature({', '.join(attrs)})"
 
 
 def _expand_shape(

@@ -10,13 +10,20 @@ from typing import TYPE_CHECKING, Any
 
 from mypy_extensions import mypyc_attr
 
-from cpscheduler.environment.constants import EzPickle, MachineID, TaskID, Time
-from cpscheduler.environment.instance.features import Feature, TaskFeature
-from cpscheduler.environment.specs.feature_spec import FeatureSpec
-from cpscheduler.environment.utils.protocols import (
-    InstanceTypes,
-    prepare_instance,
+from cpscheduler.environment.constants import (
+    MAX_TIME,
+    EzPickle,
+    MachineID,
+    TaskID,
+    Time,
 )
+from cpscheduler.environment.instance.features import (
+    Feature,
+    TaskFeature,
+    merge_symbols,
+)
+from cpscheduler.environment.specs.feature_spec import FeatureSpec
+from cpscheduler.environment.utils.protocols import Instance_T
 
 if TYPE_CHECKING:
     from cpscheduler.environment.setups import ScheduleSetup
@@ -69,20 +76,22 @@ class ProblemInstance(EzPickle):
 
     """
 
-    job_tasks: list[list[TaskID]]
-
-    features: dict[str, list[Feature]]
     _feature_specs: dict[str, FeatureSpec]
-    _storage: dict[str, Any]
-    _symbol_values: dict[str, int]
+    features: dict[str, list[Feature]]
 
-    _debug: bool
+    job_tasks: list[list[TaskID]]
+    n_tasks: int
+    n_jobs: int
+    n_machines: int
+    symbol_values: dict[str, int]
 
     _preemptive: TaskFeature[bool]
     _optional: TaskFeature[bool]
     _processing_times: TaskFeature[list[Time]]
     _machine_mask: TaskFeature[list[bool]]
     _job_ids: TaskFeature[TaskID]
+
+    _debug: bool
 
     def __init__(self, debug_mode: bool) -> None:
         """Initialize an empty ProblemInstance.
@@ -102,13 +111,6 @@ class ProblemInstance(EzPickle):
 
         """
         self.job_tasks = []
-        self._feature_specs = {}
-
-        self._storage = {}
-        self._symbol_values = {}
-
-        self._debug = debug_mode
-
         self._preemptive = TaskFeature(
             name="preemptive", semantic="binary", shape=(), owner=True
         )
@@ -147,25 +149,17 @@ class ProblemInstance(EzPickle):
             for feature_name, features in self.features.items()
         }
 
+        self.n_tasks = 0
+        self.n_jobs = 0
+        self.n_machines = 0
+        self.symbol_values = {}
+
+        self._debug = debug_mode
+
     @property
     def debug(self) -> bool:
         """Whether the instance is in debug mode."""
         return self._debug
-
-    @property
-    def n_tasks(self) -> int:
-        """Number of tasks in the instance."""
-        return self._symbol_values["n_tasks"]
-
-    @property
-    def n_jobs(self) -> int:
-        """Number of jobs in the instance."""
-        return self._symbol_values["n_jobs"]
-
-    @property
-    def n_machines(self) -> int:
-        """Number of machines in the instance."""
-        return self._symbol_values["n_machines"]
 
     @property
     def preemptive(self) -> list[bool]:
@@ -284,12 +278,6 @@ class ProblemInstance(EzPickle):
             del self.features[name]
             del self._feature_specs[name]
 
-    def validate_instance(self, origin: str) -> None:
-        """Validate the instance's features and data."""
-        for features in self.features.values():
-            for feat in features:
-                feat.validate(**self._symbol_values)
-
     def reset(self) -> None:
         """Reset instance-specific data for loading a new instance.
 
@@ -298,36 +286,39 @@ class ProblemInstance(EzPickle):
         Preserves feature registrations and providers.
         """
         self.job_tasks.clear()
-        self._storage.clear()
-        self._symbol_values.clear()
+        self.n_tasks = 0
+        self.n_jobs = 0
+        self.n_machines = 0
+        self.symbol_values.clear()
 
         for features in self.features.values():
             for feature in features:
                 feature.reset()
 
-    def _load_data(self) -> None:
-        for name, features in self.features.items():
-            provider = _find_provider(features)
+    def _load_data(self, storage: dict[str, Any]) -> dict[str, int]:
+        symbol_values: dict[str, int] = {}
 
-            if provider is not None:
-                for feature in self.features[name]:
-                    if feature is provider:
-                        continue
+        for feature, data in storage.items():
+            if feature not in self.features:
+                raise ValueError(
+                    f"Data provided for feature '{feature}', but no such "
+                    "feature is registered in the instance."
+                )
 
-                    feature.shared_data(provider)
+            features = self.features[feature]
+            for feat in features:
+                feat.set_data(data)
 
-            elif name in self._storage:
-                data = self._storage[name]
+            merge_symbols(symbol_values, features[0].solve_symbols())
 
-                for feature in features:
-                    feature.set_data(data)
+        return symbol_values
 
     # FUTURE: Memory allocation is currently the major bottleneck during
     # initialization (processing_times and machine_mask).
     # Consider a cached version, which only triggers when the n_tasks, or
     # n_machines in the incoming instance is different from the previous one.
     def initialize(
-        self, instance: InstanceTypes, setup: "ScheduleSetup"
+        self, instances: tuple[Instance_T, ...], setup: "ScheduleSetup"
     ) -> None:
         """Initialize the instance with data from a new problem instance.
 
@@ -336,11 +327,8 @@ class ProblemInstance(EzPickle):
 
         Parameters
         ----------
-        instance : InstanceTypes
-            The raw instance data, which can be in various formats (e.g., dict, tuple
-            of dicts, etc.). The instance will be processed and prepared using the
-            `prepare_instance` function, which standardizes the format and extracts
-            the relevant features and data for the environment.
+        instances : tuple[Instance_T, ...]
+            One or more instance data objects to load.
 
         setup : ScheduleSetup
             The schedule setup, which provides information about the scheduling
@@ -348,43 +336,37 @@ class ProblemInstance(EzPickle):
             parameters that may be needed during instance initialization.
 
         """
-        if isinstance(instance, tuple):
-            task_raw_instance, job_raw_instance = instance
+        self.reset()
 
-        else:
-            task_raw_instance = instance
-            job_raw_instance = {}
+        storage: dict[str, Any] = {}
 
-        task_instance = prepare_instance(task_raw_instance)
-        job_instance = prepare_instance(job_raw_instance)
+        for instance in instances:
+            for feature in instance:
+                storage[feature] = instance[feature]
 
-        n_tasks = (
-            len(next(iter(task_instance.values()))) if task_instance else 0
-        )
+        symbols_values = self._load_data(storage)
 
-        for feat, data in task_instance.items():
-            self._storage[feat] = data
+        n_tasks = symbols_values.get("n_tasks", 0)
+        n_jobs = symbols_values.get("n_jobs", 0)
+        n_machines = symbols_values.get("n_machines", setup.n_machines)
 
-        for feat, data in job_instance.items():
-            self._storage[feat] = data
+        if n_machines != setup.n_machines:
+            raise ValueError(
+                f"Instance has n_machines={n_machines}, but the setup requires "
+                f"n_machines={setup.n_machines}."
+            )
 
         self._preemptive.set_data([False] * n_tasks)
         self._optional.set_data([False] * n_tasks)
 
-        if self._job_ids.name not in self._storage:
-            self._storage[self._job_ids.name] = list(range(n_tasks))
+        if not self._job_ids.loaded:
+            self._job_ids.set_data(list(range(n_tasks)))
 
-        self._load_data()
-
-        # NOTE: These features (machine related) are special, and must not be
-        # queried by features, but using the getters of this class.
-        # That is because all components have access to these standard
-        # information, and using a feature as an alias is a bad practice.
         self._processing_times.set_data(
-            [[0] * setup.n_machines for _ in range(n_tasks)]
+            [[MAX_TIME] * n_machines for _ in range(n_tasks)]
         )
         self._machine_mask.set_data(
-            [[False] * setup.n_machines for _ in range(n_tasks)]
+            [[False] * n_machines for _ in range(n_tasks)]
         )
 
         job_ids = self.job_ids
@@ -395,9 +377,26 @@ class ProblemInstance(EzPickle):
             job_tasks[job_id].append(task_id)
 
         self.job_tasks = job_tasks
-        self._symbol_values["n_tasks"] = n_tasks
-        self._symbol_values["n_jobs"] = n_jobs
-        self._symbol_values["n_machines"] = setup.n_machines
+        self.n_tasks = n_tasks
+        self.n_jobs = n_jobs
+        self.n_machines = n_machines
+        self.symbol_values = symbols_values
+
+    def finalize(self) -> None:
+        """Finalize the instance after loading, where all features are loaded."""
+        symbol_values = self.symbol_values
+
+        for name, features in self.features.items():
+            provider = _find_provider(features)
+
+            if provider is not None:
+                merge_symbols(symbol_values, provider.solve_symbols())
+
+                for feature in self.features[name]:
+                    if feature is provider:
+                        continue
+
+                    feature.shared_data(provider)
 
     def has_feature(self, feat_name: str) -> bool:
         """Check if a feature with the given name is registered in the instance."""
@@ -430,6 +429,7 @@ class ProblemInstance(EzPickle):
     def remove_machine(self, task_id: TaskID, machine_id: MachineID) -> None:
         """Remove a machine from the eligibility list of a task, making it ineligible for that task."""
         self._machine_mask.value[task_id][machine_id] = False
+        self._processing_times.value[task_id][machine_id] = MAX_TIME
 
     def set_preemption(
         self, task_id: TaskID, allow_preemption: bool = True
