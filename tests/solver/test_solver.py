@@ -4,10 +4,12 @@ from typing import Any
 
 import pytest
 
-from cpscheduler.solver import get_formulations
-from tests.conftest import TEST_INSTANCES, env_setup
-
+# Import pyomo before importing from cpscheduler.solver to ensure that the solver
+# tests are skipped if pyomo is not available.
 pyomo = pytest.importorskip("pyomo")
+
+from cpscheduler.solver import get_formulations  # noqa: E402 I001
+from tests.conftest import TEST_INSTANCES, env_setup  # noqa: E402
 
 
 logger = logging.getLogger(__name__)
