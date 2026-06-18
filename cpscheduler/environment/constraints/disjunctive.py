@@ -58,6 +58,7 @@ class NonOverlapConstraint(Constraint):
                 if task_groups is not None
                 else UNSET
             ),
+            shape=("n_groups", None),
         )
 
     def add_task(self, group_id: Int, task: Int) -> None:

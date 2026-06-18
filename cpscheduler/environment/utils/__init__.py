@@ -10,10 +10,10 @@ __all__ = [
     "Metric",
     "Options",
     "convert_to_list",
+    "ensure_iterable",
     "extend_list",
     "job_bounds",
     "machine_bounds",
-    "prepare_instance",
     "task_bounds",
     "validate_domain_bounds",
     "validate_machine_id",
@@ -36,5 +36,5 @@ from .protocols import (
     InstanceTypes,
     Metric,
     Options,
-    prepare_instance,
+    ensure_iterable,
 )
