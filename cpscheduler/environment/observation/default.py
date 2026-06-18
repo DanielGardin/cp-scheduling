@@ -1,6 +1,5 @@
 """Default observation for scheduling environments."""
 
-from collections.abc import Sequence
 from typing import Any, Literal, TypedDict, overload
 
 from mypy_extensions import mypyc_attr
@@ -8,7 +7,6 @@ from typing_extensions import override
 
 from cpscheduler.environment.constants import Status, StatusType, TaskID, Time
 from cpscheduler.environment.instance import (
-    Feature,
     GlobalFeature,
     JobFeature,
     MachineFeature,
@@ -16,6 +14,7 @@ from cpscheduler.environment.instance import (
     TaskFeature,
 )
 from cpscheduler.environment.observation.base import Observation
+from cpscheduler.environment.observation.runtime_feature import RuntimeFeature
 from cpscheduler.environment.specs import DictSpec, FeatureSpec
 from cpscheduler.environment.state import ScheduleState
 
@@ -28,6 +27,8 @@ DefaultObsType = TypedDict(
         "global": dict[str, Any],
     },
 )
+
+AWAITING = Status.AWAITING
 
 
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=True)
@@ -49,9 +50,9 @@ class DefaultObservation(Observation[DefaultObsType]):
     _exclude_features: set[str]
     _specs: dict[str, FeatureSpec]
 
-    _time: GlobalFeature[Time]
-    _status: TaskFeature[StatusType]
-    _available: TaskFeature[bool]
+    _time: RuntimeFeature[Time]
+    _status: RuntimeFeature[list[StatusType]]
+    _available: RuntimeFeature[list[bool]]
 
     task: dict[str, Any]
     job: dict[str, Any]
@@ -72,28 +73,29 @@ class DefaultObservation(Observation[DefaultObsType]):
         """
         self._exclude_features = exclude_features or set()
 
-        self._status = TaskFeature(
+        self._status = RuntimeFeature(
             name="status",
+            scope="task",
             semantic="categorical",
+            data=[],
             n_categories=Status.count(),
-            shape=(),
-            owner=True,
+            shape=("n_tasks",),
         )
 
-        self._available = TaskFeature(
+        self._available = RuntimeFeature(
             name="available",
+            scope="task",
             semantic="mask",
-            shape=(),
-            owner=True,
+            data=[],
+            shape=("n_tasks",),
         )
 
-        self._time = GlobalFeature(
-            "time",
+        self._time = RuntimeFeature(
+            name="time",
+            scope="global",
             semantic="time",
-            default=0,
-            dynamic=True,
+            data=0,
             shape=(),
-            owner=True,
         )
 
     @property
@@ -102,29 +104,25 @@ class DefaultObservation(Observation[DefaultObsType]):
         return self._time.value
 
     @override
-    def get_features(self) -> Sequence[Feature]:
-        return [
-            self._time,
-            self._status,
-            self._available,
-        ]
-
-    @override
     def initialize(self, instance: ProblemInstance) -> None:
         super().initialize(instance)
-
-        self._time.set_data(0)
-        self._status.set_data([0] * self.n_tasks)
-        self._available.set_data(data=[False] * self.n_tasks)
-
-        self._specs = {}
+        self._specs = {
+            "status": self._status.spec,
+            "available": self._available.spec,
+            "time": self._time.spec,
+        }
 
         self.available_tasks = set()
 
-        self.task = {}
+        self.task = {
+            "status": self._status.value,
+            "available": self._available.value,
+        }
         self.job = {}
         self.machine = {}
-        self.global_state = {}
+        self.global_state = {
+            "time": self._time.value,
+        }
 
         for feat_name, features in instance.features.items():
             if feat_name in self._exclude_features or not features:
@@ -152,8 +150,16 @@ class DefaultObservation(Observation[DefaultObsType]):
                 self.global_state[feat_name] = feature.value
 
     @override
+    def reset(self, state: ScheduleState) -> None:
+        self._time.value = state.time
+        self._status.value.clear()
+        self._status.value.extend(state.runtime.status)
+        self._available.value.clear()
+        self._available.value.extend([False] * self.n_tasks)
+
+    @override
     def update(self, state: ScheduleState) -> None:
-        self._time.set_data(state.time)
+        self._time.value = state.time
         self._status.value[:] = state.runtime.status
 
         available = self._available.value

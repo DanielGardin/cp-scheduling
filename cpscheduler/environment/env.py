@@ -239,9 +239,6 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             for feature in component.get_features():
                 problem_instance.register(feature)
 
-        for feature in observation.get_features():
-            problem_instance.register(feature)
-
         self._instance = problem_instance
         self.setup = machine_setup
         self.constraints = list(constraints)
@@ -435,6 +432,8 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
                 problem_instance.register(feature)
 
+        problem_instance.finalize()
+
         self.setup_constraints = setup_constraints
         self._all_constraints = (
             *setup_constraints,
@@ -454,8 +453,6 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             component.initialize(problem_instance)
 
         self._observation.initialize(problem_instance)
-
-        problem_instance.validate_instance("SchedulingEnv.load_instance")
 
         self.state = ScheduleState(problem_instance)
         self._status = LOADED
@@ -786,6 +783,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
         observation = self._observation
 
+        observation.reset(state)
         observation.update(state)
         self._prev_obj_value = self.objective.get_current(state)  # Cold start
 

@@ -196,12 +196,6 @@ def _convert_spec_to_gym_space(
 def observation_spec_to_gym_space(obs: Observation) -> Space[Any]:
     """Convert an Observation's spec to a corresponding Gymnasium space."""
     spec = obs.get_spec()
-
-    # Extract symbols from observation attributes
-    symbols = {
-        "n_tasks": obs.n_tasks,
-        "n_jobs": obs.n_jobs,
-        "n_machines": obs.n_machines,
-    }
+    symbols = obs.symbols
 
     return _convert_spec_to_gym_space(spec, symbols)
