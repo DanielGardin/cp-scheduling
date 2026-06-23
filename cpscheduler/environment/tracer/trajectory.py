@@ -20,6 +20,8 @@ class FullTrajectoryTracer(Tracer):
     point, which may lead to a high memory usage and performance drops.
     """
 
+    tracer_name = "full_trajectory"
+
     trajectory: list[tuple[ScheduleState, SimulationEvent]]
 
     def __init__(self) -> None:
@@ -42,6 +44,8 @@ class ExecutionTrajectoryTracer(Tracer):
     at the time of the decision.
     """
 
+    tracer_name = "execution_trajectory"
+
     trajectory: list[tuple[TaskID, MachineID, Time, list[TaskID]]]
 
     def __init__(self) -> None:
@@ -58,7 +62,7 @@ class ExecutionTrajectoryTracer(Tracer):
             self.trajectory.append(
                 (
                     action.task_id,
-                    action.machine_id,
+                    action.resolve_machine(state),
                     state.time,
                     available_tasks,
                 )

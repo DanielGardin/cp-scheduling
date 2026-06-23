@@ -91,12 +91,16 @@ class ExecuteEvent(SimulationEvent):
     def is_ready(self, state: ScheduleState) -> bool:
         return state.is_available(self.task_id, self.machine_id)
 
+    def resolve_machine(self, state: ScheduleState) -> MachineID:
+        """Resolve the machine for the task given the current state of the schedule."""
+        if self.machine_id != GLOBAL_MACHINE_ID:
+            return self.machine_id
+
+        return select_machine(state, self.task_id)
+
     @override
     def process(self, state: ScheduleState, schedule: Schedule) -> None:
-        machine = self.machine_id
-        if machine == GLOBAL_MACHINE_ID:
-            machine = select_machine(state, self.task_id)
-
+        machine = self.resolve_machine(state)
         state.execute_task(self.task_id, machine)
 
 
