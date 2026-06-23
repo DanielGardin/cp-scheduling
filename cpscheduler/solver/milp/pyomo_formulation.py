@@ -1,22 +1,17 @@
+"""Pyomo-based MILP formulation for scheduling problems."""
+
 import logging
-from typing import Final, Literal, TypeAlias
+from typing import Any, Final, Literal, TypeAlias
 
-import pyomo.environ as pyo  # type: ignore[import-untyped]
-from pyomo.core.base.objective import (  # type: ignore[import-untyped]
-    ObjectiveSense,
-)
-from pyomo.core.base.var import (  # type: ignore[import-untyped]
-    VarData,
-)
-from pyomo.core.expr.relational_expr import (  # type: ignore[import-untyped]
-    RelationalExpression,
-)
-from pyomo.opt.base.solvers import OptSolver  # type: ignore[import-untyped]
-from pyomo.opt.results.results_ import (  # type: ignore[import-untyped]
-    SolverResults,
-)
-from typing_extensions import assert_never
+import pyomo.environ as pyo
+from pyomo.core.base.objective import ObjectiveSense
+from pyomo.core.base.var import VarData
+from pyomo.core.expr.relational_expr import RelationalExpression
+from pyomo.opt.base.solvers import OptSolver
+from pyomo.opt.results.results_ import SolverResults
+from typing_extensions import assert_never, override
 
+from cpscheduler.environment import SchedulingEnv
 from cpscheduler.solver.formulation import Formulation
 
 ScalarValue: TypeAlias = int | float
@@ -71,6 +66,24 @@ _SOLVER_PREFERENCE: list[str] = [
 
 
 def find_available_solver() -> str | None:
+    """Find the first available solver from the preference list.
+
+    The order of solvers is defined as follows:
+    1. CPLEX (direct/persistent interfaces preferred)
+    2. Gurobi (direct/persistent interfaces preferred)
+    3. Xpress (direct interface preferred)
+    4. MOSEK (direct interface preferred)
+    5. HiGHS
+    6. SCIP
+    7. CBC
+    8. GLPK
+
+    Returns
+    -------
+    tag: str | None
+        The tag of the first available solver, or None if no solver is found.
+
+    """
     for tag in _SOLVER_PREFERENCE:
         try:
             if pyo.SolverFactory(tag).available():
@@ -85,7 +98,21 @@ def find_available_solver() -> str | None:
 DEFAULT_BIG_M: Final[float] = 1e6
 
 
-class PyomoFormulation(Formulation):
+Strategies = Literal["big_m", "convex_hull", "gdp_big_m"]
+
+
+class PyomoFormulation(Formulation[SolverResults]):
+    """Generic pyomo-based MILP model formulation.
+
+    This class is a base formulation that provides common functionality for
+    model building, variable management, constraint addition, and solving using
+    Pyomo.
+
+    Specific formulations can inherit from this class and implement the
+    `build` method to construct the model according to the scheduling problem's
+    requirements.
+    """
+
     model: pyo.ConcreteModel
 
     _sense: ObjectiveSense
@@ -94,15 +121,24 @@ class PyomoFormulation(Formulation):
     _objective_expr: PYOMO_PARAM
 
     _variables: dict[str, VarData]
+    _disjunctive_strategy: Strategies
 
-    def initialize_pyomo_model(self, name: str, minimize: bool) -> None:
+    def __init__(self, disjunctive_strategy: Strategies = "big_m"):
+        self._disjunctive_strategy = disjunctive_strategy
+
+    @override
+    def initialize_model(self, env: SchedulingEnv) -> None:
         self._objective_expr = 0
 
-        self.model = pyo.ConcreteModel(name=name)
-        self._sense = pyo.minimize if minimize else pyo.maximize
+        self.model = pyo.ConcreteModel(name=env.get_entry())
+        self._sense = pyo.minimize if env.objective.minimize else pyo.maximize
         self.model.objective = pyo.Objective(expr=0, sense=self._sense)
 
         self._variables = {}
+
+    @override
+    def post_build(self) -> None:
+        return super().post_build()
 
     def solve(
         self,
@@ -110,8 +146,29 @@ class PyomoFormulation(Formulation):
         quiet: bool = False,
         time_limit: float | None = None,
         keep_files: bool = False,
-        **solver_kwargs: object,
-    ) -> str:
+        **solver_kwargs: Any,
+    ) -> SolverResults:
+        """Solve the MILP model using the specified solver and options.
+
+        Parameters
+        ----------
+        solver_tag: str | None, optional
+            The tag of the solver to use.
+            If None, the first available solver will be automatically selected.
+
+        quiet: bool, optional
+            If True, suppress solver output. Default is False.
+
+        time_limit: float | None, optional
+            Time limit for the solver in seconds. If None, no time limit is applied.
+
+        keep_files: bool, optional
+            If True, keep temporary files created by the solver. Default is False.
+
+        **solver_kwargs: Any
+            Additional keyword arguments to pass to the Pyomo SolverFactory.
+
+        """
         if solver_tag is None:
             solver_tag = find_available_solver()
             if solver_tag is None:
@@ -139,10 +196,10 @@ class PyomoFormulation(Formulation):
             keepfiles=keep_files,
         )
 
-        termination = self._result.solver.termination_condition
-        return str(termination)
+        return self._result
 
     def set_objective(self, expr: PYOMO_PARAM) -> None:
+        """Set the objective expression of the model."""
         self._objective_expr = expr
         self.model.del_component(self.model.objective)
         self.model.objective = pyo.Objective(expr=expr, sense=self._sense)
@@ -154,6 +211,24 @@ class PyomoFormulation(Formulation):
         ub: float | int | None = None,
         binary: bool = False,
     ) -> VarData:
+        """Add a variable to the model with the given name and properties.
+
+        Parameters
+        ----------
+        name: str
+            The name of the variable. Must be unique within the model.
+
+        lb: float | int | None, optional
+            The lower bound of the variable. If None, no lower bound is applied.
+
+        ub: float | int | None, optional
+            The upper bound of the variable. If None, no upper bound is applied.
+
+        binary: bool, optional
+            Whether the variable is binary (0 or 1). If True, lb and ub are
+            ignored and the variable is constrained to be binary.
+
+        """
         if name in self._variables:
             raise ValueError(f"Variable '{name}' already exists.")
 
@@ -172,6 +247,23 @@ class PyomoFormulation(Formulation):
         return var
 
     def add_constraint(self, constraint: PYOMO_CONSTRAINT, name: str) -> None:
+        """Add a constraint to the model.
+
+        Parameters
+        ----------
+        constraint: PYOMO_CONSTRAINT
+            The constraint to add. Can be a boolean (trivial constraint) or a
+            Pyomo relational expression.
+
+        name: str
+            The name of the constraint. Must be unique within the model.
+
+        Raises
+        ------
+        ValueError
+            If the constraint is trivially False, or if the name is not unique.
+
+        """
         if isinstance(constraint, bool):
             if not constraint:
                 raise ValueError(
@@ -185,21 +277,67 @@ class PyomoFormulation(Formulation):
         self,
         decision_vars: list[PYOMO_PARAM],
         name: str,
-        minimized: bool = True,
+        exact: bool = False,
     ) -> VarData:
-        """
-        Returns an auxiliary variable `z` constrained by `z >= v` for each v
-        in `decision_vars`.
+        """Create an auxiliary variable representing the maximum of a list of decision variables.
 
-        When `minimized=True` (default), the objective drives `z` down to
-        `max(decision_vars)`, making this exact. When `minimized=False`, `z`
-        is only a valid lower envelope and callers must enforce tightness
-        through additional constraints or accept the relaxation.
+        This method creates a new variable `z` and adds constraints `z >= v` for
+        each variable `v` in `decision_vars`.
+
+        Parameters
+        ----------
+        decision_vars: list[PYOMO_PARAM]
+            The list of decision variables to take the maximum over.
+
+        name: str
+            The name of the auxiliary variable to create.
+
+        exact: bool, default=False
+            Whether the maximum variable should be exact.
+            When False, the constraints only ensure that `z` is an upper bound
+            on the decision variables, which can be a relaxation.
+            If the caller minimizes `z` in the objective, it will be driven down
+            to the maximum of the decision variables, making it exact even when
+            `exact=False`.
+
+        Returns
+        -------
+        VarData
+            The auxiliary variable representing the (upper bound for the)
+            maximum of the decision variables.
+
         """
-        max_var = self.add_var(name, lb=None, ub=None, binary=False)
+        if len(decision_vars) == 0:
+            raise ValueError(
+                "Cannot take the maximum of an empty list of variables."
+            )
+
+        lb = max(self.get_lb(var) for var in decision_vars)
+        ub = max(self.get_ub(var) for var in decision_vars)
+
+        max_var = self.add_var(name, lb=lb, ub=ub, binary=False)
 
         for i, var in enumerate(decision_vars):
             self.add_constraint(max_var >= var, f"{name}_lb_{i}")
+
+        if not exact:
+            return max_var
+
+        binaries = [
+            self.add_var(f"{name}_is_max_{i}", binary=True)
+            for i in range(len(decision_vars))
+        ]
+
+        self.add_constraint(
+            pyo.quicksum(binaries) == 1, f"{name}_exact_one_max"
+        )
+
+        for i, (var, binary) in enumerate(
+            zip(decision_vars, binaries, strict=True)
+        ):
+            self.implication(
+                (binary,), (max_var, "==", var), f"{name}_exact_max_{i}"
+            )
 
         return max_var
 
@@ -209,6 +347,26 @@ class PyomoFormulation(Formulation):
         consequent: tuple[PYOMO_PARAM, Literal["==", "<=", ">="], PYOMO_PARAM],
         name: str | None = None,
     ) -> None:
+        """Add a linear constraint representing an implication.
+
+        This method adds constraints to the model so that, when all variables in
+        the `antecedent` are equal to 1 (True), the `consequent` constraint is
+        enforced.
+
+        Parameters
+        ----------
+        antecedent: tuple[PYOMO_PARAM, ...]
+            A tuple of variables representing the antecedent conditions.
+
+        consequent: tuple[PYOMO_PARAM, Literal["==", "<=", ">="], PYOMO_PARAM]
+            A tuple representing the consequent constraint in the form
+            (lhs, operator, rhs), where `operator` is one of "==", "<=", ">=".
+
+        name: str | None, optional
+            An optional name for the constraints added by this implication. If
+            None, default names will be generated based on the type of implication.
+
+        """
         premises: list[PYOMO_PARAM] = []
 
         for var in antecedent:
@@ -275,6 +433,7 @@ class PyomoFormulation(Formulation):
             self.add_constraint(lhs >= rhs, name or "direct_ge")
 
     def get_value(self, param: PYOMO_PARAM) -> float:
+        """Get the numerical value of a Pyomo parameter or variable."""
         if isinstance(param, int | float):
             return float(param)
 
@@ -288,6 +447,7 @@ class PyomoFormulation(Formulation):
         return float(value)
 
     def set_initial_value(self, param: PYOMO_PARAM, value: float | int) -> None:
+        """Set the initial value of a Pyomo variable or parameter."""
         if isinstance(param, int | float):
             if param != value:
                 raise ValueError(
@@ -298,6 +458,7 @@ class PyomoFormulation(Formulation):
         param.set_value(value)
 
     def get_ub(self, param: PYOMO_PARAM) -> float:
+        """Get the upper bound of a Pyomo parameter or variable."""
         if isinstance(param, int | float):
             return float(param)
 
@@ -308,6 +469,7 @@ class PyomoFormulation(Formulation):
         return float(ub)
 
     def get_lb(self, param: PYOMO_PARAM) -> float:
+        """Get the lower bound of a Pyomo parameter or variable."""
         if isinstance(param, int | float):
             return float(param)
 
@@ -321,6 +483,7 @@ class PyomoFormulation(Formulation):
         return float(lb)
 
     def set_ub(self, param: PYOMO_PARAM, ub: float | int) -> None:
+        """Set the upper bound of a Pyomo variable or parameter."""
         if isinstance(param, int | float):
             if param > ub:
                 raise ValueError(

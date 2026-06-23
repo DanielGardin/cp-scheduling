@@ -1,3 +1,5 @@
+"""Module for scheduling problem formulations and solvers."""
+
 __all__ = [
     "DisjunctiveMILPFormulation",
     "Formulation",

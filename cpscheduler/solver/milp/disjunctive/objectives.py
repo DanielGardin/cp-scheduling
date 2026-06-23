@@ -1,3 +1,5 @@
+"""Module for defining objective functions for the disjunctive MILP formulation."""
+
 from cpscheduler.environment.objectives import (
     ComposedObjective,
     Makespan,
@@ -20,7 +22,7 @@ from cpscheduler.solver.milp.disjunctive.formulation import (
 from cpscheduler.solver.milp.pyomo_formulation import PYOMO_PARAM
 
 
-def jobs_makespan(
+def _jobs_makespan(
     formulation: DisjunctiveMILPFormulation,
     state: ScheduleState,
 ) -> list[PYOMO_PARAM]:
@@ -37,7 +39,7 @@ def jobs_makespan(
 
 
 @DisjunctiveMILPFormulation.register_objective(Objective)
-def objective(
+def _objective(
     formulation: DisjunctiveMILPFormulation,
     state: ScheduleState,
     objective: Objective,
@@ -47,7 +49,7 @@ def objective(
 
 
 @DisjunctiveMILPFormulation.register_objective(Makespan)
-def makespan_objective(
+def _makespan_objective(
     formulation: DisjunctiveMILPFormulation,
     state: ScheduleState,
     objective: Makespan,
@@ -63,7 +65,7 @@ def makespan_objective(
 
 
 @DisjunctiveMILPFormulation.register_objective(ComposedObjective)
-def composed_objective(
+def _composed_objective(
     formulation: DisjunctiveMILPFormulation,
     state: ScheduleState,
     objective: ComposedObjective,
@@ -89,12 +91,12 @@ def composed_objective(
 
 
 @DisjunctiveMILPFormulation.register_objective(TotalCompletionTime)
-def total_completion_time_objective(
+def _total_completion_time_objective(
     formulation: DisjunctiveMILPFormulation,
     state: ScheduleState,
     objective: TotalCompletionTime,
 ) -> PYOMO_PARAM:
-    job_makespans = jobs_makespan(formulation, state)
+    job_makespans = _jobs_makespan(formulation, state)
 
     total_completion_time = sum(job_makespans)
 
@@ -104,12 +106,12 @@ def total_completion_time_objective(
 
 
 @DisjunctiveMILPFormulation.register_objective(WeightedCompletionTime)
-def weighted_completion_time_objective(
+def _weighted_completion_time_objective(
     formulation: DisjunctiveMILPFormulation,
     state: ScheduleState,
     objective: WeightedCompletionTime,
 ) -> PYOMO_PARAM:
-    job_makespans = jobs_makespan(formulation, state)
+    job_makespans = _jobs_makespan(formulation, state)
 
     weights = objective.weights.value
 
@@ -124,12 +126,12 @@ def weighted_completion_time_objective(
 
 
 @DisjunctiveMILPFormulation.register_objective(MaximumLateness)
-def maximum_lateness_objective(
+def _maximum_lateness_objective(
     formulation: DisjunctiveMILPFormulation,
     state: ScheduleState,
     objective: MaximumLateness,
 ) -> PYOMO_PARAM:
-    job_makespans = jobs_makespan(formulation, state)
+    job_makespans = _jobs_makespan(formulation, state)
 
     lateness = [
         job_makespan - int(due_date)
@@ -145,12 +147,12 @@ def maximum_lateness_objective(
 
 
 @DisjunctiveMILPFormulation.register_objective(TotalTardiness)
-def total_tardiness_objective(
+def _total_tardiness_objective(
     formulation: DisjunctiveMILPFormulation,
     state: ScheduleState,
     objective: TotalTardiness,
 ) -> PYOMO_PARAM:
-    job_makespans = jobs_makespan(formulation, state)
+    job_makespans = _jobs_makespan(formulation, state)
 
     due_dates = objective.due_dates.value
 
@@ -171,12 +173,12 @@ def total_tardiness_objective(
 
 
 @DisjunctiveMILPFormulation.register_objective(WeightedTardiness)
-def weighted_tardiness_objective(
+def _weighted_tardiness_objective(
     formulation: DisjunctiveMILPFormulation,
     state: ScheduleState,
     objective: WeightedTardiness,
 ) -> PYOMO_PARAM:
-    job_makespans = jobs_makespan(formulation, state)
+    job_makespans = _jobs_makespan(formulation, state)
 
     weights = objective.weights.value
     due_dates = objective.due_dates.value
@@ -202,12 +204,12 @@ def weighted_tardiness_objective(
 
 
 @DisjunctiveMILPFormulation.register_objective(TotalEarliness)
-def total_earliness_objective(
+def _total_earliness_objective(
     formulation: DisjunctiveMILPFormulation,
     state: ScheduleState,
     objective: TotalEarliness,
 ) -> PYOMO_PARAM:
-    job_makespans = jobs_makespan(formulation, state)
+    job_makespans = _jobs_makespan(formulation, state)
 
     due_dates = objective.due_dates.value
 
@@ -228,12 +230,12 @@ def total_earliness_objective(
 
 
 @DisjunctiveMILPFormulation.register_objective(WeightedEarliness)
-def weighted_earliness_objective(
+def _weighted_earliness_objective(
     formulation: DisjunctiveMILPFormulation,
     state: ScheduleState,
     objective: WeightedEarliness,
 ) -> PYOMO_PARAM:
-    job_makespans = jobs_makespan(formulation, state)
+    job_makespans = _jobs_makespan(formulation, state)
 
     weights = objective.weights.value
     due_dates = objective.due_dates.value
@@ -259,7 +261,7 @@ def weighted_earliness_objective(
 
 
 @DisjunctiveMILPFormulation.register_objective(TotalTardyJobs)
-def total_tardy_jobs_objective(
+def _total_tardy_jobs_objective(
     formulation: DisjunctiveMILPFormulation,
     state: ScheduleState,
     objective: TotalTardyJobs,
@@ -292,7 +294,7 @@ def total_tardy_jobs_objective(
 
 
 @DisjunctiveMILPFormulation.register_objective(WeightedTardyJobs)
-def weighted_tardy_jobs_objective(
+def _weighted_tardy_jobs_objective(
     formulation: DisjunctiveMILPFormulation,
     state: ScheduleState,
     objective: WeightedTardyJobs,
@@ -329,12 +331,12 @@ def weighted_tardy_jobs_objective(
 
 
 @DisjunctiveMILPFormulation.register_objective(TotalFlowTime)
-def total_flow_time_objective(
+def _total_flow_time_objective(
     formulation: DisjunctiveMILPFormulation,
     state: ScheduleState,
     objective: TotalFlowTime,
 ) -> PYOMO_PARAM:
-    job_makespans = jobs_makespan(formulation, state)
+    job_makespans = _jobs_makespan(formulation, state)
 
     release_times = objective.release_times.value
 

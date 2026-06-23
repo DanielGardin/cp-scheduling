@@ -1,3 +1,5 @@
+"""Disjunctive MILP formulation for scheduling problems."""
+
 __all__ = [
     "DisjunctiveMILPFormulation",
 ]

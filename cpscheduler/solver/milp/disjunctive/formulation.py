@@ -1,3 +1,7 @@
+"""Module for defining the disjunctive MILP formulation."""
+
+from typing_extensions import override
+
 from cpscheduler.environment import SchedulingEnv
 from cpscheduler.solver.milp.pyomo_formulation import (
     PYOMO_PARAM,
@@ -6,6 +10,20 @@ from cpscheduler.solver.milp.pyomo_formulation import (
 
 
 class DisjunctiveMILPFormulation(PyomoFormulation):
+    """A disjunctive MILP formulation for scheduling problems.
+
+    This formulation explicitly models the start and end times of tasks as
+    integer variables, and uses binary variables to model the assignment of tasks
+    to machines and the ordering of tasks on the same machine.
+
+    The formulation is designed to be flexible and extensible, allowing for
+    different types of constraints and objectives to be easily added by registering
+    the appropriate functions.
+
+    It may not be the most efficient formulation for all types of scheduling problems,
+    specially because it has a weak LP relaxation in general.
+    """
+
     formulation_name = "disjunctive"
 
     start_times: list[PYOMO_PARAM]
@@ -27,6 +45,7 @@ class DisjunctiveMILPFormulation(PyomoFormulation):
 
         self.horizon = horizon
 
+    @override
     def get_assignment(self, task_id: int) -> tuple[int, int]:
         start_time = round(self.get_value(self.start_times[task_id]))
 
@@ -36,14 +55,13 @@ class DisjunctiveMILPFormulation(PyomoFormulation):
 
         raise ValueError(f"No machine assigned for task {task_id}.")
 
+    @override
     def get_objective_value(self) -> float:
         return self.get_value(self._objective_expr)
 
+    @override
     def initialize_model(self, env: SchedulingEnv) -> None:
-        self.initialize_pyomo_model(
-            name=env.get_entry(),
-            minimize=env.objective.minimize,
-        )
+        super().initialize_model(env)
 
         state = env.state
         runtime = state.runtime
@@ -133,6 +151,7 @@ class DisjunctiveMILPFormulation(PyomoFormulation):
                     self.end_times[task_id] <= horizon, f"horizon_{task_id}"
                 )
 
+    @override
     def warm_start(self, env: SchedulingEnv) -> None:
         state = env.state
         for task_id in range(state.n_tasks):
@@ -173,11 +192,11 @@ class DisjunctiveMILPFormulation(PyomoFormulation):
 
     # Helper methods for building the model
     def has_order(self, i: int, j: int) -> bool:
+        """Check if there is an order variable defined for tasks i and j."""
         return (i, j) in self.orders
 
     def set_global_order(self, i: int, j: int) -> None:
-        "Unconditionally set i to start before j."
-
+        """Unconditionally set i to start before j."""
         if i == j:
             return
 
@@ -196,6 +215,7 @@ class DisjunctiveMILPFormulation(PyomoFormulation):
             )
 
     def get_order(self, i: int, j: int) -> PYOMO_PARAM:
+        """Get the order variable for tasks i and j, creating it if it does not exist."""
         if i == j:
             return 1
 
@@ -209,6 +229,7 @@ class DisjunctiveMILPFormulation(PyomoFormulation):
         return order_var
 
     def set_order(self, i: int, j: int) -> None:
+        """Unconditionally set i to start before j, creating the order variable if it does not exist."""
         if (i, j) not in self.orders:
             self.orders[(i, j)] = 1
 

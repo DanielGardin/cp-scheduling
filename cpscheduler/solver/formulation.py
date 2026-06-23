@@ -1,8 +1,20 @@
+"""Base class for scheduling problem formulations.
+
+Formulations are responsible for defining the decision variables and build
+the model based on the environment's setup, constraints and objective.
+
+The Formulation class provides a registry mechanism for exporting functions that
+handle specific types of constraints and objectives. This allows for a modular
+and extensible design, where new formulations can be easily created by defining
+the necessary variables and registering the appropriate functions for the
+constraints and objective of the scheduling problem.
+"""
+
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from typing import Any, ClassVar, TypeVar
+from typing import Any, ClassVar, Generic, TypeVar
 
-from typing_extensions import Self
+from typing_extensions import Self, final, override
 
 from cpscheduler.environment import (
     Constraint,
@@ -12,9 +24,9 @@ from cpscheduler.environment import (
 )
 from cpscheduler.environment.state import ScheduleState
 
-formulations: dict[str, type["Formulation"]] = {}
+formulations: dict[str, type["Formulation[Any]"]] = {}
 
-F = TypeVar("F", bound="Formulation")
+F = TypeVar("F", bound="Formulation[Any]")
 E = TypeVar("E", bound=ScheduleSetup | Constraint | Objective)
 _T = TypeVar("_T")
 
@@ -28,8 +40,12 @@ Register = dict[type[E], Exporter[F, E]]
 _Constraint = TypeVar("_Constraint", bound=Constraint)
 _Objective = TypeVar("_Objective", bound=Objective)
 
+SolverResult = TypeVar("SolverResult")
 
-class Formulation(ABC):
+
+class Formulation(Generic[SolverResult], ABC):
+    """Base class for scheduling problem formulations."""
+
     formulation_name: ClassVar[str | None] = None
 
     _constraint_registry: ClassVar[dict[type[Constraint], Exporter[Any, Any]]]
@@ -41,14 +57,17 @@ class Formulation(ABC):
     def get_constraint_fn(
         cls, constraint: type[Constraint]
     ) -> Exporter[Any, Any]:
+        """Get the registered function for a specific constraint type."""
         return cls._constraint_registry[constraint]
 
     @classmethod
     def get_objective_fn(
         cls, objective: type[Objective]
     ) -> VariableExporter[Any, Any]:
+        """Get the registered function for a specific objective type."""
         return cls._objective_registry[objective]
 
+    @override
     def __init_subclass__(cls) -> None:
         cls._constraint_registry = {}
         cls._objective_registry = {}
@@ -57,6 +76,20 @@ class Formulation(ABC):
     def register_constraint(
         cls: type[F], constraint: type[_Constraint]
     ) -> Decorator[Exporter[F, _Constraint]]:
+        """Register a function to handle a specific constraint type.
+
+        This function can be used as a decorator to register the function that
+        builds the constraints for a specific constraint type.
+
+        Example
+        -------
+        >>> @MyFormulation.register_constraint(PrecedenceConstraint)
+        ... def precedence_constraint(formulation, state, constraint):
+        ...     # Add constraints to the formulation based on the precedence constraint
+        ...     pass
+
+        """
+
         def decorator(fn: Exporter[F, _Constraint]) -> Exporter[F, _Constraint]:
             cls._constraint_registry[constraint] = fn
             return fn
@@ -67,13 +100,16 @@ class Formulation(ABC):
     def mark_constraint_as_handled(
         cls: type[F], *constraints: type[Constraint]
     ) -> None:
-        """
-        Mark a constraint type as handled without adding any constraints to the model.
+        """Mark a constraint type as handled without adding any constraints to the model.
+
         This can be used for constraints that are implicitly handled by the formulation
         or do not require explicit constraints in the model.
-        Args:
-            constraint: type[_Constraint]
-                The type of the constraint to mark as handled.
+
+        Parameters
+        ----------
+        *constraints: type[Constraint]
+            The type of the constraint to mark as handled.
+
         """
         for constraint in constraints:
             cls._constraint_registry[constraint] = lambda self, state, c: None
@@ -82,8 +118,7 @@ class Formulation(ABC):
     def register_objective(
         cls: type[F], objective: type[_Objective]
     ) -> Decorator[VariableExporter[F, _Objective]]:
-        """
-        Register an objective function for the formulation.
+        """Register an objective function for the formulation.
 
         Differently from setups and constraints, objectives can return a
         variable or an expression representing the objective value.
@@ -93,13 +128,15 @@ class Formulation(ABC):
         It is still the responsibility of the exported function to properly
         set the model's objective to the returned variable or expression.
 
-        Usage example:
-        ```python
-        @Formulation.register_objective(Makespan)
-        def makespan_objective(formulation, state, objective):
-            <define variables and constraints for makespan objective>
-            return makespan_variable
-        ```
+        Example
+        -------
+        >>> @MyFormulation.register_objective(MakespanObjective)
+        ... def makespan_objective(formulation, state, objective):
+        ...     # Define the makespan variable and set it as the objective
+        ...     formulation.makespan = ...
+        ...     formulation.model.set_objective(formulation.makespan, sense="minimize")
+        ...     return formulation.makespan
+
         """
 
         def decorator(
@@ -112,53 +149,62 @@ class Formulation(ABC):
 
     @abstractmethod
     def get_assignment(self, task_id: int) -> tuple[int, int]:
-        """
-        Get the machine assignment for a specific task.
-        Args:
-            task_id: int
-                The ID of the task to get the assignment for.
-        Returns:
-            A tuple (start_time, machine_id) representing the assignment.
+        """Get the machine assignment for a specific task.
+
+        Parameters
+        ----------
+        task_id: int
+            The ID of the task to get the assignment for.
+
+        Returns
+        -------
+        Tuple[int, int]
+            A tuple containing the machine ID and the start time assigned to the task.
+
         """
 
     @abstractmethod
     def get_objective_value(self) -> float:
-        """
-        Get the objective value of the current solution.
-        Returns:
-            The objective value as a float.
-        """
+        """Get the objective value of the current solution."""
 
     @abstractmethod
     def initialize_model(self, env: SchedulingEnv) -> None:
-        """
-        Initialize the model with variables.
+        """Initialize the model with variables.
 
         This should not add any constraints or objective to the model, but only
         initialize the variables based on the environment's setup.
         """
 
-    @abstractmethod
-    def solve(self, *args: Any, **kwargs: Any) -> Any:
+    def post_build(self) -> None:
+        """Perform any additional setup after the model has been built.
+
+        This method is called after the model has been built based on the
+        environment's setup, constraints and objective.
+        It can be used to perform any additional setup or checks that
+        require the model to be fully built.
         """
-        Solve the model using the specified solver configuration.
-        Args:
-            solver_config: dict
-                A dictionary containing solver-specific configuration parameters.
-        Returns:
-            The result of the solve operation, which may include status, objective value, etc.
+
+    @abstractmethod
+    def solve(self, *args: Any, **kwargs: Any) -> SolverResult:
+        """Solve the model and return the result.
+
+        The return type can be defined by the specific formulation, but it should
+        contain at least the information about whether the solution is optimal or
+        not, and any other relevant information about the solving process.
+
         """
 
     def warm_start(self, env: SchedulingEnv) -> None:
+        """Warm start the formulation with a valid initial schedule."""
         raise NotImplementedError(
             f"warm_start method not available for {type(self).__name__}."
         )
 
+    @final
     def build(
         self: Self, env: SchedulingEnv, symmetry_break: bool = False
     ) -> None:
-        """
-        Build the model for the scheduling problem.
+        """Build the model for the scheduling problem.
 
         This method initializes the model based on the current instance,
         state, the setup, constraints and objective.
@@ -183,11 +229,15 @@ class Formulation(ABC):
 
         self._objective_registry[type(objective)](self, state, objective)
 
+        self.post_build()
+
     def __repr__(self) -> str:
+        """Return a generic string representation of the formulation."""
         return f"Formulation(name={self.formulation_name})"
 
 
 def register_formulation(cls: type[F], name: str) -> type[F]:
+    """Register a formulation class with a specific name."""
     if name in formulations:
         raise ValueError(
             f"A formulation with name '{name}' is already registered: "

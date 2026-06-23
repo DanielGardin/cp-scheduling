@@ -1,3 +1,5 @@
+"""Module for defining constraints for the disjunctive MILP formulation."""
+
 from itertools import combinations
 
 from cpscheduler.environment.constraints import (
@@ -26,7 +28,7 @@ DisjunctiveMILPFormulation.mark_constraint_as_handled(
 
 
 @DisjunctiveMILPFormulation.register_constraint(PrecedenceConstraint)
-def prec_constraint(
+def _prec_constraint(
     formulation: DisjunctiveMILPFormulation,
     state: ScheduleState,
     constraint: PrecedenceConstraint,
@@ -45,7 +47,7 @@ def prec_constraint(
 
 
 @DisjunctiveMILPFormulation.register_constraint(NoWaitConstraint)
-def no_wait_constraint(
+def _no_wait_constraint(
     formulation: DisjunctiveMILPFormulation,
     state: ScheduleState,
     constraint: NoWaitConstraint,
@@ -64,7 +66,7 @@ def no_wait_constraint(
 
 
 @DisjunctiveMILPFormulation.register_constraint(NonOverlapConstraint)
-def non_overlap_constraint(
+def _non_overlap_constraint(
     formulation: DisjunctiveMILPFormulation,
     state: ScheduleState,
     constraint: NonOverlapConstraint,
@@ -105,7 +107,7 @@ def non_overlap_constraint(
 
 
 @DisjunctiveMILPFormulation.register_constraint(MachineConstraint)
-def machine_constraint(
+def _machine_constraint(
     formulation: DisjunctiveMILPFormulation,
     state: ScheduleState,
     constraint: MachineConstraint,
@@ -146,7 +148,7 @@ def machine_constraint(
 
 
 @DisjunctiveMILPFormulation.register_constraint(ResourceConstraint)
-def resource_constraint(
+def _resource_constraint(
     formulation: DisjunctiveMILPFormulation,
     state: ScheduleState,
     constraint: ResourceConstraint,
@@ -159,7 +161,7 @@ def resource_constraint(
 
 
 @DisjunctiveMILPFormulation.register_constraint(NonRenewableResourceConstraint)
-def non_renewable_resource_constraint(
+def _non_renewable_resource_constraint(
     formulation: DisjunctiveMILPFormulation,
     state: ScheduleState,
     constraint: NonRenewableResourceConstraint,
@@ -177,7 +179,7 @@ def non_renewable_resource_constraint(
 
 
 @DisjunctiveMILPFormulation.register_constraint(SetupConstraint)
-def setup_constraint(
+def _setup_constraint(
     formulation: DisjunctiveMILPFormulation,
     state: ScheduleState,
     constraint: SetupConstraint,
