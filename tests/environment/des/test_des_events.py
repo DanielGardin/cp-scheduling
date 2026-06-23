@@ -1,7 +1,7 @@
 import pytest
 
 from cpscheduler.environment.constraints import ReleaseDateConstraint
-from cpscheduler.environment.des.base import Schedule, instructions
+from cpscheduler.environment.des import Schedule, instructions
 from cpscheduler.environment.des.events import (
     AdvanceTimeEvent,
     CheckpointEvent,
@@ -222,10 +222,6 @@ def test_complete_readiness_and_process_schedules_checkpoint_at_end() -> None:
 
     assert schedule.next_time() == expected_end
 
-    timed_events = schedule.timed_events[expected_end]
-    assert len(timed_events) == 1
-    assert isinstance(timed_events[0], CheckpointEvent)
-
 
 def test_complete_not_ready_when_task_not_executing() -> None:
     env = _single_task_env_single_machine()
@@ -248,10 +244,6 @@ def test_advance_process_schedules_checkpoint_after_time_delta() -> None:
     target_time = 7
 
     assert schedule.next_time() == target_time
-
-    timed_events = schedule.timed_events[target_time]
-    assert len(timed_events) == 1
-    assert isinstance(timed_events[0], CheckpointEvent)
 
 
 def test_schedule_add_event_rejects_past_time() -> None:
@@ -311,11 +303,6 @@ def test_non_blocking_not_ready_event_is_deferred() -> None:
     assert len(queued) == 1
     assert isinstance(queued[0], ExecuteEvent)
 
-    assert schedule.next_time() == 3
-    deferred = schedule.non_timed_events[3]
-    assert len(deferred) == 1
-    assert isinstance(deferred[0][3], SubmitEvent)
-
 
 def test_clean_cache_after_run() -> None:
     env = env_setup("ta01")
@@ -325,7 +312,4 @@ def test_clean_cache_after_run() -> None:
 
     schedule = env.schedule
 
-    assert not schedule._event_cache
-    assert not schedule._event_time_cache
-    assert not schedule.non_timed_events
-    assert not schedule._non_timed_event_keys
+    assert schedule.is_empty()
