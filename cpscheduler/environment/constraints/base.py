@@ -174,7 +174,11 @@ class PassiveConstraint(Constraint):
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:
         """Handle the invalidation of bounds of a task that was paused."""
+        raise RuntimeError("Passive constraint does not handle pause events.")
 
     @final
     def on_bound_reset(self, task_id: TaskID, state: ScheduleState) -> None:
         """Handle the bound invalidation of a given task."""
+        raise RuntimeError(
+            "Passive constraint does not handle bound reset events."
+        )

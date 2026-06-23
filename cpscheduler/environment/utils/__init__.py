@@ -1,6 +1,7 @@
 """Utility helpers for environment configuration and validation."""
 
 __all__ = [
+    "ArrayLike",
     "DataFrameLike",
     "InfoType",
     "InstanceConfig",
@@ -28,6 +29,7 @@ from .debug import (
 )
 from .general import convert_to_list, extend_list
 from .protocols import (
+    ArrayLike,
     DataFrameLike,
     InfoType,
     Instance_T,

@@ -362,7 +362,7 @@ class NoWaitConstraint(PrecedenceConstraint):
             An optional name for the adjacency feature.
 
         """
-        return cls.from_edges(edges, name)
+        return super().from_edges(edges, name)
 
     @override
     def initialize(self, instance: ProblemInstance) -> None:
@@ -459,7 +459,7 @@ class ORPrecedenceConstraint(PrecedenceConstraint):
             An optional name for the adjacency feature.
 
         """
-        return cls.from_edges(edges, name)
+        return super().from_edges(edges, name)
 
     @override
     def reset(self, state: ScheduleState) -> None:
