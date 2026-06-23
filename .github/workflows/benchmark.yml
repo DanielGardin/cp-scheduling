@@ -47,7 +47,7 @@ jobs:
         env:
           MPLBACKEND: Agg
         run: |
-          python scripts/speed_report.py --memory --quiet | tee memory_benchmark.log
+          python scripts/memory_report.py --quiet | tee memory_benchmark.log
 
       - name: Upload benchmark artifacts
         uses: actions/upload-artifact@v4
