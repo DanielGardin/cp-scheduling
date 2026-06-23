@@ -32,7 +32,6 @@ from cpscheduler.environment.des.actions import (
     parse_instruction,
 )
 from cpscheduler.environment.des.base import (
-    Schedule,
     SimulationEvent,
     instructions,
     register_instruction,
@@ -46,6 +45,7 @@ from cpscheduler.environment.des.events import (
     ResumeEvent,
     SubmitEvent,
 )
+from cpscheduler.environment.des.schedule import Schedule
 
 register_instruction(ExecuteEvent, "execute")
 register_instruction(SubmitEvent, "submit")

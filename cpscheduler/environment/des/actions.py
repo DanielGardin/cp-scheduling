@@ -7,7 +7,6 @@ from typing_extensions import TypeIs, Unpack
 
 from cpscheduler.environment.constants import Int, Time
 from cpscheduler.environment.des.base import (
-    PriorityValue,
     SimulationEvent,
     instructions,
 )
@@ -50,7 +49,7 @@ def _parse_args(args: list[Any]) -> tuple[Any, ...]:
 
 def parse_instruction(
     instruction: SingleInstruction,
-) -> tuple[SimulationEvent, Time | None, PriorityValue | None]:
+) -> tuple[SimulationEvent, Time | None, float | None]:
     """Parse a single instruction action into a SimulationEvent.
 
     Parameters
@@ -70,7 +69,7 @@ def parse_instruction(
         The time at which the event should occur, if specified in a BAction.
         None for CAction.
 
-    priority : PriorityValue | None
+    priority : float | None
         The priority of the event, if specified in the instruction arguments.
         None if not specified.
 

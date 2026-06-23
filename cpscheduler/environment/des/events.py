@@ -8,7 +8,8 @@ from cpscheduler.environment.constants import (
     TaskID,
     Time,
 )
-from cpscheduler.environment.des.base import Schedule, SimulationEvent
+from cpscheduler.environment.des.base import SimulationEvent
+from cpscheduler.environment.des.schedule import Schedule
 from cpscheduler.environment.state import ScheduleState
 
 
