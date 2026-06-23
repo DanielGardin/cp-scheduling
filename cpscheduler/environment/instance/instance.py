@@ -390,7 +390,8 @@ class ProblemInstance(EzPickle):
             provider = _find_provider(features)
 
             if provider is not None:
-                merge_symbols(symbol_values, provider.solve_symbols())
+                provider_symbols = provider.solve_symbols()
+                merge_symbols(symbol_values, provider_symbols)
 
                 for feature in self.features[name]:
                     if feature is provider:

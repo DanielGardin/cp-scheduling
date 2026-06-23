@@ -30,31 +30,39 @@ def is_unset(value: object) -> TypeIs[_UnsetType]:
 
 
 def merge_symbols(
-    main: dict[str, int], *symbol_dicts: dict[str, int]
+    main: dict[str, int], symbol_dict: dict[str, int]
 ) -> dict[str, int]:
     """Merge multiple symbol dictionaries into one, ensuring no conflicts."""
-    for symbol_dict in symbol_dicts:
-        for k, v in symbol_dict.items():
-            if k not in main:
-                main[k] = v
+    overlapping_keys = main.keys() & symbol_dict.keys()
 
-            elif main[k] != v:
-                raise ValueError(
-                    f"Conflicting values for symbol '{k}': {main[k]} vs {v}."
-                )
+    for k in overlapping_keys:
+        if main[k] != symbol_dict[k]:
+            raise ValueError(
+                f"Conflicting values for symbol '{k}': {main[k]} vs {symbol_dict[k]}."
+            )
+
+    main.update(symbol_dict)
 
     return main
 
 
 def solve_shape(
     shape: tuple[SymbolicDim | None, ...], data: Any, depth: int = 0
-) -> dict[str, int]:
+) -> dict[str, int] | None:
     """Solve symbolic dimensions in the shape to concrete integers.
 
     This function recursively checks the shape of the data against the provided
     symbolic shape, and extracts the values of the symbolic dimensions based on
     the actual shape of the data.
     """
+    if depth >= len(shape):
+        if isinstance(data, Sequence) and not isinstance(data, str):
+            raise ValueError(
+                f"Data has more dimensions than expected by shape {shape}."
+            )
+
+        return None
+
     if hasattr(data, "shape"):
         data_shape = data.shape
         if len(data_shape) != len(shape):
@@ -62,32 +70,27 @@ def solve_shape(
                 f"Data has shape {data_shape} but expected {shape}."
             )
 
-        return merge_symbols(
-            {},
-            *(
-                dim.solve_symbol(int(data_dim))
-                for dim, data_dim in zip(shape, data_shape, strict=True)
-                if dim is not None
-            ),
-        )
+        symbols: dict[str, int] = {}
+        for i in range(depth, len(shape)):
+            dim = shape[i]
+            data_dim = data_shape[i]
 
-    if depth >= len(shape):
-        if isinstance(data, Sequence) and not isinstance(data, str):
-            raise ValueError(
-                f"Data has more dimensions than expected by shape {shape}."
-            )
+            if dim is not None:
+                merge_symbols(symbols, dim.solve_symbol(int(data_dim)))
 
-        return {}
+        return symbols
 
     if isinstance(data, Sequence) and not isinstance(data, str):
         first_dim = shape[depth]
-        symbols: dict[str, int] = (
-            {} if first_dim is None else first_dim.solve_symbol(len(data))
-        )
+        symbols = {} if first_dim is None else first_dim.solve_symbol(len(data))
 
-        return merge_symbols(
-            symbols, *(solve_shape(shape, item, depth + 1) for item in data)
-        )
+        for item in data:
+            item_symbols = solve_shape(shape, item, depth + 1)
+
+            if item_symbols is not None:
+                merge_symbols(symbols, item_symbols)
+
+        return symbols
 
     raise ValueError(
         f"Data at depth {depth} is not a sequence, cannot match shape {shape}."
@@ -377,7 +380,9 @@ class Feature(EzPickle, Generic[_T]):
         if shape is None:
             return {}
 
-        return solve_shape(shape, self._data)
+        symbols = solve_shape(shape, self._data)
+
+        return symbols or {}
 
     def validate(self) -> None:
         """Validate the feature's loaded data against its specification."""
