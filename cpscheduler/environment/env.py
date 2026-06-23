@@ -27,6 +27,7 @@ from cpscheduler.environment.setups import ScheduleSetup
 from cpscheduler.environment.specs.feature_spec import FeatureSpec
 from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.state.events import RuntimeEventKind, VarField
+from cpscheduler.environment.tracer import Tracer
 from cpscheduler.environment.utils import (
     InfoType,
     Instance_T,
@@ -119,6 +120,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
     _observation: ObsT_co
 
     metrics: dict[str, Metric]
+    tracers: tuple[Tracer, ...]
 
     renderer: Renderer
 
@@ -145,6 +147,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
     #     observation: None = None,
     #     instance: InstanceTypes | InstanceGenerator | None = None,
     #     metrics: Mapping[str, Metric] | None = None,
+    #     tracers: Iterable[Tracer] | None = None,
     #     render_mode: Renderer | str | None = None,
     #     debug_mode: bool = False,
     # ) -> None: ...
@@ -158,6 +161,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
     #     observation: ObsT_co | None = None,
     #     instance: InstanceTypes | InstanceGenerator | None = None,
     #     metrics: Mapping[str, Metric] | None = None,
+    #     tracers: Iterable[Tracer] | None = None,
     #     render_mode: Renderer | str | None = None,
     #     debug_mode: bool = False,
     # ) -> None: ...
@@ -170,6 +174,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         observation: ObsT_co | None = None,
         instance: InstanceTypes | InstanceGenerator | None = None,
         metrics: Mapping[str, Metric] | None = None,
+        tracers: Iterable[Tracer] | None = None,
         render_mode: Renderer | str | None = None,
         debug_mode: bool = False,
     ):
@@ -205,6 +210,9 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
         metrics : Mapping[str, Metric], optional
             Performance metrics to be added to the info dictionary.
+
+        tracers : Iterable[Tracer], optional
+            Tracers to monitor internal state before each decision step.
 
         render_mode : Renderer or str, optional
             Renderer instance or mode string. Defaults to a no-op renderer.
@@ -251,6 +259,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         self._all_constraints = ()
 
         self.metrics = dict(metrics) if metrics is not None else {}
+        self.tracers = tuple(tracers) if tracers is not None else ()
 
         self.instance_generator = None
         if isinstance(instance, InstanceGenerator):
@@ -444,7 +453,9 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             ),
         )
 
-        component: Component
+        for tracer in self.tracers:
+            tracer.initialize(problem_instance)
+
         for component in [
             *self.setup_constraints,
             *self.constraints,
@@ -769,6 +780,9 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         self.schedule.reset()
         state.reset()
 
+        for tracer in self.tracers:
+            tracer.reset(state)
+
         for component in [self.setup, *self._all_constraints, self.objective]:
             component.reset(state)
 
@@ -858,6 +872,9 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
         while not state.is_terminal() and self.advance_clock():
             for event in schedule.instruction_queue(state):
+                for tracer in self.tracers:
+                    tracer.step(state, event)
+
                 event.process(state, schedule)
 
                 self.propagate()
