@@ -163,16 +163,15 @@ class DefaultObservation(Observation[DefaultObsType]):
         self._status.value[:] = state.runtime.status
 
         available = self._available.value
-        for task_id in range(self.n_tasks):
-            available[task_id] = False
+        available_tasks = self.available_tasks
 
-        available_tasks = state.get_available_tasks()
-        for task_id in available_tasks:
-            available[task_id] = True
-            self.available_tasks.add(task_id)
+        available[:] = [False] * self.n_tasks
+        available_tasks.clear()
 
-        self.available_tasks.clear()
-        self.available_tasks.update(available_tasks)
+        for task_id in state.runtime.unlocked_tasks:
+            if state.is_available(task_id):
+                available[task_id] = True
+                available_tasks.add(task_id)
 
     @overload
     def __getitem__(
