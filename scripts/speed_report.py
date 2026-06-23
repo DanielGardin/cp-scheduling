@@ -1,93 +1,37 @@
+"""Benchmark the speed of heuristic agents."""
+
 import gc
-from collections.abc import Sequence
 from math import exp
-from pathlib import Path
 from time import perf_counter
-from typing import Annotated, Literal, get_args
+from typing import TYPE_CHECKING, Annotated
 
 import tyro
+from _common import (
+    COLORMAP,
+    PDR_NAMES,
+    PDRS,
+    RESET,
+    ROOT,
+    format_big_number,
+    format_percentage,
+    format_time,
+    mean,
+    print_header,
+    std,
+    to_ansi_color,
+)
 from prettytable import PrettyTable, TableStyle
 from tyro.conf import arg
 
-from cpscheduler import __compiled__, __version__
 from cpscheduler.environment import (
     JobShopSetup,
     Makespan,
     SchedulingEnv,
 )
-from cpscheduler.heuristics.pdrs import (
-    MostOperationsRemaining,
-    MostWorkRemaining,
-    PriorityDispatchingRule,
-    RandomPriority,
-    ShortestProcessingTime,
-)
-from cpscheduler.instances import read_jsp_instance
+from cpscheduler.instances.jobshop import read_jsp_instance
 
-PDR_NAMES = Literal[
-    "rng",
-    "spt",
-    "mor",
-    "mwr",
-]
-
-PDRS: dict[str, type[PriorityDispatchingRule]] = {
-    "rng": RandomPriority,
-    "spt": ShortestProcessingTime,
-    "mor": MostOperationsRemaining,
-    "mwr": MostWorkRemaining,
-}
-
-assert set(PDRS.keys()) == set(get_args(PDR_NAMES)), (
-    "PDR_NAMES must match keys of pdrs dictionary"
-)
-
-SCRIPT_PATH = Path(__file__).parent
-ROOT = SCRIPT_PATH.parent
-
-OK = "\033[92m"
-FAIL = "\033[91m"
-WARNING = "\033[93m"
-RESET = "\033[0m"
-
-COLORMAP = [
-    [5, 19, 40],
-    [22, 15, 51],
-    [40, 11, 62],
-    [58, 7, 73],
-    [76, 3, 84],
-    [94, 0, 95],
-    [114, 6, 90],
-    [134, 13, 85],
-    [155, 19, 81],
-    [175, 26, 76],
-    [196, 33, 72],
-    [206, 51, 63],
-    [217, 69, 54],
-    [227, 87, 45],
-    [238, 105, 36],
-    [249, 123, 28],
-    [249, 149, 55],
-    [250, 175, 82],
-    [250, 201, 109],
-    [251, 227, 136],
-    [252, 254, 164],
-]
-
-
-def ok_fail(condition: bool) -> str:
-    return (OK + "[PASS]" if condition else FAIL + "[FAIL]") + RESET
-
-
-def get_gray_ansi(percentage: float) -> str:
-    gray_value = int(128 + 127 * percentage)
-    return f"\033[38;2;{gray_value};{gray_value};{gray_value}m"
-
-
-def to_ansi_color(rgb: Sequence[int]) -> str:
-    r, g, b = rgb
-    return f"\033[38;2;{r};{g};{b}m"
-
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 # These times are based on the results of the CPEnv implementation by Tassel, Pierre
 # Environment compiled: https://github.com/ingambe/JobShopCPEnv
@@ -129,94 +73,11 @@ benchmark_times = {
     "ta70": 1.2,
     "ta80": 4.6,
     "lta_j100_m100_10": 90.0,
-    "lta_j1000_m10_10": 90.0,
+    # "lta_j1000_m10_10": 90.0,
 }
 
 
-def mean(data: list[float]) -> float:
-    return sum(data) / len(data) if data else 0.0
-
-
-def std(data: list[float]) -> float:
-    if len(data) < 2:
-        return 0.0
-
-    mean_value = mean(data)
-    return float(
-        (sum(((x - mean_value) ** 2 for x in data)) / (len(data) - 1)) ** 0.5
-    )
-
-
-UNITS = ("", "K", "M", "B", "T")
-
-
-def format_big_number(num: list[float]) -> str:
-    mean_value = mean(num)
-    std_value = std(num) if len(num) > 1 else 0.0
-
-    i = 0
-    while abs(mean_value) >= 1000 and i < len(UNITS) - 1:
-        mean_value /= 1000
-        std_value /= 1000
-
-        i += 1
-
-    unit = UNITS[i]
-    if std_value == 0:
-        if mean_value.is_integer():
-            return f"{mean_value:>3.0f}{unit}"
-
-        return f"{mean_value:.2f}{unit}"
-
-    if mean_value.is_integer():
-        return f"{int(mean_value)} ± {int(std_value)} {unit}"
-
-    return f"{mean_value:.2f} ± {std_value:.2f} {unit}"
-
-
-def format_memory(bytes_: float) -> str:
-    i = 0
-    while bytes_ >= 1024 and i < len(UNITS) - 1:
-        bytes_ /= 1024
-
-        i += 1
-
-    unit = f"{UNITS[i]}B"
-    return f"{bytes_:.1f} {unit}"
-
-
-TIMES = ("s ", "ms", "µs", "ns")
-
-
-def format_time(seconds: list[float]) -> str:
-    mean_value = mean(seconds)
-    std_val = std(seconds) if len(seconds) > 1 else 0.0
-
-    i = 0
-    while mean_value < 1 and i < len(TIMES) - 1:
-        mean_value *= 1000
-        std_val *= 1000
-
-        i += 1
-
-    unit = TIMES[i]
-    if std_val > 0:
-        return f"{mean_value:.2f} ± {std_val:.2f} {unit}"
-
-    return f"{mean_value:6.2f} {unit}"
-
-
-def format_percentage(value: list[float]) -> str:
-    mean_value = mean(value)
-    std_val = std(value)
-
-    if std_val > 0:
-        return f"({100 * mean_value:.2f} ± {100 * std_val:.2f})%"
-
-    return f"{100 * mean_value:.2f}%"
-
-
-def format_stage_time(
+def _format_stage_time(
     stage_times: list[float],
     total_time: float,
 ) -> str:
@@ -236,21 +97,20 @@ def format_stage_time(
 
     idx = int(len(COLORMAP) * pct)
     idx = max(0, min(len(COLORMAP) - 1, idx))
+    color = to_ansi_color(*COLORMAP[idx])
 
-    return (
-        stage_statistics
-        + to_ansi_color(COLORMAP[idx])
-        + f"{spacing}({percentage})"
-        + RESET
-    )
+    return f"{stage_statistics}{spacing}{color}({percentage}){RESET}"
+
+
+# Speedup required to be considered a significant improvement. Maps to colormap[0].
+MIN_SPEEDUP = 4
+
+# Speedup considered a very significant improvement. Maps to colormap[-1].
+MAX_SPEEDUP = 20
 
 
 class RunResult:
-    MIN_SPEEDUP = 4
-    "Speedup required to be considered a significant improvement. Maps to colormap[0]."
-
-    MAX_SPEEDUP = 20
-    "Speedup considered a very significant improvement. Maps to colormap[-1]."
+    """Class to store the results of a benchmark run."""
 
     # Static values
     instance_names: list[str]
@@ -286,6 +146,7 @@ class RunResult:
         instance_name: str,
         env: SchedulingEnv,
     ) -> None:
+        """Start a new instance for benchmarking."""
         self.current_instance = instance_name
         self.instance_names.append(instance_name)
         self.n_tasks[instance_name] = env.state.n_tasks
@@ -307,6 +168,7 @@ class RunResult:
         step_time: float,
         simulation_time: float,
     ) -> None:
+        """Log the results of a single run of the benchmark."""
         if self.current_instance is None:
             raise ValueError(
                 "No instance started. Call start_instance() before logging runs."
@@ -321,6 +183,7 @@ class RunResult:
         self.simulation_times[instance_name].append(simulation_time)
 
     def print_results(self, full: bool) -> None:
+        """Print the benchmark results."""
         table = PrettyTable(
             [
                 "Instance",
@@ -355,16 +218,16 @@ class RunResult:
 
             total_time = mean(self.simulation_times[instance_name])
 
-            initialization_time = format_stage_time(
+            initialization_time = _format_stage_time(
                 self.initialization_times[instance_name], total_time
             )
-            reset_time = format_stage_time(
+            reset_time = _format_stage_time(
                 self.reset_times[instance_name], total_time
             )
-            pdr_time = format_stage_time(
+            pdr_time = _format_stage_time(
                 self.pdr_times[instance_name], total_time
             )
-            step_time = format_stage_time(
+            step_time = _format_stage_time(
                 self.step_times[instance_name], total_time
             )
 
@@ -393,16 +256,13 @@ class RunResult:
 
             idx = int(
                 len(COLORMAP)
-                * (mean(speedups) - self.MIN_SPEEDUP)
-                / (self.MAX_SPEEDUP - self.MIN_SPEEDUP)
+                * (mean(speedups) - MIN_SPEEDUP)
+                / (MAX_SPEEDUP - MIN_SPEEDUP)
             )
             idx = max(0, min(len(COLORMAP) - 1, idx))
+            color = to_ansi_color(*COLORMAP[idx])
 
-            speedup = (
-                to_ansi_color(COLORMAP[idx])
-                + format_percentage(speedups)
-                + RESET
-            )
+            speedup = f"{color}{format_percentage(speedups)}{RESET}"
 
             table.add_row(
                 [
@@ -433,13 +293,16 @@ class RunResult:
         print(table, flush=True)
 
     def plot_results(self, filename: str) -> None:
+        """Plot the benchmark results."""
         from statistics import mean
 
         import matplotlib.pyplot as plt
         import numpy as np
         import seaborn as sns
-        from matplotlib.axes import Axes
         from scipy import stats
+
+        if TYPE_CHECKING:
+            from matplotlib.axes import Axes
 
         sns.set_theme(style="whitegrid", palette="Set2")
 
@@ -586,91 +449,6 @@ class RunResult:
         plt.show()
 
 
-def test_memory(pdr: PDR_NAMES, dynamic: bool, quiet: bool) -> None:
-    """Run a single iteration per instance with tracemalloc to measure peak memory usage."""
-    import tracemalloc
-
-    spt_agent = PDRS[pdr]()
-
-    columns = ["Instance", "Tasks", "Peak Memory", "Memory/Task"]
-    table = PrettyTable(columns)
-    table.set_style(TableStyle.MARKDOWN)
-
-    if not quiet:
-        print("Running bechmark: memory usage", end="")
-
-    dots = 0
-    for instance_name in benchmark_times:
-        if not quiet:
-            if dots < 3:
-                print(".", end="", flush=True)
-                dots += 1
-
-            else:
-                print(
-                    f"\r{' ' * 100}",
-                    end="\rRunning bechmark: memory usage",
-                    flush=True,
-                )
-                dots = 0
-
-        instance_path = ROOT / "instances/jobshop" / f"{instance_name}.txt"
-
-        instance, _ = read_jsp_instance(instance_path)
-
-        tracemalloc.start()
-        env = SchedulingEnv(JobShopSetup())
-        env.load_instance(instance)
-
-        obs, _ = env.reset()
-
-        if dynamic:
-            done = False
-            while not done:
-                single_action = spt_agent(obs)
-                obs, _, done, _, _ = env.step(single_action)
-        else:
-            action = spt_agent.ranking(obs)
-            env.step(action)
-
-        _, peak_mem = tracemalloc.get_traced_memory()
-        tracemalloc.stop()
-
-        n_tasks = env.state.n_tasks
-        per_task = peak_mem / n_tasks if n_tasks > 0 else 0
-
-        table.add_row(
-            [
-                instance_name,
-                format_big_number([n_tasks]),
-                format_memory(peak_mem),
-                format_memory(per_task),
-            ]
-        )
-
-        del env
-
-    if not quiet:
-        print()
-
-    print(table, flush=True)
-
-
-def print_header() -> None:
-    print(f"cpscheduler v{__version__}")
-    print(f"{ok_fail(__compiled__)} compiled")
-
-    instance_present = (ROOT / "instances/jobshop").exists()
-    print(f"{ok_fail(instance_present)} instance directory")
-
-    if not instance_present:
-        print()
-        raise FileNotFoundError(
-            "Could not locate `instances` directory. Perhaps you forgot to run "
-            "`git submodule update --init`?"
-        )
-
-
 def run_cli(
     n_runs: Annotated[int, arg(aliases=("-n",))] = 1,
     full: bool = False,
@@ -679,20 +457,16 @@ def run_cli(
     plot: bool = False,
     output: str = "report.pdf",
     dynamic: bool = False,
-    memory: bool = False,
 ) -> None:
-    """
-    Test the speed of the Shortest Processing Time heuristic on various job shop instances.
+    """Test the speed of the a heuristic on various job shop instances.
+
     Parameters
     ----------
-    n: int
+    n_runs: int
         The number of times to run the benchmark for each instance.
 
     full: bool
         If True, run the benchmark times for all the environment stages.
-
-    gym: bool
-        If True, run the benchmark using the Gym interface.
 
     pdr: PDR_NAMES
         The priority dispatching rule to use for the benchmark.
@@ -700,41 +474,39 @@ def run_cli(
     quiet: bool
         If True, suppress the output of the benchmark results.
 
-    numpy: bool
-        If True, allow the use of NumPy in the agent's decision making. Disabling
-        this can help isolate the time spent on the environment itself.
+    plot: bool
+        If True, plot the benchmark results.
+
+    output: str
+        The filename to save the plot to. Must end with .pdf.
 
     dynamic: bool
         If True, run the benchmark in dynamic mode, where the agent makes a decision
         at each step. If False, the agent makes a single decision for the entire schedule.
 
-    plot: bool
-        If True, plot the benchmark results.
     """
     if not output.endswith(".pdf"):
         raise ValueError(
             f"Invalid extension in output, expected *.pdf, got {output}"
         )
 
-    if not quiet:
-        print_header()
-
-    if memory:
-        test_memory(pdr, dynamic, quiet)
-        return
-
-    result = RunResult()
+    if pdr not in PDRS:
+        raise ValueError(
+            f"Invalid PDR '{pdr}', expected one of {list(PDRS.keys())}"
+        )
 
     agent = PDRS[pdr]()
 
     dots = 0
     if not quiet:
+        print_header()
         print("Running bechmark: time")
         print(
             f"Running \033[;36m{n_runs}{RESET} iteration{'s' if n_runs > 1 else ''} per instance",
             end="",
         )
 
+    result = RunResult()
     for instance_name, _ in benchmark_times.items():
         if not quiet:
             if dots < 3:
