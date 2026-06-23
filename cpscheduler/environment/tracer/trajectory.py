@@ -63,3 +63,7 @@ class ExecutionTrajectoryTracer(Tracer):
                     available_tasks,
                 )
             )
+
+    @override
+    def export(self) -> list[tuple[TaskID, MachineID, Time, list[TaskID]]]:
+        return self.trajectory

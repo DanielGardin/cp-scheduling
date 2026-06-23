@@ -498,6 +498,12 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             "infeasible": self.state.infeasible,
         }
 
+        for tracer in self.tracers:
+            tracer_info = tracer.export()
+
+            if tracer_info is not None:
+                info[tracer.tracer_name] = tracer_info
+
         for metric_name, metric in self.metrics.items():
             metric_value = metric(self.state)
 

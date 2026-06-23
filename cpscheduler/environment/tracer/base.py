@@ -1,6 +1,6 @@
 """Base tracer class for the CPScheduler environment."""
 
-from typing import Any
+from typing import Any, ClassVar
 
 from cpscheduler.environment.constants import EzPickle
 from cpscheduler.environment.des import SimulationEvent
@@ -15,6 +15,9 @@ class Tracer(EzPickle):
     They are often used as a snapshot of the environment's internal state right
     before an action, used in learning planning policies, for example.
     """
+
+    # Name of the tracer, used for identification and export.
+    tracer_name: ClassVar[str] = "tracer"
 
     def initialize(self, instance: ProblemInstance) -> None:
         """Initialize the tracer with the environment's initial state."""
