@@ -144,6 +144,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
                 render_mode=render_mode,
             )
 
+        self._current_fingerprint = self.fingerprint
         self.observation_space = self._get_observation_space()
         self.metadata = {
             "render_modes": ["human"],
@@ -164,7 +165,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         self.action_space = ActionSpace
         self._core = env
 
-        self._current_fingerprint = env.fingerprint
+        self._current_fingerprint = self.fingerprint
         self.observation_space = self._get_observation_space()
         self.metadata = {
             "render_modes": ["human"],
@@ -172,6 +173,11 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         }
 
         return self
+
+    @property
+    def fingerprint(self) -> int:
+        """Return the instance fingerprint of the current loaded instance."""
+        return self._core.fingerprint
 
     @property
     def core(self) -> SchedulingEnv[Observation[ObsType]]:
@@ -221,9 +227,9 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
 
         obs, info = self._core.reset(options=options)
 
-        if self._core.fingerprint != self._current_fingerprint:
+        if self.fingerprint != self._current_fingerprint:
             self.observation_space = self._get_observation_space()
-            self._current_fingerprint = self._core.fingerprint
+            self._current_fingerprint = self.fingerprint
 
         return obs.serialize(), info
 
