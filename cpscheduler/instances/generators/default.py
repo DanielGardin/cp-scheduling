@@ -14,5 +14,4 @@ DEFAULT_SAMPLERS: dict[str, Sampler[Any]] = {
     "processing_time": UniformInt(0, 100),
     "weights": UniformInt(1, 10),
     "machine_eligibility": UniformMachineEligibility(p=0.5),
-
 }

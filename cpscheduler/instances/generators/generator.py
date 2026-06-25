@@ -58,13 +58,15 @@ class FeatureSampler(EzPickle):
         self.outer_shape = _computer_outer_shape(sample_shape, shape)
 
     @classmethod
-    def from_spec(cls, name: str, spec: FeatureSpec, sampler: Sampler[Any], **symbols: int) -> "FeatureSampler":
+    def from_spec(
+        cls, name: str, spec: FeatureSpec, sampler: Sampler[Any], **symbols: int
+    ) -> "FeatureSampler":
         """Create a FeatureSampler from a feature spec and a sampler."""
         return cls(
             name=name,
             shape=spec.resolve_shape(**symbols),
             sampler=sampler,
-            **symbols
+            **symbols,
         )
 
     def sample(self, rng: Random, **context: Any) -> Any:
@@ -74,7 +76,10 @@ class FeatureSampler(EzPickle):
         adding outer dimensions to match the expected shape, resulting in many
         values being i.i.d. samples from the provided sampler.
         """
-        return self._sample_shape(rng, context,)
+        return self._sample_shape(
+            rng,
+            context,
+        )
 
     def _sample_shape(
         self,
@@ -101,7 +106,10 @@ class FeatureSampler(EzPickle):
 
 _Shape = tuple[int | None, ...] | None
 
-def _computer_outer_shape(shape: _Shape, target_shape: _Shape) -> tuple[int, ...]:
+
+def _computer_outer_shape(
+    shape: _Shape, target_shape: _Shape
+) -> tuple[int, ...]:
     if target_shape is None:
         return ()
 
@@ -122,14 +130,15 @@ def _computer_outer_shape(shape: _Shape, target_shape: _Shape) -> tuple[int, ...
 
         return cast("tuple[int, ...]", outer)
 
-
     if len(shape) > len(target_shape):
         raise ValueError(
             f"Shape {shape} is not compatible with target shape {target_shape}: "
             "shape has more dimensions than target shape."
         )
 
-    for s_dim, t_dim in zip(reversed(shape), reversed(target_shape), strict=False):
+    for s_dim, t_dim in zip(
+        reversed(shape), reversed(target_shape), strict=False
+    ):
         if t_dim is not None and s_dim != t_dim:
             raise ValueError(
                 f"Shape {shape} is not compatible with target shape {target_shape}: "
@@ -146,6 +155,7 @@ def _computer_outer_shape(shape: _Shape, target_shape: _Shape) -> tuple[int, ...
         )
 
     return cast("tuple[int, ...]", outer)
+
 
 class Generator(EzPickle, InstanceGenerator):
     """Generic feature-based instance generator.
@@ -239,7 +249,9 @@ class Generator(EzPickle, InstanceGenerator):
             **symbols,
         }
 
-        _default_samplers = self._default_samplers() if use_default_samplers else {}
+        _default_samplers = (
+            self._default_samplers() if use_default_samplers else {}
+        )
 
         _samplers: dict[str, FeatureSampler] = {}
 
@@ -351,7 +363,9 @@ class Generator(EzPickle, InstanceGenerator):
             return self._sampling_order
 
         in_degree: dict[str, int] = dict.fromkeys(self.feature_specs, 0)
-        dependencies: dict[str, list[str]] = {name: [] for name in self.feature_specs}
+        dependencies: dict[str, list[str]] = {
+            name: [] for name in self.feature_specs
+        }
 
         for name in self.feature_specs:
             if name not in self._samplers:
@@ -372,27 +386,26 @@ class Generator(EzPickle, InstanceGenerator):
                 in_degree[name] += 1
                 dependencies[dep].append(name)
 
-        order: list[str] = []
-        zero_in_degree = [name for name, degree in in_degree.items() if degree == 0]
+        queue = [name for name, degree in in_degree.items() if degree == 0]
 
-        while zero_in_degree:
-            name = zero_in_degree.pop()
-            order.append(name)
+        idx = 0
+        while idx < len(queue):
+            name = queue[idx]
 
             for dep in dependencies[name]:
                 degree = in_degree[dep] - 1
                 in_degree[dep] = degree
 
                 if degree == 0:
-                    zero_in_degree.append(dep)
+                    queue.append(dep)
 
-        if len(order) != len(self.feature_specs):
-            missing = set(self.feature_specs) - set(order)
+        if len(queue) != len(self.feature_specs):
+            missing = set(self.feature_specs) - set(queue)
             raise ValueError(
                 f"Circular dependencies detected among features: {missing}."
             )
 
-        sampling_order = tuple(order)
+        sampling_order = tuple(queue)
 
         self._sampling_order = sampling_order
         return sampling_order
