@@ -123,7 +123,7 @@ def test_resource_constraint() -> None:
     }
     env = SchedulingEnv(
         SingleMachineSetup(disjunctive=False),
-        constraints=[ResourceConstraint(3, "resource_0")],
+        constraints=[ResourceConstraint(capacity=3, resource_tag="resource_0")],
         instance=instance,
     )
 

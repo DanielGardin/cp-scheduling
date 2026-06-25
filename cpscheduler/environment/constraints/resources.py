@@ -9,6 +9,7 @@ from cpscheduler.environment.constants import MAX_TIME, Float, Time
 from cpscheduler.environment.constraints.base import Constraint
 from cpscheduler.environment.instance import (
     UNSET,
+    GlobalFeature,
     ProblemInstance,
     TaskFeature,
 )
@@ -89,7 +90,7 @@ class ResourceConstraint(Constraint):
     """
 
     resources: TaskFeature[float]
-    capacity: float
+    capacity: GlobalFeature[float]
 
     _next_available_time: list[Time]
     """Cache for the next available time:
@@ -108,7 +109,8 @@ class ResourceConstraint(Constraint):
 
     def __init__(
         self,
-        capacity: float,
+        capacity_tag: str = "capacity",
+        capacity: float | None = None,
         resource_tag: str = "resource",
         resources: Iterable[Float] | None = None,
     ) -> None:
@@ -116,7 +118,10 @@ class ResourceConstraint(Constraint):
 
         Parameters
         ----------
-        capacity: float
+        capacity_tag: str, optional
+            The name of the global feature that contains the resource capacity.
+
+        capacity: float, optional
             The total capacity of the resource.
 
         resource_tag: str, optional
@@ -129,7 +134,12 @@ class ResourceConstraint(Constraint):
             Default to None.
 
         """
-        self.capacity = capacity
+        self.capacity = GlobalFeature(
+            name=capacity_tag,
+            semantic="cost",
+            shape=(),
+            default=capacity if capacity is not None else UNSET,
+        )
 
         self.resources = TaskFeature(
             name=resource_tag,
@@ -153,13 +163,14 @@ class ResourceConstraint(Constraint):
 
     @override
     def reset(self, state: ScheduleState) -> None:
+        capacity = self.capacity.value
+
         self._next_available_time.clear()
         self._available_resources.clear()
 
         self._next_available_time.append(MAX_TIME)
-        self._available_resources.append(self.capacity)
+        self._available_resources.append(capacity)
 
-        capacity = self.capacity
         for task_id, resource in enumerate(self.resources.value):
             if resource > capacity:
                 state.forbid_task(task_id)
