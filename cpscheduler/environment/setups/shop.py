@@ -117,9 +117,9 @@ class OpenShopSetup(ScheduleSetup):
 
 
 def _build_job_precedence(
-    instance: ProblemInstance, operation_order: list[int], name: str
+    instance: ProblemInstance, operation_order: list[int]
 ) -> PrecedenceConstraint:
-    precedence = PrecedenceConstraint(name=name)
+    precedence = PrecedenceConstraint()
 
     task_orders = [[-1] * len(tasks) for tasks in instance.job_tasks]
 
@@ -198,9 +198,7 @@ class JobShopSetup(OpenShopSetup):
     def setup_constraints(
         self, instance: ProblemInstance
     ) -> tuple[Constraint, ...]:
-        precedence = _build_job_precedence(
-            instance, self.operation_order.value, "jobshop_chains"
-        )
+        precedence = _build_job_precedence(instance, self.operation_order.value)
 
         return (
             (MachineConstraint(), precedence)
@@ -275,9 +273,7 @@ class FlexibleJobShopSetup(UnrelatedParallelMachineSetup):
     def setup_constraints(
         self, instance: ProblemInstance
     ) -> tuple[Constraint, ...]:
-        precedence = _build_job_precedence(
-            instance, self.operation_order.value, "flexible_jobshop_chains"
-        )
+        precedence = _build_job_precedence(instance, self.operation_order.value)
 
         return (
             (MachineConstraint(), precedence)
@@ -362,9 +358,7 @@ class FlowShopSetup(ScheduleSetup):
     def setup_constraints(
         self, instance: ProblemInstance
     ) -> tuple[Constraint, ...]:
-        precedence = _build_job_precedence(
-            instance, self.operation_order.value, "flowshop_chains"
-        )
+        precedence = _build_job_precedence(instance, self.operation_order.value)
 
         return (
             (MachineConstraint(), precedence)
