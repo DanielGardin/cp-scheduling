@@ -76,11 +76,7 @@ dev = [
 line-length = 80
 target-version = "py310"
 exclude = [
-    ".git",
-    ".venv",
-    "/build",
-    "/dist",
-    "/instances"
+    "instances/*"
 ]
 
 [tool.ruff.lint]

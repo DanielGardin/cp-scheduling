@@ -19,7 +19,7 @@ from cpscheduler.environment import (
     Makespan,
     SchedulingEnv,
 )
-from cpscheduler.instances.jobshop import read_jsp_instance
+from cpscheduler.instances.formats.jobshop import read_standard_jobshop_instance
 
 benchmark_instances = [
     "dmu05",
@@ -98,7 +98,7 @@ def run_cli(
 
         instance_path = ROOT / "instances/jobshop" / f"{instance_name}.txt"
 
-        instance, _ = read_jsp_instance(instance_path)
+        instance, _ = read_standard_jobshop_instance(instance_path)
 
         tracemalloc.start()
         env = SchedulingEnv(
@@ -113,7 +113,7 @@ def run_cli(
                 single_action = spt_agent(obs)
                 obs, _, done, _, _ = env.step(single_action)
         else:
-            action = spt_agent.ranking(obs)
+            action = spt_agent.ranking(obs, "parallel")
             env.step(action)
 
         _, peak_mem = tracemalloc.get_traced_memory()
