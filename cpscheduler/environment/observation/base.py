@@ -18,6 +18,7 @@ Serialized_Obs = TypeVar("Serialized_Obs", default=Any)
 class Observation(EzPickle, Generic[Serialized_Obs]):
     """Abstract observation contract for scheduling environments."""
 
+    fingerprint: int
     n_tasks: int
     n_jobs: int
     n_machines: int
@@ -25,6 +26,8 @@ class Observation(EzPickle, Generic[Serialized_Obs]):
 
     def initialize(self, instance: ProblemInstance) -> None:
         """Initialize the observation with the scheduling instance."""
+        self.fingerprint = instance.fingerprint
+
         self.n_tasks = instance.n_tasks
         self.n_jobs = instance.n_jobs
         self.n_machines = instance.n_machines
