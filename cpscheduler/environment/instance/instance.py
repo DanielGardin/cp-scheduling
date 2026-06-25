@@ -45,6 +45,27 @@ def _find_provider(features: list[Feature]) -> Feature | None:
     return provider
 
 
+def _load_data(
+    storage: dict[str, Any], features: dict[str, list[Feature]]
+) -> dict[str, int]:
+    symbol_values: dict[str, int] = {}
+
+    for feature, data in storage.items():
+        if feature not in features:
+            raise ValueError(
+                f"Data provided for feature '{feature}', but no such "
+                "feature is registered in the instance."
+            )
+
+        feat_list = features[feature]
+        for feat in feat_list:
+            feat.set_data(data)
+
+        merge_symbols(symbol_values, feat_list[0].solve_symbols())
+
+    return symbol_values
+
+
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
 class ProblemInstance(EzPickle):
     """Class representing a scheduling problem instance.
@@ -76,6 +97,7 @@ class ProblemInstance(EzPickle):
 
     """
 
+    _fingerprint: int
     _feature_specs: dict[str, FeatureSpec]
     features: dict[str, list[Feature]]
 
@@ -155,6 +177,15 @@ class ProblemInstance(EzPickle):
         self.symbol_values = {}
 
         self._debug = debug_mode
+
+    @property
+    def fingerprint(self) -> int:
+        """Return the fingerprint of the instance.
+
+        The fingerprint is a unique identifier for the instance, which can be used
+        to check if two instances are equivalent.
+        """
+        return self._fingerprint
 
     @property
     def debug(self) -> bool:
@@ -295,23 +326,7 @@ class ProblemInstance(EzPickle):
             for feature in features:
                 feature.reset()
 
-    def _load_data(self, storage: dict[str, Any]) -> dict[str, int]:
-        symbol_values: dict[str, int] = {}
-
-        for feature, data in storage.items():
-            if feature not in self.features:
-                raise ValueError(
-                    f"Data provided for feature '{feature}', but no such "
-                    "feature is registered in the instance."
-                )
-
-            features = self.features[feature]
-            for feat in features:
-                feat.set_data(data)
-
-            merge_symbols(symbol_values, features[0].solve_symbols())
-
-        return symbol_values
+        self._fingerprint = 0
 
     # FUTURE: Memory allocation is currently the major bottleneck during
     # initialization (processing_times and machine_mask).
@@ -344,7 +359,7 @@ class ProblemInstance(EzPickle):
             for feature in instance:
                 storage[feature] = instance[feature]
 
-        symbols_values = self._load_data(storage)
+        symbols_values = _load_data(storage, self.features)
 
         n_tasks = symbols_values.get("n_tasks", 0)
         n_jobs = symbols_values.get("n_jobs", 0)
@@ -398,6 +413,15 @@ class ProblemInstance(EzPickle):
                         continue
 
                     feature.shared_data(provider)
+
+        self._fingerprint = hash(
+            tuple(
+                sorted(
+                    (name, features[0].compute_hash())
+                    for name, features in self.features.items()
+                )
+            )
+        )
 
     def has_feature(self, feat_name: str) -> bool:
         """Check if a feature with the given name is registered in the instance."""

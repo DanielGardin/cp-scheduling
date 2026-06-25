@@ -6,7 +6,7 @@ from typing import Any, Generic, Literal
 
 from typing_extensions import Self, TypeIs, TypeVar
 
-from cpscheduler.environment.constants import EzPickle, Singleton
+from cpscheduler.environment.constants import EzPickle, Singleton, hash_anything
 from cpscheduler.environment.specs.feature_spec import (
     FeatureSpec,
     Scope,
@@ -390,6 +390,15 @@ class Feature(EzPickle, Generic[_T]):
             raise RuntimeError(
                 f"Feature {self.name} is required but has no loaded data."
             )
+
+    def compute_hash(self) -> int:
+        """Compute a hash for the feature data."""
+        if not self.loaded:
+            raise RuntimeError(
+                f"Feature {self.name} has no loaded data to compute hash."
+            )
+
+        return hash_anything(self._data)
 
     def __eq__(self, value: object, /) -> bool:
         """Check equality of features based on their name and specification."""

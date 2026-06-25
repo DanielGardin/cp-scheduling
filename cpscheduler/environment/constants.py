@@ -9,7 +9,6 @@ This module defines:
 
 """
 
-from collections.abc import Hashable, Iterable, Mapping
 from typing import (
     Any,
     ClassVar,
@@ -229,56 +228,46 @@ class Singleton:
 PickleState = list[tuple[str, Any]]
 
 
-def _to_hashable(value: Any) -> Any:
-    """Convert nested containers into a hashable representation.
-
-    Recursively transforms mutable containers (list, dict, set) into their immutable counterparts
-    (tuple, frozenset) for use as dictionary keys or in sets. Strings and bytes are treated as
-    already hashable and returned as-is.
+def hash_anything(obj: Any) -> int:
+    """Compute a hash for any object, including nested containers.
 
     Parameters
     ----------
-    value : Any
-        The value to convert. Can be a nested structure of containers.
+    obj : Any
+        The object to convert.
 
     Returns
     -------
-    Any
-        Hashable representation of the input. Mutable containers are converted; hashable values
-        are returned unchanged.
+    int
+        The hash of the transformed object, suitable for use in sets or as
+        dictionary keys.
 
     Raises
     ------
     TypeError
-        If value is an unhashable type not handled by this function (e.g., custom class without __hash__).
-
-    Examples
-    --------
-    >>> _to_hashable({'a': [1, 2], 'b': {3, 4}})
-    frozenset({('a', (1, 2)), ('b', frozenset({3, 4}))})
-
-    >>> _to_hashable([1, 2, 3])
-    (1, 2, 3)
-
-    >>> _to_hashable({1, 2, 3})
-    frozenset({1, 2, 3})
+        If the object is an unhashable type not handled by this function
+        (e.g., custom class without __hash__).
 
     """
-    if isinstance(value, Mapping):
-        return frozenset(
-            (_to_hashable(key), _to_hashable(val)) for key, val in value.items()
+    if isinstance(obj, dict):
+        return hash(
+            tuple(
+                sorted(
+                    (hash_anything(k), hash_anything(v)) for k, v in obj.items()
+                )
+            )
         )
 
-    if isinstance(value, set | frozenset):
-        return frozenset(_to_hashable(item) for item in value)
+    if isinstance(obj, list | tuple):
+        return hash(tuple(hash_anything(item) for item in obj))
 
-    if isinstance(value, Iterable) and not isinstance(value, str | bytes):
-        return tuple(_to_hashable(item) for item in value)
+    if isinstance(obj, set):
+        return hash(tuple(sorted(hash_anything(item) for item in obj)))
 
-    if isinstance(value, Hashable):
-        return value
+    if isinstance(obj, EzPickle):
+        return hash(sorted(obj.__getstate__()))
 
-    raise TypeError(f"Value of type {type(value).__name__} is not hashable")
+    return hash(obj)
 
 
 def _collect_fields(cls: type) -> tuple[str, ...]:
