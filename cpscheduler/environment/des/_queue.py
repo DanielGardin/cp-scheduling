@@ -1,9 +1,10 @@
 from collections.abc import Iterator
 
+from cpscheduler.environment.constants import EzPickle
 from cpscheduler.environment.des.base import EventID, ScheduledEvent
 
 
-class EventQueue:
+class EventQueue(EzPickle):
     events: list[ScheduledEvent]
     index_map: dict[EventID, int]
 

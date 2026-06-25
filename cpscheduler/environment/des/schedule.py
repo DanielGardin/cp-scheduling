@@ -35,7 +35,7 @@ def _validate_event(
         event = validated_event
 
 
-class _TimeSlot:
+class _TimeSlot(EzPickle):
     """Helper class for managing events scheduled at a specific time step.
 
     Handles two heaps of events: one for timed events and one for non-timed events.
