@@ -51,7 +51,7 @@ def test_pdr(instance_name: str, heuristic: str) -> None:
 
     obs, info = env.reset()
 
-    action = pdr.ranking(obs)
+    action = pdr.ranking(obs, "parallel")
     obs, _, terminated, _, info = env.step(action)
 
     assert terminated

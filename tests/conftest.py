@@ -12,7 +12,7 @@ from cpscheduler.environment import (
     SingleMachineSetup,
 )
 from cpscheduler.environment.constraints import PreemptionConstraint
-from cpscheduler.instances.jobshop import read_jsp_instance
+from cpscheduler.instances.formats.jobshop import read_standard_jobshop_instance
 
 TEST_INSTANCES = [
     "dmu04",
@@ -80,7 +80,7 @@ def env_setup(
     path = PROJECT_ROOT / f"instances/jobshop/{instance_name}.txt"
 
     try:
-        instance, _ = read_jsp_instance(path)
+        instance, _ = read_standard_jobshop_instance(path)
 
     except FileNotFoundError as e:
         if not (PROJECT_ROOT / "instances").exists():

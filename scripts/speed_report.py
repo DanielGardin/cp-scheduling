@@ -28,7 +28,7 @@ from cpscheduler.environment import (
     Makespan,
     SchedulingEnv,
 )
-from cpscheduler.instances.jobshop import read_jsp_instance
+from cpscheduler.instances.formats.jobshop import read_standard_jobshop_instance
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -522,7 +522,7 @@ def run_cli(
                 dots = 0
 
         instance_path = ROOT / "instances/jobshop" / f"{instance_name}.txt"
-        instance, _ = read_jsp_instance(instance_path)
+        instance, _ = read_standard_jobshop_instance(instance_path)
         gc.collect()
         gc.freeze()
 
@@ -558,7 +558,7 @@ def run_cli(
 
             else:
                 tick = perf_counter()
-                action = agent.ranking(obs)
+                action = agent.ranking(obs, "parallel")
                 pdr_time = perf_counter() - tick
 
                 tick = perf_counter()

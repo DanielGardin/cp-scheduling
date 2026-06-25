@@ -63,19 +63,12 @@ def read_dacolteppan_jobshop_instance(path: str | Path) -> InstanceReturnType:
             line = f.readline().strip()
             values = list(map(int, line.split()))
 
-            for operation_id in range(len(values) // 2):
-                i = operation_id * 2
+            n_operations = (len(values) - 2) // 2
 
-                machine_id = values[i]
-                processing_time = values[i + 1]
-
-                if machine_id == -1 and processing_time == -1:
-                    break
-
-                instance["job"].append(job_id)
-                instance["operation"].append(operation_id)
-                instance["machine"].append(machine_id)
-                instance["processing_time"].append(processing_time)
+            instance["job"].extend([job_id] * n_operations)
+            instance["operation"].extend(list(range(n_operations)))
+            instance["machine"].extend(values[: n_operations * 2 : 2])
+            instance["processing_time"].extend(values[1 : n_operations * 2 : 2])
 
         metadata = {
             "n_jobs": n_jobs,

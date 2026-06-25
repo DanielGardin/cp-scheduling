@@ -68,13 +68,10 @@ def read_standard_jobshop_instance(path: str | Path) -> InstanceReturnType:
                     f"Expected {2 * n_machines} values for job {job_id}, got {len(values)}"
                 )
 
-            for machine_id, processing_time in zip(
-                values[::2], values[1::2], strict=True
-            ):
-                instance["job"].append(job_id)
-                instance["operation"].append(len(instance["job"]) - 1)
-                instance["machine"].append(machine_id)
-                instance["processing_time"].append(processing_time)
+            instance["job"].extend([job_id] * n_machines)
+            instance["operation"].extend(list(range(n_machines)))
+            instance["machine"].extend(values[::2])
+            instance["processing_time"].extend(values[1::2])
 
         metadata = {
             "n_jobs": n_jobs,
