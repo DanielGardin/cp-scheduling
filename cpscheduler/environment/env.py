@@ -275,6 +275,11 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         )
 
     @property
+    def fingerprint(self) -> int:
+        """Return the instance fingerprint of the current loaded instance."""
+        return self._instance.fingerprint
+
+    @property
     def loaded(self) -> bool:
         """Indicates whether an instance has been loaded and the environment is initialized."""
         return self._status != UNLOADED

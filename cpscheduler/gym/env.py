@@ -42,6 +42,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
     constraints (beta), and objectives (gamma) into a RL-friendy interface.
     """
 
+    _current_fingerprint: int | None
     _core: SchedulingEnv[Observation[ObsType]]
 
     @overload
@@ -163,6 +164,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         self.action_space = ActionSpace
         self._core = env
 
+        self._current_fingerprint = env.fingerprint
         self.observation_space = self._get_observation_space()
         self.metadata = {
             "render_modes": ["human"],
@@ -219,8 +221,9 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
 
         obs, info = self._core.reset(options=options)
 
-        # FUTURE: This is expensive, highly unnecessary, but fine for now.
-        self.observation_space = self._get_observation_space()
+        if self._core.fingerprint != self._current_fingerprint:
+            self.observation_space = self._get_observation_space()
+            self._current_fingerprint = self._core.fingerprint
 
         return obs.serialize(), info
 
