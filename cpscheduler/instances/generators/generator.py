@@ -391,6 +391,7 @@ class Generator(EzPickle, InstanceGenerator):
         idx = 0
         while idx < len(queue):
             name = queue[idx]
+            idx += 1
 
             for dep in dependencies[name]:
                 degree = in_degree[dep] - 1
