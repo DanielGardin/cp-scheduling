@@ -175,6 +175,7 @@ class ProblemInstance(EzPickle):
         self.n_jobs = 0
         self.n_machines = 0
         self.symbol_values = {}
+        self._fingerprint = 0
 
         self._debug = debug_mode
 

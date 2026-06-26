@@ -22,6 +22,7 @@ from cpscheduler.environment.des import ActionType
 from cpscheduler.environment.observation import Observation
 from cpscheduler.environment.observation.default import DefaultObsType
 from cpscheduler.environment.render import Renderer
+from cpscheduler.environment.tracer import Tracer
 from cpscheduler.environment.utils import InstanceGenerator
 from cpscheduler.environment.utils.protocols import (
     Instance_T,
@@ -54,6 +55,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         observation: None = None,
         instance: InstanceTypes | None = None,
         metrics: Mapping[str, Metric[Any]] | None = None,
+        tracers: Iterable[Tracer] | None = None,
         *,
         render_mode: Renderer | str | None = None,
     ) -> None: ...
@@ -68,6 +70,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         observation: Observation[ObsType],
         instance: InstanceTypes | None = None,
         metrics: Mapping[str, Metric[Any]] | None = None,
+        tracers: Iterable[Tracer] | None = None,
         render_mode: Renderer | str | None = None,
     ) -> None: ...
 
@@ -79,6 +82,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         observation: Observation[ObsType] | None = None,
         instance: InstanceTypes | None = None,
         metrics: Mapping[str, Metric[Any]] | None = None,
+        tracers: Iterable[Tracer] | None = None,
         *,
         render_mode: Renderer | str | None = None,
     ):
@@ -115,6 +119,9 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         metrics : Mapping[str, Metric], optional
             Performance metrics to be added to the info dictionary.
 
+        tracers: Iterable[Tracer], optional
+            Tracers to monitor internal state before each decision step.
+
         render_mode : Renderer or str, optional
             Renderer instance or mode string. Defaults to a no-op renderer.
 
@@ -128,6 +135,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
                 objective=objective,
                 instance=instance,
                 metrics=metrics,
+                tracers=tracers,
                 render_mode=render_mode,
             )
 
@@ -141,6 +149,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
                 observation=observation,
                 instance=instance,
                 metrics=metrics,
+                tracers=tracers,
                 render_mode=render_mode,
             )
 
