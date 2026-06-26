@@ -55,13 +55,13 @@ if USE_MYPYC:
             if file.name == "__init__.py":
                 continue
 
-            if "/test" in str(file):
+            if "/test" in file.as_posix():
                 continue
 
             mypyc_targets.append(str(file))
 
     opt_level = os.environ.get("MYPYC_OPT_LEVEL", "3")
-    debug_level = os.environ.get("MYPYC_DEBUG_LEVEL", "1")
+    debug_level = os.environ.get("MYPYC_DEBUG_LEVEL", "0")
 
     ext_modules = mypycify(
         mypyc_targets,
