@@ -5,7 +5,7 @@ from typing import Any, Literal, TypedDict, overload
 from mypy_extensions import mypyc_attr
 from typing_extensions import override
 
-from cpscheduler.environment.constants import Status, StatusType, TaskID, Time
+from cpscheduler.environment.constants import Status, TaskID, Time
 from cpscheduler.environment.instance import (
     GlobalFeature,
     JobFeature,
@@ -51,7 +51,7 @@ class DefaultObservation(Observation[DefaultObsType]):
     _specs: dict[str, FeatureSpec]
 
     _time: RuntimeFeature[Time]
-    _status: RuntimeFeature[list[StatusType]]
+    _status: RuntimeFeature[list[int]]
     _available: RuntimeFeature[list[bool]]
 
     task: dict[str, Any]
@@ -61,8 +61,24 @@ class DefaultObservation(Observation[DefaultObsType]):
 
     available_tasks: set[TaskID]
 
-    def __init__(self, exclude_features: set[str] | None = None) -> None:
+    def __init__(
+        self,
+        exclude_features: set[str] | None = None,
+        n_tasks: int | None = None,
+        n_machines: int | None = None,
+        n_jobs: int | None = None,
+        **symbols: int,
+    ) -> None:
         """Initialize the DefaultObservation.
+
+        Observations can be initialized with expected symbol values, which can
+        be used to have a complete observation spec before any instance has
+        been loaded.
+
+        If the inferred symbols do not match the expectations, an error is raised
+        during instance loading.
+
+        By default, no symbol has an expected value.
 
         Parameters
         ----------
@@ -70,7 +86,22 @@ class DefaultObservation(Observation[DefaultObsType]):
             A set of feature names to exclude from the observation.
             If None, all features will be included.
 
+        n_tasks: int | None
+            Expected number of tasks.
+
+        n_machines: int | None
+            Expected number of machines.
+
+        n_jobs: int | None
+            Expected number of jobs.
+            If n_tasks is specified, but not n_jobs, it is supposed that
+            n_jobs = n_tasks.
+
+        **symbols: int
+            Additional symbols with expected values.
+
         """
+        super().__init__(n_tasks, n_machines, n_jobs, **symbols)
         self._exclude_features = exclude_features or set()
 
         self._status = RuntimeFeature(
@@ -98,6 +129,20 @@ class DefaultObservation(Observation[DefaultObsType]):
             shape=(),
         )
 
+        self._specs = {
+            "status": self._status.spec,
+            "available": self._available.spec,
+            "time": self._time.spec,
+        }
+
+        self.task = {
+            "status": self._status.value,
+            "available": self._available.value,
+        }
+        self.job = {}
+        self.machine = {}
+        self.global_state = {"time": 0}
+
     @property
     def time(self) -> Time:
         """Return the current time in the schedule."""
@@ -106,23 +151,15 @@ class DefaultObservation(Observation[DefaultObsType]):
     @override
     def initialize(self, instance: ProblemInstance) -> None:
         super().initialize(instance)
-        self._specs = {
-            "status": self._status.spec,
-            "available": self._available.spec,
-            "time": self._time.spec,
-        }
-
         self.available_tasks = set()
 
-        self.task = {
-            "status": self._status.value,
-            "available": self._available.value,
-        }
-        self.job = {}
-        self.machine = {}
-        self.global_state = {
-            "time": self._time.value,
-        }
+        self._status.value.clear()
+        self._available.value.clear()
+
+        self._status.value.extend([AWAITING] * instance.n_tasks)
+        self._available.value.extend([False] * instance.n_tasks)
+
+        self.global_state["time"] = self._time.value
 
         for feat_name, features in instance.features.items():
             if feat_name in self._exclude_features or not features:
@@ -148,14 +185,6 @@ class DefaultObservation(Observation[DefaultObsType]):
 
             elif isinstance(feature, GlobalFeature):
                 self.global_state[feat_name] = feature.value
-
-    @override
-    def reset(self, state: ScheduleState) -> None:
-        self._time.value = state.time
-        self._status.value.clear()
-        self._status.value.extend(state.runtime.status)
-        self._available.value.clear()
-        self._available.value.extend([False] * self.n_tasks)
 
     @override
     def update(self, state: ScheduleState) -> None:

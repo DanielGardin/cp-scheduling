@@ -280,7 +280,7 @@ class Generator(EzPickle, InstanceGenerator):
     @classmethod
     def from_env(
         cls,
-        env: SchedulingEnv,
+        env: SchedulingEnv[Any],
         n_tasks: int,
         n_machines: int | None = None,
         n_jobs: int | None = None,

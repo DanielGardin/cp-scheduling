@@ -23,18 +23,87 @@ class Observation(EzPickle, Generic[Serialized_Obs]):
     n_jobs: int
     n_machines: int
     symbols: dict[str, int]
+    _default_symbols: dict[str, int]
+
+    def __init__(
+        self,
+        n_tasks: int | None = None,
+        n_machines: int | None = None,
+        n_jobs: int | None = None,
+        **symbols: int,
+    ):
+        """Initialize an Observation.
+
+        Observations can be initialized with expected symbol values, which can
+        be used to have a complete observation spec before any instance has
+        been loaded.
+
+        If the inferred symbols do not match the expectations, an error is raised
+        during instance loading.
+
+        By default, no symbol has an expected value.
+
+        Parameters
+        ----------
+        n_tasks: int | None
+            Expected number of tasks.
+
+        n_machines: int | None
+            Expected number of machines.
+
+        n_jobs: int | None
+            Expected number of jobs.
+            If n_tasks is specified, but not n_jobs, it is supposed that
+            n_jobs = n_tasks.
+
+        **symbols: int
+            Additional symbols with expected values.
+
+        """
+        self._default_symbols = {}
+
+        if n_tasks is not None:
+            self._default_symbols["n_tasks"] = n_tasks
+
+            if n_jobs is None:
+                n_jobs = n_tasks
+
+        if n_machines is not None:
+            self._default_symbols["n_machines"] = n_machines
+
+        if n_jobs is not None:
+            self._default_symbols["n_jobs"] = n_jobs
+
+        self._default_symbols.update(symbols)
+        self.symbols = self._default_symbols.copy()
+
+        self.n_tasks = n_tasks or 0
+        self.n_machines = n_machines or 0
+        self.n_jobs = n_jobs or 0
 
     def initialize(self, instance: ProblemInstance) -> None:
         """Initialize the observation with the scheduling instance."""
+        concrete_symbols = instance.symbol_values
+
+        for symbol, value in self._default_symbols.items():
+            if symbol not in concrete_symbols:
+                raise KeyError(
+                    f"Observation expected symbol '{symbol}', which hasn't been "
+                    "defined by the problem."
+                )
+
+            if value != concrete_symbols[symbol]:
+                raise ValueError(
+                    f"Observation expected {symbol}={value}, but the loaded "
+                    f"instance has {symbol}={concrete_symbols[symbol]}."
+                )
+
         self.fingerprint = instance.fingerprint
 
         self.n_tasks = instance.n_tasks
         self.n_jobs = instance.n_jobs
         self.n_machines = instance.n_machines
         self.symbols = instance.symbol_values
-
-    def reset(self, state: ScheduleState) -> None:
-        """Reset the observation to the initial state of the scheduling environment."""
 
     def update(self, state: ScheduleState) -> None:
         """Update the observation from the current stable scheduling state.

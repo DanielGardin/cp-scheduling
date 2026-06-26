@@ -392,6 +392,18 @@ class ProblemInstance(EzPickle):
         for task_id, job_id in enumerate(job_ids):
             job_tasks[job_id].append(task_id)
 
+        if "n_jobs" in symbols_values:
+            if n_jobs != symbols_values["n_jobs"]:
+                cur_n_jobs = symbols_values["n_jobs"]
+
+                raise ValueError(
+                    f"Instance has 'n_jobs'={cur_n_jobs}, but "
+                    f"only {n_jobs} were given by the 'job' feature."
+                )
+
+        else:
+            symbols_values["n_jobs"] = n_jobs
+
         self.job_tasks = job_tasks
         self.n_tasks = n_tasks
         self.n_jobs = n_jobs

@@ -808,7 +808,6 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
         observation = self._observation
 
-        observation.reset(state)
         observation.update(state)
         self._prev_obj_value = self.objective.get_current(state)  # Cold start
 
