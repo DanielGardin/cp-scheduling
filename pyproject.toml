@@ -29,6 +29,9 @@ dependencies = [
     "typing-extensions",
 ]
 
+[tool.setuptools.package-data]
+"my_library" = ["py.typed"]
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["cpscheduler*"]
