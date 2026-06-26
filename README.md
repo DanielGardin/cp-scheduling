@@ -1,13 +1,187 @@
 # CP Scheduler
 
-A modular, zero-dependency*, framework for modeling, simulating, and solving scheduling problems using constraint programming.
-Problems are defined declaratively through composable **setups**, **constraints**, and **objectives** following the $\alpha \mid \beta \mid \gamma$ classification from scheduling theory ([Pinedo, 2022](https://link.springer.com/book/10.1007/978-3-031-05921-6)).
+A modular, zero-dependency*, framework for modeling, simulating, and solving arbitrary scheduling problems, designed for Reinforcement Learning agents.
+The simulator implements a parameterized environment, where problems are defined declaratively through composable **setups**, **constraints**, and **objectives** following the Graham classification ($\alpha \mid \beta \mid \gamma$ ) from scheduling theory ([Pinedo, 2022](https://link.springer.com/book/10.1007/978-3-031-05921-6)).
 
-The environment automatically enforces feasibility during simulation via constraint propagation, making it suitable for priority dispatching rules, MILP solvers, and integration with reinforcement learning pipelines.
+The environment automatically enforces feasibility during simulation via constraint propagation, making it suitable for priority dispatching rules, MILP solvers, and integration with reinforcement learning pipelines, with automatic action masking for
+arbitrary problems.
 
-> Inspired by [JobShopCPEnv](https://github.com/ingambe/JobShopCPEnv), which only targets job-shop problems. This project generalises the idea to a wide range of scheduling problem types.
+> Inspired by [JobShopCPEnv](https://github.com/ingambe/JobShopCPEnv), which only targets job-shop problems. This project generalises the idea to a wide range of scheduling problem types **without compromising performance**.
 
-*The `environment` codebase is written in pure python (stdlib) and only depends on mypy for type checking and compilation through mypyC.
+---
+*The `environment` module is written in pure python (stdlib) and only depends on mypy for type checking and compilation through mypyC.
+
+## Project Structure
+
+```text
+cpscheduler/
+├── environment/       Core simulation engine (setups, constraints, objectives)
+├── gym/               Gymnasium-compatible wrapper and observation/action adapters
+├── heuristics/        Priority dispatching rules
+├── instances/         Instance readers & generators (JSP, RCPSP, SMTWT)
+├── renderers/         Render capabilities used in the environment
+└── solver/            Mathematical programming backends (MILP/CP formulations)
+```
+
+---
+
+## Environment
+The main component of this library is the `SchedulingEnv` environment.
+It combines three kinds of components: a **schedule setup** ($\alpha$), a set of **constraints** ($\beta$), and an **objective** ($\gamma$) into a step-based simulation driven by constraint propagation.
+
+One problem is the result of composing a schedule setup with (none or at least one) constraints and an objective.
+This problem is then identified as a triple $\alpha \mid \beta \mid \gamma$.
+
+### Schedule Setups $(\alpha)$
+
+A setup defines the machine environment and how processing times are assigned to tasks.
+
+| Class | Notation | Description |
+|---|---|---|
+| `SingleMachineSetup` | $1$ | One machine, all tasks share a single queue. |
+| `IdenticalParallelMachineSetup` | $P_m$ | $m$ identical machines, same processing time on every machine. |
+| `UniformParallelMachineSetup` | $Q_m$ | $m$ machines with different speeds. |
+| `UnrelatedParallelMachineSetup` | $R_m$ | $m$ machines with task-dependent processing times. |
+| `JobShopSetup` | $J_m$ | Each task is pre-assigned to a machine with a fixed operation order per job. |
+| `FlexibleJobShopSetup` | $FJ_m$ | Job-shop precedence with machine alternatives per task. |
+| `FlowShopSetup` | $F_m$ | Job-shop style precedence with shared machine order across jobs. |
+| `OpenShopSetup` | $O_m$ | Each task can run on any machine, no fixed operation order. |
+
+### Constraints $(\beta)$
+
+Constraints are split into **active** constraints (propagated during simulation) and **passive** constraints (compile-time properties set during initialisation).
+
+| Constraint | Notation | Type | Description |
+|---|---|---|---|
+| `PrecedenceConstraint` | $prec$ | Active | Enforces ordering between tasks. |
+| `NoWaitConstraint` | $nwt$ | Active | Enforces zero waiting time across precedence-linked tasks. |
+| `ORPrecedenceConstraint` | $or\text{-}prec$ | Active | Enforces disjunctive (OR) predecessor requirements. |
+| `NonOverlapConstraint` | — | Active | Prevents overlapping execution within groups. |
+| `ResourceConstraint` | — | Active | Limits concurrent resource usage. |
+| `NonRenewableResourceConstraint` | — | Active | Tracks cumulative consumption of a depletable resource. |
+| `SetupConstraint` | $s_{jk}$ | Active | Adds sequence-dependent setup times between tasks. |
+| `MachineBreakdownConstraint` | $brkdwn$ | Active | Models machine unavailability windows. |
+| `BatchConstraint` | $batch$ | Active | Couples tasks that must be processed together on machines. |
+| `ReleaseDateConstraint` | $r_j$ | Active | Tasks cannot start before a release time. |
+| `DeadlineConstraint` | $\bar{d}_j$ | Active | Tasks must finish before a deadline. |
+| `HorizonConstraint` | — | Active | Restricts task completion to a finite horizon. |
+| `PreemptionConstraint`* | $prmp$ | Passive | Allows tasks to be interrupted and resumed. |
+| `OptionalityConstraint` | $opt$ | Passive | Marks tasks as optional (can be left unscheduled). |
+| `MachineEligibilityConstraint` | $M_j$ | Passive | Restricts tasks to a subset of machines. |
+| `ConstantProcessingTime` | $p_j = p$ | Passive | Forces all tasks to have the same processing time. |
+
+**Preemption is partially covered at the moment, we are working for its full functionality.*
+
+### Objectives $(\gamma)$
+
+| Objective | Notation | Description |
+|---|---|---|
+| `Makespan` | $C_{\max}$ | Time at which the last task finishes. |
+| `TotalCompletionTime` | $\sum C_j$ | Sum of all job completion times. |
+| `WeightedCompletionTime` | $\sum w_j C_j$ | Weighted sum of completion times. |
+| `DiscountedTotalCompletionTime` | $\sum \rho^{C_j} C_j$ | Discounted completion-time objective. |
+| `TotalFlowTime` | $\sum F_j$ | Sum of flow times (completion − release). |
+| `MaximumLateness` | $L_{\max}$ | Worst-case lateness w.r.t. due dates. |
+| `TotalTardiness` | $\sum T_j$ | Sum of positive lateness values. |
+| `WeightedTardiness` | $\sum w_j T_j$ | Weighted sum of tardiness. |
+| `TotalEarliness` | $\sum E_j$ | Sum of positive earliness values. |
+| `WeightedEarliness` | $\sum w_j E_j$ | Weighted sum of earliness. |
+| `TotalTardyJobs` | $\sum U_j$ | Number of late jobs. |
+| `WeightedTardyJobs` | $\sum w_j U_j$ | Weighted count of late jobs. |
+| `ComposedObjective` | — | Linear combination of any objectives above. |
+
+
+## Getting Started
+The composition happens in the `SchedulingEnv` initialization, which accepts
+components of `ScheduleSetup`, `Constraint`, and `Objective`, as listed above.
+
+```
+SchedulingEnv(
+    machine_setup: ScheduleSetup,
+    constraints: Iterable[Constraint],
+    objective: Objective | None,
+    ...
+)
+```
+
+**Example:**
+```python
+from cpscheduler.environment import SchedulingEnv, JobShopSetup, Makespan
+from cpscheduler.instances.formats import read_standard_jobshop_instance
+from cpscheduler.heuristics.pdrs import ShortestProcessingTime
+
+instance, _ = read_standard_jobshop_instance("instances/jobshop/ta01.txt")
+
+env = SchedulingEnv(JobShopSetup(), objective=Makespan())
+env.load_instance(instance)
+
+heuristic = ShortestProcessingTime()
+obs, info = env.reset()
+
+terminated = False
+while not terminated:
+    action = heuristic(obs)
+    obs, reward, terminated, truncated, info = env.step(action)
+
+print(f"Makespan: {info['current_time']}")
+```
+**Output:**
+```text
+Makespan: 1462
+```
+
+
+### Composing a Custom Problem
+
+Every combination of setups, constraints and objectives can yield a valid
+scheduling environment, beyond the more popular configurations.
+Each component require a different data to be imputed as an instance, which
+can be a dictionary, or dataframe containing the data.
+
+You can check which feature names are required by the environment via
+`env.required_features()`
+
+```python
+from cpscheduler.environment import (
+    SchedulingEnv,
+    IdenticalParallelMachineSetup,
+    ReleaseDateConstraint,
+    WeightedTardiness,
+)
+
+# Create an environment for the P2|r_j|Σw_jT_j problem
+env = SchedulingEnv(
+    machine_setup=IdenticalParallelMachineSetup(n_machines=2),
+    constraints=[ReleaseDateConstraint()],
+    objective=WeightedTardiness(),
+)
+
+print(env.required_features().keys())
+```
+
+**Output:**
+```text
+['job', 'processing_time', 'release_time', 'due_date', 'weight']
+```
+
+The feature `'job'` is a reserved name that allows grouping tasks into jobs.
+If not provided, each task is treated as a single-job task.
+
+To load an instance, you can use a dictionary with the required features as
+keys and lists of values for each task.
+
+```
+# An example instance with 4 tasks for this problem
+instance = {
+    "processing_time": [1, 2, 3, 4],
+    "release_time": [0, 1, 2, 1],
+    "due_date": [5, 4, 5, 5],
+    "weight": [1, 2, 1, 3]
+}
+
+env.load_instance(instance)
+```
+
 
 ## Installation
 
@@ -54,211 +228,6 @@ MYPYC_DISABLE=1 pytest --cov --cov-report=term-missing --cov-report=xml
 `MYPYC_DISABLE=1` keeps the environment in interpreted Python mode, which makes
 line-level coverage reporting reliable for the `cpscheduler` source files.
 
-## Project Structure
-
-```text
-cpscheduler/
-├── environment/       Core simulation engine (setups, constraints, objectives)
-├── gym/               Gymnasium-compatible wrapper and observation/action adapters
-├── heuristics/        Priority dispatching rules
-├── instances/         Instance readers & generators (JSP, RCPSP, SMTWT)
-└── solver/            Mathematical programming backends (MILP/CP formulations)
-```
-
----
-
-## Environment
-
-`SchedulingEnv` is the central class. It combines a **schedule setup** ($\alpha$), a set of **constraints** ($\beta$), and an **objective** ($\gamma$) into a step-based simulation driven by constraint propagation.
-
-### Quick Start
-
-```python
-from cpscheduler.environment import SchedulingEnv, JobShopSetup, Makespan
-from cpscheduler.instances import read_jsp_instance
-from cpscheduler.heuristics.pdrs import ShortestProcessingTime
-
-instance, _ = read_jsp_instance("instances/jobshop/ta01.txt")
-
-env = SchedulingEnv(JobShopSetup(), objective=Makespan())
-env.load_instance(instance)
-
-heuristic = ShortestProcessingTime()
-obs, info = env.reset()
-action = heuristic(obs)
-obs, reward, terminated, truncated, info = env.step(action)
-
-print(f"Makespan: {info['current_time']}")
-```
-
-### Schedule Setups ($\alpha$)
-
-A setup defines the machine environment and how processing times are assigned to tasks.
-
-| Class | Notation | Description |
-|---|---|---|
-| `SingleMachineSetup` | $1$ | One machine, all tasks share a single queue. |
-| `IdenticalParallelMachineSetup` | $P_m$ | $m$ identical machines, same processing time on every machine. |
-| `UniformParallelMachineSetup` | $Q_m$ | $m$ machines with different speeds. |
-| `UnrelatedParallelMachineSetup` | $R_m$ | $m$ machines with task-dependent processing times. |
-| `JobShopSetup` | $J_m$ | Each task is pre-assigned to a machine with a fixed operation order per job. |
-| `FlexibleJobShopSetup` | $FJ_m$ | Job-shop precedence with machine alternatives per task. |
-| `FlowShopSetup` | $F_m$ | Job-shop style precedence with shared machine order across jobs. |
-| `OpenShopSetup` | $O_m$ | Each task can run on any machine; no fixed operation order. |
-
-### Constraints ($\beta$)
-
-Constraints are split into **active** constraints (propagated during simulation) and **passive** constraints (compile-time properties set during initialisation).
-
-| Constraint | Notation | Type | Description |
-|---|---|---|---|
-| `PrecedenceConstraint` | $prec$ | Active | Enforces ordering between tasks. |
-| `NoWaitConstraint` | $nwt$ | Active | Enforces zero waiting time across precedence-linked tasks. |
-| `ORPrecedenceConstraint` | $or\text{-}prec$ | Active | Enforces disjunctive (OR) predecessor requirements. |
-| `NonOverlapConstraint` | — | Active | Prevents overlapping execution within groups. |
-| `ResourceConstraint` | — | Active | Limits concurrent resource usage. |
-| `NonRenewableResourceConstraint` | — | Active | Tracks cumulative consumption of a depletable resource. |
-| `SetupConstraint` | $s_{jk}$ | Active | Adds sequence-dependent setup times between tasks. |
-| `MachineBreakdownConstraint` | $brkdwn$ | Active | Models machine unavailability windows. |
-| `BatchConstraint` | $batch$ | Active | Couples tasks that must be processed together on machines. |
-| `ReleaseDateConstraint` | $r_j$ | Active | Tasks cannot start before a release time. |
-| `DeadlineConstraint` | $\bar{d}_j$ | Active | Tasks must finish before a deadline. |
-| `HorizonConstraint` | — | Active | Restricts task completion to a finite horizon. |
-| `PreemptionConstraint`* | $prmp$ | Passive | Allows tasks to be interrupted and resumed. |
-| `OptionalityConstraint` | $opt$ | Passive | Marks tasks as optional (can be left unscheduled). |
-| `MachineEligibilityConstraint` | $M_j$ | Passive | Restricts tasks to a subset of machines. |
-| `ConstantProcessingTime` | $p_j = p$ | Passive | Forces all tasks to have the same processing time. |
-
-**Preemption is partially covered at the moment, we are working for its full functionality.*
-
-### Objectives ($\gamma$)
-
-| Objective | Notation | Description |
-|---|---|---|
-| `Makespan` | $C_{\max}$ | Time at which the last task finishes. |
-| `TotalCompletionTime` | $\sum C_j$ | Sum of all job completion times. |
-| `WeightedCompletionTime` | $\sum w_j C_j$ | Weighted sum of completion times. |
-| `DiscountedTotalCompletionTime` | $\sum \rho^{C_j} C_j$ | Discounted completion-time objective. |
-| `TotalFlowTime` | $\sum F_j$ | Sum of flow times (completion − release). |
-| `MaximumLateness` | $L_{\max}$ | Worst-case lateness w.r.t. due dates. |
-| `TotalTardiness` | $\sum T_j$ | Sum of positive lateness values. |
-| `WeightedTardiness` | $\sum w_j T_j$ | Weighted sum of tardiness. |
-| `TotalEarliness` | $\sum E_j$ | Sum of positive earliness values. |
-| `WeightedEarliness` | $\sum w_j E_j$ | Weighted sum of earliness. |
-| `TotalTardyJobs` | $\sum U_j$ | Number of late jobs. |
-| `WeightedTardyJobs` | $\sum w_j U_j$ | Weighted count of late jobs. |
-| `ComposedObjective` | — | Linear combination of any objectives above. |
-
-### Composing a Custom Problem
-
-```python
-from cpscheduler.environment import (
-    SchedulingEnv,
-    IdenticalParallelMachineSetup,
-    ReleaseDateConstraint,
-    WeightedTardiness,
-)
-
-env = SchedulingEnv(
-    machine_setup=IdenticalParallelMachineSetup(n_machines=3),
-    constraints=[ReleaseDateConstraint()],
-    objective=WeightedTardiness(),
-)
-```
-
-### Observation & Info
-
-`env.observation.serialize()` returns a dictionary with `task`, `job`, `machine`, and `global` sections. The `info` dictionary returned by `step()` and `reset()` includes `current_time`, `objective_value`, `event_count`, and any custom metrics added via `env.add_metric()`.
-
----
-
-## Gymnasium Wrapper
-
-The `gym` module wraps `SchedulingEnv` into a [Gymnasium](https://gymnasium.farama.org/)-compatible interface, enabling interoperability with standard RL tooling.
-
-### Registered Environments
-
-```python
-import gymnasium as gym
-from cpscheduler.environment import JobShopSetup
-
-# Generic scheduling environment
-env = gym.make("Scheduling-v0", machine_setup=JobShopSetup(), instance=instance)
-
-# Pre-configured job-shop alias
-env = gym.make("Jobshop-v0", instance=instance)
-```
-
-### Wrappers
-
-| Wrapper | Description |
-|---|---|
-| `PermutationActionWrapper` | Accepts an ordered task/job sequence as the action. |
-
-```python
-from cpscheduler.gym import SchedulingEnvGym
-from cpscheduler.gym.wrappers import PermutationActionWrapper
-
-gym_env = SchedulingEnvGym(JobShopSetup(), objective=Makespan(), instance=instance)
-gym_env = PermutationActionWrapper(gym_env, strict=True)
-```
-
----
-
-## Heuristics
-
-Built-in priority dispatching rules that work directly with `SchedulingEnv` observations.
-
-| Heuristic | Description |
-|---|---|
-| `ShortestProcessingTime` | Prioritises tasks with the smallest processing time. |
-| `EarliestDueDate` | Prioritises the nearest due date. |
-| `ModifiedDueDate` | Adjusts due dates based on remaining work. |
-| `WeightedModifiedDueDate` | Weighted modified due-date score. |
-| `MinimumSlackTime` | Smallest slack (due date − processing time − current time). |
-| `FirstInFirstOut` | Arrival order. |
-| `MostOperationsRemaining` | Most remaining operations in the job. |
-| `MostWorkRemaining` | Most remaining processing time in the job. |
-| `CombinedRule` | Weighted combination of multiple PDRs. |
-| `RandomPriority` | Random ordering. |
-
-```python
-from cpscheduler.heuristics.pdrs import ShortestProcessingTime
-
-heuristic = ShortestProcessingTime()
-action = heuristic(obs)  # single dispatch action, e.g. ("execute", task_id)
-```
-
----
-
-## Solver
-
-The `solver` module builds mathematical programming formulations from a `SchedulingEnv` instance.
-The default registered backend is a disjunctive MILP formulation implemented with [Pyomo](https://pyomo.readthedocs.io/).
-
-```python
-from cpscheduler.solver import SchedulingSolver, get_formulations
-
-print(get_formulations())  # ['disjunctive']
-
-solver = SchedulingSolver(env, formulation="disjunctive", horizon=10_000)
-solver.warm_start([("submit", task_id) for task_id in range(env.state.n_tasks)])
-solver.build()
-result = solver.solve(time_limit=60)
-
-actions = result.action
-objective_value = result.objective_value
-status = result.status
-```
-
-**Key features:**
-
-- **Formulation registry**: List and select registered formulations via `get_formulations()`.
-- **Warm starting**: Feed an initial schedule as action tuples before `build()`.
-- **Automatic solver selection**: Uses the first available Pyomo-compatible MILP backend if none is provided.
-- **CP support in codebase**: MiniZinc-based CP formulations exist under `cpscheduler/solver/cp/` and can be enabled/registered for experimental workflows.
-
----
 
 ## Compilation
 
