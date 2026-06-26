@@ -30,7 +30,7 @@ dependencies = [
 ]
 
 [tool.setuptools.package-data]
-"my_library" = ["py.typed"]
+"cpscheduler" = ["py.typed"]
 
 [tool.setuptools.packages.find]
 where = ["."]
