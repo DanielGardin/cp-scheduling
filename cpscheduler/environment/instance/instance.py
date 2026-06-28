@@ -98,7 +98,7 @@ class ProblemInstance(EzPickle):
     """
 
     _fingerprint: int
-    _feature_specs: dict[str, FeatureSpec]
+    feature_specs: dict[str, FeatureSpec]
     features: dict[str, list[Feature]]
 
     job_tasks: list[list[TaskID]]
@@ -166,7 +166,7 @@ class ProblemInstance(EzPickle):
             "job": [self._job_ids],
         }
 
-        self._feature_specs = {
+        self.feature_specs = {
             feature_name: features[0].spec
             for feature_name, features in self.features.items()
         }
@@ -187,6 +187,16 @@ class ProblemInstance(EzPickle):
         to check if two instances are equivalent.
         """
         return self._fingerprint
+
+    @property
+    def symbols(self) -> set[str]:
+        """Return all symbols in features."""
+        symbols: set[str] = set()
+
+        for spec in self.feature_specs.values():
+            symbols |= spec.symbols
+
+        return symbols
 
     @property
     def debug(self) -> bool:
@@ -242,7 +252,7 @@ class ProblemInstance(EzPickle):
         """
         return {
             name: feature
-            for name, feature in self._feature_specs.items()
+            for name, feature in self.feature_specs.items()
             if _find_provider(self.features[name]) is None
         }
 
@@ -281,34 +291,15 @@ class ProblemInstance(EzPickle):
                 "directly using `get_processing_time`, and `has_processing_time`."
             )
 
-        registered_spec = self._feature_specs.get(name)
+        registered_spec = self.feature_specs.get(name)
 
         if registered_spec is None:
-            self._feature_specs[name] = feature.spec
+            self.feature_specs[name] = feature.spec
 
         elif registered_spec != feature.spec:
             raise ValueError(f"Incompatible feature spec for '{name}'.")
 
         self.features.setdefault(name, []).append(feature)
-
-    def unregister(self, feature: Feature[Any]) -> None:
-        """Remove a previously registered feature from the instance.
-
-        This is used to clean up instance features that are no longer relevant
-        after loading a new instance, allowing features to be re-registered with
-        new data without conflicts.
-        """
-        name = feature.name
-
-        registered = self.features.get(name)
-        if not registered:
-            return
-
-        registered.remove(feature)
-
-        if not registered:
-            del self.features[name]
-            del self._feature_specs[name]
 
     def reset(self) -> None:
         """Reset instance-specific data for loading a new instance.
@@ -352,8 +343,6 @@ class ProblemInstance(EzPickle):
             parameters that may be needed during instance initialization.
 
         """
-        self.reset()
-
         storage: dict[str, Any] = {}
 
         for instance in instances:

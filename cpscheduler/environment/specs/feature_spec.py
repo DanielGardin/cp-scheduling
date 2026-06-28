@@ -142,6 +142,18 @@ class FeatureSpec(ObservationSpec):
             for dim in self.shape
         )
 
+    @property
+    def symbols(self) -> set[str]:
+        """Return the symbolic dimensions of the shape."""
+        symbols: set[str] = set()
+
+        if self.shape:
+            for dim in self.shape:
+                if dim:
+                    symbols.update(dim.symbols)
+
+        return symbols
+
     # FUTURE: Implement broadcasted views for shareable features
     # This method is also incomplete, shapes are not compared, as it is not
     # obvious how the broadcast must happen.

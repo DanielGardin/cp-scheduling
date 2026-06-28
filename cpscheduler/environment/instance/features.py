@@ -187,7 +187,6 @@ class Feature(EzPickle, Generic[_T]):
         high: float or None, optional
             The upper bound for numerical features, if applicable. Default is None.
 
-
         Raises
         ------
         ValueError
