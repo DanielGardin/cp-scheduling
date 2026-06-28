@@ -31,7 +31,7 @@ from cpscheduler.environment.utils.protocols import (
     Options,
 )
 from cpscheduler.gym.common import ActionSpace
-from cpscheduler.gym.obs_spaces import observation_spec_to_gym_space
+from cpscheduler.gym.obs_spaces import convert_spec_to_gym_space
 
 ObsType = TypeVar("ObsType", default=DefaultObsType)
 
@@ -161,7 +161,11 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         }
 
     def _get_observation_space(self) -> Space[Any]:
-        return observation_spec_to_gym_space(self._core.observation)
+        env = self._core
+
+        return convert_spec_to_gym_space(
+            env.observation_spec, env.observation.symbols
+        )
 
     @classmethod
     def from_env(
@@ -169,7 +173,6 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
     ) -> "SchedulingEnvGym[ObsType]":
         """Create a `SchedulingEnvGym` instance from an existing `SchedulingEnv`."""
         self = cls.__new__(cls)
-        super().__init__(self)
 
         self.action_space = ActionSpace
         self._core = env
@@ -240,7 +243,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
             self.observation_space = self._get_observation_space()
             self._current_fingerprint = self.fingerprint
 
-        return obs.serialize(), info
+        return obs.snapshot(), info
 
     def step(
         self, action: ActionType
@@ -290,7 +293,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         obs, reward, done, truncated, info = self._core.step(action)
 
         return (
-            obs.serialize(),
+            obs.snapshot(),
             reward,
             done,
             truncated,
@@ -333,36 +336,6 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
 
         """
         self._core.load_instance(*instances)
-
-    def add_constraint(self, constraint: Constraint) -> None:
-        """Add a constraint to the environment.
-
-        Parameters
-        ----------
-        constraint : Constraint
-            The constraint to add.
-
-        Notes
-        -----
-        Resets any loaded instance to allow configuration changes.
-
-        """
-        self._core.add_constraint(constraint)
-
-    def set_objective(self, objective: Objective) -> None:
-        """Replace the objective function.
-
-        Parameters
-        ----------
-        objective : Objective
-            The new objective function.
-
-        Notes
-        -----
-        Resets any loaded instance to allow configuration changes.
-
-        """
-        self._core.set_objective(objective)
 
     def add_metric(self, name: str, metric: Metric[Any]) -> None:
         """Add a metric to the environment."""

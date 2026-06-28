@@ -7,14 +7,12 @@ from gymnasium.spaces import (
     Box,
     Dict,
     Graph,
-    MultiBinary,
     Sequence,
     Space,
     Tuple,
 )
 
 from cpscheduler.environment.constants import MAX_TIME
-from cpscheduler.environment.observation import Observation
 from cpscheduler.environment.specs import (
     DictSpec,
     FeatureSpec,
@@ -83,7 +81,7 @@ def feature_spec_to_gym_space(
 
     match semantic:
         case "binary" | "mask":
-            return MultiBinary(shape)
+            return Box(low=0, high=1, shape=shape, dtype=np.int8)
 
         case "categorical":
             high = (
@@ -140,7 +138,7 @@ def feature_spec_to_gym_space(
 
         case "set":
             # Sets are represented as binary indicator vectors
-            return MultiBinary(shape)
+            raise ValueError("Sets are not supported in this version.")
 
         case "unknown":
             raise ValueError(
@@ -158,7 +156,7 @@ def convert_stack_to_gym_space(spec: StackSpec, symbols: dict[str, int]) -> Box:
     )
 
 
-def _convert_spec_to_gym_space(
+def convert_spec_to_gym_space(
     spec: ObservationSpec, symbols: dict[str, int]
 ) -> Space[Any]:
     """Recursively convert an ObservationSpec to a corresponding Gymnasium space."""
@@ -171,16 +169,16 @@ def _convert_spec_to_gym_space(
     if isinstance(spec, DictSpec):
         return Dict(
             {
-                key: _convert_spec_to_gym_space(field_spec, symbols)
+                key: convert_spec_to_gym_space(field_spec, symbols)
                 for key, field_spec in spec.items()
             }
         )
 
     if isinstance(spec, SequenceSpec):
         if spec.length is None:
-            return Sequence(_convert_spec_to_gym_space(spec.element, symbols))
+            return Sequence(convert_spec_to_gym_space(spec.element, symbols))
 
-        element_space = _convert_spec_to_gym_space(spec.element, symbols)
+        element_space = convert_spec_to_gym_space(spec.element, symbols)
         length = spec.length.resolve(**symbols)
         return Tuple(tuple(element_space for _ in range(length)))
 
@@ -191,11 +189,3 @@ def _convert_spec_to_gym_space(
         return Graph(node_space=node_space, edge_space=edge_space)
 
     raise ValueError(f"Unsupported ObservationSpec type: {type(spec).__name__}")
-
-
-def observation_spec_to_gym_space(obs: Observation) -> Space[Any]:
-    """Convert an Observation's spec to a corresponding Gymnasium space."""
-    spec = obs.get_spec()
-    symbols = obs.symbols
-
-    return _convert_spec_to_gym_space(spec, symbols)

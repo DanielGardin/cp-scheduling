@@ -24,7 +24,7 @@ from cpscheduler.environment.objectives import Objective
 from cpscheduler.environment.observation import DefaultObservation, Observation
 from cpscheduler.environment.render import Renderer
 from cpscheduler.environment.setups import ScheduleSetup
-from cpscheduler.environment.specs.feature_spec import FeatureSpec
+from cpscheduler.environment.specs import FeatureSpec, ObservationSpec
 from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.state.events import RuntimeEventKind, VarField
 from cpscheduler.environment.tracer import Tracer
@@ -86,14 +86,13 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
     State Machine
     -------------
     UNLOADED
-        No instance loaded; configuration is mutable.
+        No instance loaded.
 
     LOADED
         Instance loaded and components initialized.
-        Configuration is frozen, ready for reset.
 
     RUNNING
-        Episode active; simulation advances via step().
+        Episode active, simulation advances via step().
 
     Simulation Loop (in `step()`)
     ----------------------------
@@ -103,21 +102,14 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
     4. Update runtime (callbacks for task start/completion).
     5. Return observation, reward, terminated, and info.
 
-    Invariants
-    ----------
-    - After `load_instance()`: state is globally consistent (propagation completed).
-    - Features are immutable after `initialize()`. Use `reset()` to load a new instance.
-
     """
 
     # Environment static variables
     setup: ScheduleSetup
-    constraints: list[Constraint]
-    setup_constraints: tuple[Constraint, ...]
+    constraints: tuple[Constraint, ...]
     objective: Objective
-    instance_generator: InstanceGenerator | None
-    _all_constraints: tuple[Constraint, ...]
-    _observation: ObsT_co
+    observation: ObsT_co
+    observation_spec: ObservationSpec
 
     metrics: dict[str, Metric]
     tracers: tuple[Tracer, ...]
@@ -125,7 +117,10 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
     renderer: Renderer
 
     # Environment dynamic variables
-    _instance: ProblemInstance
+    setup_constraints: tuple[Constraint, ...]
+    _all_constraints: tuple[Constraint, ...]
+    instance: ProblemInstance
+    instance_generator: InstanceGenerator | None
     state: ScheduleState
     schedule: Schedule
 
@@ -247,19 +242,24 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             for feature in component.get_features():
                 problem_instance.register(feature)
 
-        self._instance = problem_instance
+        for symbol in problem_instance.symbols:
+            if symbol not in observation.symbols:
+                observation.symbols[symbol] = 0
+
         self.setup = machine_setup
-        self.constraints = list(constraints)
+        self.constraints = tuple(constraints)
         self.objective = objective
-        self._observation = observation
-
-        self.schedule = Schedule()
-
-        self.setup_constraints = ()
-        self._all_constraints = ()
+        self.observation = observation
+        self.observation_spec = observation.compile(problem_instance)
 
         self.metrics = dict(metrics) if metrics is not None else {}
         self.tracers = tuple(tracers) if tracers is not None else ()
+
+        self.setup_constraints = ()
+        self._all_constraints = ()
+        self.instance = problem_instance
+
+        self.schedule = Schedule()
 
         self.instance_generator = None
         if isinstance(instance, InstanceGenerator):
@@ -277,7 +277,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
     @property
     def fingerprint(self) -> int:
         """Return the instance fingerprint of the current loaded instance."""
-        return self._instance.fingerprint
+        return self.instance.fingerprint
 
     @property
     def loaded(self) -> bool:
@@ -288,11 +288,6 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
     def running(self) -> bool:
         """Indicates whether the environment is currently running an episode."""
         return self._status == RUNNING
-
-    @property
-    def observation(self) -> ObsT_co:
-        """Access the current observation object."""
-        return self._observation
 
     @property
     def all_constraints(self) -> tuple[Constraint, ...]:
@@ -328,74 +323,21 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         )
 
     # Environment configuration public methods
-    def add_constraint(self, constraint: Constraint) -> None:
-        """Add a constraint to the environment.
-
-        Parameters
-        ----------
-        constraint : Constraint
-            The constraint to add.
-
-        Notes
-        -----
-        Resets any loaded instance to allow configuration changes.
-
-        """
-        if self._status != UNLOADED:
-            self.reset_instance()
-
-        self.constraints.append(constraint)
-
-        instance = self._instance
-        for feature in constraint.get_features():
-            instance.register(feature)
-
-    def set_objective(self, objective: Objective) -> None:
-        """Replace the objective function.
-
-        Parameters
-        ----------
-        objective : Objective
-            The new objective function.
-
-        Notes
-        -----
-        Resets any loaded instance to allow configuration changes.
-
-        """
-        if self._status != UNLOADED:
-            self.reset_instance()
-
-        instance = self._instance
-        for prev_feature in self.objective.get_features():
-            instance.unregister(prev_feature)
-
-        for feature in objective.get_features():
-            instance.register(feature)
-
-        self.objective = objective
-
     def reset_instance(self) -> None:
         """Unload the current instance and restore configuration mutability.
 
         Returns the environment to UNLOADED state, allowing setup, constraints,
         and objective modifications.
         """
-        instance = self._instance
-
-        for constraint in self.setup_constraints:
-            for feature in constraint.get_features():
-                instance.unregister(feature)
-
         self.setup_constraints = ()
         self._all_constraints = ()
 
-        instance.reset()
+        self.instance.reset()
         self._status = UNLOADED
 
     def required_features(self) -> dict[str, FeatureSpec]:
         """Return a dictionary of all required features from the setup, constraints, and objective."""
-        return self._instance.required_features()
+        return self.instance.required_features()
 
     def set_generator(self, instance_generator: InstanceGenerator) -> None:
         """Set the instance generator.
@@ -428,7 +370,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         """
         self.reset_instance()
 
-        problem_instance = self._instance
+        problem_instance = self.instance
 
         problem_instance.initialize(instances, self.setup)
         self.setup.initialize(problem_instance)
@@ -468,7 +410,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         ]:
             component.initialize(problem_instance)
 
-        self._observation.initialize(problem_instance)
+        self.observation.initialize(problem_instance)
 
         self.state = ScheduleState(problem_instance)
         self._status = LOADED
@@ -696,7 +638,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         state = self.state
         runtime_event_queue = state.runtime_event_queue
         objective = self.objective
-        observation = self._observation
+        observation = self.observation
 
         task_ids = runtime_event_queue.task_ids
         kinds = runtime_event_queue.kinds
@@ -806,7 +748,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
                 "contradictory constraints included in your schedule problem."
             )
 
-        observation = self._observation
+        observation = self.observation
 
         observation.update(state)
         self._prev_obj_value = self.objective.get_current(state)  # Cold start
@@ -895,7 +837,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         # Gymnasium-like step return
 
         self.update_runtime()
-        self._observation.update(state)
+        self.observation.update(state)
 
         obj_value = self.objective.get_current(state)
         reward = obj_value - self._prev_obj_value
@@ -908,7 +850,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         terminal = state.is_terminal()
         info = self.get_info()
 
-        return self._observation, reward, terminal, truncated, info
+        return self.observation, reward, terminal, truncated, info
 
     def render(self) -> None:
         """Render the current environment state.

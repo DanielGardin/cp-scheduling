@@ -19,9 +19,6 @@ class Observation(EzPickle, Generic[Serialized_Obs]):
     """Abstract observation contract for scheduling environments."""
 
     fingerprint: int
-    n_tasks: int
-    n_jobs: int
-    n_machines: int
     symbols: dict[str, int]
     _default_symbols: dict[str, int]
 
@@ -77,9 +74,32 @@ class Observation(EzPickle, Generic[Serialized_Obs]):
         self._default_symbols.update(symbols)
         self.symbols = self._default_symbols.copy()
 
-        self.n_tasks = n_tasks or 0
-        self.n_machines = n_machines or 0
-        self.n_jobs = n_jobs or 0
+    @property
+    def n_tasks(self) -> int:
+        """Return the number of tasks within the instance."""
+        return self.symbols["n_tasks"]
+
+    @property
+    def n_machines(self) -> int:
+        """Return the number of machines within the instance."""
+        return self.symbols["n_machines"]
+
+    @property
+    def n_jobs(self) -> int:
+        """Return the number of jobs within the instance."""
+        return self.symbols["n_jobs"]
+
+    def compile(self, instance: ProblemInstance) -> ObservationSpec:
+        """Compile the instance configuration into an observation spec.
+
+        This method declares the structure created by `serialize`, which will
+        be further populated by a symbol table.
+        This must be a pure function, the population of the observation must be
+        done in `initialize`.
+        """
+        raise NotImplementedError(
+            f"compile() was not implemented for {type(self).__name__}."
+        )
 
     def initialize(self, instance: ProblemInstance) -> None:
         """Initialize the observation with the scheduling instance."""
@@ -99,11 +119,7 @@ class Observation(EzPickle, Generic[Serialized_Obs]):
                 )
 
         self.fingerprint = instance.fingerprint
-
-        self.n_tasks = instance.n_tasks
-        self.n_jobs = instance.n_jobs
-        self.n_machines = instance.n_machines
-        self.symbols = instance.symbol_values
+        self.symbols = concrete_symbols
 
     def update(self, state: ScheduleState) -> None:
         """Update the observation from the current stable scheduling state.
@@ -153,13 +169,3 @@ class Observation(EzPickle, Generic[Serialized_Obs]):
         this logic can be changed directly when required.
         """
         return deepcopy(self.serialize())
-
-    def get_spec(self) -> ObservationSpec:
-        """Return the specification of this observation structure.
-
-        Describes the layout, types, and metadata of the observation
-        without requiring serialized data.
-        """
-        raise NotImplementedError(
-            f"get_spec() was not implemented for {type(self).__name__}."
-        )
