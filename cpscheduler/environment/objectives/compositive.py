@@ -155,3 +155,8 @@ class ComposedObjective(Objective):
             )
 
         return " ".join(terms) if terms else "0"
+
+    @override
+    @classmethod
+    def get_general_entry(cls) -> str:
+        return "Σw_kf_k"
