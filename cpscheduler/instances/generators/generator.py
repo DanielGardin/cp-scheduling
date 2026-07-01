@@ -3,8 +3,8 @@
 from random import Random
 from typing import Any, cast
 
+from cpscheduler.common import AnySchedulingEnv, unwrap_env
 from cpscheduler.environment.constants import EzPickle
-from cpscheduler.environment.env import SchedulingEnv
 from cpscheduler.environment.specs import FeatureSpec
 from cpscheduler.environment.specs.symbols import resolve_shape, symbolic_shape
 from cpscheduler.environment.utils.protocols import InstanceGenerator
@@ -280,7 +280,7 @@ class Generator(EzPickle, InstanceGenerator):
     @classmethod
     def from_env(
         cls,
-        env: SchedulingEnv[Any],
+        env: AnySchedulingEnv,
         n_tasks: int,
         n_machines: int | None = None,
         n_jobs: int | None = None,
@@ -329,18 +329,20 @@ class Generator(EzPickle, InstanceGenerator):
             Currently unused.
 
         """
+        core_env = unwrap_env(env)
+
         if n_machines is None:
-            n_machines = env.setup.n_machines
+            n_machines = core_env.setup.n_machines
 
             if n_machines == 0:
                 raise ValueError(
                     "Number of machines must be specified. Scheduling setup "
-                    f"{type(env.setup).__name__} does not specify a fixed "
+                    f"{type(core_env.setup).__name__} does not specify a fixed "
                     f"number of machines."
                 )
 
         return cls(
-            feature_specs=env.required_features(),
+            feature_specs=core_env.required_features(),
             n_tasks=n_tasks,
             n_machines=n_machines,
             n_jobs=n_jobs,
