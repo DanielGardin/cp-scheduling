@@ -242,6 +242,9 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             for feature in component.get_features():
                 problem_instance.register(feature)
 
+        if "n_machines" not in observation.symbols:
+            observation.symbols["n_machines"] = machine_setup.n_machines
+
         for symbol in problem_instance.symbols:
             if symbol not in observation.symbols:
                 observation.symbols[symbol] = 0
