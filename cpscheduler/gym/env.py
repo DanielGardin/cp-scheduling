@@ -22,6 +22,7 @@ from cpscheduler.environment.des import ActionType
 from cpscheduler.environment.observation import Observation
 from cpscheduler.environment.observation.default import DefaultObsType
 from cpscheduler.environment.render import Renderer
+from cpscheduler.environment.specs import FeatureSpec, ObservationSpec
 from cpscheduler.environment.tracer import Tracer
 from cpscheduler.environment.utils import InstanceGenerator
 from cpscheduler.environment.utils.protocols import (
@@ -196,6 +197,11 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         """Return the underlying `SchedulingEnv` instance."""
         return self._core
 
+    @property
+    def observation_spec(self) -> ObservationSpec:
+        """Return the observation specification of the current loaded instance."""
+        return self._core.observation_spec
+
     def reset(
         self, *, seed: int | None = None, options: Options | None = None
     ) -> tuple[ObsType, dict[str, Any]]:
@@ -306,6 +312,18 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
 
     # Expose SchedulingEnv public methods
 
+    def reset_instance(self) -> None:
+        """Unload the current instance and restore configuration mutability.
+
+        Returns the environment to UNLOADED state, allowing setup, constraints,
+        and objective modifications.
+        """
+        self._core.reset_instance()
+
+    def required_features(self) -> dict[str, FeatureSpec]:
+        """Return a dictionary of all required features from the setup, constraints, and objective."""
+        return self._core.required_features()
+
     def set_generator(self, instance: InstanceGenerator) -> None:
         """Set the instance generator.
 
@@ -340,6 +358,10 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
     def add_metric(self, name: str, metric: Metric[Any]) -> None:
         """Add a metric to the environment."""
         self._core.add_metric(name, metric)
+
+    def clear_metrics(self) -> None:
+        """Clear all metrics from the environment."""
+        self._core.clear_metrics()
 
     def get_entry(self) -> str:
         """Get a string representation of the environment's configuration."""
