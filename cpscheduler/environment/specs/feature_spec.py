@@ -216,3 +216,27 @@ class FeatureSpec(ObservationSpec):
                 self.high,
             )
         )
+
+    def __repr__(self) -> str:
+        """Return a string representation of the FeatureSpec."""
+        attrs = [
+            f"scope={self.scope!r}",
+            f"semantic={self.semantic!r}",
+        ]
+
+        if self.sparse:
+            attrs.append("sparse=True")
+
+        if self.shape is not None:
+            attrs.append(f"shape={self.shape!r}")
+
+        if self.n_categories is not None:
+            attrs.append(f"n_categories={self.n_categories!r}")
+
+        if self.low is not None:
+            attrs.append(f"low={self.low!r}")
+
+        if self.high is not None:
+            attrs.append(f"high={self.high!r}")
+
+        return f"FeatureSpec({', '.join(attrs)})"

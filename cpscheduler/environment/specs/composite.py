@@ -180,6 +180,11 @@ class DictSpec(ObservationSpec, Mapping[str, ObservationSpec]):
         """Hash based on the attributes of the DictSpecs."""
         return hash(frozenset(self._fields.items()))
 
+    def __repr__(self) -> str:
+        """Return a string representation of the DictSpec."""
+        pairs = ", ".join(f"{k}: {v}" for k, v in self._fields.items())
+        return f"DictSpec({pairs})"
+
 
 class SequenceSpec(ObservationSpec):
     """Observation spec for a sequence of features.
@@ -238,6 +243,15 @@ class SequenceSpec(ObservationSpec):
     def __hash__(self) -> int:
         """Hash based on the attributes of the SequenceSpec."""
         return hash((self.element, self.length))
+
+    def __repr__(self) -> str:
+        """Return a string representation of the SequenceSpec."""
+        attrs = [f"element={self.element!r}"]
+
+        if self.length is not None:
+            attrs.append(f"length={self.length!r}")
+
+        return f"SequenceSpec({', '.join(attrs)})"
 
 
 GraphRepresentation = Literal[
