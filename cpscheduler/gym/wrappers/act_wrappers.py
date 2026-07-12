@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
-from typing import Any, Literal, TypeVar
+from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
 from gymnasium import ActionWrapper, Env
 from gymnasium.spaces import Box, Sequence, Space
@@ -12,6 +12,10 @@ from typing_extensions import override
 from cpscheduler.environment.constants import Int
 from cpscheduler.environment.des import ActionType
 from cpscheduler.environment.utils.protocols import Options
+
+if TYPE_CHECKING:
+    from cpscheduler.environment import SchedulingEnv
+
 
 _Obs = TypeVar("_Obs")
 _Act = TypeVar("_Act")
@@ -29,9 +33,7 @@ class SchedulingActionWrapper(ActionWrapper[_Obs, _Act, ActionType], ABC):
 
     def __init__(self, env: Env[_Obs, ActionType]):
         super().__init__(env)
-
-        if not self.requires_loaded or self.env.get_wrapper_attr("loaded"):
-            self.action_space = self.get_action_space()
+        self.action_space = self._get_action_space()
 
     def reset(
         self,
@@ -40,21 +42,19 @@ class SchedulingActionWrapper(ActionWrapper[_Obs, _Act, ActionType], ABC):
         options: Options | None = None,
     ) -> tuple[_Obs, dict[str, Any]]:
         """Reset the environment and update the action space if necessary."""
-        previously_loaded = self.get_wrapper_attr("loaded")
+        fingerprint: int = self.get_wrapper_attr("fingerprint")
 
         obs, info = super().reset(
             seed=seed, options=dict(options) if options else None
         )
 
-        if self.requires_loaded and (
-            options is not None or not previously_loaded
-        ):
-            self.action_space = self.get_action_space()
+        if self.get_wrapper_attr("fingerprint") != fingerprint:
+            self.action_space = self._get_action_space()
 
         return obs, info
 
     @abstractmethod
-    def get_action_space(self) -> Space[_Act]:
+    def _get_action_space(self) -> Space[_Act]:
         """Get the action space for the environment.
 
         This method is called when the environment loads a new instance,
@@ -104,8 +104,12 @@ class PermutationActionWrapper(SchedulingActionWrapper[_Obs, Iterable[Int]]):
             )
 
     @override
-    def get_action_space(self) -> Space[Iterable[Int]]:
-        return Sequence(Box(low=0, high=2**31 - 1, dtype=int64), stack=True)
+    def _get_action_space(self) -> Space[Iterable[Int]]:
+        env: SchedulingEnv = self.get_wrapper_attr("core")
+
+        n_tasks = env.observation.n_tasks
+
+        return Sequence(Box(low=0, high=n_tasks, dtype=int64), stack=True)
 
     @override
     def action(self, action: Iterable[Int]) -> ActionType:
