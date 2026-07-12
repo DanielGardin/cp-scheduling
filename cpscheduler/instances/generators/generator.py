@@ -281,7 +281,7 @@ class Generator(EzPickle, InstanceGenerator):
     def from_env(
         cls,
         env: AnySchedulingEnv,
-        n_tasks: int,
+        n_tasks: int | None = None,
         n_machines: int | None = None,
         n_jobs: int | None = None,
         *,
@@ -299,8 +299,9 @@ class Generator(EzPickle, InstanceGenerator):
             environment's required features will be used as the generator's
             feature specifications.
 
-        n_tasks: int
+        n_tasks: int | None, optional
             The number of tasks in the generated instances.
+            If `None`, it is inferred from the environment.
 
         n_machines: int | None, optional
             The number of machines in the generated instances. If `None`, it is
@@ -328,18 +329,39 @@ class Generator(EzPickle, InstanceGenerator):
             Additional symbols that can be used in feature specs and samplers.
             Currently unused.
 
+        Returns
+        -------
+        Generator
+            A new Generator instance configured for the given environment.
+
+        Raises
+        ------
+        ValueError
+            If the number of tasks or machines cannot be inferred from the environment
+            and is not provided explicitly.
+
         """
         core_env = unwrap_env(env)
 
+        obs_symbols = core_env.observation.symbols
+        if n_tasks is None:
+            n_tasks = obs_symbols.get("n_tasks", 0)
+
+            if n_tasks == 0:
+                raise ValueError(
+                    "Number of tasks cannot be inferred and must be specified."
+                )
+
         if n_machines is None:
-            n_machines = core_env.setup.n_machines
+            n_machines = obs_symbols.get("n_machines", 0)
 
             if n_machines == 0:
                 raise ValueError(
-                    "Number of machines must be specified. Scheduling setup "
-                    f"{type(core_env.setup).__name__} does not specify a fixed "
-                    f"number of machines."
+                    "Number of machines cannot be inferred and must be specified."
                 )
+
+        if n_jobs is None:
+            n_jobs = obs_symbols.get("n_jobs", n_tasks)
 
         return cls(
             feature_specs=core_env.required_features(),

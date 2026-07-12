@@ -4,6 +4,7 @@ from importlib.machinery import EXTENSION_SUFFIXES
 from typing import Any
 
 from cpscheduler.environment.env import SchedulingEnv
+from cpscheduler.environment.observation import Observation
 
 
 def is_compiled() -> bool:
@@ -13,12 +14,12 @@ def is_compiled() -> bool:
     return any(env.__file__.endswith(suffix) for suffix in EXTENSION_SUFFIXES)
 
 
-AnySchedulingEnv = Any | SchedulingEnv[Any]
+AnySchedulingEnv = Any | SchedulingEnv[Observation[Any]]
 
 
 def unwrap_env(
     env: AnySchedulingEnv, max_depth: int = 10
-) -> SchedulingEnv[Any]:
+) -> SchedulingEnv[Observation[Any]]:
     """Unwraps the environment to get the underlying SchedulingEnv instance.
 
     Parameters
