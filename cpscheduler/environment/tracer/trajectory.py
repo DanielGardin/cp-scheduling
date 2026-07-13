@@ -1,6 +1,7 @@
 """Trajectory-tracing utilities for the environment."""
 
 from copy import deepcopy
+from typing import Any
 
 from typing_extensions import override
 
@@ -44,30 +45,41 @@ class ExecutionTrajectoryTracer(Tracer):
     at the time of the decision.
     """
 
-    tracer_name = "execution_trajectory"
+    tracer_name = "trajectory"
 
-    trajectory: list[tuple[TaskID, MachineID, Time, list[TaskID]]]
+    tasks: list[TaskID]
+    machines: list[MachineID]
+    times: list[Time]
+    feasible_sets: list[list[TaskID]]
 
     def __init__(self) -> None:
-        self.trajectory = []
+        self.tasks = []
+        self.machines = []
+        self.times = []
+        self.feasible_sets = []
 
     @override
     def reset(self, state: ScheduleState) -> None:
-        self.trajectory.clear()
+        self.tasks.clear()
+        self.machines.clear()
+        self.times.clear()
+        self.feasible_sets.clear()
 
     @override
     def step(self, state: ScheduleState, action: SimulationEvent) -> None:
         if isinstance(action, ExecuteEvent):
             available_tasks = state.get_available_tasks()
-            self.trajectory.append(
-                (
-                    action.task_id,
-                    action.resolve_machine(state),
-                    state.time,
-                    available_tasks,
-                )
-            )
+
+            self.tasks.append(action.task_id)
+            self.machines.append(action.resolve_machine(state))
+            self.times.append(state.time)
+            self.feasible_sets.append(available_tasks)
 
     @override
-    def export(self) -> list[tuple[TaskID, MachineID, Time, list[TaskID]]]:
-        return self.trajectory
+    def export(self) -> dict[str, Any]:
+        return {
+            "tasks": self.tasks,
+            "machines": self.machines,
+            "times": self.times,
+            "feasible_sets": self.feasible_sets,
+        }
