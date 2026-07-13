@@ -33,6 +33,6 @@ class Tracer(EzPickle):
         lead to undefined behavior.
         """
 
-    def export(self) -> Any | None:
+    def export(self) -> dict[str, Any] | Any | None:
         """Export the tracer's internal state to a serializable format."""
         return None

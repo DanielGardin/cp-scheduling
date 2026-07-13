@@ -7,7 +7,7 @@ with constraint propagation.
 """
 
 from collections.abc import Iterable, Mapping
-from typing import TYPE_CHECKING, Generic, Literal, cast
+from typing import TYPE_CHECKING, Any, Generic, Literal, cast
 
 from typing_extensions import TypeVar, assert_never
 
@@ -70,6 +70,17 @@ TASK_STARTED = RuntimeEventKind.TASK_STARTED
 TASK_PAUSED = RuntimeEventKind.TASK_PAUSED
 TASK_COMPLETED = RuntimeEventKind.TASK_COMPLETED
 TASK_MACHINE_INFEASIBLE = RuntimeEventKind.TASK_MACHINE_INFEASIBLE
+
+
+def _join_info(info: InfoType, key: str, new_item: InfoType | Any) -> None:
+    if isinstance(new_item, Mapping):
+        info.update(
+            {f"{key}.{subkey}": value for subkey, value in new_item.items()}
+        )
+
+    else:
+        info[key] = new_item
+
 
 ObsT_co = TypeVar(
     "ObsT_co", bound=Observation, default=DefaultObservation, covariant=True
@@ -452,21 +463,11 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             tracer_info = tracer.export()
 
             if tracer_info is not None:
-                info[tracer.tracer_name] = tracer_info
+                _join_info(info, tracer.tracer_name, tracer_info)
 
         for metric_name, metric in self.metrics.items():
             metric_value = metric(self.state)
-
-            if isinstance(metric_value, Mapping):
-                info.update(
-                    {
-                        f"{metric_name}_{key}": value
-                        for key, value in metric_value.items()
-                    }
-                )
-
-            else:
-                info[metric_name] = metric_value
+            _join_info(info, metric_name, metric_value)
 
         return info
 
