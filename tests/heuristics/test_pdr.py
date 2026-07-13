@@ -3,6 +3,7 @@ import logging
 import pytest
 
 from cpscheduler.environment import SchedulingEnv
+from cpscheduler.environment.observation import DefaultObservation
 from cpscheduler.heuristics.pdrs import (
     MostOperationsRemaining,
     MostWorkRemaining,
@@ -30,7 +31,7 @@ pdr_expected_results = {
     "ta80": {"SPT": 5848, "MOPNR": 5707, "MWKR": 5505},
 }
 
-envs: dict[str, SchedulingEnv] = {
+envs: dict[str, SchedulingEnv[DefaultObservation]] = {
     instance_name: env_setup(instance_name)
     for instance_name in pdr_expected_results
 }

@@ -72,11 +72,11 @@ class SchedulingSolver(Generic[R]):
             If the environment is not loaded and reset before initializing the solver.
 
         """
-        env = unwrap_env(env)
+        core_env = unwrap_env(env)
 
         if instance is not None:
-            env.load_instance(*ensure_iterable(instance))
-            env.reset()
+            core_env.load_instance(*ensure_iterable(instance))
+            core_env.reset()
 
         elif not env.running:
             raise ValueError(
@@ -88,9 +88,9 @@ class SchedulingSolver(Generic[R]):
 
         self.formulation = formulation
 
-        self.formulation.initialize_model(env)
+        self.formulation.initialize_model(core_env)
 
-        self.env = env
+        self.env = core_env
         self._built = False
 
     def build(self) -> None:

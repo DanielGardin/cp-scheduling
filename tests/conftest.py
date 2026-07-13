@@ -12,6 +12,7 @@ from cpscheduler.environment import (
     SingleMachineSetup,
 )
 from cpscheduler.environment.constraints import PreemptionConstraint
+from cpscheduler.environment.observation import DefaultObservation
 from cpscheduler.instances.formats.jobshop import read_standard_jobshop_instance
 
 TEST_INSTANCES = [
@@ -25,10 +26,10 @@ TEST_INSTANCES = [
 
 PROJECT_ROOT = Path(__file__).parent.parent
 
-EnvFactory: TypeAlias = Callable[[], SchedulingEnv]
+EnvFactory: TypeAlias = Callable[[], SchedulingEnv[DefaultObservation]]
 
 
-def _single_machine_case() -> SchedulingEnv:
+def _single_machine_case() -> SchedulingEnv[DefaultObservation]:
     return SchedulingEnv(
         machine_setup=SingleMachineSetup(disjunctive=False),
         objective=Makespan(),
@@ -37,7 +38,7 @@ def _single_machine_case() -> SchedulingEnv:
     )
 
 
-def _identical_parallel_case() -> SchedulingEnv:
+def _identical_parallel_case() -> SchedulingEnv[DefaultObservation]:
     return SchedulingEnv(
         machine_setup=IdenticalParallelMachineSetup(
             n_machines=2, disjunctive=False
@@ -48,7 +49,7 @@ def _identical_parallel_case() -> SchedulingEnv:
     )
 
 
-def _flow_shop_case() -> SchedulingEnv:
+def _flow_shop_case() -> SchedulingEnv[DefaultObservation]:
     return SchedulingEnv(
         machine_setup=FlowShopSetup(disjunctive=False),
         objective=Makespan(),
@@ -61,7 +62,7 @@ def _flow_shop_case() -> SchedulingEnv:
     )
 
 
-def _open_shop_case() -> SchedulingEnv:
+def _open_shop_case() -> SchedulingEnv[DefaultObservation]:
     return SchedulingEnv(
         machine_setup=OpenShopSetup(disjunctive=False),
         objective=Makespan(),
@@ -76,7 +77,7 @@ def _open_shop_case() -> SchedulingEnv:
 
 def env_setup(
     instance_name: str, allow_preemption: bool = False
-) -> SchedulingEnv:
+) -> SchedulingEnv[DefaultObservation]:
     path = PROJECT_ROOT / f"instances/jobshop/{instance_name}.txt"
 
     try:

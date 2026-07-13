@@ -83,7 +83,7 @@ def _join_info(info: InfoType, key: str, new_item: InfoType | Any) -> None:
 
 
 ObsT_co = TypeVar(
-    "ObsT_co", bound=Observation, default=DefaultObservation, covariant=True
+    "ObsT_co", bound=Observation, default=Observation[Any], covariant=True
 )
 
 

@@ -22,6 +22,7 @@ from cpscheduler.environment import (
     ScheduleSetup,
     SchedulingEnv,
 )
+from cpscheduler.environment.observation import Observation
 from cpscheduler.environment.state import ScheduleState
 
 formulations: dict[str, type["Formulation[Any]"]] = {}
@@ -168,7 +169,7 @@ class Formulation(Generic[SolverResult], ABC):
         """Get the objective value of the current solution."""
 
     @abstractmethod
-    def initialize_model(self, env: SchedulingEnv) -> None:
+    def initialize_model(self, env: SchedulingEnv[Observation[Any]]) -> None:
         """Initialize the model with variables.
 
         This should not add any constraints or objective to the model, but only
