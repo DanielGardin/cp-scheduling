@@ -90,13 +90,8 @@ class SingleMachineSetup(ScheduleSetup):
             instance.set_processing_time(task_id, 0, p_time)
 
     @override
-    def setup_constraints(
-        self, instance: ProblemInstance
-    ) -> tuple[Constraint, ...]:
-        if not self.disjunctive:
-            return ()
-
-        return (MachineConstraint(),)
+    def setup_constraints(self) -> tuple[Constraint, ...]:
+        return (MachineConstraint(),) if self.disjunctive else ()
 
     @classmethod
     @override
@@ -164,9 +159,7 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
                 instance.set_processing_time(task_id, machine, p_time)
 
     @override
-    def setup_constraints(
-        self, instance: ProblemInstance
-    ) -> tuple[Constraint, ...]:
+    def setup_constraints(self) -> tuple[Constraint, ...]:
         return (MachineConstraint(),) if self.disjunctive else ()
 
     @override
@@ -264,9 +257,7 @@ class UniformParallelMachineSetup(ScheduleSetup):
                 instance.set_processing_time(task_id, machine, machine_p_time)
 
     @override
-    def setup_constraints(
-        self, instance: ProblemInstance
-    ) -> tuple[Constraint, ...]:
+    def setup_constraints(self) -> tuple[Constraint, ...]:
         return (MachineConstraint(),) if self.disjunctive else ()
 
     @override
@@ -342,9 +333,7 @@ class UnrelatedParallelMachineSetup(ScheduleSetup):
                 instance.set_processing_time(task_id, machine_id, ptime)
 
     @override
-    def setup_constraints(
-        self, instance: ProblemInstance
-    ) -> tuple[Constraint, ...]:
+    def setup_constraints(self) -> tuple[Constraint, ...]:
         return (MachineConstraint(),) if self.disjunctive else ()
 
     @override

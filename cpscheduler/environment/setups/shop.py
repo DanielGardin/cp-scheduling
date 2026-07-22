@@ -24,16 +24,69 @@ from cpscheduler.environment.setups.parallel import (
 )
 
 
-class OpenShopSetup(ScheduleSetup):
+class _ShopSetup(ScheduleSetup):
+    """Base class for shop scheduling setups.
+
+    This class provides common features and methods for shop scheduling setups:
+    - `processing_times`: A task feature representing the processing times of tasks.
+    - `machines`: A task feature representing the machine assignments for tasks.
+    """
+
+    processing_times: TaskFeature[Time]
+    machines: TaskFeature[MachineID]
+    disjunctive: bool
+
+    def __init__(
+        self,
+        processing_times: str = "processing_time",
+        machine_feature: str = "machine",
+        disjunctive: bool = True,
+    ):
+        self.disjunctive = disjunctive
+        self.processing_times = TaskFeature(
+            name=processing_times,
+            semantic="duration",
+            shape=(),
+        )
+
+        self.machines = TaskFeature(
+            name=machine_feature,
+            semantic="machine",
+            shape=(),
+        )
+
+    @override
+    def get_features(self) -> list[TaskFeature]:
+        return [self.processing_times, self.machines]
+
+    @override
+    def setup_constraints(self) -> tuple[Constraint, ...]:
+        return (MachineConstraint(),) if self.disjunctive else ()
+
+    @override
+    def initialize(self, instance: ProblemInstance) -> None:
+        for task_id, (p_time, machine_id) in enumerate(
+            zip(self.processing_times.value, self.machines.value, strict=False)
+        ):
+            instance.set_processing_time(task_id, machine_id, p_time)
+
+    @property
+    @override
+    def n_machines(self) -> int:
+        if self.machines.loaded:
+            return max(self.machines.value) + 1
+
+        return 0
+
+
+class OpenShopSetup(_ShopSetup):
     """Open Shop Scheduling Setup.
 
     This setup is used for scheduling tasks in an open shop environment where
     each task can be processed on any machine, and the order of operations is not fixed.
     """
 
-    processing_times: TaskFeature[Time]
-    machines: TaskFeature[MachineID]
-    disjunctive: bool
+    _task_disjunction: NonOverlapConstraint
 
     def __init__(
         self,
@@ -58,50 +111,25 @@ class OpenShopSetup(ScheduleSetup):
             that only one task can be processed at a time on each machine.
 
         """
-        self.disjunctive = disjunctive
-
-        self.processing_times = TaskFeature(
-            name=processing_times,
-            semantic="duration",
-            shape=(),
+        super().__init__(
+            processing_times=processing_times,
+            machine_feature=machine_feature,
+            disjunctive=disjunctive,
         )
-
-        self.machines = TaskFeature(
-            name=machine_feature,
-            semantic="machine",
-            shape=(),
-        )
-
-    @property
-    @override
-    def n_machines(self) -> int:
-        if self.machines.loaded:
-            return max(self.machines.value) + 1
-
-        return 0
-
-    @override
-    def get_features(self) -> list[TaskFeature]:
-        return [self.processing_times, self.machines]
 
     @override
     def initialize(self, instance: ProblemInstance) -> None:
-        for task_id, (p_time, machine_id) in enumerate(
-            zip(self.processing_times.value, self.machines.value, strict=False)
-        ):
-            instance.set_processing_time(task_id, machine_id, p_time)
+        super().initialize(instance)
+
+        for tasks in instance.job_tasks:
+            self._task_disjunction.add_group(tasks)
 
     @override
-    def setup_constraints(
-        self, instance: ProblemInstance
-    ) -> tuple[Constraint, ...]:
-        task_disjunction = NonOverlapConstraint(task_groups=instance.job_tasks)
+    def setup_constraints(self) -> tuple[Constraint, ...]:
+        task_disjunction = NonOverlapConstraint()
+        self._task_disjunction = task_disjunction
 
-        return (
-            (MachineConstraint(), task_disjunction)
-            if self.disjunctive
-            else (task_disjunction,)
-        )
+        return (*super().setup_constraints(), task_disjunction)
 
     @override
     def get_entry(self) -> str:
@@ -117,10 +145,10 @@ class OpenShopSetup(ScheduleSetup):
 
 
 def _build_job_precedence(
-    instance: ProblemInstance, operation_order: list[int]
+    precedence: PrecedenceConstraint,
+    instance: ProblemInstance,
+    operation_order: list[int],
 ) -> PrecedenceConstraint:
-    precedence = PrecedenceConstraint()
-
     task_orders = [[-1] * len(tasks) for tasks in instance.job_tasks]
 
     for task_id, (job, op) in enumerate(
@@ -140,7 +168,7 @@ def _build_job_precedence(
     return precedence
 
 
-class JobShopSetup(OpenShopSetup):
+class JobShopSetup(_ShopSetup):
     """Job Shop Scheduling Setup.
 
     This setup is used for scheduling tasks in a job shop environment where each
@@ -148,6 +176,8 @@ class JobShopSetup(OpenShopSetup):
     """
 
     operation_order: TaskFeature[int]
+
+    _chain_precedence: PrecedenceConstraint
 
     def __init__(
         self,
@@ -188,22 +218,21 @@ class JobShopSetup(OpenShopSetup):
 
     @override
     def get_features(self) -> list[TaskFeature]:
-        return [
-            self.processing_times,
-            self.machines,
-            self.operation_order,
-        ]
+        return [*super().get_features(), self.operation_order]
 
     @override
-    def setup_constraints(
-        self, instance: ProblemInstance
-    ) -> tuple[Constraint, ...]:
-        precedence = _build_job_precedence(instance, self.operation_order.value)
+    def setup_constraints(self) -> tuple[Constraint, ...]:
+        precedence = PrecedenceConstraint()
+        self._chain_precedence = precedence
 
-        return (
-            (MachineConstraint(), precedence)
-            if self.disjunctive
-            else (precedence,)
+        return (*super().setup_constraints(), precedence)
+
+    @override
+    def initialize(self, instance: ProblemInstance) -> None:
+        super().initialize(instance)
+
+        _build_job_precedence(
+            self._chain_precedence, instance, self.operation_order.value
         )
 
     @override
@@ -229,6 +258,8 @@ class FlexibleJobShopSetup(UnrelatedParallelMachineSetup):
     """
 
     operation_order: TaskFeature[int]
+
+    _chain_precedence: PrecedenceConstraint
 
     def __init__(
         self,
@@ -264,21 +295,25 @@ class FlexibleJobShopSetup(UnrelatedParallelMachineSetup):
 
     @override
     def get_features(self) -> list[TaskFeature]:
-        return [
-            self.processing_times,
-            self.operation_order,
-        ]
+        return [self.processing_times, self.operation_order]
 
     @override
-    def setup_constraints(
-        self, instance: ProblemInstance
-    ) -> tuple[Constraint, ...]:
-        precedence = _build_job_precedence(instance, self.operation_order.value)
+    def setup_constraints(self) -> tuple[Constraint, ...]:
+        precedence = PrecedenceConstraint()
+        self._chain_precedence = precedence
 
         return (
             (MachineConstraint(), precedence)
             if self.disjunctive
             else (precedence,)
+        )
+
+    @override
+    def initialize(self, instance: ProblemInstance) -> None:
+        super().initialize(instance)
+
+        _build_job_precedence(
+            self._chain_precedence, instance, self.operation_order.value
         )
 
     @override
@@ -305,6 +340,8 @@ class FlowShopSetup(ScheduleSetup):
     processing_times: TaskFeature[Time]
     operation_order: TaskFeature[int]
     disjunctive: bool
+
+    _chain_precedence: PrecedenceConstraint
 
     def __init__(
         self,
@@ -355,10 +392,9 @@ class FlowShopSetup(ScheduleSetup):
         ]
 
     @override
-    def setup_constraints(
-        self, instance: ProblemInstance
-    ) -> tuple[Constraint, ...]:
-        precedence = _build_job_precedence(instance, self.operation_order.value)
+    def setup_constraints(self) -> tuple[Constraint, ...]:
+        precedence = PrecedenceConstraint()
+        self._chain_precedence = precedence
 
         return (
             (MachineConstraint(), precedence)
@@ -376,6 +412,10 @@ class FlowShopSetup(ScheduleSetup):
             )
         ):
             instance.set_processing_time(task_id, machine_id, p_time)
+
+        _build_job_precedence(
+            self._chain_precedence, instance, self.operation_order.value
+        )
 
     @override
     def get_entry(self) -> str:

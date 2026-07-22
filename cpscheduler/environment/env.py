@@ -230,8 +230,6 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         """
         self._status = UNLOADED
 
-        problem_instance = ProblemInstance(debug_mode)
-
         if machine_setup is None:
             machine_setup = ScheduleSetup()
 
@@ -244,10 +242,15 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         if observation is None:
             observation = cast("ObsT_co", DefaultObservation())
 
+        setup_constraints = machine_setup.setup_constraints()
+
+        problem_instance = ProblemInstance(debug_mode)
+
         component: Component
         for component in [
             machine_setup,
             *constraints,
+            *setup_constraints,
             objective,
         ]:
             for feature in component.get_features():
@@ -269,8 +272,12 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         self.metrics = dict(metrics) if metrics is not None else {}
         self.tracers = tuple(tracers) if tracers is not None else ()
 
-        self.setup_constraints = ()
-        self._all_constraints = ()
+        self.setup_constraints = setup_constraints
+        self._all_constraints = tuple(
+            constraint
+            for constraint in self.constraints + setup_constraints
+            if not isinstance(constraint, PassiveConstraint)
+        )
         self.instance = problem_instance
 
         self.schedule = Schedule()
@@ -343,9 +350,6 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         Returns the environment to UNLOADED state, allowing setup, constraints,
         and objective modifications.
         """
-        self.setup_constraints = ()
-        self._all_constraints = ()
-
         self.instance.reset()
         self._status = UNLOADED
 
@@ -388,35 +392,9 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
         problem_instance.initialize(instances, self.setup)
         self.setup.initialize(problem_instance)
-
-        setup_constraints = self.setup.setup_constraints(problem_instance)
-        for constraint in setup_constraints:
-            for feature in constraint.get_features():
-                if not feature.owner:
-                    raise ValueError(
-                        f"Setup '{self.setup}' produced a non-owner feature "
-                        f"'{feature.name}' from setup constraint '{constraint}'. "
-                        f"Setup constraints must be built entirely from the "
-                        "instance, and not require any additional features."
-                    )
-
-                problem_instance.register(feature)
-
         problem_instance.finalize()
 
-        self.setup_constraints = setup_constraints
-        self._all_constraints = (
-            *setup_constraints,
-            *(
-                constraint
-                for constraint in self.constraints
-                if not isinstance(constraint, PassiveConstraint)
-            ),
-        )
-
-        for tracer in self.tracers:
-            tracer.initialize(problem_instance)
-
+        component: Component
         for component in [
             *self.setup_constraints,
             *self.constraints,
@@ -425,6 +403,9 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             component.initialize(problem_instance)
 
         self.observation.initialize(problem_instance)
+
+        for tracer in self.tracers:
+            tracer.initialize(problem_instance)
 
         self.state = ScheduleState(problem_instance)
         self._status = LOADED

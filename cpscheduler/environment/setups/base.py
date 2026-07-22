@@ -5,7 +5,6 @@ from typing_extensions import override
 
 from cpscheduler.environment.component import Component
 from cpscheduler.environment.constraints import Constraint
-from cpscheduler.environment.instance import ProblemInstance
 
 setups: dict[str, type["ScheduleSetup"]] = {}
 
@@ -41,15 +40,10 @@ class ScheduleSetup(Component):
         """
         return 0
 
-    def setup_constraints(
-        self, instance: ProblemInstance
-    ) -> tuple[Constraint, ...]:
-        """Build the constraint objects to be included in the enviornment due to the setup.
+    def setup_constraints(self) -> tuple[Constraint, ...]:
+        """Export the constraints defined by the setup.
 
-        Parameters
-        ----------
-        instance: ProblemInstance
-            The problem instance for which to build the constraints.
-
+        These constraints are intrinsic to the setup and are often
+        initialized with the problem instance during `setup.initialize()`.
         """
         return ()
