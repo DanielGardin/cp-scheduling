@@ -46,12 +46,10 @@ class DefaultObservation(Observation[DefaultObsType]):
 
     The features are organized in four scopes: "task", "job", "machine" and "global",
     which can be accessed as dictionaries of feature name to feature value.
-
-    Because it is too general, it is not recommended for training agents,
-    but it can be useful for debugging and testing purposes.
     """
 
-    _exclude_features: set[str]
+    _all_features: bool
+    _feature_set: set[str]
 
     _time: RuntimeFeature[Time]
     _status: RuntimeFeature[list[int]]
@@ -66,7 +64,7 @@ class DefaultObservation(Observation[DefaultObsType]):
 
     def __init__(
         self,
-        exclude_features: Iterable[str] | None = None,
+        features: Iterable[str] | None = None,
         n_tasks: int | None = None,
         n_machines: int | None = None,
         n_jobs: int | None = None,
@@ -85,8 +83,8 @@ class DefaultObservation(Observation[DefaultObsType]):
 
         Parameters
         ----------
-        exclude_features: set[str] | None
-            A set of feature names to exclude from the observation.
+        features: Iterable[str] | None
+            A set of feature names to include in the observation.
             If None, all features will be included.
 
         n_tasks: int | None
@@ -105,7 +103,9 @@ class DefaultObservation(Observation[DefaultObsType]):
 
         """
         super().__init__(n_tasks, n_machines, n_jobs, **symbols)
-        self._exclude_features = set(exclude_features or ())
+
+        self._all_features = features is None
+        self._feature_set = set(features or ())
 
         self._status = RuntimeFeature(
             name="status",
@@ -150,10 +150,8 @@ class DefaultObservation(Observation[DefaultObsType]):
         }
 
         for feature_name, spec in instance.feature_specs.items():
-            if feature_name in self._exclude_features:
-                continue
-
-            feature_specs[spec.scope][feature_name] = spec
+            if self._all_features or feature_name in self._feature_set:
+                feature_specs[spec.scope][feature_name] = spec
 
         return DictSpec(
             {
@@ -184,8 +182,13 @@ class DefaultObservation(Observation[DefaultObsType]):
         }
 
         for feat_name, features in instance.features.items():
-            if feat_name in self._exclude_features or not features:
+            if not self._all_features and feat_name not in self._feature_set:
                 continue
+
+            if not features:
+                raise ValueError(
+                    f"Feature '{feat_name}' has no values in the instance."
+                )
 
             feature = features[0]
 
@@ -209,6 +212,8 @@ class DefaultObservation(Observation[DefaultObsType]):
     @override
     def update(self, state: ScheduleState) -> None:
         self._time.value = state.time
+        self.global_state["time"] = state.time
+
         self._status.value[:] = state.runtime.status
 
         available = self._available.value
