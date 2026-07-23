@@ -20,13 +20,7 @@ from typing_extensions import override
 
 from cpscheduler.environment.constants import Int, Time
 from cpscheduler.environment.constraints import Constraint, MachineConstraint
-from cpscheduler.environment.instance import (
-    UNSET,
-    Feature,
-    MachineFeature,
-    ProblemInstance,
-    TaskFeature,
-)
+from cpscheduler.environment.instance import Feature, ProblemInstance
 from cpscheduler.environment.setups.base import ScheduleSetup
 from cpscheduler.environment.utils.general import convert_to_list
 
@@ -43,7 +37,7 @@ class SingleMachineSetup(ScheduleSetup):
     available for processing.
     """
 
-    processing_times: TaskFeature[Time]
+    processing_times: Feature[list[Time]]
 
     disjunctive: bool
 
@@ -69,10 +63,8 @@ class SingleMachineSetup(ScheduleSetup):
         """
         self.disjunctive = disjunctive
 
-        self.processing_times = TaskFeature(
-            name=processing_times,
-            semantic="duration",
-            shape=(),
+        self.processing_times = Feature(
+            name=processing_times, shape=("n_tasks",)
         )
 
     @property
@@ -81,7 +73,7 @@ class SingleMachineSetup(ScheduleSetup):
         return 1
 
     @override
-    def get_features(self) -> list[TaskFeature]:
+    def get_features(self) -> list[Feature]:
         return [self.processing_times]
 
     @override
@@ -107,7 +99,7 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
     """
 
     _n_machines: int
-    processing_times: TaskFeature[Time]
+    processing_times: Feature[list[Time]]
     disjunctive: bool
 
     def __init__(
@@ -135,10 +127,8 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
         """
         self.disjunctive = disjunctive
 
-        self.processing_times = TaskFeature(
-            name=processing_times,
-            semantic="duration",
-            shape=(),
+        self.processing_times = Feature(
+            name=processing_times, shape=("n_tasks",)
         )
 
         self._n_machines = n_machines
@@ -149,7 +139,7 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
         return self._n_machines
 
     @override
-    def get_features(self) -> list[TaskFeature]:
+    def get_features(self) -> list[Feature]:
         return [self.processing_times]
 
     @override
@@ -180,14 +170,14 @@ class UniformParallelMachineSetup(ScheduleSetup):
     the task's processing time divided by the machine's speed.
     """
 
-    speed: MachineFeature[int]
-    processing_times: TaskFeature[Time]
+    speed: Feature[list[int]]
+    processing_times: Feature[list[Time]]
     disjunctive: bool
 
     def __init__(
         self,
-        speed: Iterable[Int] | None = None,
         speed_tag: str = "speed",
+        speed: Iterable[Int] | None = None,
         processing_times: str = "processing_time",
         disjunctive: bool = True,
     ):
@@ -216,19 +206,19 @@ class UniformParallelMachineSetup(ScheduleSetup):
         """
         self.disjunctive = disjunctive
 
-        self.processing_times = TaskFeature(
-            name=processing_times,
-            semantic="duration",
-            shape=(),
+        self.processing_times = Feature(
+            name=processing_times, shape=("n_tasks",)
         )
 
-        self.speed = MachineFeature(
-            name=speed_tag,
-            semantic="discrete",
-            default=(
-                convert_to_list(speed, int) if speed is not None else UNSET
-            ),
+        self.speed = Feature(
+            name=speed_tag, preprocess=self._load_speeds, shape=("n_machines",)
         )
+
+        if speed is not None:
+            self.speed.own_data(speed)
+
+    def _load_speeds(self, speeds: Iterable[Int]) -> list[int]:
+        return convert_to_list(speeds, int)
 
     @property
     @override
@@ -282,7 +272,7 @@ class UnrelatedParallelMachineSetup(ScheduleSetup):
     for the same task.
     """
 
-    processing_times: TaskFeature[list[Time]]
+    processing_times: Feature[list[list[Time]]]
     disjunctive: bool
 
     def __init__(
@@ -308,10 +298,9 @@ class UnrelatedParallelMachineSetup(ScheduleSetup):
         """
         self.disjunctive = disjunctive
 
-        self.processing_times = TaskFeature(
+        self.processing_times = Feature(
             name=processing_times,
-            shape=("n_machines",),
-            semantic="duration",
+            shape=("n_tasks", "n_machines"),
         )
 
     @property
@@ -323,7 +312,7 @@ class UnrelatedParallelMachineSetup(ScheduleSetup):
         return 0
 
     @override
-    def get_features(self) -> list[TaskFeature]:
+    def get_features(self) -> list[Feature]:
         return [self.processing_times]
 
     @override

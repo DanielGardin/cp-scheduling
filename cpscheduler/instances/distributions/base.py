@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, MutableSequence, Sequence
     from random import Random
 
-    from cpscheduler.environment.specs.symbols import BaseShapeDim
+    from cpscheduler.environment.utils.symbols import BaseShapeDim
 
 
 _T_co = TypeVar("_T_co", covariant=True)

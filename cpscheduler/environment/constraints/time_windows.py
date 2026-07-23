@@ -1,10 +1,12 @@
 """Time window constraints for the scheduling environment."""
 
+from collections.abc import Iterable
+
 from typing_extensions import override
 
 from cpscheduler.environment.constants import MAX_TIME, Int, Time
 from cpscheduler.environment.constraints.base import Constraint
-from cpscheduler.environment.instance import UNSET, GlobalFeature, TaskFeature
+from cpscheduler.environment.instance import Feature
 from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.utils.general import convert_to_list
 
@@ -19,7 +21,7 @@ class HorizonConstraint(Constraint):
     produce a standalone entry in the schedule.
     """
 
-    horizon: GlobalFeature[Time]
+    horizon: Feature[Time]
 
     def __init__(self, horizon: Int = MAX_TIME):
         """Initialize the Horizon Constraint.
@@ -30,16 +32,15 @@ class HorizonConstraint(Constraint):
             The upper bound on the completion time of all tasks.
 
         """
-        self.horizon = GlobalFeature(
-            name="horizon", semantic="time", default=Time(horizon)
-        )
+        self.horizon = Feature(name="horizon", shape=())
+        self.horizon.own_data(Time(horizon))
 
     def set_horizon(self, horizon: Int) -> None:
         """Set the horizon value."""
-        self.horizon.set_data(Time(horizon))
+        self.horizon.own_data(Time(horizon))
 
     @override
-    def get_features(self) -> list[GlobalFeature]:
+    def get_features(self) -> list[Feature]:
         return [self.horizon]
 
     @override
@@ -64,12 +65,12 @@ class ReleaseDateConstraint(Constraint):
 
     """
 
-    release_dates: TaskFeature[Time]
+    release_dates: Feature[list[Time]]
 
     def __init__(
         self,
         release_tag: str = "release_time",
-        release_dates: list[Int] | None = None,
+        release_dates: Iterable[Int] | None = None,
     ):
         """Initialize the Release Date Constraint.
 
@@ -84,19 +85,18 @@ class ReleaseDateConstraint(Constraint):
             Default to None.
 
         """
-        self.release_dates = TaskFeature(
-            name=release_tag,
-            semantic="time",
-            shape=(),
-            default=(
-                convert_to_list(release_dates, Time)
-                if release_dates is not None
-                else UNSET
-            ),
+        self.release_dates = Feature(
+            name=release_tag, preprocess=self._load_dates, shape=("n_tasks",)
         )
 
+        if release_dates is not None:
+            self.release_dates.own_data(release_dates)
+
+    def _load_dates(self, dates: Iterable[Int]) -> list[Time]:
+        return convert_to_list(dates, Time)
+
     @override
-    def get_features(self) -> list[TaskFeature]:
+    def get_features(self) -> list[Feature]:
         return [self.release_dates]
 
     @override
@@ -127,7 +127,7 @@ class DeadlineConstraint(Constraint):
 
     """
 
-    due_dates: TaskFeature[Time]
+    due_dates: Feature[list[Time]]
 
     def __init__(
         self, due_tag: str = "due_time", due_dates: list[Int] | None = None
@@ -144,19 +144,15 @@ class DeadlineConstraint(Constraint):
             If None, deadlines must be provided in the instance data.
 
         """
-        self.due_dates = TaskFeature(
-            name=due_tag,
-            semantic="time",
-            shape=(),
-            default=(
-                convert_to_list(due_dates, Time)
-                if due_dates is not None
-                else UNSET
-            ),
+        self.due_dates = Feature(
+            name=due_tag, preprocess=self._load_dates, shape=("n_tasks",)
         )
 
+    def _load_dates(self, dates: Iterable[Int]) -> list[Time]:
+        return convert_to_list(dates, Time)
+
     @override
-    def get_features(self) -> list[TaskFeature]:
+    def get_features(self) -> list[Feature]:
         return [self.due_dates]
 
     @override

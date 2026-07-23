@@ -6,11 +6,7 @@ from typing_extensions import Self, override
 
 from cpscheduler.environment.constants import Int, MachineID, TaskID
 from cpscheduler.environment.constraints.base import Constraint
-from cpscheduler.environment.instance import (
-    UNSET,
-    GlobalFeature,
-    ProblemInstance,
-)
+from cpscheduler.environment.instance import Feature, ProblemInstance
 from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.utils.general import convert_to_list
 
@@ -85,7 +81,7 @@ class PrecedenceConstraint(Constraint):
     must be completed before others can start.
     """
 
-    parents: GlobalFeature[dict[TaskID, list[TaskID]]]
+    parents: Feature[dict[TaskID, list[TaskID]]]
     "A mapping of task IDs to their parent task IDs."
 
     children: dict[TaskID, list[TaskID]]
@@ -109,18 +105,15 @@ class PrecedenceConstraint(Constraint):
             An optional name for the adjacency feature.
 
         """
-        self.parents = GlobalFeature(
-            name=name,
-            semantic="adjacency",
-            default=(
+        self.parents = Feature(name=name)
+
+        if precedence is not None:
+            self.parents.own_data(
                 {
                     TaskID(child_id): convert_to_list(parent_ids, TaskID)
                     for child_id, parent_ids in precedence.items()
                 }
-                if precedence is not None
-                else UNSET
-            ),
-        )
+            )
 
     @classmethod
     def from_edges(
@@ -216,7 +209,7 @@ class PrecedenceConstraint(Constraint):
         )
 
     @override
-    def get_features(self) -> list[GlobalFeature]:
+    def get_features(self) -> list[Feature]:
         return [self.parents]
 
     @override

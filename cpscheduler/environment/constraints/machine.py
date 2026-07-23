@@ -12,11 +12,7 @@ from cpscheduler.environment.constants import (
     Time,
 )
 from cpscheduler.environment.constraints.base import Constraint
-from cpscheduler.environment.instance import (
-    Feature,
-    MachineFeature,
-    ProblemInstance,
-)
+from cpscheduler.environment.instance import Feature, ProblemInstance
 from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.utils.general import convert_to_list, extend_list
 
@@ -94,7 +90,7 @@ class MachineBreakdownConstraint(Constraint):
 
     """
 
-    breakdowns: MachineFeature[list[tuple[Time, Time]]]
+    breakdowns: Feature[list[list[tuple[Time, Time]]]]
     next_breakdown: dict[MachineID, int]
 
     def __init__(
@@ -114,9 +110,9 @@ class MachineBreakdownConstraint(Constraint):
             An optional name for the breakdown feature.
 
         """
-        self.breakdowns = MachineFeature(
+        self.breakdowns = Feature(
             name=name,
-            semantic="calendar",
+            shape=("n_machines", None, 2),
         )
 
         if breakdowns is not None:
@@ -130,14 +126,14 @@ class MachineBreakdownConstraint(Constraint):
                 for i in range(n_machines)
             ]
 
-            self.breakdowns.set_data(calendar)
+            self.breakdowns.own_data(calendar)
 
     def add_breakdown(
         self, machine_id: Int, start_time: Int, end_time: Int
     ) -> None:
         """Add a breakdown interval for a specific machine."""
         if not self.breakdowns.loaded:
-            self.breakdowns.set_data([])
+            self.breakdowns.own_data([])
 
         machine = MachineID(machine_id)
         extend_list(self.breakdowns.value, machine + 1, list)
@@ -252,7 +248,7 @@ class BatchConstraint(Constraint):
     Each machine can process up to `capacity[m]` tasks simultaneously,
     """
 
-    capacity: MachineFeature[int]
+    capacity: Feature[list[int]]
     constant_capacity: int | None
 
     machine_map: list[set[TaskID]]
@@ -279,10 +275,8 @@ class BatchConstraint(Constraint):
         """
         self.constant_capacity = None
 
-        if capacity is None:
-            self.capacity = MachineFeature(name=name, semantic="count")
-
-        else:
+        self.capacity = Feature(name=name, shape=("n_machines",))
+        if capacity is not None:
             if isinstance(capacity, Int):
                 self.constant_capacity = int(capacity)
                 storage: list[int] = []
@@ -290,9 +284,7 @@ class BatchConstraint(Constraint):
             else:
                 storage = convert_to_list(capacity, int)
 
-            self.capacity = MachineFeature(
-                name=name, semantic="count", default=storage
-            )
+            self.capacity.own_data(storage)
 
     def set_capacity(self, machine_id: Int, capacity: Int) -> None:
         """Set the capacity for a specific machine."""

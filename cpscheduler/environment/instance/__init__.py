@@ -8,22 +8,7 @@ The `ProblemInstance` class is the main class for representing a scheduling prob
 It contains all the features of the instance, centralizing the information in one place.
 """
 
-__all__ = [
-    "UNSET",
-    "Feature",
-    "GlobalFeature",
-    "JobFeature",
-    "MachineFeature",
-    "ProblemInstance",
-    "TaskFeature",
-]
+__all__ = ["Feature", "ProblemInstance"]
 
-from .features import (
-    UNSET,
-    Feature,
-    GlobalFeature,
-    JobFeature,
-    MachineFeature,
-    TaskFeature,
-)
+from .features import Feature
 from .instance import ProblemInstance

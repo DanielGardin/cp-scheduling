@@ -17,7 +17,7 @@ from cpscheduler.environment.constraints import (
     NonOverlapConstraint,
     PrecedenceConstraint,
 )
-from cpscheduler.environment.instance import ProblemInstance, TaskFeature
+from cpscheduler.environment.instance import Feature, ProblemInstance
 from cpscheduler.environment.setups.base import ScheduleSetup
 from cpscheduler.environment.setups.parallel import (
     UnrelatedParallelMachineSetup,
@@ -32,8 +32,8 @@ class _ShopSetup(ScheduleSetup):
     - `machines`: A task feature representing the machine assignments for tasks.
     """
 
-    processing_times: TaskFeature[Time]
-    machines: TaskFeature[MachineID]
+    processing_times: Feature[list[Time]]
+    machines: Feature[list[MachineID]]
     disjunctive: bool
 
     def __init__(
@@ -43,20 +43,19 @@ class _ShopSetup(ScheduleSetup):
         disjunctive: bool = True,
     ):
         self.disjunctive = disjunctive
-        self.processing_times = TaskFeature(
+
+        self.processing_times = Feature(
             name=processing_times,
-            semantic="duration",
-            shape=(),
+            shape=("n_tasks",),
         )
 
-        self.machines = TaskFeature(
+        self.machines = Feature(
             name=machine_feature,
-            semantic="machine",
-            shape=(),
+            shape=("n_tasks",),
         )
 
     @override
-    def get_features(self) -> list[TaskFeature]:
+    def get_features(self) -> list[Feature]:
         return [self.processing_times, self.machines]
 
     @override
@@ -175,7 +174,7 @@ class JobShopSetup(_ShopSetup):
     task has a specific operation order and is assigned to a specific machine.
     """
 
-    operation_order: TaskFeature[int]
+    operation_order: Feature[list[int]]
 
     _chain_precedence: PrecedenceConstraint
 
@@ -212,12 +211,10 @@ class JobShopSetup(_ShopSetup):
             disjunctive=disjunctive,
         )
 
-        self.operation_order = TaskFeature(
-            name=operation_order, semantic="order", shape=()
-        )
+        self.operation_order = Feature(name=operation_order, shape=("n_tasks",))
 
     @override
-    def get_features(self) -> list[TaskFeature]:
+    def get_features(self) -> list[Feature]:
         return [*super().get_features(), self.operation_order]
 
     @override
@@ -257,7 +254,7 @@ class FlexibleJobShopSetup(UnrelatedParallelMachineSetup):
     allowing for more scheduling options and potentially better solutions.
     """
 
-    operation_order: TaskFeature[int]
+    operation_order: Feature[list[int]]
 
     _chain_precedence: PrecedenceConstraint
 
@@ -289,12 +286,10 @@ class FlexibleJobShopSetup(UnrelatedParallelMachineSetup):
             disjunctive=disjunctive,
         )
 
-        self.operation_order = TaskFeature(
-            name=operation_order, semantic="order", shape=()
-        )
+        self.operation_order = Feature(name=operation_order, shape=("n_tasks",))
 
     @override
-    def get_features(self) -> list[TaskFeature]:
+    def get_features(self) -> list[Feature]:
         return [self.processing_times, self.operation_order]
 
     @override
@@ -337,8 +332,8 @@ class FlowShopSetup(ScheduleSetup):
     machine order.
     """
 
-    processing_times: TaskFeature[Time]
-    operation_order: TaskFeature[int]
+    processing_times: Feature[list[Time]]
+    operation_order: Feature[list[int]]
     disjunctive: bool
 
     _chain_precedence: PrecedenceConstraint
@@ -368,13 +363,12 @@ class FlowShopSetup(ScheduleSetup):
         """
         self.disjunctive = disjunctive
 
-        self.processing_times = TaskFeature(
-            name=processing_times, semantic="duration", shape=()
+        self.processing_times = Feature(
+            name=processing_times,
+            shape=("n_tasks",),
         )
 
-        self.operation_order = TaskFeature(
-            name=operation_order, semantic="order", shape=()
-        )
+        self.operation_order = Feature(name=operation_order, shape=("n_tasks",))
 
     @property
     @override
@@ -385,7 +379,7 @@ class FlowShopSetup(ScheduleSetup):
         return 0
 
     @override
-    def get_features(self) -> list[TaskFeature]:
+    def get_features(self) -> list[Feature]:
         return [
             self.processing_times,
             self.operation_order,

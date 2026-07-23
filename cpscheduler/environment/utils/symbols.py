@@ -19,10 +19,9 @@ BaseShapeDim = int | BuiltinSymbols | str | None
 
 ShapeDim: TypeAlias = "BaseShapeDim | SymbolicDim"
 
-
-REQUIRED_SYMBOLS: frozenset[str] = frozenset(
-    ["const", "n_tasks", "n_jobs", "n_machines"]
-)
+N_TASKS = "n_tasks"
+N_JOBS = "n_jobs"
+N_MACHINES = "n_machines"
 
 
 def _parse_affine_expr(expr: str) -> dict[str, int]:

@@ -1,11 +1,20 @@
 """Makespan and maximum lateness objectives."""
 
+from collections.abc import Iterable
+
 from typing_extensions import override
 
-from cpscheduler.environment.constants import MAX_TIME, MachineID, TaskID, Time
-from cpscheduler.environment.instance import JobFeature
+from cpscheduler.environment.constants import (
+    MAX_TIME,
+    Int,
+    MachineID,
+    TaskID,
+    Time,
+)
+from cpscheduler.environment.instance import Feature
 from cpscheduler.environment.objectives.base import Objective
 from cpscheduler.environment.state import ScheduleState
+from cpscheduler.environment.utils.general import convert_to_list
 
 
 class Makespan(Objective):
@@ -62,19 +71,24 @@ class MaximumLateness(Objective):
 
     _value: Time
 
-    due_dates: JobFeature[Time]
+    due_dates: Feature[list[Time]]
 
     def __init__(
         self,
-        due_dates: str = "due_date",
+        due_dates_tag: str = "due_date",
+        due_dates: Iterable[Int] | None = None,
         minimize: bool = True,
     ):
         """Initialize the Maximum Lateness objective.
 
         Parameters
         ----------
-        due_dates: str, optional
+        due_dates_tag: str, optional
             The name of the job feature that contains the due dates.
+
+        due_dates: Iterable[Time] | None, optional
+            The due dates for each job.
+            If None, due dates must be provided in the instance data.
 
         minimize: bool, optional
             Whether to minimize or maximize the objective.
@@ -83,7 +97,17 @@ class MaximumLateness(Objective):
         """
         super().__init__(minimize)
 
-        self.due_dates = JobFeature(name=due_dates, semantic="time", shape=())
+        self.due_dates = Feature(
+            name=due_dates_tag,
+            preprocess=self._load_dates,
+            shape=("n_jobs",),
+        )
+
+        if due_dates is not None:
+            self.due_dates.own_data(due_dates)
+
+    def _load_dates(self, dates: Iterable[Int]) -> list[Time]:
+        return convert_to_list(dates, Time)
 
     @property
     @override
@@ -91,7 +115,7 @@ class MaximumLateness(Objective):
         return True
 
     @override
-    def get_features(self) -> list[JobFeature]:
+    def get_features(self) -> list[Feature]:
         return [self.due_dates]
 
     @override

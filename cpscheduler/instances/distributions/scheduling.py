@@ -5,7 +5,7 @@ from typing import Any
 
 from typing_extensions import override
 
-from cpscheduler.environment.specs.symbols import BaseShapeDim
+from cpscheduler.environment.utils.symbols import BaseShapeDim
 from cpscheduler.instances.distributions.base import Process
 from cpscheduler.instances.distributions.discrete import Multinomial
 

@@ -19,10 +19,8 @@ from cpscheduler.environment.constants import (
 )
 from cpscheduler.environment.instance.features import (
     Feature,
-    TaskFeature,
     merge_symbols,
 )
-from cpscheduler.environment.specs.feature_spec import FeatureSpec
 from cpscheduler.environment.utils.protocols import Instance_T
 
 if TYPE_CHECKING:
@@ -59,7 +57,7 @@ def _load_data(
 
         feat_list = features[feature]
         for feat in feat_list:
-            feat.set_data(data)
+            feat.load_data(data)
 
         merge_symbols(symbol_values, feat_list[0].solve_symbols())
 
@@ -98,7 +96,6 @@ class ProblemInstance(EzPickle):
     """
 
     _fingerprint: int
-    feature_specs: dict[str, FeatureSpec]
     features: dict[str, list[Feature]]
 
     job_tasks: list[list[TaskID]]
@@ -107,11 +104,11 @@ class ProblemInstance(EzPickle):
     n_machines: int
     symbol_values: dict[str, int]
 
-    _preemptive: TaskFeature[bool]
-    _optional: TaskFeature[bool]
-    _processing_times: TaskFeature[list[Time]]
-    _machine_mask: TaskFeature[list[bool]]
-    _job_ids: TaskFeature[TaskID]
+    _preemptive: Feature[list[bool]]
+    _optional: Feature[list[bool]]
+    _processing_times: Feature[list[list[Time]]]
+    _machine_mask: Feature[list[list[bool]]]
+    _job_ids: Feature[list[TaskID]]
 
     _debug: bool
 
@@ -133,29 +130,19 @@ class ProblemInstance(EzPickle):
 
         """
         self.job_tasks = []
-        self._preemptive = TaskFeature(
-            name="preemptive", semantic="binary", shape=(), owner=True
+        self._preemptive = Feature(name="preemptive", shape=("n_tasks",))
+
+        self._optional = Feature(name="optional", shape=("n_tasks",))
+
+        self._machine_mask = Feature(
+            name="machine_mask", shape=("n_task", "n_machines")
         )
 
-        self._optional = TaskFeature(
-            name="optional", semantic="binary", shape=(), owner=True
+        self._processing_times = Feature(
+            name="all_processing_times", shape=("n_tasks", "n_machines")
         )
 
-        self._machine_mask = TaskFeature(
-            name="machine_mask",
-            shape=("n_machines",),
-            semantic="mask",
-            owner=True,
-        )
-
-        self._processing_times = TaskFeature(
-            name="all_processing_times",
-            shape=("n_machines",),
-            semantic="duration",
-            owner=True,
-        )
-
-        self._job_ids = TaskFeature(name="job", semantic="task", shape=())
+        self._job_ids = Feature(name="job", shape=("n_tasks",))
 
         # Setting features without self.register(...)
         self.features = {
@@ -164,11 +151,6 @@ class ProblemInstance(EzPickle):
             "all_processing_times": [self._processing_times],
             "machine_mask": [self._machine_mask],
             "job": [self._job_ids],
-        }
-
-        self.feature_specs = {
-            feature_name: features[0].spec
-            for feature_name, features in self.features.items()
         }
 
         self.n_tasks = 0
@@ -193,8 +175,9 @@ class ProblemInstance(EzPickle):
         """Return all symbols in features."""
         symbols: set[str] = set()
 
-        for spec in self.feature_specs.values():
-            symbols |= spec.symbols
+        for features in self.features.values():
+            for feature in features:
+                symbols |= feature.symbols
 
         return symbols
 
@@ -244,17 +227,17 @@ class ProblemInstance(EzPickle):
         """
         return self._job_ids.value
 
-    def required_features(self) -> dict[str, FeatureSpec]:
+    def required_features(self) -> list[str]:
         """Return a dictionary of required features for the instance.
 
         Required features are those that have no provider among the registered
         features, and thus must be provided with data during instance initialization.
         """
-        return {
-            name: feature
-            for name, feature in self.feature_specs.items()
-            if _find_provider(self.features[name]) is None
-        }
+        return [
+            name
+            for name, features in self.features.items()
+            if _find_provider(features) is None
+        ]
 
     def register(self, feature: Feature[Any]) -> None:
         """Register a feature to the instance.
@@ -290,14 +273,6 @@ class ProblemInstance(EzPickle):
                 "component requires access to machine information, retrieve it "
                 "directly using `get_processing_time`, and `has_processing_time`."
             )
-
-        registered_spec = self.feature_specs.get(name)
-
-        if registered_spec is None:
-            self.feature_specs[name] = feature.spec
-
-        elif registered_spec != feature.spec:
-            raise ValueError(f"Incompatible feature spec for '{name}'.")
 
         self.features.setdefault(name, []).append(feature)
 
@@ -361,16 +336,16 @@ class ProblemInstance(EzPickle):
                 f"n_machines={setup.n_machines}."
             )
 
-        self._preemptive.set_data([False] * n_tasks)
-        self._optional.set_data([False] * n_tasks)
+        self._preemptive.own_data([False] * n_tasks)
+        self._optional.own_data([False] * n_tasks)
 
         if not self._job_ids.loaded:
-            self._job_ids.set_data(list(range(n_tasks)))
+            self._job_ids.own_data(list(range(n_tasks)))
 
-        self._processing_times.set_data(
+        self._processing_times.own_data(
             [[MAX_TIME] * n_machines for _ in range(n_tasks)]
         )
-        self._machine_mask.set_data(
+        self._machine_mask.own_data(
             [[False] * n_machines for _ in range(n_tasks)]
         )
 

@@ -11,11 +11,11 @@ easily serialized, statically analyzed and validated.
 from collections.abc import ItemsView, Iterator, KeysView, Mapping, ValuesView
 from typing import Literal
 
-from cpscheduler.environment.specs.feature_spec import (
+from cpscheduler.environment.observation.specs.feature_spec import (
     FeatureSpec,
     ObservationSpec,
 )
-from cpscheduler.environment.specs.symbols import (
+from cpscheduler.environment.utils.symbols import (
     ShapeDim,
     SymbolicDim,
     resolve_shape,

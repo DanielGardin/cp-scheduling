@@ -1,16 +1,20 @@
 """Tardy jobs objectives."""
 
+from collections.abc import Iterable
+
 from typing_extensions import override
 
 from cpscheduler.environment.constants import (
     Float,
+    Int,
     MachineID,
     TaskID,
     Time,
 )
-from cpscheduler.environment.instance import UNSET, JobFeature, ProblemInstance
+from cpscheduler.environment.instance import Feature, ProblemInstance
 from cpscheduler.environment.objectives.base import CompletionTimeObjective
 from cpscheduler.environment.state import ScheduleState
+from cpscheduler.environment.utils.general import convert_to_list
 
 
 class TotalTardyJobs(CompletionTimeObjective):
@@ -20,22 +24,27 @@ class TotalTardyJobs(CompletionTimeObjective):
     A job is tardy if its completion time exceeds its due date, i.e., C_j > d_j.
     """
 
-    due_dates: JobFeature[Time]
+    due_dates: Feature[list[Time]]
 
     _tardy_jobs: list[bool]
     _n_tardy_jobs: int
 
     def __init__(
         self,
-        due_dates: str = "due_date",
+        due_dates_tag: str = "due_date",
+        due_dates: Iterable[Int] | None = None,
         minimize: bool = True,
     ) -> None:
         """Initialize the Total Tardy Jobs objective.
 
         Parameters
         ----------
-        due_dates: str, optional
+        due_dates_tag: str, optional
             The name of the job feature that contains the due dates.
+
+        due_dates: Iterable[Time] | None, optional
+            The due dates for each job.
+            If None, due dates must be provided in the instance data.
 
         minimize: bool, optional
             Whether to minimize or maximize the objective.
@@ -44,14 +53,17 @@ class TotalTardyJobs(CompletionTimeObjective):
         """
         super().__init__(minimize)
 
-        self.due_dates = JobFeature(
-            name=due_dates,
-            semantic="time",
-            shape=(),
+        self.due_dates = Feature(
+            name=due_dates_tag,
+            preprocess=self._load_due_dates,
+            shape=("n_jobs",),
         )
 
+    def _load_due_dates(self, due_dates: Iterable[Int]) -> list[Time]:
+        return convert_to_list(due_dates, Time)
+
     @override
-    def get_features(self) -> list[JobFeature]:
+    def get_features(self) -> list[Feature]:
         return [self.due_dates]
 
     @override
@@ -122,50 +134,55 @@ class WeightedTardyJobs(TotalTardyJobs):
     The weighted variant optimizes Σw_jU_j, where w_j is the weight of job j.
     """
 
-    weights: JobFeature[float]
+    weights: Feature[list[float]]
 
     _weighted_tardy_jobs: float
 
     def __init__(
         self,
-        due_dates: str = "due_date",
-        job_weights: str = "weight",
-        weights: list[Float] | None = None,
+        due_dates_tag: str = "due_date",
+        due_dates: Iterable[Int] | None = None,
+        weights_tag: str = "weight",
+        weights: Iterable[Float] | None = None,
         minimize: bool = True,
     ) -> None:
         """Initialize the Weighted Tardy Jobs objective.
 
         Parameters
         ----------
-        due_dates: str, optional
+        due_dates_tag: str, optional
             The name of the job feature that contains the due dates.
 
-        job_weights: str, optional
+        due_dates: Iterable[Time] | None, optional
+            The due dates for each job.
+            If None, due dates must be provided in the instance data.
+
+        weights_tag: str, optional
             The name of the job feature that contains the weights.
             Default to "weight".
 
-        weights: list[Float] | None, optional
+        weights: Iterable[Float] | None, optional
             The weights for each job.
             If None is provided, the weights will be loaded from the instance.
-            Default to None.
 
         minimize: bool, optional
             Whether to minimize or maximize the objective.
             Default is True (i.e., minimize).
 
         """
-        super().__init__(due_dates, minimize)
+        super().__init__(due_dates_tag, due_dates, minimize)
 
-        self.weights = JobFeature(
-            name=job_weights,
-            semantic="continuous",
-            shape=(),
-            default=(
-                [float(weight) for weight in weights]
-                if weights is not None
-                else UNSET
-            ),
+        self.weights = Feature(
+            name=weights_tag,
+            preprocess=self._load_weights,
+            shape=("n_jobs",),
         )
+
+        if weights is not None:
+            self.weights.own_data(weights)
+
+    def _load_weights(self, weights: Iterable[Float]) -> list[float]:
+        return convert_to_list(weights, float)
 
     @property
     @override
@@ -173,7 +190,7 @@ class WeightedTardyJobs(TotalTardyJobs):
         return all(weight >= 0.0 for weight in self.weights.value)
 
     @override
-    def get_features(self) -> list[JobFeature]:
+    def get_features(self) -> list[Feature]:
         return [self.due_dates, self.weights]
 
     @override

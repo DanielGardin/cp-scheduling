@@ -11,11 +11,7 @@ from typing_extensions import override
 import cpscheduler.environment.utils.debug as debug
 from cpscheduler.environment.constants import Int, MachineID, TaskID
 from cpscheduler.environment.constraints.base import Constraint
-from cpscheduler.environment.instance import (
-    UNSET,
-    GlobalFeature,
-    ProblemInstance,
-)
+from cpscheduler.environment.instance import Feature, ProblemInstance
 from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.utils.general import convert_to_list, extend_list
 
@@ -27,7 +23,7 @@ class NonOverlapConstraint(Constraint):
     independently of their assignments.
     """
 
-    groups: GlobalFeature[list[list[TaskID]]]
+    groups: Feature[list[list[TaskID]]]
 
     current_groups: list[set[TaskID]]
 
@@ -47,19 +43,21 @@ class NonOverlapConstraint(Constraint):
             An optional iterable of task groups, where each group is an iterable of task IDs.
 
         """
-        self.groups = GlobalFeature(
+        self.groups = Feature(
             name=groups_tag,
-            semantic="task",
-            default=(
-                [
-                    convert_to_list(task_group, TaskID)
-                    for task_group in task_groups
-                ]
-                if task_groups is not None
-                else UNSET
-            ),
+            preprocess=self._preprocess_groups,
             shape=("n_groups", None),
         )
+
+        if task_groups is not None:
+            self.groups.own_data(task_groups)
+
+    def _preprocess_groups(
+        self, task_groups: Iterable[Iterable[Int]]
+    ) -> list[list[TaskID]]:
+        return [
+            convert_to_list(task_group, TaskID) for task_group in task_groups
+        ]
 
     def add_task(self, group_id: Int, task: Int) -> None:
         """Add a task to a specific group."""
@@ -84,7 +82,7 @@ class NonOverlapConstraint(Constraint):
         self.groups.value[int(group_id)].clear()
 
     @override
-    def get_features(self) -> list[GlobalFeature]:
+    def get_features(self) -> list[Feature]:
         return [self.groups]
 
     @override

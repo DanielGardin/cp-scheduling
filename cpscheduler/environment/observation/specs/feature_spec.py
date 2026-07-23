@@ -3,7 +3,7 @@
 from typing import Literal
 
 from cpscheduler.environment.constants import EzPickle
-from cpscheduler.environment.specs.symbols import (
+from cpscheduler.environment.utils.symbols import (
     BaseShapeDim,
     SymbolicDim,
     resolve_shape,
@@ -36,6 +36,7 @@ SemanticType = Literal[
     "duration",  # Integer delta [0, MAX_TIME)
     "interval",  # Interval (start, end)
     "calendar",  # Sequence of intervals (start, end)
+    "precedence",
     # Structural
     "mask",  # Boolean mask
     "set",  # Arbitrary set. Represented as a binary indicator vector of possible elements.
@@ -58,7 +59,6 @@ class FeatureSpec(ObservationSpec):
 
     scope: Scope
     semantic: SemanticType
-    sparse: bool
 
     # Feature metadata (used for ObservationSpec)
     shape: tuple[SymbolicDim | None, ...] | None
@@ -70,7 +70,6 @@ class FeatureSpec(ObservationSpec):
         self,
         scope: Scope,
         semantic: SemanticType,
-        sparse: bool = False,
         *,
         shape: tuple[BaseShapeDim, ...] | None = None,
         n_categories: int | None = None,
@@ -87,10 +86,6 @@ class FeatureSpec(ObservationSpec):
         semantic: SemanticType
             The semantic type of the feature, which determines how it should be
             interpreted and processed.
-
-        sparse: bool, default False
-            Whether the feature is sparse (i.e. mostly zeros) and should be stored
-            in a sparse format.
 
         shape: tuple[BaseShapeDim, ...] | None, default None
             The shape of the feature, if it is an array.
@@ -123,7 +118,6 @@ class FeatureSpec(ObservationSpec):
 
         self.scope = scope
         self.semantic = semantic
-        self.sparse = sparse
 
         self.shape = symbolic_shape(shape)
 
@@ -196,7 +190,6 @@ class FeatureSpec(ObservationSpec):
             isinstance(value, FeatureSpec)
             and self.scope == value.scope
             and self.semantic == value.semantic
-            and self.sparse == value.sparse
             and self.shape == value.shape
             and self.n_categories == value.n_categories
             and self.low == value.low
@@ -209,7 +202,6 @@ class FeatureSpec(ObservationSpec):
             (
                 self.scope,
                 self.semantic,
-                self.sparse,
                 self.shape,
                 self.n_categories,
                 self.low,
@@ -223,9 +215,6 @@ class FeatureSpec(ObservationSpec):
             f"scope={self.scope!r}",
             f"semantic={self.semantic!r}",
         ]
-
-        if self.sparse:
-            attrs.append("sparse=True")
 
         if self.shape is not None:
             attrs.append(f"shape={self.shape!r}")

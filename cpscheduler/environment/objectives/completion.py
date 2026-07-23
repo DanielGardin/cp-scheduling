@@ -1,11 +1,12 @@
 """Completion time related objective functions."""
 
+from collections.abc import Iterable
 from math import expm1
 
 from typing_extensions import override
 
-from cpscheduler.environment.constants import Float, Time
-from cpscheduler.environment.instance import UNSET, GlobalFeature, JobFeature
+from cpscheduler.environment.constants import Float, Int, Time
+from cpscheduler.environment.instance import Feature
 from cpscheduler.environment.objectives.base import RegularObjective
 from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.utils.general import convert_to_list
@@ -39,7 +40,7 @@ class WeightedCompletionTime(TotalCompletionTime):
     of all jobs, i.e., Σw_jC_j.
     """
 
-    weights: JobFeature[float]
+    weights: Feature[list[float]]
 
     def __init__(
         self,
@@ -67,16 +68,17 @@ class WeightedCompletionTime(TotalCompletionTime):
         """
         super().__init__(minimize)
 
-        self.weights = JobFeature(
+        self.weights = Feature(
             name=weights_tag,
-            semantic="continuous",
-            shape=(),
-            default=(
-                convert_to_list(weights, float)
-                if weights is not None
-                else UNSET
-            ),
+            preprocess=self._load_weights,
+            shape=("n_jobs",),
         )
+
+        if weights is not None:
+            self.weights.own_data(weights)
+
+    def _load_weights(self, weights: Iterable[Float]) -> list[float]:
+        return convert_to_list(weights, float)
 
     @property
     @override
@@ -84,7 +86,7 @@ class WeightedCompletionTime(TotalCompletionTime):
         return all(weight >= 0 for weight in self.weights.value)
 
     @override
-    def get_features(self) -> list[JobFeature]:
+    def get_features(self) -> list[Feature]:
         return [self.weights]
 
     @override
@@ -122,7 +124,7 @@ class DiscountedTotalCompletionTime(RegularObjective):
     with its completion time.
     """
 
-    discount_factor: GlobalFeature[float]
+    discount_factor: Feature[float]
 
     def __init__(
         self,
@@ -144,15 +146,15 @@ class DiscountedTotalCompletionTime(RegularObjective):
         """
         super().__init__(minimize)
 
-        self.discount_factor = GlobalFeature(
+        self.discount_factor = Feature(
             name="discount_factor",
-            semantic="continuous",
             shape=(),
-            default=discount_factor,
         )
 
+        self.discount_factor.own_data(discount_factor)
+
     @override
-    def get_features(self) -> list[GlobalFeature]:
+    def get_features(self) -> list[Feature]:
         return [self.discount_factor]
 
     @override
@@ -190,17 +192,24 @@ class TotalFlowTime(RegularObjective):
     i.e., F_j = C_j - r_j.
     """
 
-    release_times: JobFeature[Time]
+    release_times: Feature[list[Time]]
 
     def __init__(
-        self, release_times: str = "release_time", minimize: bool = True
+        self,
+        release_tag: str = "release_time",
+        release_times: Iterable[Int] | None = None,
+        minimize: bool = True,
     ) -> None:
         """Initialize the Total Flow Time objective.
 
         Parameters
         ----------
-        release_times: str, optional
+        release_tag: str, optional
             The name of the job feature that contains the release times.
+
+        release_times: Iterable[Time] | None, optional
+            The release times for each job.
+            If None is provided, the release times will be loaded from the instance.
 
         minimize: bool, optional
             Whether to minimize or maximize the objective.
@@ -209,12 +218,20 @@ class TotalFlowTime(RegularObjective):
         """
         super().__init__(minimize)
 
-        self.release_times = JobFeature(
-            name=release_times, semantic="time", shape=()
+        self.release_times = Feature(
+            name=release_tag,
+            preprocess=self._load_release_times,
+            shape=("n_jobs",),
         )
 
+        if release_times is not None:
+            self.release_times.own_data(release_times)
+
+    def _load_release_times(self, release_times: Iterable[Int]) -> list[Time]:
+        return convert_to_list(release_times, Time)
+
     @override
-    def get_features(self) -> list[JobFeature]:
+    def get_features(self) -> list[Feature]:
         return [self.release_times]
 
     @override

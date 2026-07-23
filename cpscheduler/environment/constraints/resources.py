@@ -8,10 +8,8 @@ from typing_extensions import override
 from cpscheduler.environment.constants import MAX_TIME, Float, Time
 from cpscheduler.environment.constraints.base import Constraint
 from cpscheduler.environment.instance import (
-    UNSET,
-    GlobalFeature,
+    Feature,
     ProblemInstance,
-    TaskFeature,
 )
 from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.utils.general import convert_to_list
@@ -89,8 +87,8 @@ class ResourceConstraint(Constraint):
     the duration of its processing time, and releases them once it finishes.
     """
 
-    resources: TaskFeature[float]
-    capacity: GlobalFeature[float]
+    resources: Feature[list[float]]
+    capacity: Feature[float]
 
     _next_available_time: list[Time]
     """Cache for the next available time:
@@ -120,9 +118,11 @@ class ResourceConstraint(Constraint):
         ----------
         capacity_tag: str, optional
             The name of the global feature that contains the resource capacity.
+            Default is "capacity".
 
         capacity: float, optional
             The total capacity of the resource.
+            If None, the capacity must be provided in the instance data.
 
         resource_tag: str, optional
             The name of the task feature that contains the resource usage for each task.
@@ -134,26 +134,25 @@ class ResourceConstraint(Constraint):
             Default to None.
 
         """
-        self.capacity = GlobalFeature(
-            name=capacity_tag,
-            semantic="cost",
-            shape=(),
-            default=capacity if capacity is not None else UNSET,
+        self.capacity = Feature(name=capacity_tag, shape=())
+
+        if capacity is not None:
+            self.capacity.own_data(capacity)
+
+        self.resources = Feature(
+            name=resource_tag,
+            preprocess=self._load_resources,
+            shape=("n_tasks",),
         )
 
-        self.resources = TaskFeature(
-            name=resource_tag,
-            semantic="cost",
-            shape=(),
-            default=(
-                convert_to_list(resources, float)
-                if resources is not None
-                else UNSET
-            ),
-        )
+        if resources is not None:
+            self.resources.own_data(resources)
+
+    def _load_resources(self, resources: Iterable[Float]) -> list[float]:
+        return convert_to_list(resources, float)
 
     @override
-    def get_features(self) -> list[TaskFeature]:
+    def get_features(self) -> list[Feature]:
         return [self.resources]
 
     @override
@@ -255,14 +254,15 @@ class NonRenewableResourceConstraint(Constraint):
 
     """
 
-    resources: TaskFeature[float]
-    capacity: float
+    resources: Feature[list[float]]
+    capacity: Feature[float]
 
     _current_capacity: float
 
     def __init__(
         self,
-        capacity: float,
+        capacity_tag: str = "capacity",
+        capacity: float | None = None,
         resource_tag: str = "resource",
         resources: Iterable[Float] | None = None,
     ) -> None:
@@ -270,8 +270,13 @@ class NonRenewableResourceConstraint(Constraint):
 
         Parameters
         ----------
-        capacity: float
+        capacity_tag: str, optional
+            The name of the global feature that contains the resource capacity.
+            Default is "capacity".
+
+        capacity: float, optional
             The total capacity of the non-renewable resource.
+            If None, the capacity must be provided in the instance data.
 
         resource_tag: str, optional
             The name of the task feature that contains the resource usage for each task.
@@ -283,30 +288,30 @@ class NonRenewableResourceConstraint(Constraint):
             Default to None.
 
         """
-        self.capacity = capacity
+        self.capacity = Feature(name=capacity_tag, shape=())
 
-        self.resources = TaskFeature(
+        if capacity is not None:
+            self.capacity.own_data(capacity)
+
+        self.resources = Feature(
             name=resource_tag,
-            semantic="cost",
-            shape=(),
-            default=(
-                convert_to_list(resources, float)
-                if resources is not None
-                else UNSET
-            ),
+            preprocess=self._load_resources,
+            shape=("n_tasks",),
         )
 
+        if resources is not None:
+            self.resources.own_data(resources)
+
+    def _load_resources(self, resources: Iterable[Float]) -> list[float]:
+        return convert_to_list(resources, float)
+
     @override
-    def get_features(self) -> list[TaskFeature]:
+    def get_features(self) -> list[Feature]:
         return [self.resources]
 
     @override
-    def initialize(self, instance: ProblemInstance) -> None:
-        self._current_capacity = self.capacity
-
-    @override
     def reset(self, state: ScheduleState) -> None:
-        self._current_capacity = self.capacity
+        self._current_capacity = self.capacity.value
 
     @override
     def on_assignment(
