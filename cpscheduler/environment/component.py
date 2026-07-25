@@ -16,15 +16,15 @@ Together, they compose the Graham entry (via `get_entry`), and define:
 
 """
 
-from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from mypy_extensions import mypyc_attr
 
 from cpscheduler.environment.constants import EzPickle
+from cpscheduler.environment.instance import Feature
 
 if TYPE_CHECKING:
-    from cpscheduler.environment.instance import Feature, ProblemInstance
+    from cpscheduler.environment.instance import ProblemInstance
     from cpscheduler.environment.state import ScheduleState
 
 
@@ -43,19 +43,25 @@ class Component(EzPickle):
 
     """
 
-    def get_features(self) -> Sequence["Feature"]:
+    def get_features(self) -> list[Feature]:
         """Return the list of features required or provided by this component.
 
-        Features must be registered with the problem instance before `initialize()` is called.
-        Typically called during `SchedulingEnv.__init__()` and after `load_instance()`.
+        Features are used to define the problem instance and manage required
+        data for the component to function.
+
+        If the component registers features as its attributes, this function
+        automatically collects them. Otherwise, subclasses can override this method
+        to return a custom list of features.
 
         Returns
         -------
-        Sequence[Feature]
+        list[Feature]
             List of Feature objects (may be empty).
 
         """
-        return []
+        return [
+            attr for _, attr in self.__getstate__() if isinstance(attr, Feature)
+        ]
 
     def initialize(self, instance: "ProblemInstance") -> None:
         """Initialize component state after the instance has been fully loaded.

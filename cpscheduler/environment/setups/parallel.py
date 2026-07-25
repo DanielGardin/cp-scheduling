@@ -73,10 +73,6 @@ class SingleMachineSetup(ScheduleSetup):
         return 1
 
     @override
-    def get_features(self) -> list[Feature]:
-        return [self.processing_times]
-
-    @override
     def initialize(self, instance: ProblemInstance) -> None:
         for task_id, p_time in enumerate(self.processing_times.value):
             instance.set_processing_time(task_id, 0, p_time)
@@ -137,10 +133,6 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
     @override
     def n_machines(self) -> int:
         return self._n_machines
-
-    @override
-    def get_features(self) -> list[Feature]:
-        return [self.processing_times]
 
     @override
     def initialize(self, instance: ProblemInstance) -> None:
@@ -229,13 +221,6 @@ class UniformParallelMachineSetup(ScheduleSetup):
         return 0
 
     @override
-    def get_features(self) -> list[Feature]:
-        return [
-            self.speed,
-            self.processing_times,
-        ]
-
-    @override
     def initialize(self, instance: ProblemInstance) -> None:
         if any(s <= 0 for s in self.speed.value):
             raise ValueError("Machine speeds must be positive integers.")
@@ -310,10 +295,6 @@ class UnrelatedParallelMachineSetup(ScheduleSetup):
             return len(self.processing_times.value[0])
 
         return 0
-
-    @override
-    def get_features(self) -> list[Feature]:
-        return [self.processing_times]
 
     @override
     def initialize(self, instance: ProblemInstance) -> None:

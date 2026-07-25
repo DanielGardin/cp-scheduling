@@ -63,10 +63,6 @@ class TotalTardyJobs(CompletionTimeObjective):
         return convert_to_list(due_dates, Time)
 
     @override
-    def get_features(self) -> list[Feature]:
-        return [self.due_dates]
-
-    @override
     def initialize(self, instance: ProblemInstance) -> None:
         super().initialize(instance)
 
@@ -188,10 +184,6 @@ class WeightedTardyJobs(TotalTardyJobs):
     @override
     def regular(self) -> bool:
         return all(weight >= 0.0 for weight in self.weights.value)
-
-    @override
-    def get_features(self) -> list[Feature]:
-        return [self.due_dates, self.weights]
 
     @override
     def initialize(self, instance: ProblemInstance) -> None:

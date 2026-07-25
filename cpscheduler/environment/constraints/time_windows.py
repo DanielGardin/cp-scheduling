@@ -40,10 +40,6 @@ class HorizonConstraint(Constraint):
         self.horizon.own_data(Time(horizon))
 
     @override
-    def get_features(self) -> list[Feature]:
-        return [self.horizon]
-
-    @override
     def reset(self, state: ScheduleState) -> None:
         horizon = self.horizon.value
 
@@ -96,10 +92,6 @@ class ReleaseDateConstraint(Constraint):
         return convert_to_list(dates, Time)
 
     @override
-    def get_features(self) -> list[Feature]:
-        return [self.release_dates]
-
-    @override
     def reset(self, state: ScheduleState) -> None:
         for task_id, release_time in enumerate(self.release_dates.value):
             state.tight_start_lb(task_id, release_time)
@@ -150,10 +142,6 @@ class DeadlineConstraint(Constraint):
 
     def _load_dates(self, dates: Iterable[Int]) -> list[Time]:
         return convert_to_list(dates, Time)
-
-    @override
-    def get_features(self) -> list[Feature]:
-        return [self.due_dates]
 
     @override
     def reset(self, state: ScheduleState) -> None:

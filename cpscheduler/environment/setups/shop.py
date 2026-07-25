@@ -55,10 +55,6 @@ class _ShopSetup(ScheduleSetup):
         )
 
     @override
-    def get_features(self) -> list[Feature]:
-        return [self.processing_times, self.machines]
-
-    @override
     def setup_constraints(self) -> tuple[Constraint, ...]:
         return (MachineConstraint(),) if self.disjunctive else ()
 
@@ -214,10 +210,6 @@ class JobShopSetup(_ShopSetup):
         self.operation_order = Feature(name=operation_order, shape=("n_tasks",))
 
     @override
-    def get_features(self) -> list[Feature]:
-        return [*super().get_features(), self.operation_order]
-
-    @override
     def setup_constraints(self) -> tuple[Constraint, ...]:
         precedence = PrecedenceConstraint()
         self._chain_precedence = precedence
@@ -287,10 +279,6 @@ class FlexibleJobShopSetup(UnrelatedParallelMachineSetup):
         )
 
         self.operation_order = Feature(name=operation_order, shape=("n_tasks",))
-
-    @override
-    def get_features(self) -> list[Feature]:
-        return [self.processing_times, self.operation_order]
 
     @override
     def setup_constraints(self) -> tuple[Constraint, ...]:
@@ -377,13 +365,6 @@ class FlowShopSetup(ScheduleSetup):
             return max(self.operation_order.value) + 1
 
         return 0
-
-    @override
-    def get_features(self) -> list[Feature]:
-        return [
-            self.processing_times,
-            self.operation_order,
-        ]
 
     @override
     def setup_constraints(self) -> tuple[Constraint, ...]:
