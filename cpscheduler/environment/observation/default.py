@@ -1,36 +1,22 @@
 """Default observation for scheduling environments."""
 
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any, Literal, TypedDict, overload
+from typing import Any
 
 from mypy_extensions import mypyc_attr
 from typing_extensions import override
 
 from cpscheduler.environment.constants import Status, TaskID, Time
-from cpscheduler.environment.instance import (
-    GlobalFeature,
-    JobFeature,
-    MachineFeature,
-    ProblemInstance,
-    TaskFeature,
-)
+from cpscheduler.environment.instance import ProblemInstance
 from cpscheduler.environment.observation.base import Observation
-from cpscheduler.environment.observation.runtime_feature import RuntimeFeature
-from cpscheduler.environment.specs import DictSpec, ObservationSpec
+from cpscheduler.environment.specs import (
+    DictSpec,
+    FeatureViewSpec,
+    ObservationSpec,
+)
 from cpscheduler.environment.state import ScheduleState
 
-if TYPE_CHECKING:
-    from cpscheduler.environment.specs.feature_spec import FeatureSpec, Scope
-
-DefaultObsType = TypedDict(
-    "DefaultObsType",
-    {
-        "task": dict[str, list[Any]],
-        "job": dict[str, list[Any]],
-        "machine": dict[str, list[Any]],
-        "global": dict[str, Any],
-    },
-)
+DefaultObsType = dict[str, Any]
 
 AWAITING = Status.AWAITING
 
@@ -51,16 +37,13 @@ class DefaultObservation(Observation[DefaultObsType]):
     _all_features: bool
     _feature_set: set[str]
 
-    _time: RuntimeFeature[Time]
-    _status: RuntimeFeature[list[int]]
-    _available: RuntimeFeature[list[bool]]
-
-    task: dict[str, Any]
-    job: dict[str, Any]
-    machine: dict[str, Any]
-    global_state: dict[str, Any]
+    _time: Time
+    _status: list[int]
+    _available: list[bool]
 
     available_tasks: set[TaskID]
+
+    _obs: DefaultObsType
 
     def __init__(
         self,
@@ -107,79 +90,59 @@ class DefaultObservation(Observation[DefaultObsType]):
         self._all_features = features is None
         self._feature_set = set(features or ())
 
-        self._status = RuntimeFeature(
-            name="status",
-            scope="task",
-            semantic="categorical",
-            data=[],
-            n_categories=Status.count(),
-            shape=("n_tasks",),
-        )
-
-        self._available = RuntimeFeature(
-            name="available",
-            scope="task",
-            semantic="mask",
-            data=[],
-            shape=("n_tasks",),
-        )
-
-        self._time = RuntimeFeature(
-            name="time",
-            scope="global",
-            semantic="time",
-            data=0,
-            shape=(),
-        )
+        self._obs = {}
 
     @property
     def time(self) -> Time:
         """Return the current time in the schedule."""
-        return self._time.value
+        return self._time
 
     @override
     def compile(self, instance: ProblemInstance) -> ObservationSpec:
-        feature_specs: dict[Scope, dict[str, FeatureSpec]] = {
-            "task": {
-                "status": self._status.spec,
-                "available": self._available.spec,
-            },
-            "job": {},
-            "machine": {},
-            "global": {"time": self._time.spec},
-        }
+        feature_specs: dict[str, FeatureViewSpec[Any, Any]] = {}
 
-        for feature_name, spec in instance.feature_specs.items():
+        all_features = self._all_features
+
+        if all_features or "status" in self._feature_set:
+            feature_specs["status"] = FeatureViewSpec(
+                value_type="categorical",
+                shape=("n_tasks",),
+                n_categories=Status.count(),
+            )
+
+        if all_features or "available" in self._feature_set:
+            feature_specs["available"] = FeatureViewSpec(
+                value_type="binary",
+                shape=("n_tasks",),
+            )
+
+        if all_features or "time" in self._feature_set:
+            feature_specs["time"] = FeatureViewSpec(
+                value_type="continuous", shape=()
+            )
+
+        for feature_name, features in instance.features.items():
             if self._all_features or feature_name in self._feature_set:
-                feature_specs[spec.scope][feature_name] = spec
+                feature_view = features[0].view
 
-        return DictSpec(
-            {
-                scope: DictSpec(features)
-                for scope, features in feature_specs.items()
-            }
-        )
+                feature_specs[feature_name] = feature_view
+
+        return DictSpec(feature_specs)
 
     @override
     def initialize(self, instance: ProblemInstance) -> None:
         super().initialize(instance)
+
         self.available_tasks = set()
+        self._status = [AWAITING] * instance.n_tasks
+        self._available = [False] * instance.n_tasks
+        self._time = 0
 
-        self._status.value.clear()
-        self._available.value.clear()
+        obs = self._obs
 
-        self._status.value.extend([AWAITING] * instance.n_tasks)
-        self._available.value.extend([False] * instance.n_tasks)
-
-        self.task = {
-            "status": self._status.value,
-            "available": self._available.value,
-        }
-        self.job = {}
-        self.machine = {}
-        self.global_state = {
-            "time": self._time.value,
-        }
+        obs["status"] = self._status
+        obs["available"] = self._available
+        obs["time"] = self._time
 
         for feat_name, features in instance.features.items():
             if not self._all_features and feat_name not in self._feature_set:
@@ -197,26 +160,20 @@ class DefaultObservation(Observation[DefaultObsType]):
                     f"Feature '{feat_name}' is not loaded in the instance."
                 )
 
-            if isinstance(feature, TaskFeature):
-                self.task[feat_name] = feature.value
-
-            elif isinstance(feature, JobFeature):
-                self.job[feat_name] = feature.value
-
-            elif isinstance(feature, MachineFeature):
-                self.machine[feat_name] = feature.value
-
-            elif isinstance(feature, GlobalFeature):
-                self.global_state[feat_name] = feature.value
+            obs[feat_name] = feature.materialize()
 
     @override
     def update(self, state: ScheduleState) -> None:
-        self._time.value = state.time
-        self.global_state["time"] = state.time
+        obs = self._obs
 
-        self._status.value[:] = state.runtime.status
+        self._time = state.time
 
-        available = self._available.value
+        if "time" in obs:
+            obs["time"] = state.time
+
+        self._status[:] = state.runtime.status
+
+        available = self._available
         available_tasks = self.available_tasks
 
         available[:] = [False] * state.n_tasks
@@ -227,35 +184,10 @@ class DefaultObservation(Observation[DefaultObsType]):
                 available[task_id] = True
                 available_tasks.add(task_id)
 
-    @overload
-    def __getitem__(
-        self, key: Literal["task", "job", "machine"]
-    ) -> dict[str, list[Any]]: ...
-
-    @overload
-    def __getitem__(self, key: Literal["global"]) -> dict[str, Any]: ...
-
     def __getitem__(self, key: str) -> Any:
         """Get the features of the specified scope."""
-        if key == "task":
-            return self.task
-
-        if key == "job":
-            return self.job
-
-        if key == "machine":
-            return self.machine
-
-        if key == "global":
-            return self.global_state
-
-        raise KeyError(f"Unknown observation scope '{key}'.")
+        return self._obs[key]
 
     @override
     def serialize(self) -> DefaultObsType:
-        return {
-            "task": self.task,
-            "job": self.job,
-            "machine": self.machine,
-            "global": self.global_state,
-        }
+        return self._obs

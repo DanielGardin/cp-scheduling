@@ -48,7 +48,57 @@ class ShortestProcessingTime(StaticPriorityDispatchingRule):
 
     @override
     def priority_score(self, obs: DefaultObservation) -> list[float]:
-        return [float(-p) for p in obs.task[self.processing_time]]
+        return [float(-p) for p in obs[self.processing_time]]
+
+
+class WeightedShortestProcessingTime(StaticPriorityDispatchingRule):
+    """
+    Weighted Shortest Processing Time (WSPT) heuristic.
+
+    Prioritizes tasks based on their processing time and weight, with shorter
+    and higher-weighted tasks receiving higher priority.
+    """
+
+    processing_time: str
+    weight: str
+
+    def __init__(
+        self,
+        processing_time: str = "processing_time",
+        weight: str = "weight",
+        seed: int | None = None,
+    ) -> None:
+        """Initialize the Weighted Shortest Processing Time heuristic.
+
+        Parameters
+        ----------
+        processing_time : str, optional
+            Feature name for the processing time of each task.
+            Default is "processing_time".
+
+        weight : str, optional
+            Feature name for the weight of each task.
+            Default is "weight".
+
+        seed : int or None, optional
+            Random seed for reproducibility. Default is None.
+
+        """
+        super().__init__(seed)
+
+        self.processing_time = processing_time
+        self.weight = weight
+
+    @override
+    def priority_score(self, obs: DefaultObservation) -> list[float]:
+        task = obs
+
+        return [
+            float(-w / p)
+            for w, p in zip(
+                task[self.weight], task[self.processing_time], strict=True
+            )
+        ]
 
 
 class EarliestDueDate(StaticPriorityDispatchingRule):
@@ -81,7 +131,7 @@ class EarliestDueDate(StaticPriorityDispatchingRule):
 
     @override
     def priority_score(self, obs: DefaultObservation) -> list[float]:
-        return [float(-d) for d in obs.task[self.due_date]]
+        return [float(-d) for d in obs[self.due_date]]
 
 
 class FirstInFirstOut(StaticPriorityDispatchingRule):

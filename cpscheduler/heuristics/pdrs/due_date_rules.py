@@ -46,8 +46,8 @@ class ModifiedDueDate(PriorityDispatchingRule):
     @override
     def priority_score(self, obs: DefaultObservation) -> list[float]:
         t = obs.time
-        due_dates = obs.task[self.due_date]
-        processing_times = obs.task[self.processing_time]
+        due_dates = obs[self.due_date]
+        processing_times = obs[self.processing_time]
 
         return [
             -max(t + p, d)
@@ -104,9 +104,9 @@ class WeightedModifiedDueDate(PriorityDispatchingRule):
     @override
     def priority_score(self, obs: DefaultObservation) -> list[float]:
         t = obs.time
-        due_dates = obs.task[self.due_date]
-        processing_times = obs.task[self.processing_time]
-        weights = obs.task[self.weight]
+        due_dates = obs[self.due_date]
+        processing_times = obs[self.processing_time]
+        weights = obs[self.weight]
 
         return [
             -max(t + p, d) / w
@@ -165,8 +165,8 @@ class MinimumSlackTime(PriorityDispatchingRule):
     def priority_score(self, obs: DefaultObservation) -> list[float]:
         t = obs.time
 
-        processing_times = obs.task[self.processing_time]
-        due_dates = obs.task[self.due_date]
+        processing_times = obs[self.processing_time]
+        due_dates = obs[self.due_date]
 
         if self.release_time is None:
             return [
@@ -174,7 +174,7 @@ class MinimumSlackTime(PriorityDispatchingRule):
                 for p, d in zip(processing_times, due_dates, strict=False)
             ]
 
-        release_times = obs.task[self.release_time]
+        release_times = obs[self.release_time]
         return [
             max(t, r) + p - d
             for p, r, d in zip(

@@ -10,7 +10,7 @@ __all__ = [  # noqa: RUF022
     "FirstInFirstOut",
     # Processing-time-based
     "ShortestProcessingTime",
-    # "WeightedShortestProcessingTime",
+    "WeightedShortestProcessingTime",
     # Remaining-work-based
     "MostOperationsRemaining",
     "MostWorkRemaining",
@@ -42,4 +42,5 @@ from .simple_rules import (
     FirstInFirstOut,
     RandomPriority,
     ShortestProcessingTime,
+    WeightedShortestProcessingTime,
 )

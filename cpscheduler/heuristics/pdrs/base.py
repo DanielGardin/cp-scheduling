@@ -6,7 +6,7 @@ from typing import Literal
 
 from mypy_extensions import mypyc_attr
 
-from cpscheduler.environment.constants import Status, TaskID
+from cpscheduler.environment.constants import Status, StatusType, TaskID
 from cpscheduler.environment.des import SingleInstruction
 from cpscheduler.environment.observation import DefaultObservation
 
@@ -281,7 +281,7 @@ class PriorityDispatchingRule:
             return [("submit", task_id) for _, task_id in filtered_priorities]
 
         if schedule_generation == "serial":
-            status = obs.task["status"]
+            status: list[StatusType] = obs["status"]
             filtered_priorities = sorted(
                 [
                     (-prio, task_id)
@@ -367,7 +367,7 @@ class PriorityDispatchingRule:
             return [("submit", task_id) for _, task_id in filtered_priorities]
 
         if schedule_generation == "serial":
-            status = obs.task["status"]
+            status: list[StatusType] = obs["status"]
 
             filtered_priorities = sorted(
                 [

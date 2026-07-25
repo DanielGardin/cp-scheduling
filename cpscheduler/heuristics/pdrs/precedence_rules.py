@@ -75,10 +75,8 @@ class MostWorkRemaining(StaticPriorityDispatchingRule):
 
     @override
     def priority_score(self, obs: DefaultObservation) -> list[float]:
-        parents: dict[TaskID, list[TaskID]] = obs.global_state[
-            self.precedence_label
-        ]
-        processing_times: list[Time] = obs.task[self.processing_time]
+        parents: dict[TaskID, list[TaskID]] = obs[self.precedence_label]
+        processing_times: list[Time] = obs[self.processing_time]
 
         priorities = processing_times.copy()
 
@@ -124,9 +122,7 @@ class MostOperationsRemaining(StaticPriorityDispatchingRule):
 
     @override
     def priority_score(self, obs: DefaultObservation) -> list[float]:
-        parents: dict[TaskID, list[TaskID]] = obs.global_state[
-            self.precedence_label
-        ]
+        parents: dict[TaskID, list[TaskID]] = obs[self.precedence_label]
 
         priorities = [1] * obs.n_tasks
 
