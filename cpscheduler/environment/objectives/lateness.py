@@ -51,10 +51,6 @@ class TotalTardiness(RegularObjective):
         return convert_to_list(due_dates, Time)
 
     @override
-    def get_features(self) -> list[Feature]:
-        return [self.due_dates]
-
-    @override
     def get_current(self, state: ScheduleState) -> float:
         return float(
             sum(
@@ -144,10 +140,6 @@ class WeightedTardiness(TotalTardiness):
     @override
     def regular(self) -> bool:
         return all(weight >= 0 for weight in self.weights.value)
-
-    @override
-    def get_features(self) -> list[Feature]:
-        return [self.due_dates, self.weights]
 
     @override
     def get_current(self, state: ScheduleState) -> float:

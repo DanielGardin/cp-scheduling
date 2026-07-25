@@ -209,10 +209,6 @@ class PrecedenceConstraint(Constraint):
         )
 
     @override
-    def get_features(self) -> list[Feature]:
-        return [self.parents]
-
-    @override
     def initialize(self, instance: ProblemInstance) -> None:
         self.children = _inverse_graph(self.parents.value)
 

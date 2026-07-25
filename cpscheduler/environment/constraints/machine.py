@@ -190,10 +190,6 @@ class MachineBreakdownConstraint(Constraint):
         return cls(breakdowns)
 
     @override
-    def get_features(self) -> list[Feature]:
-        return [self.breakdowns]
-
-    @override
     def initialize(self, instance: ProblemInstance) -> None:
         self.next_breakdown = {
             machine: 0
@@ -298,10 +294,6 @@ class BatchConstraint(Constraint):
         extend_list(self.capacity.value, machine + 1, lambda: 1)
 
         self.capacity.value[machine] = int(capacity)
-
-    @override
-    def get_features(self) -> list[Feature]:
-        return [self.capacity]
 
     @override
     def initialize(self, instance: ProblemInstance) -> None:

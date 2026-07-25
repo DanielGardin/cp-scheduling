@@ -82,10 +82,6 @@ class NonOverlapConstraint(Constraint):
         self.groups.value[int(group_id)].clear()
 
     @override
-    def get_features(self) -> list[Feature]:
-        return [self.groups]
-
-    @override
     def initialize(self, instance: ProblemInstance) -> None:
         if instance.debug:
             for tasks in self.groups.value:

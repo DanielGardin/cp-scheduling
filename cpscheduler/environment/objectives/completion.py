@@ -86,10 +86,6 @@ class WeightedCompletionTime(TotalCompletionTime):
         return all(weight >= 0 for weight in self.weights.value)
 
     @override
-    def get_features(self) -> list[Feature]:
-        return [self.weights]
-
-    @override
     def get_current(self, state: ScheduleState) -> float:
         weights = self.weights.value
 
@@ -152,10 +148,6 @@ class DiscountedTotalCompletionTime(RegularObjective):
         )
 
         self.discount_factor.own_data(discount_factor)
-
-    @override
-    def get_features(self) -> list[Feature]:
-        return [self.discount_factor]
 
     @override
     def get_current(self, state: ScheduleState) -> float:
@@ -229,10 +221,6 @@ class TotalFlowTime(RegularObjective):
 
     def _load_release_times(self, release_times: Iterable[Int]) -> list[Time]:
         return convert_to_list(release_times, Time)
-
-    @override
-    def get_features(self) -> list[Feature]:
-        return [self.release_times]
 
     @override
     def get_current(self, state: ScheduleState) -> float:

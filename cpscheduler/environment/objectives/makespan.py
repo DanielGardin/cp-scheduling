@@ -115,10 +115,6 @@ class MaximumLateness(Objective):
         return True
 
     @override
-    def get_features(self) -> list[Feature]:
-        return [self.due_dates]
-
-    @override
     def reset(self, state: ScheduleState) -> None:
         super().reset(state)
         self._value = -MAX_TIME

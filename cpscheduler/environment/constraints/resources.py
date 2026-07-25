@@ -152,10 +152,6 @@ class ResourceConstraint(Constraint):
         return convert_to_list(resources, float)
 
     @override
-    def get_features(self) -> list[Feature]:
-        return [self.resources]
-
-    @override
     def initialize(self, instance: ProblemInstance) -> None:
         self._next_available_time = []
         self._available_resources = []
@@ -304,10 +300,6 @@ class NonRenewableResourceConstraint(Constraint):
 
     def _load_resources(self, resources: Iterable[Float]) -> list[float]:
         return convert_to_list(resources, float)
-
-    @override
-    def get_features(self) -> list[Feature]:
-        return [self.resources]
 
     @override
     def reset(self, state: ScheduleState) -> None:
