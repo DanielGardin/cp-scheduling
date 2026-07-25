@@ -10,7 +10,8 @@ Symbol values are resolved during runtime.
 from __future__ import annotations
 
 import ast
-from typing import Literal, TypeAlias, overload
+from collections.abc import Sequence
+from typing import Any, Literal, TypeAlias, overload
 
 from cpscheduler.environment.constants import EzPickle
 
@@ -346,6 +347,18 @@ class SymbolicDim(EzPickle):
         return result
 
 
+def to_raw_shape(
+    shape: tuple[ShapeDim, ...] | None,
+) -> tuple[BaseShapeDim, ...] | None:
+    """Convert a shape with SymbolicDims to a raw shape with BaseShapeDims."""
+    if shape is None:
+        return None
+
+    return tuple(
+        dim.raw if isinstance(dim, SymbolicDim) else dim for dim in shape
+    )
+
+
 @overload
 def symbolic_shape(
     raw_shape: tuple[BaseShapeDim, ...],
@@ -389,4 +402,67 @@ def resolve_shape(
     return tuple(
         dim.resolve(**symbol_values) if isinstance(dim, SymbolicDim) else None
         for dim in shape
+    )
+
+
+def merge_symbols(
+    main: dict[str, int], symbol_dict: dict[str, int]
+) -> dict[str, int]:
+    """Merge multiple symbol dictionaries into one, ensuring no conflicts."""
+    overlapping_keys = main.keys() & symbol_dict.keys()
+
+    for k in overlapping_keys:
+        if main[k] != symbol_dict[k]:
+            raise ValueError(
+                f"Conflicting values for symbol '{k}': {main[k]} vs {symbol_dict[k]}."
+            )
+
+    main.update(symbol_dict)
+
+    return main
+
+
+def solve_shape(
+    shape: tuple[SymbolicDim | None, ...], data: Any, depth: int = 0
+) -> dict[str, int] | None:
+    """Solve symbolic dimensions in the shape to concrete integers."""
+    if depth >= len(shape):
+        if isinstance(data, Sequence) and not isinstance(data, str):
+            raise ValueError(
+                f"Data has more dimensions than expected by shape {shape}."
+            )
+
+        return None
+
+    if hasattr(data, "shape"):
+        data_shape = data.shape
+        if len(data_shape) != len(shape):
+            raise ValueError(
+                f"Data has shape {data_shape} but expected {shape}."
+            )
+
+        symbols: dict[str, int] = {}
+        for i in range(depth, len(shape)):
+            dim = shape[i]
+            data_dim = data_shape[i]
+
+            if dim is not None:
+                merge_symbols(symbols, dim.solve_symbol(int(data_dim)))
+
+        return symbols
+
+    if isinstance(data, Sequence) and not isinstance(data, str):
+        first_dim = shape[depth]
+        symbols = {} if first_dim is None else first_dim.solve_symbol(len(data))
+
+        for item in data:
+            item_symbols = solve_shape(shape, item, depth + 1)
+
+            if item_symbols is not None:
+                merge_symbols(symbols, item_symbols)
+
+        return symbols
+
+    raise ValueError(
+        f"Data at depth {depth} is not a sequence, cannot match shape {shape}."
     )
