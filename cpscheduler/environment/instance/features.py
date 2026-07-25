@@ -2,20 +2,14 @@
 
 from collections.abc import Callable
 from copy import deepcopy
-from typing import Any, Generic, Literal
+from typing import Any, Generic
 
 from typing_extensions import TypeIs, TypeVar
 
 from cpscheduler.environment.constants import EzPickle, Singleton, hash_anything
+from cpscheduler.environment.instance.metadata import FeatureMetadata, ValueType
 from cpscheduler.environment.specs.feature_spec import FeatureViewSpec
-from cpscheduler.environment.utils.symbols import (
-    BaseShapeDim,
-    SymbolicDim,
-    resolve_shape,
-    solve_shape,
-    symbolic_shape,
-    to_raw_shape,
-)
+from cpscheduler.environment.utils.symbols import BaseShapeDim, SymbolicDim
 
 
 # This is used to distinguish between features that have no data loaded and those
@@ -30,100 +24,6 @@ UNSET = _UnsetType()
 def is_unset(value: object) -> TypeIs[_UnsetType]:
     """Check if a value is the UNSET singleton."""
     return value is UNSET
-
-
-ValueType = Literal[
-    # Numeric
-    "continuous",  # Real-valued, unbounded
-    "discrete",  # Integer-valued, unbounded
-    "binary",  # Boolean-valued, {0, 1}
-    "count",  # Non-negative integer-valued
-    # Bounded numeric
-    "normalized",  # Real-valued, bounded in [low, high]
-    "probability",  # Real-valued, bounded in [0, 1], sum to 1
-    # Scheduling quantities
-    "time",  # Integer-valued, bounded in [MIN_TIME, MAX_TIME]
-    "duration",  # Non-negative integer-valued time duration
-    "cost",  # Non-negative real-valued cost
-    # Identifiers
-    "id",  # Integer-valued, unique identifier
-    "task_id",  # Integer-valued, bounded in [0, n_tasks)
-    "job_id",  # Integer-valued, bounded in [0, n_jobs)
-    "machine_id",  # Integer-valued, bounded in [0, n_machines)
-    # Ordered / categorical
-    "order",  # Non-negative integer-valued, teorically bounded
-    "categorical",  # Categorical, integer-valued, bounded in [0, n_categories)
-    # Unknown
-    "unknown",  # Non-structured, or non-scalar
-]
-
-
-class FeatureMetadata(EzPickle):
-    """Metadata for a scheduling instance feature."""
-
-    value_type: ValueType
-    shape: tuple[SymbolicDim | None, ...] | None
-
-    n_categories: int | None
-    low: float | None
-    high: float | None
-
-    def __init__(
-        self,
-        value_type: ValueType,
-        shape: tuple[BaseShapeDim, ...] | None,
-        n_categories: int | None = None,
-        low: float | None = None,
-        high: float | None = None,
-    ) -> None:
-        """Initialize feature metadata.
-
-        Parameters
-        ----------
-        value_type: ValueType
-            The type of values the feature holds, used for validation and interpretation.
-
-        shape: tuple[BaseShapeDim, ...] or None
-            The shape of the feature data, where BaseShapeDim can be an int or a
-            symbolic dimension. If None, the shape is not specified.
-
-        n_categories: int | None, default None
-            The number of categories, if the feature is categorical.
-
-        low: float | None, default None
-            The lower bound of the feature values, if applicable.
-
-        high: float | None, default None
-            The upper bound of the feature values, if applicable.
-
-        """
-        self.value_type = value_type
-        self.shape = symbolic_shape(shape)
-        self.n_categories = n_categories
-        self.low = low
-        self.high = high
-
-    @property
-    def symbols(self) -> set[str]:
-        """Return the set of symbols used in the feature's shape."""
-        if self.shape is None:
-            return set()
-
-        symbols: set[str] = set()
-        for dim in self.shape:
-            if isinstance(dim, SymbolicDim):
-                symbols.update(dim.symbols)
-
-        return symbols
-
-    @property
-    def raw_shape(self) -> tuple[BaseShapeDim, ...] | None:
-        """Return the unresolved shape."""
-        return to_raw_shape(self.shape)
-
-    def resolve_shape(self, **symbols: int) -> tuple[int | None, ...] | None:
-        """Resolve the symbolic dimensions in the feature's shape to concrete integers."""
-        return resolve_shape(self.shape, **symbols)
 
 
 _T = TypeVar("_T", default=Any)
@@ -303,7 +203,11 @@ class Feature(EzPickle, Generic[_T]):
         The current feature must not be an owner, as it will become a consumer
         sharing the source's data.
         """
-        # TODO: Check if the source feature is compatible in terms of specification
+        if not source.metadata.is_compatible(self.metadata):
+            raise ValueError(
+                f"Cannot share data from feature '{source.name}' to feature "
+                f"'{self.name}', specifications are not compatible."
+            )
 
         if not source.owner:
             raise RuntimeError(
@@ -335,14 +239,7 @@ class Feature(EzPickle, Generic[_T]):
                 f"Feature {self.name} has no loaded data to solve symbols."
             )
 
-        shape = self.metadata.shape
-
-        if shape is None:
-            return {}
-
-        symbols = solve_shape(shape, self._data)
-
-        return symbols or {}
+        return self.metadata.solve_symbols(self._data)
 
     def validate(self) -> None:
         """Validate the feature's loaded data against its specification."""

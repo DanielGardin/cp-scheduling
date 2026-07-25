@@ -10,5 +10,6 @@ It contains all the features of the instance, centralizing the information in on
 
 __all__ = ["Feature", "FeatureMetadata", "ProblemInstance"]
 
-from .features import Feature, FeatureMetadata
+from .features import Feature
 from .instance import ProblemInstance
+from .metadata import FeatureMetadata
