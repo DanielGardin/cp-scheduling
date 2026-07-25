@@ -105,9 +105,7 @@ class PrecedenceConstraint(Constraint):
             An optional name for the adjacency feature.
 
         """
-        self.parents = Feature(
-            name=name, shape=(None, None), value_type="task_id"
-        )
+        self.parents = Feature(name=name, value_type="task_id")
 
         if precedence is not None:
             self.parents.own_data(
