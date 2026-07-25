@@ -7,9 +7,14 @@ from typing import Any, Generic
 from typing_extensions import TypeIs, TypeVar
 
 from cpscheduler.environment.constants import EzPickle, Singleton, hash_anything
+from cpscheduler.environment.specs.feature_spec import (
+    FeatureViewSpec,
+    ValueType,
+)
 from cpscheduler.environment.utils.symbols import (
     BaseShapeDim,
     SymbolicDim,
+    resolve_shape,
     symbolic_shape,
 )
 
@@ -111,6 +116,7 @@ class Feature(EzPickle, Generic[_T]):
     _data: _T | _UnsetType  # Current data
 
     shape: tuple[SymbolicDim | None, ...] | None
+    view: FeatureViewSpec[_T, Any]
 
     def __init__(
         self,
@@ -118,6 +124,12 @@ class Feature(EzPickle, Generic[_T]):
         optional: bool = False,
         preprocess: Callable[[Any], _T] | None = None,
         shape: tuple[BaseShapeDim, ...] | None = None,
+        view: FeatureViewSpec[_T, Any] | None = None,
+        *,
+        value_type: ValueType = "unknown",
+        n_categories: int | None = None,
+        low: float | None = None,
+        high: float | None = None,
     ) -> None:
         """Initialize a feature with the given parameters.
 
@@ -142,6 +154,29 @@ class Feature(EzPickle, Generic[_T]):
             The shape of the feature data, where BaseShapeDim can be an int or a
             symbolic dimension. If None, the shape is not specified. Default is None.
 
+        view: FeatureViewSpec[_T, Any] or None, optional
+            A specification of how the feature data should be viewed or interpreted.
+            If None, a default view is created based on the shape and additional
+            parameters. Default is None.
+
+        View parameters
+        -----------------
+        value_type: ValueType, optional
+            The type of values the feature holds, used for validation and interpretation.
+            Default is "unknown".
+
+        n_categories: int or None, optional
+            The number of categories for categorical features. If None, the feature
+            is not treated as categorical. Default is None.
+
+        low: float or None, optional
+            The lower bound for the feature values, used for validation. If None,
+            no lower bound is enforced. Default is None.
+
+        high: float or None, optional
+            The upper bound for the feature values, used for validation. If None,
+            no upper bound is enforced. Default is None.
+
         """
         self.name = name
         self.optional = optional
@@ -151,6 +186,17 @@ class Feature(EzPickle, Generic[_T]):
         self._data = UNSET
 
         self.shape = symbolic_shape(shape)
+        self.view = (
+            view
+            if view is not None
+            else FeatureViewSpec(
+                value_type=value_type,
+                shape=shape,
+                n_categories=n_categories,
+                low=low,
+                high=high,
+            )
+        )
 
     @property
     def owner(self) -> bool:
@@ -239,6 +285,10 @@ class Feature(EzPickle, Generic[_T]):
 
         self._data = source._data
 
+    def resolve_shape(self, **symbols: int) -> tuple[int | None, ...] | None:
+        """Resolve the symbolic dimensions in the feature's shape to concrete integers."""
+        return resolve_shape(self.shape, **symbols)
+
     def solve_symbols(self) -> dict[str, int]:
         """Solve the symbolic dimensions in the feature's shape to concrete integers."""
         if not self.loaded:
@@ -270,6 +320,13 @@ class Feature(EzPickle, Generic[_T]):
             )
 
         return hash_anything(self._data)
+
+    def materialize(self, spec: FeatureViewSpec[_T, Any] | None = None) -> Any:
+        """Return a materialized representation of the feature's data."""
+        if spec is None:
+            spec = self.view
+
+        return spec.materialize(self.value)
 
     def __eq__(self, value: object, /) -> bool:
         """Check equality of features based on their name and specification."""
