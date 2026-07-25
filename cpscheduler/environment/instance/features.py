@@ -1,21 +1,20 @@
 """Feature classes for scheduling instance specifications and data management."""
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from copy import deepcopy
-from typing import Any, Generic
+from typing import Any, Generic, Literal
 
 from typing_extensions import TypeIs, TypeVar
 
 from cpscheduler.environment.constants import EzPickle, Singleton, hash_anything
-from cpscheduler.environment.specs.feature_spec import (
-    FeatureViewSpec,
-    ValueType,
-)
+from cpscheduler.environment.specs.feature_spec import FeatureViewSpec
 from cpscheduler.environment.utils.symbols import (
     BaseShapeDim,
     SymbolicDim,
     resolve_shape,
+    solve_shape,
     symbolic_shape,
+    to_raw_shape,
 )
 
 
@@ -33,67 +32,98 @@ def is_unset(value: object) -> TypeIs[_UnsetType]:
     return value is UNSET
 
 
-def merge_symbols(
-    main: dict[str, int], symbol_dict: dict[str, int]
-) -> dict[str, int]:
-    """Merge multiple symbol dictionaries into one, ensuring no conflicts."""
-    overlapping_keys = main.keys() & symbol_dict.keys()
+ValueType = Literal[
+    # Numeric
+    "continuous",  # Real-valued, unbounded
+    "discrete",  # Integer-valued, unbounded
+    "binary",  # Boolean-valued, {0, 1}
+    "count",  # Non-negative integer-valued
+    # Bounded numeric
+    "normalized",  # Real-valued, bounded in [low, high]
+    "probability",  # Real-valued, bounded in [0, 1], sum to 1
+    # Scheduling quantities
+    "time",  # Integer-valued, bounded in [MIN_TIME, MAX_TIME]
+    "duration",  # Non-negative integer-valued time duration
+    "cost",  # Non-negative real-valued cost
+    # Identifiers
+    "id",  # Integer-valued, unique identifier
+    "task_id",  # Integer-valued, bounded in [0, n_tasks)
+    "job_id",  # Integer-valued, bounded in [0, n_jobs)
+    "machine_id",  # Integer-valued, bounded in [0, n_machines)
+    # Ordered / categorical
+    "order",  # Non-negative integer-valued, teorically bounded
+    "categorical",  # Categorical, integer-valued, bounded in [0, n_categories)
+    # Unknown
+    "unknown",  # Non-structured, or non-scalar
+]
 
-    for k in overlapping_keys:
-        if main[k] != symbol_dict[k]:
-            raise ValueError(
-                f"Conflicting values for symbol '{k}': {main[k]} vs {symbol_dict[k]}."
-            )
 
-    main.update(symbol_dict)
+class FeatureMetadata(EzPickle):
+    """Metadata for a scheduling instance feature."""
 
-    return main
+    value_type: ValueType
+    shape: tuple[SymbolicDim | None, ...] | None
 
+    n_categories: int | None
+    low: float | None
+    high: float | None
 
-def _solve_shape(
-    shape: tuple[SymbolicDim | None, ...], data: Any, depth: int = 0
-) -> dict[str, int] | None:
-    """Solve symbolic dimensions in the shape to concrete integers."""
-    if depth >= len(shape):
-        if isinstance(data, Sequence) and not isinstance(data, str):
-            raise ValueError(
-                f"Data has more dimensions than expected by shape {shape}."
-            )
+    def __init__(
+        self,
+        value_type: ValueType,
+        shape: tuple[BaseShapeDim, ...] | None,
+        n_categories: int | None = None,
+        low: float | None = None,
+        high: float | None = None,
+    ) -> None:
+        """Initialize feature metadata.
 
-        return None
+        Parameters
+        ----------
+        value_type: ValueType
+            The type of values the feature holds, used for validation and interpretation.
 
-    if hasattr(data, "shape"):
-        data_shape = data.shape
-        if len(data_shape) != len(shape):
-            raise ValueError(
-                f"Data has shape {data_shape} but expected {shape}."
-            )
+        shape: tuple[BaseShapeDim, ...] or None
+            The shape of the feature data, where BaseShapeDim can be an int or a
+            symbolic dimension. If None, the shape is not specified.
 
-        symbols: dict[str, int] = {}
-        for i in range(depth, len(shape)):
-            dim = shape[i]
-            data_dim = data_shape[i]
+        n_categories: int | None, default None
+            The number of categories, if the feature is categorical.
 
-            if dim is not None:
-                merge_symbols(symbols, dim.solve_symbol(int(data_dim)))
+        low: float | None, default None
+            The lower bound of the feature values, if applicable.
+
+        high: float | None, default None
+            The upper bound of the feature values, if applicable.
+
+        """
+        self.value_type = value_type
+        self.shape = symbolic_shape(shape)
+        self.n_categories = n_categories
+        self.low = low
+        self.high = high
+
+    @property
+    def symbols(self) -> set[str]:
+        """Return the set of symbols used in the feature's shape."""
+        if self.shape is None:
+            return set()
+
+        symbols: set[str] = set()
+        for dim in self.shape:
+            if isinstance(dim, SymbolicDim):
+                symbols.update(dim.symbols)
 
         return symbols
 
-    if isinstance(data, Sequence) and not isinstance(data, str):
-        first_dim = shape[depth]
-        symbols = {} if first_dim is None else first_dim.solve_symbol(len(data))
+    @property
+    def raw_shape(self) -> tuple[BaseShapeDim, ...] | None:
+        """Return the unresolved shape."""
+        return to_raw_shape(self.shape)
 
-        for item in data:
-            item_symbols = _solve_shape(shape, item, depth + 1)
-
-            if item_symbols is not None:
-                merge_symbols(symbols, item_symbols)
-
-        return symbols
-
-    raise ValueError(
-        f"Data at depth {depth} is not a sequence, cannot match shape {shape}."
-    )
+    def resolve_shape(self, **symbols: int) -> tuple[int | None, ...] | None:
+        """Resolve the symbolic dimensions in the feature's shape to concrete integers."""
+        return resolve_shape(self.shape, **symbols)
 
 
 _T = TypeVar("_T", default=Any)
@@ -109,13 +139,13 @@ class Feature(EzPickle, Generic[_T]):
     """
 
     name: str
-    optional: bool
 
     _preprocess: Callable[[Any], _T] | None
     _storage: _T | _UnsetType  # Persistent data: owner == _storage is not UNSET
     _data: _T | _UnsetType  # Current data
+    owner: bool
 
-    shape: tuple[SymbolicDim | None, ...] | None
+    metadata: FeatureMetadata
     view: FeatureViewSpec[_T, Any]
 
     def __init__(
@@ -123,10 +153,11 @@ class Feature(EzPickle, Generic[_T]):
         name: str,
         optional: bool = False,
         preprocess: Callable[[Any], _T] | None = None,
-        shape: tuple[BaseShapeDim, ...] | None = None,
         view: FeatureViewSpec[_T, Any] | None = None,
+        owner: bool = False,
         *,
         value_type: ValueType = "unknown",
+        shape: tuple[BaseShapeDim, ...] | None = None,
         n_categories: int | None = None,
         low: float | None = None,
         high: float | None = None,
@@ -150,20 +181,26 @@ class Feature(EzPickle, Generic[_T]):
             A function to preprocess the feature data before it is stored or used.
             If None, no preprocessing is applied. Default is None.
 
-        shape: tuple[BaseShapeDim, ...] or None, optional
-            The shape of the feature data, where BaseShapeDim can be an int or a
-            symbolic dimension. If None, the shape is not specified. Default is None.
-
         view: FeatureViewSpec[_T, Any] or None, optional
             A specification of how the feature data should be viewed or interpreted.
             If None, a default view is created based on the shape and additional
             parameters. Default is None.
 
-        View parameters
+        owner: bool, optional
+            Whether this feature instance owns its data. If True, the feature is
+            a provider, and must call `own_data` to set its persistent data.
+            If False, the feature is a consumer and can load data from other features.
+
+        Metadata
         -----------------
+
         value_type: ValueType, optional
             The type of values the feature holds, used for validation and interpretation.
             Default is "unknown".
+
+        shape: tuple[BaseShapeDim, ...] or None, optional
+            The shape of the feature data, where BaseShapeDim can be an int or a
+            symbolic dimension. If None, the shape is not specified. Default is None.
 
         n_categories: int or None, optional
             The number of categories for categorical features. If None, the feature
@@ -185,7 +222,16 @@ class Feature(EzPickle, Generic[_T]):
         self._storage = UNSET
         self._data = UNSET
 
-        self.shape = symbolic_shape(shape)
+        self.owner = owner
+
+        self.metadata = FeatureMetadata(
+            value_type=value_type,
+            shape=shape,
+            n_categories=n_categories,
+            low=low,
+            high=high,
+        )
+
         self.view = (
             view
             if view is not None
@@ -197,11 +243,6 @@ class Feature(EzPickle, Generic[_T]):
                 high=high,
             )
         )
-
-    @property
-    def owner(self) -> bool:
-        """Check if the feature owns its data."""
-        return self._storage is not UNSET
 
     @property
     def loaded(self) -> bool:
@@ -217,17 +258,14 @@ class Feature(EzPickle, Generic[_T]):
         raise ValueError(f"Feature {self.name} has no loaded data.")
 
     @property
+    def shape(self) -> tuple[SymbolicDim | None, ...] | None:
+        """Return the symbolic shape of the feature."""
+        return self.metadata.shape
+
+    @property
     def symbols(self) -> set[str]:
         """Return the set of symbols used in the feature's shape."""
-        if self.shape is None:
-            return set()
-
-        symbols: set[str] = set()
-        for dim in self.shape:
-            if isinstance(dim, SymbolicDim):
-                symbols.update(dim.symbols)
-
-        return symbols
+        return self.metadata.symbols
 
     def reset(self) -> None:
         """Overwrite feature's data with its persistent value."""
@@ -239,6 +277,7 @@ class Feature(EzPickle, Generic[_T]):
 
         self._storage = _data
         self._data = deepcopy(_data)
+        self.owner = True
 
     def load_data(self, data: _T) -> None:
         """Set the feature's current data."""
@@ -287,7 +326,7 @@ class Feature(EzPickle, Generic[_T]):
 
     def resolve_shape(self, **symbols: int) -> tuple[int | None, ...] | None:
         """Resolve the symbolic dimensions in the feature's shape to concrete integers."""
-        return resolve_shape(self.shape, **symbols)
+        return self.metadata.resolve_shape(**symbols)
 
     def solve_symbols(self) -> dict[str, int]:
         """Solve the symbolic dimensions in the feature's shape to concrete integers."""
@@ -296,12 +335,12 @@ class Feature(EzPickle, Generic[_T]):
                 f"Feature {self.name} has no loaded data to solve symbols."
             )
 
-        shape = self.shape
+        shape = self.metadata.shape
 
         if shape is None:
             return {}
 
-        symbols = _solve_shape(shape, self._data)
+        symbols = solve_shape(shape, self._data)
 
         return symbols or {}
 
@@ -342,8 +381,5 @@ class Feature(EzPickle, Generic[_T]):
 
         if self.optional:
             attrs.append("optional=True")
-
-        if self.shape is not None:
-            attrs.append(f"shape={self.shape!r}")
 
         return f"Feature({', '.join(attrs)})"

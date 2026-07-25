@@ -19,7 +19,7 @@ from cpscheduler.environment.des import (
     is_single_action,
     parse_instruction,
 )
-from cpscheduler.environment.instance import ProblemInstance
+from cpscheduler.environment.instance import FeatureMetadata, ProblemInstance
 from cpscheduler.environment.objectives import Objective
 from cpscheduler.environment.observation import DefaultObservation, Observation
 from cpscheduler.environment.render import Renderer
@@ -353,7 +353,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         self.instance.reset()
         self._status = UNLOADED
 
-    def required_features(self) -> list[str]:
+    def required_features(self) -> dict[str, FeatureMetadata]:
         """Return a dictionary of all required features from the setup, constraints, and objective."""
         return self.instance.required_features()
 

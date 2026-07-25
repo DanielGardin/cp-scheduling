@@ -17,11 +17,9 @@ from cpscheduler.environment.constants import (
     TaskID,
     Time,
 )
-from cpscheduler.environment.instance.features import (
-    Feature,
-    merge_symbols,
-)
+from cpscheduler.environment.instance.features import Feature, FeatureMetadata
 from cpscheduler.environment.utils.protocols import Instance_T
+from cpscheduler.environment.utils.symbols import merge_symbols
 
 if TYPE_CHECKING:
     from cpscheduler.environment.setups import ScheduleSetup
@@ -130,19 +128,25 @@ class ProblemInstance(EzPickle):
 
         """
         self.job_tasks = []
-        self._preemptive = Feature(name="preemptive", shape=("n_tasks",))
+        self._preemptive = Feature(
+            name="preemptive", shape=("n_tasks",), owner=True
+        )
 
-        self._optional = Feature(name="optional", shape=("n_tasks",))
+        self._optional = Feature(
+            name="optional", shape=("n_tasks",), owner=True
+        )
 
         self._machine_mask = Feature(
-            name="machine_mask", shape=("n_task", "n_machines")
+            name="machine_mask", shape=("n_tasks", "n_machines"), owner=True
         )
 
         self._processing_times = Feature(
-            name="all_processing_times", shape=("n_tasks", "n_machines")
+            name="all_processing_times",
+            shape=("n_tasks", "n_machines"),
+            owner=True,
         )
 
-        self._job_ids = Feature(name="job", shape=("n_tasks",))
+        self._job_ids = Feature(name="job", shape=("n_tasks",), optional=True)
 
         # Setting features without self.register(...)
         self.features = {
@@ -227,17 +231,18 @@ class ProblemInstance(EzPickle):
         """
         return self._job_ids.value
 
-    def required_features(self) -> list[str]:
+    def required_features(self) -> dict[str, FeatureMetadata]:
         """Return a dictionary of required features for the instance.
 
         Required features are those that have no provider among the registered
         features, and thus must be provided with data during instance initialization.
         """
-        return [
-            name
+        return {
+            name: features[0].metadata
             for name, features in self.features.items()
             if _find_provider(features) is None
-        ]
+            and not all(feature.optional for feature in features)
+        }
 
     def register(self, feature: Feature[Any]) -> None:
         """Register a feature to the instance.
@@ -403,6 +408,21 @@ class ProblemInstance(EzPickle):
     def has_feature(self, feat_name: str) -> bool:
         """Check if a feature with the given name is registered in the instance."""
         return feat_name in self.features
+
+    def get_feature(self, feat_name: str) -> Feature[Any]:
+        """Get the first registered feature with the given name.
+
+        Raises
+        ------
+        ValueError
+            If no feature with the given name is registered in the instance.
+        """
+        if feat_name not in self.features:
+            raise ValueError(
+                f"Feature '{feat_name}' is not registered in the instance."
+            )
+
+        return self.features[feat_name][0]
 
     def get_machines(self, task_id: TaskID) -> list[MachineID]:
         """Get the list of eligible machines for a given task."""
