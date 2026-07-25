@@ -9,11 +9,11 @@ easily serialized, statically analyzed and validated.
 """
 
 from collections.abc import ItemsView, Iterator, KeysView, Mapping, ValuesView
-from typing import Literal
+from typing import Any, Literal
 
-from cpscheduler.environment.observation.specs.feature_spec import (
-    FeatureSpec,
-    ObservationSpec,
+from cpscheduler.environment.specs.base import ObservationSpec
+from cpscheduler.environment.specs.feature_spec import (
+    FeatureViewSpec,
 )
 from cpscheduler.environment.utils.symbols import (
     ShapeDim,
@@ -36,12 +36,12 @@ class StackSpec(ObservationSpec):
     stacked along the feature dimension.
     """
 
-    features: tuple[FeatureSpec, ...]
+    features: tuple[FeatureViewSpec[Any, Any], ...]
     shape: tuple[SymbolicDim | None, ...]
 
     def __init__(
         self,
-        features: list[FeatureSpec],
+        features: list[FeatureViewSpec[Any, Any]],
         feature_dim: int = -1,
     ) -> None:
         """Initialize a StackSpec.

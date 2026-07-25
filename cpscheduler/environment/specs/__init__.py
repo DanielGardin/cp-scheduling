@@ -7,7 +7,7 @@ the expected format of the observations.
 
 __all__ = [
     "DictSpec",
-    "FeatureSpec",
+    "FeatureViewSpec",
     "GraphSpec",
     "ObservationSpec",
     "SequenceSpec",
@@ -15,5 +15,6 @@ __all__ = [
 ]
 
 
+from .base import ObservationSpec
 from .composite import DictSpec, GraphSpec, SequenceSpec, StackSpec
-from .feature_spec import FeatureSpec, ObservationSpec
+from .feature_spec import FeatureViewSpec
