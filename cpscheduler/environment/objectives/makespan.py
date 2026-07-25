@@ -101,6 +101,7 @@ class MaximumLateness(Objective):
             name=due_dates_tag,
             preprocess=self._load_dates,
             shape=("n_jobs",),
+            value_type="time",
         )
 
         if due_dates is not None:

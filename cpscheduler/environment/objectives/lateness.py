@@ -45,7 +45,12 @@ class TotalTardiness(RegularObjective):
         """
         super().__init__(minimize)
 
-        self.due_dates = Feature(name=due_dates_tag, shape=("n_jobs",))
+        self.due_dates = Feature(
+            name=due_dates_tag,
+            shape=("n_jobs",),
+            value_type="time",
+            preprocess=self._load_due_dates,
+        )
 
     def _load_due_dates(self, due_dates: Iterable[Int]) -> list[Time]:
         return convert_to_list(due_dates, Time)
@@ -127,7 +132,10 @@ class WeightedTardiness(TotalTardiness):
         super().__init__(due_dates_tag, due_dates, minimize)
 
         self.weights = Feature(
-            name=weights_tag, preprocess=self._load_weights, shape=("n_jobs",)
+            name=weights_tag,
+            preprocess=self._load_weights,
+            shape=("n_jobs",),
+            value_type="cost",
         )
 
         if weights is not None:

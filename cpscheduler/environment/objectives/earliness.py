@@ -49,6 +49,7 @@ class TotalEarliness(CompletionTimeObjective):
             name=due_dates_tag,
             preprocess=self._load_due_dates,
             shape=("n_jobs",),
+            value_type="time",
         )
 
         if due_dates is not None:
@@ -132,7 +133,10 @@ class WeightedEarliness(TotalEarliness):
         super().__init__(due_dates_tag, due_dates, minimize)
 
         self.weights = Feature(
-            name=weights_tag, preprocess=self._load_weights, shape=("n_jobs",)
+            name=weights_tag,
+            preprocess=self._load_weights,
+            shape=("n_jobs",),
+            value_type="cost",
         )
 
         if weights is not None:

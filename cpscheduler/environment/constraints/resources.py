@@ -134,7 +134,7 @@ class ResourceConstraint(Constraint):
             Default to None.
 
         """
-        self.capacity = Feature(name=capacity_tag, shape=())
+        self.capacity = Feature(name=capacity_tag, shape=(), value_type="count")
 
         if capacity is not None:
             self.capacity.own_data(capacity)
@@ -143,6 +143,7 @@ class ResourceConstraint(Constraint):
             name=resource_tag,
             preprocess=self._load_resources,
             shape=("n_tasks",),
+            value_type="count",
         )
 
         if resources is not None:
@@ -284,7 +285,7 @@ class NonRenewableResourceConstraint(Constraint):
             Default to None.
 
         """
-        self.capacity = Feature(name=capacity_tag, shape=())
+        self.capacity = Feature(name=capacity_tag, shape=(), value_type="count")
 
         if capacity is not None:
             self.capacity.own_data(capacity)
@@ -293,6 +294,7 @@ class NonRenewableResourceConstraint(Constraint):
             name=resource_tag,
             preprocess=self._load_resources,
             shape=("n_tasks",),
+            value_type="count",
         )
 
         if resources is not None:

@@ -47,11 +47,13 @@ class _ShopSetup(ScheduleSetup):
         self.processing_times = Feature(
             name=processing_times,
             shape=("n_tasks",),
+            value_type="duration",
         )
 
         self.machines = Feature(
             name=machine_feature,
             shape=("n_tasks",),
+            value_type="machine_id",
         )
 
     @override
@@ -207,7 +209,9 @@ class JobShopSetup(_ShopSetup):
             disjunctive=disjunctive,
         )
 
-        self.operation_order = Feature(name=operation_order, shape=("n_tasks",))
+        self.operation_order = Feature(
+            name=operation_order, shape=("n_tasks",), value_type="order"
+        )
 
     @override
     def setup_constraints(self) -> tuple[Constraint, ...]:
@@ -278,7 +282,9 @@ class FlexibleJobShopSetup(UnrelatedParallelMachineSetup):
             disjunctive=disjunctive,
         )
 
-        self.operation_order = Feature(name=operation_order, shape=("n_tasks",))
+        self.operation_order = Feature(
+            name=operation_order, shape=("n_tasks",), value_type="order"
+        )
 
     @override
     def setup_constraints(self) -> tuple[Constraint, ...]:
@@ -356,7 +362,9 @@ class FlowShopSetup(ScheduleSetup):
             shape=("n_tasks",),
         )
 
-        self.operation_order = Feature(name=operation_order, shape=("n_tasks",))
+        self.operation_order = Feature(
+            name=operation_order, shape=("n_tasks",), value_type="order"
+        )
 
     @property
     @override

@@ -72,6 +72,7 @@ class WeightedCompletionTime(TotalCompletionTime):
             name=weights_tag,
             preprocess=self._load_weights,
             shape=("n_jobs",),
+            value_type="cost",
         )
 
         if weights is not None:
@@ -145,6 +146,7 @@ class DiscountedTotalCompletionTime(RegularObjective):
         self.discount_factor = Feature(
             name="discount_factor",
             shape=(),
+            value_type="normalized",
         )
 
         self.discount_factor.own_data(discount_factor)
@@ -214,6 +216,7 @@ class TotalFlowTime(RegularObjective):
             name=release_tag,
             preprocess=self._load_release_times,
             shape=("n_jobs",),
+            value_type="time",
         )
 
         if release_times is not None:

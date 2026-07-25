@@ -57,6 +57,7 @@ class TotalTardyJobs(CompletionTimeObjective):
             name=due_dates_tag,
             preprocess=self._load_due_dates,
             shape=("n_jobs",),
+            value_type="time",
         )
 
     def _load_due_dates(self, due_dates: Iterable[Int]) -> list[Time]:
@@ -172,6 +173,7 @@ class WeightedTardyJobs(TotalTardyJobs):
             name=weights_tag,
             preprocess=self._load_weights,
             shape=("n_jobs",),
+            value_type="cost",
         )
 
         if weights is not None:

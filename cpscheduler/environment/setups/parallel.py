@@ -64,7 +64,7 @@ class SingleMachineSetup(ScheduleSetup):
         self.disjunctive = disjunctive
 
         self.processing_times = Feature(
-            name=processing_times, shape=("n_tasks",)
+            name=processing_times, shape=("n_tasks",), value_type="duration"
         )
 
     @property
@@ -124,7 +124,7 @@ class IdenticalParallelMachineSetup(ScheduleSetup):
         self.disjunctive = disjunctive
 
         self.processing_times = Feature(
-            name=processing_times, shape=("n_tasks",)
+            name=processing_times, shape=("n_tasks",), value_type="duration"
         )
 
         self._n_machines = n_machines
@@ -199,11 +199,14 @@ class UniformParallelMachineSetup(ScheduleSetup):
         self.disjunctive = disjunctive
 
         self.processing_times = Feature(
-            name=processing_times, shape=("n_tasks",)
+            name=processing_times, shape=("n_tasks",), value_type="duration"
         )
 
         self.speed = Feature(
-            name=speed_tag, preprocess=self._load_speeds, shape=("n_machines",)
+            name=speed_tag,
+            preprocess=self._load_speeds,
+            shape=("n_machines",),
+            value_type="count",
         )
 
         if speed is not None:
@@ -286,6 +289,7 @@ class UnrelatedParallelMachineSetup(ScheduleSetup):
         self.processing_times = Feature(
             name=processing_times,
             shape=("n_tasks", "n_machines"),
+            value_type="duration",
         )
 
     @property

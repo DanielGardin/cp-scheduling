@@ -47,6 +47,7 @@ class NonOverlapConstraint(Constraint):
             name=groups_tag,
             preprocess=self._preprocess_groups,
             shape=("n_groups", None),
+            value_type="task_id",
         )
 
         if task_groups is not None:

@@ -129,24 +129,33 @@ class ProblemInstance(EzPickle):
         """
         self.job_tasks = []
         self._preemptive = Feature(
-            name="preemptive", shape=("n_tasks",), owner=True
+            name="preemptive",
+            shape=("n_tasks",),
+            owner=True,
+            value_type="binary",
         )
 
         self._optional = Feature(
-            name="optional", shape=("n_tasks",), owner=True
+            name="optional", shape=("n_tasks",), owner=True, value_type="binary"
         )
 
         self._machine_mask = Feature(
-            name="machine_mask", shape=("n_tasks", "n_machines"), owner=True
+            name="machine_mask",
+            shape=("n_tasks", "n_machines"),
+            owner=True,
+            value_type="binary",
         )
 
         self._processing_times = Feature(
             name="all_processing_times",
             shape=("n_tasks", "n_machines"),
             owner=True,
+            value_type="duration",
         )
 
-        self._job_ids = Feature(name="job", shape=("n_tasks",), optional=True)
+        self._job_ids = Feature(
+            name="job", shape=("n_tasks",), optional=True, value_type="job_id"
+        )
 
         # Setting features without self.register(...)
         self.features = {

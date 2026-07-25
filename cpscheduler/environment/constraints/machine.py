@@ -113,6 +113,7 @@ class MachineBreakdownConstraint(Constraint):
         self.breakdowns = Feature(
             name=name,
             shape=("n_machines", None, 2),
+            value_type="time",
         )
 
         if breakdowns is not None:
@@ -271,7 +272,9 @@ class BatchConstraint(Constraint):
         """
         self.constant_capacity = None
 
-        self.capacity = Feature(name=name, shape=("n_machines",))
+        self.capacity = Feature(
+            name=name, shape=("n_machines",), value_type="count"
+        )
         if capacity is not None:
             if isinstance(capacity, Int):
                 self.constant_capacity = int(capacity)

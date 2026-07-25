@@ -32,7 +32,7 @@ class HorizonConstraint(Constraint):
             The upper bound on the completion time of all tasks.
 
         """
-        self.horizon = Feature(name="horizon", shape=())
+        self.horizon = Feature(name="horizon", shape=(), value_type="time")
         self.horizon.own_data(Time(horizon))
 
     def set_horizon(self, horizon: Int) -> None:
@@ -82,7 +82,10 @@ class ReleaseDateConstraint(Constraint):
 
         """
         self.release_dates = Feature(
-            name=release_tag, preprocess=self._load_dates, shape=("n_tasks",)
+            name=release_tag,
+            preprocess=self._load_dates,
+            shape=("n_tasks",),
+            value_type="time",
         )
 
         if release_dates is not None:
@@ -137,7 +140,10 @@ class DeadlineConstraint(Constraint):
 
         """
         self.due_dates = Feature(
-            name=due_tag, preprocess=self._load_dates, shape=("n_tasks",)
+            name=due_tag,
+            preprocess=self._load_dates,
+            shape=("n_tasks",),
+            value_type="time",
         )
 
     def _load_dates(self, dates: Iterable[Int]) -> list[Time]:
