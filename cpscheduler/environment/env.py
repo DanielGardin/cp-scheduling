@@ -22,9 +22,9 @@ from cpscheduler.environment.des import (
 from cpscheduler.environment.instance import ProblemInstance
 from cpscheduler.environment.objectives import Objective
 from cpscheduler.environment.observation import DefaultObservation, Observation
-from cpscheduler.environment.observation.specs import ObservationSpec
 from cpscheduler.environment.render import Renderer
 from cpscheduler.environment.setups import ScheduleSetup
+from cpscheduler.environment.specs import ObservationSpec
 from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.state.events import RuntimeEventKind, VarField
 from cpscheduler.environment.tracer import Tracer
