@@ -17,7 +17,8 @@ from cpscheduler.environment.constants import (
     TaskID,
     Time,
 )
-from cpscheduler.environment.instance.features import Feature, FeatureMetadata
+from cpscheduler.environment.instance.features import Feature
+from cpscheduler.environment.instance.metadata import FeatureMetadata
 from cpscheduler.environment.utils.protocols import Instance_T
 from cpscheduler.environment.utils.symbols import merge_symbols
 

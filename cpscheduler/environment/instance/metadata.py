@@ -37,6 +37,20 @@ ValueType = Literal[
     "unknown",  # Non-structured, or non-scalar
 ]
 
+_BOUNDS: dict[ValueType, tuple[float, float | None]] = {
+    "probability": (0.0, 1.0),
+    "binary": (0.0, 1.0),
+    "normalized": (0.0, 1.0),
+    "count": (0.0, None),
+    "duration": (0.0, None),
+    "cost": (0.0, None),
+    "time": (0.0, None),
+    "order": (0.0, None),
+    "task_id": (0.0, None),
+    "job_id": (0.0, None),
+    "machine_id": (0.0, None),
+}
+
 
 class FeatureMetadata(EzPickle):
     """Metadata for a scheduling instance feature."""
@@ -80,8 +94,41 @@ class FeatureMetadata(EzPickle):
         self.value_type = value_type
         self.shape = symbolic_shape(shape)
         self.n_categories = n_categories
-        self.low = low
-        self.high = high
+
+        default_low, default_high = self._infer_bounds()
+
+        self.low = low if low is not None else default_low
+        self.high = high if high is not None else default_high
+
+    def _infer_bounds(self) -> tuple[float | None, float | None]:
+        """Infer the bounds of the feature based on its value type."""
+        if self.value_type == "categorical":
+            if self.n_categories is None:
+                raise ValueError(
+                    "'n_categories' must be provided for categorical features."
+                )
+            return 0.0, float(self.n_categories - 1)
+
+        return _BOUNDS.get(self.value_type, (None, None))
+
+    def __repr__(self) -> str:
+        """Return a string representation of the feature metadata."""
+        attrs = [
+            f"value_type={self.value_type!r}",
+            f"shape={self.shape!r}",
+        ]
+
+        if self.n_categories is not None:
+            attrs.append(f"n_categories={self.n_categories!r}")
+
+        else:
+            if self.low is not None:
+                attrs.append(f"low={self.low!r}")
+
+            if self.high is not None:
+                attrs.append(f"high={self.high!r}")
+
+        return f"{type(self).__name__}({', '.join(attrs)})"
 
     @property
     def symbols(self) -> set[str]:

@@ -6,15 +6,25 @@ the expected format of the observations.
 """
 
 __all__ = [
+    "DenseViewSpec",
     "DictSpec",
     "FeatureViewSpec",
+    "FreeViewSpec",
     "GraphSpec",
     "ObservationSpec",
+    "RaggedViewSpec",
     "SequenceSpec",
     "StackSpec",
+    "from_metadata",
 ]
 
 
 from .base import ObservationSpec
 from .composite import DictSpec, GraphSpec, SequenceSpec, StackSpec
-from .feature_spec import FeatureViewSpec
+from .feature_spec import (
+    DenseViewSpec,
+    FeatureViewSpec,
+    FreeViewSpec,
+    RaggedViewSpec,
+    from_metadata,
+)

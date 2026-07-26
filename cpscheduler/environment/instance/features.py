@@ -4,11 +4,15 @@ from collections.abc import Callable
 from copy import deepcopy
 from typing import Any, Generic
 
+from mypy_extensions import mypyc_attr
 from typing_extensions import TypeIs, TypeVar
 
 from cpscheduler.environment.constants import EzPickle, Singleton, hash_anything
 from cpscheduler.environment.instance.metadata import FeatureMetadata, ValueType
-from cpscheduler.environment.specs.feature_spec import FeatureViewSpec
+from cpscheduler.environment.specs.feature_spec import (
+    FeatureViewSpec,
+    from_metadata,
+)
 from cpscheduler.environment.utils.symbols import BaseShapeDim, SymbolicDim
 
 
@@ -29,6 +33,7 @@ def is_unset(value: object) -> TypeIs[_UnsetType]:
 _T = TypeVar("_T", default=Any)
 
 
+@mypyc_attr(native_class=True, allow_interpreted_subclasses=True)
 class Feature(EzPickle, Generic[_T]):
     """Storage class for a scheduling instance feature.
 
@@ -46,14 +51,12 @@ class Feature(EzPickle, Generic[_T]):
     owner: bool
 
     metadata: FeatureMetadata
-    view: FeatureViewSpec[_T, Any]
 
     def __init__(
         self,
         name: str,
         optional: bool = False,
         preprocess: Callable[[Any], _T] | None = None,
-        view: FeatureViewSpec[_T, Any] | None = None,
         owner: bool = False,
         *,
         value_type: ValueType = "unknown",
@@ -80,11 +83,6 @@ class Feature(EzPickle, Generic[_T]):
         preprocess: Callable[[Any], _T] or None, optional
             A function to preprocess the feature data before it is stored or used.
             If None, no preprocessing is applied. Default is None.
-
-        view: FeatureViewSpec[_T, Any] or None, optional
-            A specification of how the feature data should be viewed or interpreted.
-            If None, a default view is created based on the shape and additional
-            parameters. Default is None.
 
         owner: bool, optional
             Whether this feature instance owns its data. If True, the feature is
@@ -132,18 +130,48 @@ class Feature(EzPickle, Generic[_T]):
             high=high,
         )
 
-        self.view = (
-            view
-            if view is not None
-            else FeatureViewSpec(
-                value_type=value_type,
-                shape=shape,
-                n_categories=n_categories,
-                low=low,
-                high=high,
-            )
-        )
+    def __eq__(self, value: object, /) -> bool:
+        """Check equality of features based on their name and specification."""
+        return isinstance(value, Feature) and self.name == value.name
 
+    def __repr__(self) -> str:
+        """Return a string representation of the feature."""
+        attrs = [
+            f"name={self.name!r}",
+            f"owner={self.owner}",
+            f"loaded={self.loaded}",
+        ]
+
+        if self.optional:
+            attrs.append("optional=True")
+
+        return f"Feature({', '.join(attrs)})"
+
+    # Metadata-related methods
+    @property
+    def shape(self) -> tuple[SymbolicDim | None, ...] | None:
+        """Return the symbolic shape of the feature."""
+        return self.metadata.shape
+
+    @property
+    def symbols(self) -> set[str]:
+        """Return the set of symbols used in the feature's shape."""
+        return self.metadata.symbols
+
+    def resolve_shape(self, **symbols: int) -> tuple[int | None, ...] | None:
+        """Resolve the symbolic dimensions in the feature's shape to concrete integers."""
+        return self.metadata.resolve_shape(**symbols)
+
+    def solve_symbols(self) -> dict[str, int]:
+        """Solve the symbolic dimensions in the feature's shape to concrete integers."""
+        if not self.loaded:
+            raise ValueError(
+                f"Feature {self.name} has no loaded data to solve symbols."
+            )
+
+        return self.metadata.solve_symbols(self._data)
+
+    # Data management methods
     @property
     def loaded(self) -> bool:
         """Check if the feature has loaded data."""
@@ -156,16 +184,6 @@ class Feature(EzPickle, Generic[_T]):
             return self._data
 
         raise ValueError(f"Feature {self.name} has no loaded data.")
-
-    @property
-    def shape(self) -> tuple[SymbolicDim | None, ...] | None:
-        """Return the symbolic shape of the feature."""
-        return self.metadata.shape
-
-    @property
-    def symbols(self) -> set[str]:
-        """Return the set of symbols used in the feature's shape."""
-        return self.metadata.symbols
 
     def reset(self) -> None:
         """Overwrite feature's data with its persistent value."""
@@ -228,19 +246,6 @@ class Feature(EzPickle, Generic[_T]):
 
         self._data = source._data
 
-    def resolve_shape(self, **symbols: int) -> tuple[int | None, ...] | None:
-        """Resolve the symbolic dimensions in the feature's shape to concrete integers."""
-        return self.metadata.resolve_shape(**symbols)
-
-    def solve_symbols(self) -> dict[str, int]:
-        """Solve the symbolic dimensions in the feature's shape to concrete integers."""
-        if not self.loaded:
-            raise ValueError(
-                f"Feature {self.name} has no loaded data to solve symbols."
-            )
-
-        return self.metadata.solve_symbols(self._data)
-
     def validate(self) -> None:
         """Validate the feature's loaded data against its specification."""
         if not self.loaded and not self.optional:
@@ -257,26 +262,14 @@ class Feature(EzPickle, Generic[_T]):
 
         return hash_anything(self._data)
 
+    # Observation and materialization methods
+    def possible_views(self) -> dict[str, FeatureViewSpec[_T, Any]]:
+        """Return a list of possible views for the feature's data."""
+        return {"default": from_metadata(self.metadata)}
+
     def materialize(self, spec: FeatureViewSpec[_T, Any] | None = None) -> Any:
         """Return a materialized representation of the feature's data."""
         if spec is None:
-            spec = self.view
+            spec = self.possible_views()["default"]
 
         return spec.materialize(self.value)
-
-    def __eq__(self, value: object, /) -> bool:
-        """Check equality of features based on their name and specification."""
-        return isinstance(value, Feature) and self.name == value.name
-
-    def __repr__(self) -> str:
-        """Return a string representation of the feature."""
-        attrs = [
-            f"name={self.name!r}",
-            f"owner={self.owner}",
-            f"loaded={self.loaded}",
-        ]
-
-        if self.optional:
-            attrs.append("optional=True")
-
-        return f"Feature({', '.join(attrs)})"

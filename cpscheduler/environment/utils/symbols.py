@@ -324,7 +324,7 @@ class SymbolicDim(EzPickle):
         """Return a string representation of the symbolic dimension, reconstructing the affine expression."""
         parts: list[str] = []
 
-        for sym, coef in self._coefs.items():
+        for sym, coef in sorted(self._coefs.items()):
             if coef == 1:
                 parts.append(sym)
 

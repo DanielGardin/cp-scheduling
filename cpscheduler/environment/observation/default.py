@@ -10,6 +10,7 @@ from cpscheduler.environment.constants import Status, TaskID, Time
 from cpscheduler.environment.instance import ProblemInstance
 from cpscheduler.environment.observation.base import Observation
 from cpscheduler.environment.specs import (
+    DenseViewSpec,
     DictSpec,
     FeatureViewSpec,
     ObservationSpec,
@@ -104,26 +105,24 @@ class DefaultObservation(Observation[DefaultObsType]):
         all_features = self._all_features
 
         if all_features or "status" in self._feature_set:
-            feature_specs["status"] = FeatureViewSpec(
+            feature_specs["status"] = DenseViewSpec(
                 value_type="categorical",
                 shape=("n_tasks",),
                 n_categories=Status.count(),
             )
 
         if all_features or "available" in self._feature_set:
-            feature_specs["available"] = FeatureViewSpec(
+            feature_specs["available"] = DenseViewSpec(
                 value_type="binary",
                 shape=("n_tasks",),
             )
 
         if all_features or "time" in self._feature_set:
-            feature_specs["time"] = FeatureViewSpec(
-                value_type="continuous", shape=()
-            )
+            feature_specs["time"] = DenseViewSpec(value_type="time", shape=())
 
         for feature_name, features in instance.features.items():
             if self._all_features or feature_name in self._feature_set:
-                feature_view = features[0].view
+                feature_view = features[0].possible_views()["default"]
 
                 feature_specs[feature_name] = feature_view
 
