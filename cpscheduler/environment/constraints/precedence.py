@@ -6,7 +6,7 @@ from typing_extensions import Self, override
 
 from cpscheduler.environment.constants import Int, MachineID, TaskID
 from cpscheduler.environment.constraints.base import Constraint
-from cpscheduler.environment.instance import Feature, ProblemInstance
+from cpscheduler.environment.instance import DAGFeature, ProblemInstance
 from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.utils.general import convert_to_list
 
@@ -81,7 +81,7 @@ class PrecedenceConstraint(Constraint):
     must be completed before others can start.
     """
 
-    parents: Feature[dict[TaskID, list[TaskID]]]
+    parents: DAGFeature
     "A mapping of task IDs to their parent task IDs."
 
     children: dict[TaskID, list[TaskID]]
@@ -105,7 +105,9 @@ class PrecedenceConstraint(Constraint):
             An optional name for the adjacency feature.
 
         """
-        self.parents = Feature(name=name, value_type="task_id")
+        self.parents = DAGFeature(
+            name=name, n_nodes="n_tasks", value_type="task_id"
+        )
 
         if precedence is not None:
             self.parents.own_data(

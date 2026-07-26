@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 from copy import deepcopy
-from typing import Any, Generic
+from typing import Any, Generic, override
 
 from mypy_extensions import mypyc_attr
 from typing_extensions import TypeIs, TypeVar
@@ -10,6 +10,7 @@ from typing_extensions import TypeIs, TypeVar
 from cpscheduler.environment.constants import EzPickle, Singleton, hash_anything
 from cpscheduler.environment.instance.metadata import FeatureMetadata, ValueType
 from cpscheduler.environment.specs.feature_spec import (
+    AdjacencyMatrixViewSpec,
     FeatureViewSpec,
     from_metadata,
 )
@@ -273,3 +274,55 @@ class Feature(EzPickle, Generic[_T]):
             spec = self.possible_views()["default"]
 
         return spec.materialize(self.value)
+
+
+# Specialized feature classes for specific data types
+
+
+class DAGFeature(Feature[dict[int, list[int]]]):
+    """Feature class for representing Directed Acyclic Graphs (DAGs)."""
+
+    n_nodes: SymbolicDim
+
+    def __init__(
+        self,
+        name: str,
+        n_nodes: int | str,
+        optional: bool = False,
+        preprocess: Callable[[Any], dict[int, list[int]]] | None = None,
+        owner: bool = False,
+        *,
+        value_type: ValueType = "unknown",
+        n_categories: int | None = None,
+        low: float | None = None,
+        high: float | None = None,
+    ) -> None:
+        """Initialize a DAG feature with the given parameters."""
+        super().__init__(
+            name=name,
+            optional=optional,
+            preprocess=preprocess,
+            owner=owner,
+            value_type=value_type,
+            shape=None,
+            n_categories=n_categories,
+            low=low,
+            high=high,
+        )
+
+        self.n_nodes = SymbolicDim.from_shapedim(n_nodes)
+
+    @override
+    def possible_views(
+        self,
+    ) -> dict[str, FeatureViewSpec[dict[int, list[int]], Any]]:
+        return {
+            "default": from_metadata(self.metadata),
+            "adjacency_matrix": AdjacencyMatrixViewSpec(
+                value_type=self.metadata.value_type,
+                n_nodes=self.n_nodes.raw,
+                n_categories=self.metadata.n_categories,
+                low=self.metadata.low,
+                high=self.metadata.high,
+            ),
+        }

@@ -1,6 +1,7 @@
 """Feature specifications for the environment."""
 
 __all__ = [
+    "AdjacencyMatrixViewSpec",
     "DenseViewSpec",
     "FeatureViewSpec",
     "FreeViewSpec",
@@ -15,3 +16,4 @@ from .base import (
     RaggedViewSpec,
     from_metadata,
 )
+from .graph import AdjacencyMatrixViewSpec

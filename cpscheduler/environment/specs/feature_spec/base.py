@@ -1,5 +1,6 @@
 """Feature specifications for observations in the scheduling environment."""
 
+from collections.abc import Callable
 from typing import Any, Generic, TypeVar, cast, override
 
 from mypy_extensions import mypyc_attr
@@ -85,6 +86,27 @@ class FeatureViewSpec(ObservationSpec, Generic[_T, _R]):
         )
 
 
+class CustomViewSpec(FeatureViewSpec[_T, _R]):
+    """A custom view of a feature, where the data is transformed using a custom function."""
+
+    def __init__(
+        self,
+        value_type: ValueType,
+        shape: tuple[BaseShapeDim, ...] | None,
+        materialize_fn: Callable[[_T], _R],
+        n_categories: int | None = None,
+        low: float | None = None,
+        high: float | None = None,
+    ) -> None:
+        """Initialize the CustomViewSpec with the given metadata and materialization function."""
+        super().__init__(value_type, shape, n_categories, low, high)
+        self.materialize_fn = materialize_fn
+
+    @override
+    def materialize(self, data: _T, **symbols: int) -> _R:
+        return self.materialize_fn(data)
+
+
 # Basic feature view specifications for common feature types
 # These are inferrable from the feature metadata alone and do not require
 # additional information to materialize the feature data.
@@ -127,12 +149,12 @@ class DenseViewSpec(FeatureViewSpec[_T, _T]):
     def raw_shape(self) -> tuple[int | str, ...]:
         return cast("tuple[int | str, ...]", super().raw_shape)
 
+    @override
     def resolve_shape(self, **symbols: int) -> tuple[int, ...]:
-        """Resolve the symbolic shape to a concrete shape using the provided symbols."""
         return cast("tuple[int, ...]", super().resolve_shape(**symbols))
 
+    @override
     def materialize(self, data: _T, **symbols: int) -> _T:
-        """Materialize the feature data as a dense array."""
         return data
 
 
@@ -165,11 +187,12 @@ class FreeViewSpec(FeatureViewSpec[_T, _T]):
     def raw_shape(self) -> None:
         return None
 
+    @override
     def resolve_shape(self, **symbols: int) -> None:
-        """Resolve the symbolic shape to a concrete shape using the provided symbols."""
+        return None
 
+    @override
     def materialize(self, data: _T, **symbols: int) -> _T:
-        """Materialize the feature data without any shape constraints."""
         return data
 
 
@@ -203,12 +226,12 @@ class RaggedViewSpec(FeatureViewSpec[_T, _T]):
     def raw_shape(self) -> tuple[BaseShapeDim, ...]:
         return cast("tuple[BaseShapeDim, ...]", super().raw_shape)
 
+    @override
     def resolve_shape(self, **symbols: int) -> tuple[int | None, ...]:
-        """Resolve the symbolic shape to a concrete shape using the provided symbols."""
         return cast("tuple[int | None, ...]", super().resolve_shape(**symbols))
 
+    @override
     def materialize(self, data: _T, **symbols: int) -> _T:
-        """Materialize the feature data as a ragged array."""
         return data
 
 
