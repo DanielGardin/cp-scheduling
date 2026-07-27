@@ -5,11 +5,13 @@ from typing import Any, cast
 
 from cpscheduler.common import AnySchedulingEnv, unwrap_env
 from cpscheduler.environment.constants import EzPickle
-from cpscheduler.environment.specs import FeatureSpec
-from cpscheduler.environment.specs.symbols import resolve_shape, symbolic_shape
+from cpscheduler.environment.instance import FeatureMetadata
 from cpscheduler.environment.utils.protocols import InstanceGenerator
+from cpscheduler.environment.utils.symbols import resolve_shape, symbolic_shape
 from cpscheduler.instances.distributions.base import Sampler
-from cpscheduler.instances.generators.default import DEFAULT_SAMPLERS
+from cpscheduler.instances.generators.default import infer_sampler
+
+Shape = tuple[int | None, ...] | None
 
 
 class FeatureSampler(EzPickle):
@@ -22,8 +24,8 @@ class FeatureSampler(EzPickle):
     def __init__(
         self,
         name: str,
-        shape: tuple[int | None, ...] | None,
-        sampler: Sampler[Any],
+        metadata: FeatureMetadata,
+        sampler: Sampler[Any] | None = None,
         **symbols: int,
     ) -> None:
         """Initialize a FeatureSampler.
@@ -33,13 +35,14 @@ class FeatureSampler(EzPickle):
         name: str
             The name of the feature being sampled.
 
-        shape: tuple[int | None, ...] | None
-            The expected shape of the feature value.
-            None is treated as a wildcard, and any sample is accepted.
+        metadata: FeatureMetadata
+            The metadata of the feature, including its shape and value type.
 
-        sampler: Sampler[Any]
+        sampler: Sampler[Any] | None, optional
             The sampler to generate values for this feature.
             The sampler's shape must be compatible with the provided shape.
+            If None is provided, a default sampler will be used from
+            the feature's metadata.
 
         **symbols: int
             Additional symbols that may be needed to resolve the sampler's shape.
@@ -51,23 +54,63 @@ class FeatureSampler(EzPickle):
 
         """
         self.name = name
-        self.sampler = sampler
+        self.sampler = sampler or infer_sampler(metadata, symbols)
 
-        sample_shape = resolve_shape(symbolic_shape(sampler.shape), **symbols)
-
-        self.outer_shape = _computer_outer_shape(sample_shape, shape)
-
-    @classmethod
-    def from_spec(
-        cls, name: str, spec: FeatureSpec, sampler: Sampler[Any], **symbols: int
-    ) -> "FeatureSampler":
-        """Create a FeatureSampler from a feature spec and a sampler."""
-        return cls(
-            name=name,
-            shape=spec.resolve_shape(**symbols),
-            sampler=sampler,
-            **symbols,
+        sample_shape = resolve_shape(
+            symbolic_shape(self.sampler.shape), **symbols
         )
+        target_shape = resolve_shape(metadata.shape, **symbols)
+
+        self.outer_shape = self._compute_outer_shape(sample_shape, target_shape)
+
+    def _compute_outer_shape(
+        self, shape: Shape, target_shape: Shape
+    ) -> tuple[int, ...]:
+        if target_shape is None:
+            return ()
+
+        if shape is None:
+            if not target_shape or target_shape[-1] is not None:
+                raise ValueError(
+                    f"Shape {shape} is not compatible with target shape {target_shape}: "
+                    f"shape is None but target shape has last dimension {target_shape[-1]}."
+                )
+
+            outer = target_shape[:-1]
+
+            if any(dim is None for dim in outer):
+                raise ValueError(
+                    f"Target shape {target_shape} has None in outer dimensions, "
+                    "loop shape cannot be determined."
+                )
+
+            return cast("tuple[int, ...]", outer)
+
+        if len(shape) > len(target_shape):
+            raise ValueError(
+                f"Shape {shape} is not compatible with target shape {target_shape}: "
+                "shape has more dimensions than target shape."
+            )
+
+        for s_dim, t_dim in zip(
+            reversed(shape), reversed(target_shape), strict=False
+        ):
+            if t_dim is not None and s_dim != t_dim:
+                raise ValueError(
+                    f"Shape {shape} is not compatible with target shape {target_shape}: "
+                    f"dimension {s_dim} does not match target dimension {t_dim}."
+                )
+
+        n_outer = len(target_shape) - len(shape)
+        outer = target_shape[:n_outer]
+
+        if any(dim is None for dim in outer):
+            raise ValueError(
+                f"Target shape {target_shape} has None in outer dimensions, "
+                "loop shape cannot be determined."
+            )
+
+        return cast("tuple[int, ...]", outer)
 
     def sample(self, rng: Random, **context: Any) -> Any:
         """Sample a value for this feature using the associated sampler.
@@ -104,59 +147,6 @@ class FeatureSampler(EzPickle):
         ]
 
 
-_Shape = tuple[int | None, ...] | None
-
-
-def _computer_outer_shape(
-    shape: _Shape, target_shape: _Shape
-) -> tuple[int, ...]:
-    if target_shape is None:
-        return ()
-
-    if shape is None:
-        if not target_shape or target_shape[-1] is not None:
-            raise ValueError(
-                f"Shape {shape} is not compatible with target shape {target_shape}: "
-                f"shape is None but target shape has last dimension {target_shape[-1]}."
-            )
-
-        outer = target_shape[:-1]
-
-        if any(dim is None for dim in outer):
-            raise ValueError(
-                f"Target shape {target_shape} has None in outer dimensions, "
-                "loop shape cannot be determined."
-            )
-
-        return cast("tuple[int, ...]", outer)
-
-    if len(shape) > len(target_shape):
-        raise ValueError(
-            f"Shape {shape} is not compatible with target shape {target_shape}: "
-            "shape has more dimensions than target shape."
-        )
-
-    for s_dim, t_dim in zip(
-        reversed(shape), reversed(target_shape), strict=False
-    ):
-        if t_dim is not None and s_dim != t_dim:
-            raise ValueError(
-                f"Shape {shape} is not compatible with target shape {target_shape}: "
-                f"dimension {s_dim} does not match target dimension {t_dim}."
-            )
-
-    n_outer = len(target_shape) - len(shape)
-    outer = target_shape[:n_outer]
-
-    if any(dim is None for dim in outer):
-        raise ValueError(
-            f"Target shape {target_shape} has None in outer dimensions, "
-            "loop shape cannot be determined."
-        )
-
-    return cast("tuple[int, ...]", outer)
-
-
 class Generator(EzPickle, InstanceGenerator):
     """Generic feature-based instance generator.
 
@@ -167,7 +157,8 @@ class Generator(EzPickle, InstanceGenerator):
     previously generated features.
     """
 
-    feature_specs: dict[str, FeatureSpec]
+    use_default_samplers: bool
+    feature_metadata: dict[str, FeatureMetadata]
     _sampling_order: tuple[str, ...]
 
     _symbols: dict[str, int]
@@ -176,7 +167,7 @@ class Generator(EzPickle, InstanceGenerator):
 
     def __init__(
         self,
-        feature_specs: dict[str, FeatureSpec],
+        feature_metadata: dict[str, FeatureMetadata],
         n_tasks: int,
         n_machines: int,
         n_jobs: int | None = None,
@@ -190,9 +181,8 @@ class Generator(EzPickle, InstanceGenerator):
 
         Parameters
         ----------
-        feature_specs: dict[str, FeatureSpec]
-            The feature specifications defining the required features for the
-            environment. Each feature must have a registered sampler.
+        feature_metadata: dict[str, FeatureMetadata]
+            The feature metadata for features that will be sampled.
 
         n_tasks: int
             The number of tasks in the generated instances. This is a required
@@ -217,24 +207,39 @@ class Generator(EzPickle, InstanceGenerator):
             will be initialized without a fixed seed.
 
         use_default_samplers: bool, optional
-            Whether to use default samplers for features when available. If `True`,
-            the generator will attempt to register default samplers for any features
-            that do not have a sampler provided in the `samplers` argument.
+            Whether to use default samplers for features. If `True`, the generator
+            will use default samplers, inferred from the feature metadata.
+            If `False`, it will raise an error if a sampler is not provided for
+            a feature.
 
         **symbols: int
             Additional symbols that can be used in feature specs and samplers.
             Currently unused.
 
+        Raises
+        ------
+        ValueError
+            If the number of tasks is less than the number of jobs, or if
+            use_default_samplers is False and a sampler is not provided for
+            a required feature.
+
+        Note
+        ----
+        The generator does not assume any scheduling semantics, when using
+        default samplers, there is no guarantee that the generated instances
+        will be feasible or valid for any particular scheduling environment.
+
         """
         n_jobs = n_jobs if n_jobs is not None else n_tasks
+        samplers = samplers or {}
 
-        self.feature_specs = feature_specs
+        self.feature_metadata = feature_metadata.copy()
 
         if n_jobs == n_tasks:
             # If n_jobs is not explicitly specified, it is assumed to be equal
             # to n_tasks. In this case, we remove 'job' from the feature specs,
             # since it is deterministically defined as the same as the task index.
-            self.feature_specs.pop("job", None)
+            self.feature_metadata.pop("job", None)
 
         elif n_tasks < n_jobs:
             raise ValueError(
@@ -249,33 +254,30 @@ class Generator(EzPickle, InstanceGenerator):
             **symbols,
         }
 
-        _default_samplers = (
-            self._default_samplers() if use_default_samplers else {}
-        )
-
         _samplers: dict[str, FeatureSampler] = {}
 
-        for name, feature_spec in self.feature_specs.items():
-            if samplers and name in samplers:
-                _samplers[name] = FeatureSampler.from_spec(
-                    name=name,
-                    spec=feature_spec,
-                    sampler=samplers[name],
-                    **_symbols,
+        if not use_default_samplers:
+            missing = set(self.feature_metadata) - set(samplers)
+            if missing:
+                raise ValueError(
+                    f"No sampler provided for features: {missing}. "
+                    "A sampler must be registered for every required feature."
                 )
 
-            elif name in _default_samplers:
-                _samplers[name] = FeatureSampler.from_spec(
-                    name=name,
-                    spec=feature_spec,
-                    sampler=_default_samplers[name],
-                    **_symbols,
-                )
+        for name, metadata in self.feature_metadata.items():
+            _samplers[name] = FeatureSampler(
+                name=name,
+                metadata=metadata,
+                sampler=samplers.get(name),
+                **_symbols,
+            )
 
         self._sampling_order = ()
         self._symbols = _symbols
         self._samplers = _samplers
         self._rng = Random(seed)
+
+        self.use_default_samplers = use_default_samplers
 
     @classmethod
     def from_env(
@@ -321,24 +323,29 @@ class Generator(EzPickle, InstanceGenerator):
             will be initialized without a fixed seed.
 
         use_default_samplers: bool, optional
-            Whether to use default samplers for features when available. If `True`,
-            the generator will attempt to register default samplers for any features
-            that do not have a sampler provided in the `samplers` argument.
+            Whether to use default samplers for features. If `True`, the generator
+            will use default samplers, inferred from the feature metadata.
+            If `False`, it will raise an error if a sampler is not provided for
+            a feature.
 
         **symbols: int
             Additional symbols that can be used in feature specs and samplers.
             Currently unused.
-
-        Returns
-        -------
-        Generator
-            A new Generator instance configured for the given environment.
 
         Raises
         ------
         ValueError
             If the number of tasks or machines cannot be inferred from the environment
             and is not provided explicitly.
+            If the number of tasks is less than the number of jobs, or if
+            use_default_samplers is False and a sampler is not provided for
+            a required feature.
+
+        Note
+        ----
+        The generator does not assume any scheduling semantics, when using
+        default samplers, there is no guarantee that the generated instances
+        will be feasible or valid for any particular scheduling environment.
 
         """
         core_env = unwrap_env(env)
@@ -363,19 +370,19 @@ class Generator(EzPickle, InstanceGenerator):
         if n_jobs is None:
             n_jobs = obs_symbols.get("n_jobs", n_tasks)
 
+        symbols |= {
+            "n_tasks": n_tasks,
+            "n_machines": n_machines,
+            "n_jobs": n_jobs,
+        }
+
         return cls(
-            feature_specs=core_env.required_features(),
-            n_tasks=n_tasks,
-            n_machines=n_machines,
-            n_jobs=n_jobs,
+            feature_metadata=core_env.required_features(),
             samplers=samplers,
             seed=seed,
             use_default_samplers=use_default_samplers,
             **symbols,
         )
-
-    def _default_samplers(self) -> dict[str, Sampler[Any]]:
-        return DEFAULT_SAMPLERS
 
     def _invalidate_ordering(self) -> None:
         self._sampling_order = ()
@@ -386,12 +393,12 @@ class Generator(EzPickle, InstanceGenerator):
         if self._sampling_order:
             return self._sampling_order
 
-        in_degree: dict[str, int] = dict.fromkeys(self.feature_specs, 0)
+        in_degree: dict[str, int] = dict.fromkeys(self.feature_metadata, 0)
         dependencies: dict[str, list[str]] = {
-            name: [] for name in self.feature_specs
+            name: [] for name in self.feature_metadata
         }
 
-        for name in self.feature_specs:
+        for name in self.feature_metadata:
             if name not in self._samplers:
                 raise ValueError(
                     f"No sampler provided for feature '{name}'. A sampler must be "
@@ -401,7 +408,7 @@ class Generator(EzPickle, InstanceGenerator):
             sampler = self._samplers[name].sampler
 
             for dep in sampler.dependencies:
-                if dep not in self.feature_specs:
+                if dep not in self.feature_metadata:
                     raise ValueError(
                         f"Sampler for feature '{name}' depends on feature '{dep}', "
                         "which is not in the environment's required features."
@@ -424,8 +431,8 @@ class Generator(EzPickle, InstanceGenerator):
                 if degree == 0:
                     queue.append(dep)
 
-        if len(queue) != len(self.feature_specs):
-            missing = set(self.feature_specs) - set(queue)
+        if len(queue) != len(self.feature_metadata):
+            missing = set(self.feature_metadata) - set(queue)
             raise ValueError(
                 f"Circular dependencies detected among features: {missing}."
             )
@@ -451,9 +458,11 @@ class Generator(EzPickle, InstanceGenerator):
             The sampler to register for the feature.
 
         """
-        self._samplers[feature_name] = FeatureSampler.from_spec(
+        metadata = self.feature_metadata[feature_name]
+
+        self._samplers[feature_name] = FeatureSampler(
             name=feature_name,
-            spec=self.feature_specs[feature_name],
+            metadata=metadata,
             sampler=sampler,
             **self._symbols,
         )
@@ -495,11 +504,9 @@ class Generator(EzPickle, InstanceGenerator):
         context: dict[str, Any] = dict(self._symbols)
 
         for feature_name in self.sampling_order:
-            spec = self.feature_specs[feature_name]
             sampler = self._samplers[feature_name]
 
             context["feature_name"] = feature_name
-            context["spec"] = spec
 
             feature_value = sampler.sample(self._rng, **context)
 
