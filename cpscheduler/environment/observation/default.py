@@ -1,6 +1,6 @@
 """Default observation for scheduling environments."""
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 from mypy_extensions import mypyc_attr
@@ -22,6 +22,11 @@ DefaultObsType = dict[str, Any]
 AWAITING = Status.AWAITING
 
 
+FEATURE_SELECTION = (
+    Iterable[str] | Mapping[str, str | FeatureViewSpec[Any, Any]] | None
+)
+
+
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=True)
 class DefaultObservation(Observation[DefaultObsType]):
     """Lightweight default observation.
@@ -36,7 +41,8 @@ class DefaultObservation(Observation[DefaultObsType]):
     """
 
     _all_features: bool
-    _feature_set: set[str]
+    _features: dict[str, str | FeatureViewSpec[Any, Any]]
+    feature_specs: dict[str, FeatureViewSpec[Any, Any]]
 
     _time: Time
     _status: list[int]
@@ -48,7 +54,7 @@ class DefaultObservation(Observation[DefaultObsType]):
 
     def __init__(
         self,
-        features: Iterable[str] | None = None,
+        features: FEATURE_SELECTION = None,
         n_tasks: int | None = None,
         n_machines: int | None = None,
         n_jobs: int | None = None,
@@ -67,9 +73,11 @@ class DefaultObservation(Observation[DefaultObsType]):
 
         Parameters
         ----------
-        features: Iterable[str] | None
-            A set of feature names to include in the observation.
-            If None, all features will be included.
+        features: Iterable[str] | Mapping[str, str | FeatureViewSpec[Any, Any]] | None
+            The selection of features to include in the observation.
+            It accepts an iterable of feature names (all default views), or
+            a mapping of feature names to either a view name or a custom FeatureViewSpec.
+            If None, all features are included with their default views.
 
         n_tasks: int | None
             Expected number of tasks.
@@ -89,7 +97,13 @@ class DefaultObservation(Observation[DefaultObsType]):
         super().__init__(n_tasks, n_machines, n_jobs, **symbols)
 
         self._all_features = features is None
-        self._feature_set = set(features or ())
+        self._features = {}
+
+        if isinstance(features, Mapping):
+            self._features = dict(features)
+
+        elif isinstance(features, Iterable):
+            self._features = dict.fromkeys(features, "default")
 
         self._obs = {}
 
@@ -102,30 +116,66 @@ class DefaultObservation(Observation[DefaultObsType]):
     def compile(self, instance: ProblemInstance) -> ObservationSpec:
         feature_specs: dict[str, FeatureViewSpec[Any, Any]] = {}
 
-        all_features = self._all_features
+        if self._all_features:
+            self._features = dict.fromkeys(instance.features.keys(), "default")
+            self._features |= dict.fromkeys(
+                ["status", "available", "time"], "default"
+            )
 
-        if all_features or "status" in self._feature_set:
+        if "status" in self._features:
+            if self._features["status"] != "default":
+                raise ValueError(
+                    "The 'status' feature does not have any other view than "
+                    "the default."
+                )
+
             feature_specs["status"] = DenseViewSpec(
                 value_type="categorical",
                 shape=("n_tasks",),
                 n_categories=Status.count(),
             )
 
-        if all_features or "available" in self._feature_set:
+        if "available" in self._features:
+            if self._features["available"] != "default":
+                raise ValueError(
+                    "The 'available' feature does not have any other view than "
+                    "the default."
+                )
+
             feature_specs["available"] = DenseViewSpec(
                 value_type="binary",
                 shape=("n_tasks",),
             )
 
-        if all_features or "time" in self._feature_set:
+        if "time" in self._features:
+            if self._features["time"] != "default":
+                raise ValueError(
+                    "The 'time' feature does not have any other view than "
+                    "the default."
+                )
+
             feature_specs["time"] = DenseViewSpec(value_type="time", shape=())
 
         for feature_name, features in instance.features.items():
-            if self._all_features or feature_name in self._feature_set:
-                feature_view = features[0].possible_views()["default"]
+            if feature_name not in self._features:
+                continue
 
-                feature_specs[feature_name] = feature_view
+            view = self._features[feature_name]
 
+            if isinstance(view, FeatureViewSpec):
+                feature_specs[feature_name] = view
+
+            else:
+                possible_views = features[0].possible_views()
+
+                if view not in possible_views:
+                    raise ValueError(
+                        f"Feature '{feature_name}' does not have a view named '{view}'."
+                    )
+
+                feature_specs[feature_name] = possible_views[view]
+
+        self.feature_specs = feature_specs
         return DictSpec(feature_specs)
 
     @override
@@ -144,7 +194,7 @@ class DefaultObservation(Observation[DefaultObsType]):
         obs["time"] = self._time
 
         for feat_name, features in instance.features.items():
-            if not self._all_features and feat_name not in self._feature_set:
+            if feat_name not in self.feature_specs:
                 continue
 
             if not features:
@@ -152,14 +202,8 @@ class DefaultObservation(Observation[DefaultObsType]):
                     f"Feature '{feat_name}' has no values in the instance."
                 )
 
-            feature = features[0]
-
-            if not feature.loaded:
-                raise ValueError(
-                    f"Feature '{feat_name}' is not loaded in the instance."
-                )
-
-            obs[feat_name] = feature.materialize()
+            spec = self.feature_specs[feat_name]
+            obs[feat_name] = features[0].materialize(spec, **self.symbols)
 
     @override
     def update(self, state: ScheduleState) -> None:
