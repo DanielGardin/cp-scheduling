@@ -155,7 +155,7 @@ class SymbolicDim(EzPickle):
         return cls(**coefs)
 
     @property
-    def raw(self) -> BaseShapeDim:
+    def raw(self) -> int | str:
         """The raw dimension specification, as provided by the user."""
         if self.is_constant():
             return self._const_value

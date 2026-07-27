@@ -41,6 +41,10 @@ class AdjacencyMatrixViewSpec(FeatureViewSpec[ADJ_LIST, ADJ_MATRIX]):
         return cast("tuple[int | str, int | str]", super().raw_shape)
 
     @override
+    def resolve_shape(self, **symbols: int) -> tuple[int, int]:
+        return cast("tuple[int, int]", super().resolve_shape(**symbols))
+
+    @override
     def materialize(
         self, data: dict[int, list[int]], **symbols: int
     ) -> list[list[bool]]:

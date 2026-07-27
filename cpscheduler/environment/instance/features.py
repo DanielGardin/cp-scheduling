@@ -190,6 +190,10 @@ class Feature(EzPickle, Generic[_T]):
         """Overwrite feature's data with its persistent value."""
         self._data = deepcopy(self._storage)
 
+    def empty(self) -> None:
+        """Clear the feature's loaded data, setting it to UNSET."""
+        self._data = UNSET
+
     def own_data(self, data: Any) -> None:
         """Overwrite the feature's persistent data."""
         _data = self._preprocess(data) if self._preprocess is not None else data
@@ -268,12 +272,14 @@ class Feature(EzPickle, Generic[_T]):
         """Return a list of possible views for the feature's data."""
         return {"default": from_metadata(self.metadata)}
 
-    def materialize(self, spec: FeatureViewSpec[_T, Any] | None = None) -> Any:
+    def materialize(
+        self, spec: FeatureViewSpec[_T, Any] | None = None, **symbols: int
+    ) -> Any:
         """Return a materialized representation of the feature's data."""
         if spec is None:
             spec = self.possible_views()["default"]
 
-        return spec.materialize(self.value)
+        return spec.materialize(self.value, **symbols)
 
 
 # Specialized feature classes for specific data types

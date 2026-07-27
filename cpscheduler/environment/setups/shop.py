@@ -215,7 +215,7 @@ class JobShopSetup(_ShopSetup):
 
     @override
     def setup_constraints(self) -> tuple[Constraint, ...]:
-        precedence = PrecedenceConstraint()
+        precedence = PrecedenceConstraint({})
         self._chain_precedence = precedence
 
         return (*super().setup_constraints(), precedence)
@@ -288,7 +288,7 @@ class FlexibleJobShopSetup(UnrelatedParallelMachineSetup):
 
     @override
     def setup_constraints(self) -> tuple[Constraint, ...]:
-        precedence = PrecedenceConstraint()
+        precedence = PrecedenceConstraint({})
         self._chain_precedence = precedence
 
         return (
@@ -376,7 +376,7 @@ class FlowShopSetup(ScheduleSetup):
 
     @override
     def setup_constraints(self) -> tuple[Constraint, ...]:
-        precedence = PrecedenceConstraint()
+        precedence = PrecedenceConstraint({})
         self._chain_precedence = precedence
 
         return (

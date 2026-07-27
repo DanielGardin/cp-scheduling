@@ -353,9 +353,11 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         self.instance.reset()
         self._status = UNLOADED
 
-    def required_features(self) -> dict[str, FeatureMetadata]:
+    def required_features(
+        self, show_optional: bool = False
+    ) -> dict[str, FeatureMetadata]:
         """Return a dictionary of all required features from the setup, constraints, and objective."""
-        return self.instance.required_features()
+        return self.instance.required_features(show_optional)
 
     def set_generator(self, instance_generator: InstanceGenerator) -> None:
         """Set the instance generator.

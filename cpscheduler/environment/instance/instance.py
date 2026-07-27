@@ -241,7 +241,9 @@ class ProblemInstance(EzPickle):
         """
         return self._job_ids.value
 
-    def required_features(self) -> dict[str, FeatureMetadata]:
+    def required_features(
+        self, show_optional: bool
+    ) -> dict[str, FeatureMetadata]:
         """Return a dictionary of required features for the instance.
 
         Required features are those that have no provider among the registered
@@ -251,7 +253,7 @@ class ProblemInstance(EzPickle):
             name: features[0].metadata
             for name, features in self.features.items()
             if _find_provider(features) is None
-            and not all(feature.optional for feature in features)
+            and (not features[0].optional or show_optional)
         }
 
     def register(self, feature: Feature[Any]) -> None:
@@ -307,6 +309,13 @@ class ProblemInstance(EzPickle):
         for features in self.features.values():
             for feature in features:
                 feature.reset()
+
+        # Remove stale data from internal features
+        self._preemptive.empty()
+        self._optional.empty()
+        self._processing_times.empty()
+        self._machine_mask.empty()
+        self._job_ids.empty()
 
         self._fingerprint = 0
 
