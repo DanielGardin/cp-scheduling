@@ -1,10 +1,10 @@
 """Feature specifications for observations in the scheduling environment."""
 
 from collections.abc import Callable
-from typing import Any, Generic, TypeVar, cast, override
+from typing import Any, Generic, TypeVar, cast
 
 from mypy_extensions import mypyc_attr
-from typing_extensions import TypeIs
+from typing_extensions import TypeIs, override
 
 from cpscheduler.environment.instance.metadata import FeatureMetadata, ValueType
 from cpscheduler.environment.specs.base import ObservationSpec

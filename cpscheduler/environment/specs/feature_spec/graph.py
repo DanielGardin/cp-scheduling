@@ -1,6 +1,8 @@
 """Graph feature specifications for observations in the scheduling environment."""
 
-from typing import cast, override
+from typing import cast
+
+from typing_extensions import override
 
 from cpscheduler.environment.instance.metadata import ValueType
 from cpscheduler.environment.specs.feature_spec.base import FeatureViewSpec
