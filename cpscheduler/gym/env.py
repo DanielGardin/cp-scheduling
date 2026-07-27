@@ -7,7 +7,7 @@ the gymnasium infrastructure and semantics without friction.
 """
 
 from collections.abc import Iterable, Mapping
-from typing import Any, cast, overload
+from typing import Any, overload
 
 from gymnasium import Env, Space
 from typing_extensions import TypeVar
@@ -19,10 +19,11 @@ from cpscheduler.environment import (
     SchedulingEnv,
 )
 from cpscheduler.environment.des import ActionType
+from cpscheduler.environment.instance import FeatureMetadata
 from cpscheduler.environment.observation import Observation
 from cpscheduler.environment.observation.default import DefaultObsType
 from cpscheduler.environment.render import Renderer
-from cpscheduler.environment.specs import FeatureSpec, ObservationSpec
+from cpscheduler.environment.specs import ObservationSpec
 from cpscheduler.environment.tracer import Tracer
 from cpscheduler.environment.utils import InstanceGenerator
 from cpscheduler.environment.utils.protocols import (
@@ -32,9 +33,10 @@ from cpscheduler.environment.utils.protocols import (
     Options,
 )
 from cpscheduler.gym.common import ActionSpace
-from cpscheduler.gym.obs_spaces import convert_spec_to_gym_space
+from cpscheduler.gym.obs_spaces import to_gym_space
 
 ObsType = TypeVar("ObsType", default=DefaultObsType)
+_T = TypeVar("_T", covariant=True)
 
 
 class SchedulingEnvGym(Env[ObsType, ActionType]):
@@ -130,7 +132,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         self.action_space = ActionSpace
 
         if observation is None:
-            _env = SchedulingEnv(
+            self._core: SchedulingEnv[Observation[ObsType]] = SchedulingEnv(
                 machine_setup=machine_setup,
                 constraints=constraints,
                 objective=objective,
@@ -139,8 +141,6 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
                 tracers=tracers,
                 render_mode=render_mode,
             )
-
-            self._core = cast("SchedulingEnv[Observation[ObsType]]", _env)
 
         else:
             self._core = SchedulingEnv(
@@ -164,14 +164,18 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
     def _get_observation_space(self) -> Space[Any]:
         env = self._core
 
-        return convert_spec_to_gym_space(
-            env.observation_spec, env.observation.symbols
+        return to_gym_space(
+            env.observation_spec, "observation", env.observation.symbols
         )
 
+    # FUTURE: There is an issue with this method, it does not recognize
+    # SchedulingEnvGym as type[SchedulingEnvGym[_T]].
+    # As a result, verytime from_env is called, it returns a
+    # SchedulingEnvGym[DefaultObsType] instead of the correct type.
     @classmethod
     def from_env(
-        cls, env: SchedulingEnv[Observation[ObsType]]
-    ) -> "SchedulingEnvGym[ObsType]":
+        cls: "type[SchedulingEnvGym[_T]]", env: SchedulingEnv[Observation[_T]]
+    ) -> "SchedulingEnvGym[_T]":
         """Create a `SchedulingEnvGym` instance from an existing `SchedulingEnv`."""
         self = cls.__new__(cls)
 
@@ -320,7 +324,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         """
         self._core.reset_instance()
 
-    def required_features(self) -> dict[str, FeatureSpec]:
+    def required_features(self) -> dict[str, FeatureMetadata]:
         """Return a dictionary of all required features from the setup, constraints, and objective."""
         return self._core.required_features()
 
