@@ -173,7 +173,7 @@ def _non_renewable_resource_constraint(
     )
 
     formulation.add_constraint(
-        resource_demand <= constraint.capacity,
+        resource_demand <= constraint.capacity.value,
         f"non_renewable_resource_{constraint.resources.name}",
     )
 

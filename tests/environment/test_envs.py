@@ -32,9 +32,9 @@ def test_execute(case_name: str) -> None:
     assert not terminated
     assert not truncated
     assert info["current_time"] == 0
-    assert obs.task["status"][0] == Status.EXECUTING
+    assert obs["status"][0] == Status.EXECUTING
 
-    advancing_time = max(obs["task"]["processing_time"])
+    advancing_time = max(obs["processing_time"])
     new_obs, _, new_terminated, new_truncated, new_info = env.step(
         [("advance", advancing_time)]
     )
@@ -42,7 +42,7 @@ def test_execute(case_name: str) -> None:
     assert not new_terminated
     assert not new_truncated
     assert new_info["current_time"] == advancing_time
-    assert new_obs.task["status"][0] == Status.COMPLETED
+    assert new_obs["status"][0] == Status.COMPLETED
 
 
 @pytest.mark.env
@@ -74,18 +74,18 @@ def test_submit(instance_name: str) -> None:
 
     obs, *_, info = env.step(actions)
 
-    assert obs.task["status"][0] == Status.COMPLETED
-    assert obs.task["status"][1] == Status.COMPLETED
+    assert obs["status"][0] == Status.COMPLETED
+    assert obs["status"][1] == Status.COMPLETED
 
-    assert obs.task["status"][2] == Status.EXECUTING
+    assert obs["status"][2] == Status.EXECUTING
 
     assert info["current_time"] == env.state.get_end(1)
 
     new_obs, *_, info = env.step([("complete", 2)])
 
-    assert new_obs.task["status"][0] == Status.COMPLETED
-    assert new_obs.task["status"][1] == Status.COMPLETED
-    assert new_obs.task["status"][2] == Status.COMPLETED
+    assert new_obs["status"][0] == Status.COMPLETED
+    assert new_obs["status"][1] == Status.COMPLETED
+    assert new_obs["status"][2] == Status.COMPLETED
 
     assert info["current_time"] == env.state.get_end(2)
 
@@ -101,7 +101,7 @@ def test_execute2(case_name: str) -> None:
 
     obs, _, terminated, *_ = env.step(actions)
 
-    assert obs.task["status"] == [Status.COMPLETED] * obs.n_tasks
+    assert obs["status"] == [Status.COMPLETED] * obs.n_tasks
     assert terminated
 
 
@@ -116,7 +116,7 @@ def test_submit2(case_name: str) -> None:
 
     obs, _, terminated, *_ = env.step(actions)
 
-    assert obs.task["status"] == [Status.COMPLETED] * obs.n_tasks
+    assert obs["status"] == [Status.COMPLETED] * obs.n_tasks
     assert terminated
 
 

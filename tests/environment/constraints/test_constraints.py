@@ -144,7 +144,11 @@ def test_nonrenewable_resource_constraint() -> None:
     instance = {"processing_time": [1, 1], "resource_0": [1, 1]}
     env = SchedulingEnv(
         SingleMachineSetup(disjunctive=False),
-        constraints=[NonRenewableResourceConstraint(1, "resource_0")],
+        constraints=[
+            NonRenewableResourceConstraint(
+                capacity=1, resource_tag="resource_0"
+            )
+        ],
         instance=instance,
     )
 
