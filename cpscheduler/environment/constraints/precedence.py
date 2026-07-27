@@ -11,69 +11,6 @@ from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.utils.general import convert_to_list
 
 
-def topological_sort(
-    precedence_map: dict[TaskID, list[TaskID]],
-    n_tasks: int,
-    remove_leaves: bool = True,
-) -> list[TaskID]:
-    """Perform a topological sort on a directed acyclic graph.
-
-    Parameters
-    ----------
-    precedence_map: dict[TaskID, list[TaskID]]
-        A mapping of task IDs to a list of their child task IDs, representing the
-        precedence relationships between tasks.
-
-    n_tasks: int
-        The total number of tasks in the graph.
-
-    remove_leaves: bool, optional
-        If True, only return the internal nodes of the graph (i.e., tasks that have
-        children). If False, return all tasks in topological order. Default is True.
-
-    Returns
-    -------
-    list[TaskID]
-        A list containing the tasks in topological order
-
-    """
-    in_degree = [0] * n_tasks
-    for children in precedence_map.values():
-        for child in children:
-            in_degree[child] += 1
-
-    queue = [task for task, degree in enumerate(in_degree) if degree == 0]
-
-    topological_order: list[TaskID] = []
-
-    idx = 0
-    while idx < len(queue):
-        vertex = queue[idx]
-        idx += 1
-
-        if not remove_leaves or (precedence_map.get(vertex)):
-            topological_order.append(vertex)
-
-            for child in precedence_map.get(vertex, []):
-                in_degree[child] -= 1
-
-                if in_degree[child] == 0:
-                    queue.append(child)
-
-    return topological_order
-
-
-def _inverse_graph(
-    graph: dict[TaskID, list[TaskID]],
-) -> dict[TaskID, list[TaskID]]:
-    inverse: dict[TaskID, list[TaskID]] = {}
-    for child_id, parent_ids in graph.items():
-        for parent_id in parent_ids:
-            inverse.setdefault(parent_id, []).append(child_id)
-
-    return inverse
-
-
 class PrecedenceConstraint(Constraint):
     """Precedence constraint for the scheduling environment.
 
@@ -83,6 +20,8 @@ class PrecedenceConstraint(Constraint):
 
     parents: DAGFeature
     "A mapping of task IDs to their parent task IDs."
+
+    _topological_order: list[TaskID]
 
     children: dict[TaskID, list[TaskID]]
     "A mapping of task IDs to their child task IDs."
@@ -200,7 +139,7 @@ class PrecedenceConstraint(Constraint):
     def is_outtree(self) -> bool:
         """Check if the precedence graph is an out-tree."""
         if self.parents.loaded:
-            for children in _inverse_graph(self.parents.value).values():
+            for children in self.children.values():
                 if len(children) > 1:
                     return False
 
@@ -212,11 +151,15 @@ class PrecedenceConstraint(Constraint):
 
     @override
     def initialize(self, instance: ProblemInstance) -> None:
-        self.children = _inverse_graph(self.parents.value)
+        self.children = self.parents.forward()
+        self._topological_order = self.parents.topological_sort(n_tasks=instance.n_tasks)
 
     @override
     def reset(self, state: ScheduleState) -> None:
-        for task_id in topological_sort(self.children, state.n_tasks):
+        for task_id in self._topological_order:
+            if task_id not in self.children:
+                continue
+
             end_time = state.get_end_lb(task_id)
 
             for child_id in self.children[task_id]:
@@ -454,11 +397,9 @@ class ORPrecedenceConstraint(PrecedenceConstraint):
 
     @override
     def reset(self, state: ScheduleState) -> None:
-        tasks = topological_sort(self.children, state.n_tasks, False)
-
         parents = self.parents.value
 
-        for task_id in tasks:
+        for task_id in self._topological_order:
             if task_id in parents:
                 earliest_start = min(
                     state.get_end_lb(parent_id)

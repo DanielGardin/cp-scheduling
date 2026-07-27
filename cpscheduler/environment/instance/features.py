@@ -284,9 +284,17 @@ class Feature(EzPickle, Generic[_T]):
 
 # Specialized feature classes for specific data types
 
+# Topological sort enum
+UNVISITED = 0
+VISITING = 1
+VISITED = 2
 
 class DAGFeature(Feature[dict[int, list[int]]]):
-    """Feature class for representing Directed Acyclic Graphs (DAGs)."""
+    """Feature class for representing Directed Acyclic Graphs (DAGs).
+
+    The graph is stored in a dependecy view (successor -> predecessors).
+    In order to obtain a forward view, refer to `forward`
+    """
 
     n_nodes: SymbolicDim
 
@@ -332,3 +340,72 @@ class DAGFeature(Feature[dict[int, list[int]]]):
                 high=self.metadata.high,
             ),
         }
+
+    def forward(self) -> dict[int, list[int]]:
+        """Return the adjacency list of the graph."""
+        inverse: dict[int, list[int]] = {}
+        for child_id, parent_ids in self.value.items():
+            for parent_id in parent_ids:
+                inverse.setdefault(parent_id, []).append(child_id)
+
+        return inverse
+
+    def topological_sort(self, **symbols: int,
+    ) -> list[int]:
+        """Perform a topological sort.
+
+        Parameters
+        ----------
+        **symbols:
+            Symbol values used to resolve the symbolic graph size.
+
+        Raises
+        ------
+        RuntimeError:
+            If the graph contains a cycle.
+
+        """
+        n_nodes = self.n_nodes.resolve(**symbols)
+        graph = self.value
+
+        state = [UNVISITED] * n_nodes
+        order: list[int] = []
+
+        for root in range(n_nodes):
+            if state[root] == VISITED:
+                continue
+
+            stack = [(root, False)]
+            while stack:
+                node, post_visit = stack.pop()
+
+                if post_visit:
+                    state[node] = VISITED
+                    order.append(node)
+                    continue
+
+                node_state = state[node]
+
+                if node_state == VISITED:
+                    continue
+
+                if node_state == VISITING:
+                    raise ValueError(
+                        f"Graph {self.name} contains a cycle involving node {node}."
+                    )
+
+                state[node] = VISITING
+                stack.append((node, True))
+
+                for parent in graph.get(node, ()):
+                    parent_state = state[parent]
+
+                    if parent_state == VISITING:
+                        raise ValueError(
+                            f"Graph {self.name} contains a cycle involving node {parent}."
+                        )
+
+                    if parent_state == UNVISITED:
+                        stack.append((parent, False))
+
+        return order
