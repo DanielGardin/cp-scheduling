@@ -1,7 +1,7 @@
 """Module for converting ObservationSpecs to Gymnasium spaces."""
 
 from functools import singledispatch
-from typing import Any, Never, cast
+from typing import Any, cast
 
 import numpy as np
 from gymnasium.spaces import (
@@ -13,6 +13,7 @@ from gymnasium.spaces import (
     Space,
     Tuple,
 )
+from typing_extensions import Never
 
 from cpscheduler.environment.constants import MAX_TIME
 from cpscheduler.environment.instance.metadata import ValueType
