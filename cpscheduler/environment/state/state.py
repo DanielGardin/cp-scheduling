@@ -15,6 +15,7 @@ from cpscheduler.environment.constants import (
     GLOBAL_MACHINE_ID,
     MAX_TIME,
     EzPickle,
+    JobID,
     MachineID,
     Status,
     TaskID,
@@ -230,6 +231,10 @@ class ScheduleState(EzPickle):
     def get_original_machines(self, task_id: TaskID) -> list[MachineID]:
         """Return a list of all machines that can process a task."""
         return self.instance.get_machines(task_id)
+
+    def get_job(self, task_id: TaskID) -> JobID:
+        """Return the job the task belongs to."""
+        return self.instance.job_ids[task_id]
 
     # Constraint propagation API methods
 
