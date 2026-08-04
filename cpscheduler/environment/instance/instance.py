@@ -6,6 +6,7 @@ The instance provides methods for feature registration, data loading, and valida
 allowing components to interact with the instance's features and data in a structured way.
 """
 
+from copy import deepcopy
 from typing import TYPE_CHECKING, Any
 
 from mypy_extensions import mypyc_attr
@@ -95,6 +96,8 @@ class ProblemInstance(EzPickle):
     """
 
     _fingerprint: int
+    original_instance: dict[str, Any]
+
     features: dict[str, list[Feature]]
 
     job_tasks: list[list[TaskID]]
@@ -172,6 +175,7 @@ class ProblemInstance(EzPickle):
         self.n_machines = 0
         self.symbol_values = {}
         self._fingerprint = 0
+        self.original_instance = {}
 
         self._debug = debug_mode
 
@@ -318,6 +322,7 @@ class ProblemInstance(EzPickle):
         self._job_ids.empty()
 
         self._fingerprint = 0
+        self.original_instance.clear()
 
     # FUTURE: Memory allocation is currently the major bottleneck during
     # initialization (processing_times and machine_mask).
@@ -346,7 +351,10 @@ class ProblemInstance(EzPickle):
 
         for instance in instances:
             for feature in instance:
-                storage[feature] = instance[feature]
+                data = deepcopy(instance[feature])
+
+                storage[feature] = data
+                self.original_instance[feature] = data
 
         symbols_values = _load_data(storage, self.features)
 

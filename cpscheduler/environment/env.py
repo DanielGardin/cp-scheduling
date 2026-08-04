@@ -301,6 +301,11 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         return self.instance.fingerprint
 
     @property
+    def raw_instance(self) -> dict[str, Any]:
+        """Return raw instance data."""
+        return self.instance.original_instance
+
+    @property
     def loaded(self) -> bool:
         """Indicates whether an instance has been loaded and the environment is initialized."""
         return self._status != UNLOADED
@@ -455,6 +460,8 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         return info
 
     # Environment internal methods for simulation
+
+    # TODO: Add a meaningful error message when the action is not parseable.
     def schedule_action(self, action: ActionType) -> None:
         """Parse action and add instruction(s) to the event schedule.
 
