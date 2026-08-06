@@ -29,23 +29,23 @@ from cpscheduler.environment.specs import (
     StackSpec,
 )
 
-MAX_INT = np.iinfo(np.int32).max
+MAX_INT = float(np.iinfo(np.int32).max)
 MAX_FLOAT = float(np.finfo(np.float32).max)
 MIN_FLOAT = float(np.finfo(np.float32).min)
-MIN_INT = np.iinfo(np.int32).min
+MIN_INT = float(np.iinfo(np.int32).min)
 
 BOUNDS: dict[ValueType, tuple[float, float]] = {
     "continuous": (MIN_FLOAT, MAX_FLOAT),
     "discrete": (MIN_INT, MAX_INT),
     "binary": (0.0, 1.0),
-    "count": (0.0, float(MAX_INT)),
+    "count": (0.0, MAX_INT),
     "normalized": (0.0, 1.0),
     "probability": (0.0, 1.0),
-    "time": (0.0, float(MAX_TIME)),
-    "duration": (0.0, float(MAX_TIME)),
+    "time": (0.0, MAX_TIME),
+    "duration": (0.0, MAX_TIME),
     "cost": (MIN_FLOAT, MAX_FLOAT),
-    "id": (float(MIN_INT), float(MAX_INT)),
-    "order": (0.0, float(MAX_INT)),
+    "id": (MIN_INT, MAX_INT),
+    "order": (0.0, MAX_INT),
 }
 
 _DTYPE = type[np.floating[Any]] | type[np.integer[Any]]
@@ -75,32 +75,29 @@ def _resolve_bounds(
 
     match spec.value_type:
         case "task_id":
-            if "n_tasks" not in symbols:
-                raise ValueError(
-                    f"{name}: Cannot resolve bounds statically without `n_tasks`."
-                )
-
-            high = float(symbols["n_tasks"] - 1)
+            n_tasks = symbols.get("n_tasks", MAX_INT)
+            low = 0.0
+            high = float(n_tasks if n_tasks > 0 else MAX_INT)
 
         case "job_id":
-            if "n_jobs" not in symbols:
-                raise ValueError(
-                    f"{name}: Cannot resolve bounds statically without `n_jobs`."
-                )
-
-            high = float(symbols["n_jobs"] - 1)
+            n_jobs = symbols.get("n_jobs", MAX_INT)
+            low = 0.0
+            high = float(n_jobs if n_jobs > 0 else MAX_INT)
 
         case "machine_id":
-            if "n_machines" not in symbols:
-                raise ValueError(
-                    f"{name}: Cannot resolve bounds statically without `n_machines`."
-                )
-
-            high = float(symbols["n_machines"] - 1)
-
-        case "categorical" if spec.n_categories is not None:
+            n_machines = symbols.get("n_machines", MAX_INT)
             low = 0.0
-            high = float(spec.n_categories - 1)
+            high = float(n_machines if n_machines > 0 else MAX_INT)
+
+        case "categorical":
+            n_cat = spec.n_categories
+
+            low = 0.0
+            high = (
+                float(n_cat - 1)
+                if n_cat is not None
+                else MAX_INT
+            )
 
         case _:
             pass
