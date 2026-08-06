@@ -917,23 +917,13 @@ class ScheduleState(EzPickle):
 
         end_time = start_time + duration
 
-        start = domains.start
-        end = domains.end
+        self.tight_start_lb(task_id, start_time, machine_id)
+        self.tight_start_ub(task_id, start_time, machine_id)
 
         domains.assignment[task_id] = machine_id
+        domains.presence[task_id] = PRESENT
         domains.feasible_machines[task_id].clear()
         domains.feasible_machines[task_id].add(machine_id)
-        domains.presence[task_id] = PRESENT
-
-        start.lbs[idx] = start_time
-        start.ubs[idx] = start_time
-        end.lbs[idx] = end_time
-        end.ubs[idx] = end_time
-
-        start.global_lbs[task_id] = start_time
-        start.global_ubs[task_id] = start_time
-        end.global_lbs[task_id] = end_time
-        end.global_ubs[task_id] = end_time
 
         self.domain_event_queue.add_event(task_id, ASSIGNMENT, machine_id)
         self.runtime_event_queue.add_event(task_id, TASK_STARTED, machine_id)
