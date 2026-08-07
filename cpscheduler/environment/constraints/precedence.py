@@ -152,7 +152,9 @@ class PrecedenceConstraint(Constraint):
     @override
     def initialize(self, instance: ProblemInstance) -> None:
         self.children = self.parents.forward()
-        self._topological_order = self.parents.topological_sort(n_tasks=instance.n_tasks)
+        self._topological_order = self.parents.topological_sort(
+            n_tasks=instance.n_tasks
+        )
 
     @override
     def reset(self, state: ScheduleState) -> None:

@@ -94,11 +94,7 @@ def _resolve_bounds(
             n_cat = spec.n_categories
 
             low = 0.0
-            high = (
-                float(n_cat - 1)
-                if n_cat is not None
-                else MAX_INT
-            )
+            high = float(n_cat - 1) if n_cat is not None else MAX_INT
 
         case _:
             pass

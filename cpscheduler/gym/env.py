@@ -165,9 +165,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         env = self._core
         symbols = env.observation.symbols
 
-        return to_gym_space(
-            env.observation_spec, "observation", symbols
-        )
+        return to_gym_space(env.observation_spec, "observation", symbols)
 
     # FUTURE: There is an issue with this method, it does not recognize
     # SchedulingEnvGym as type[SchedulingEnvGym[_T]].

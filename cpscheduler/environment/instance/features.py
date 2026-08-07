@@ -289,6 +289,7 @@ UNVISITED = 0
 VISITING = 1
 VISITED = 2
 
+
 class DAGFeature(Feature[dict[int, list[int]]]):
     """Feature class for representing Directed Acyclic Graphs (DAGs).
 
@@ -350,8 +351,7 @@ class DAGFeature(Feature[dict[int, list[int]]]):
 
         return inverse
 
-    def topological_sort(self, **symbols: int,
-    ) -> list[int]:
+    def topological_sort(self, **symbols: int) -> list[int]:
         """Perform a topological sort.
 
         Parameters
