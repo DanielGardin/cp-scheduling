@@ -2,7 +2,7 @@
 
 from typing import TYPE_CHECKING, Any
 
-from cpscheduler.environment.render import GLASBEY_BW_PALETTE, Renderer
+from cpscheduler.environment.render.base import GLASBEY_BW_PALETTE, Renderer
 from cpscheduler.environment.state import ScheduleState
 
 if TYPE_CHECKING:
