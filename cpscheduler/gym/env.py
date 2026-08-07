@@ -132,7 +132,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         self.action_space = ActionSpace
 
         if observation is None:
-            self._core: SchedulingEnv[Observation[ObsType]] = SchedulingEnv(
+            self._core = SchedulingEnv(
                 machine_setup=machine_setup,
                 constraints=constraints,
                 objective=objective,
@@ -163,9 +163,10 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
 
     def _get_observation_space(self) -> Space[Any]:
         env = self._core
+        symbols = env.observation.symbols
 
         return to_gym_space(
-            env.observation_spec, "observation", env.observation.symbols
+            env.observation_spec, "observation", symbols
         )
 
     # FUTURE: There is an issue with this method, it does not recognize

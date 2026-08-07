@@ -376,8 +376,12 @@ class Generator(EzPickle, InstanceGenerator):
             "n_jobs": n_jobs,
         }
 
+        # FUTURE: There is no current way of differentiating optional and
+        # required features. Introducing so they can be differentiated can
+        # help in scenarios where the user may want an individual optional
+        # feature to be not sampled.
         return cls(
-            feature_metadata=core_env.required_features(),
+            feature_metadata=core_env.required_features(show_optional=True),
             samplers=samplers,
             seed=seed,
             use_default_samplers=use_default_samplers,

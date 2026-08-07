@@ -1,3 +1,7 @@
+"""ANSI Renderer for basic visualization."""
+
+from typing_extensions import override
+
 from cpscheduler.environment.render.base import GLASBEY_BW_PALETTE, Renderer
 from cpscheduler.environment.state import ScheduleState
 
@@ -9,6 +13,7 @@ BLOCK = "█"
 ANSI_RESET = "\033[0m"
 
 def hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
+    """Convert a color hex code into a RGB tuple."""
     hex_color = hex_color.removeprefix("#")
     return (
         int(hex_color[0:2], 16),
@@ -17,11 +22,13 @@ def hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
     )
 
 def ansi_fg(hex_color: str) -> str:
+    """Convert a color hex cde into ANSI foreground color code."""
     r, g, b = hex_to_rgb(hex_color)
     return f"\033[38;2;{r};{g};{b}m"
 
 
 def ansi_bg(hex_color: str) -> str:
+    """Convert a color hex cde into ANSI background color code."""
     r, g, b = hex_to_rgb(hex_color)
     return f"\033[48;2;{r};{g};{b}m"
 
@@ -51,7 +58,7 @@ class AnsiRenderer(Renderer):
     # Maximum percentage of the current time, e.g.
     # ▐████████▐█████  ▐█
     # ├────────────────────▶
-    #                    ^ (<=95% of the gantt width)
+    # 0                  ^ (<=95% of the gantt width)
     cursor_max_mult = 0.95
 
     def __init__(
@@ -130,6 +137,7 @@ class AnsiRenderer(Renderer):
 
         return ticks, ticklabels
 
+    @override
     def build_gantt(self, state: ScheduleState) -> str:
         current_time = int(state.time)
         makespan = int(state.runtime.last_completion_time)
@@ -194,5 +202,5 @@ class AnsiRenderer(Renderer):
         )
 
     def render(self, state: ScheduleState) -> None:
-        """Render the schedule state using Plotly."""
+        """Print the rendered schedule in the terminal."""
         print(self.build_gantt(state))

@@ -33,6 +33,7 @@ MAX_INT = float(np.iinfo(np.int32).max)
 MAX_FLOAT = float(np.finfo(np.float32).max)
 MIN_FLOAT = float(np.finfo(np.float32).min)
 MIN_INT = float(np.iinfo(np.int32).min)
+MAX_TIME_FLOAT = float(MAX_TIME)
 
 BOUNDS: dict[ValueType, tuple[float, float]] = {
     "continuous": (MIN_FLOAT, MAX_FLOAT),
@@ -41,8 +42,8 @@ BOUNDS: dict[ValueType, tuple[float, float]] = {
     "count": (0.0, MAX_INT),
     "normalized": (0.0, 1.0),
     "probability": (0.0, 1.0),
-    "time": (0.0, MAX_TIME),
-    "duration": (0.0, MAX_TIME),
+    "time": (0.0, MAX_TIME_FLOAT),
+    "duration": (0.0, MAX_TIME_FLOAT),
     "cost": (MIN_FLOAT, MAX_FLOAT),
     "id": (MIN_INT, MAX_INT),
     "order": (0.0, MAX_INT),
