@@ -699,6 +699,17 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         RuntimeError
             If propagation detects initial inconsistency.
 
+        Note
+        ----
+        When resetting the environment will resolve which instance will be
+        simulated by the following order of priority, selecting the first
+        one encountered:
+
+        1. The instance given in option by the "instance" key.
+        2. A generated instance from a generator given by "instance_generator" key.
+        3. A generated instance from the internal generator.
+        4. The instance that was already previously loaded.
+
         """
         options = options or {}
 

@@ -17,6 +17,6 @@ from . import environment
 from .common import is_compiled
 
 __compiled__ = is_compiled()
-__version__ = "0.8.3"
+__version__ = "0.8.4"
 
 __all__ = ["environment"]
