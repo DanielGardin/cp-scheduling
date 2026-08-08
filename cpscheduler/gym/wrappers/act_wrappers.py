@@ -5,7 +5,7 @@ from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
 from gymnasium import ActionWrapper, Env
-from gymnasium.spaces import Box, Sequence, Space
+from gymnasium.spaces import Box, Discrete, Sequence, Space
 from numpy import int64
 from typing_extensions import override
 
@@ -109,8 +109,24 @@ class PermutationActionWrapper(SchedulingActionWrapper[_Obs, Iterable[Int]]):
 
         n_tasks = env.observation.n_tasks
 
-        return Sequence(Box(low=0, high=n_tasks, dtype=int64), stack=True)
+        return Sequence(Box(low=0, high=n_tasks - 1, dtype=int64), stack=True)
 
     @override
     def action(self, action: Iterable[Int]) -> ActionType:
         return ((self.instruction, job_id) for job_id in action)
+
+
+class SingleActionWrapper(SchedulingActionWrapper[_Obs, Int]):
+    """A wrapper for a single task execution per step."""
+
+    @override
+    def _get_action_space(self) -> Space[Int]:
+        env: SchedulingEnv = self.get_wrapper_attr("core")
+
+        n_tasks = env.observation.n_tasks
+
+        return Discrete(n_tasks)
+
+    @override
+    def action(self, action: Int) -> ActionType:
+        return ("execute", action)

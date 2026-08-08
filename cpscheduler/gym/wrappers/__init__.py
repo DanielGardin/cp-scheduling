@@ -2,6 +2,7 @@
 
 __all__ = [
     "PermutationActionWrapper",
+    "SingleActionWrapper",
 ]
 
-from .act_wrappers import PermutationActionWrapper
+from .act_wrappers import PermutationActionWrapper, SingleActionWrapper
