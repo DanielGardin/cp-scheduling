@@ -26,7 +26,7 @@ from cpscheduler.environment.render import Renderer
 from cpscheduler.environment.setups import ScheduleSetup
 from cpscheduler.environment.specs import ObservationSpec
 from cpscheduler.environment.state import ScheduleState
-from cpscheduler.environment.state.events import RuntimeEventKind, VarField
+from cpscheduler.environment.state.events import VarField
 from cpscheduler.environment.tracer import Tracer
 from cpscheduler.environment.utils import (
     InfoType,
@@ -62,14 +62,7 @@ END_UB = VarField.END_UB
 PRESENCE = VarField.PRESENCE
 ABSENCE = VarField.ABSENCE
 MACHINE_INFEASIBLE = VarField.MACHINE_INFEASIBLE
-PAUSE = VarField.PAUSE
-BOUNDS_RESET = VarField.BOUNDS_RESET
 STATE_INFEASIBLE = VarField.STATE_INFEASIBLE
-
-TASK_STARTED = RuntimeEventKind.TASK_STARTED
-TASK_PAUSED = RuntimeEventKind.TASK_PAUSED
-TASK_COMPLETED = RuntimeEventKind.TASK_COMPLETED
-TASK_MACHINE_INFEASIBLE = RuntimeEventKind.TASK_MACHINE_INFEASIBLE
 
 
 def _join_info(info: InfoType, key: str, new_item: InfoType | Any) -> None:
@@ -333,19 +326,13 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         if self._status == LOADED:
             return f"SchedulingEnv({entry}, n_tasks={n_tasks})"
 
-        time = state.time
-
         if state.infeasible:
-            return (
-                f"SchedulingEnv({entry}, n_tasks={n_tasks}, "
-                f"current_time={time}, infeasible=True)"
-            )
+            return f"SchedulingEnv({entry}, n_tasks={n_tasks}, infeasible=True)"
 
         obj_value = self.objective.get_current(state)
 
         return (
-            f"SchedulingEnv({entry}, n_tasks={n_tasks}, "
-            f"current_time={time}, objective={obj_value})"
+            f"SchedulingEnv({entry}, n_tasks={n_tasks}, objective={obj_value})"
         )
 
     # Environment configuration public methods
@@ -441,7 +428,6 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
     def get_info(self) -> InfoType:
         """Retrieve additional information about the environment."""
         info = {
-            "current_time": self.state.time,
             "objective_value": self._prev_obj_value,
             "event_count": self.event_count,
             "infeasible": self.state.infeasible,
@@ -483,53 +469,53 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             instruction, time, priority = parse_instruction(instruction_args)
             self.schedule.add_event(instruction, state, time, priority)
 
-    def advance_clock(self) -> bool:
-        """Advance simulation time to the next event horizon.
+    # def advance_clock(self) -> bool:
+    #     """Advance simulation time to the next event horizon.
 
-        Determines the next time step based on scheduled instructions or state,
-        updates all constraints, and triggers propagation.
-        Halts when the schedule is empty, awaiting the next policy action.
+    #     Determines the next time step based on scheduled instructions or state,
+    #     updates all constraints, and triggers propagation.
+    #     Halts when the schedule is empty, awaiting the next policy action.
 
-        The next time is determined by the following logic:
-        - If the schedule has pending instructions, advance to the next instruction time.
-        - If the schedule is empty but there are unlocked tasks, advance to the earliest start_lb
-            among unlocked tasks.
-        - If the schedule is empty and no unlocked tasks, advance to the last completion time.
+    #     The next time is determined by the following logic:
+    #     - If the schedule has pending instructions, advance to the next instruction time.
+    #     - If the schedule is empty but there are unlocked tasks, advance to the earliest start_lb
+    #         among unlocked tasks.
+    #     - If the schedule is empty and no unlocked tasks, advance to the last completion time.
 
-        This logic ensures that the simulation advances to the next decision
-        point where the state may change, either due to scheduled events or
-        lower bounds for next possible instructions.
+    #     This logic ensures that the simulation advances to the next decision
+    #     point where the state may change, either due to scheduled events or
+    #     lower bounds for next possible instructions.
 
-        Returns
-        -------
-        bool
-            True if schedule is not empty (more events to process).
-            False if inconsistency detected or schedule is empty.
+    #     Returns
+    #     -------
+    #     bool
+    #         True if schedule is not empty (more events to process).
+    #         False if inconsistency detected or schedule is empty.
 
-        """
-        schedule = self.schedule
-        state = self.state
+    #     """
+    #     schedule = self.schedule
+    #     state = self.state
 
-        empty_schedule = schedule.is_empty()
+    #     empty_schedule = schedule.is_empty()
 
-        if not empty_schedule:
-            next_time = schedule.next_time()
+    #     if not empty_schedule:
+    #         next_time = schedule.next_time()
 
-        elif state.runtime.unlocked_tasks:
-            next_time = state.get_next_start_lb()
+    #     elif state.runtime.unlocked_tasks:
+    #         next_time = state.get_next_start_lb()
 
-        else:
-            next_time = state.get_last_completion_time()
+    #     else:
+    #         next_time = state.get_last_completion_time()
 
-        if next_time > state.time:
-            self.state.advance_time_(next_time)
+    #     if next_time > state.time:
+    #         self.state.advance_time_(next_time)
 
-            for constraint in self._all_constraints:
-                constraint.on_time_update(next_time, self.state)
+    #         for constraint in self._all_constraints:
+    #             constraint.on_time_update(next_time, self.state)
 
-            self.propagate()
+    #         self.propagate()
 
-        return not schedule.is_empty()
+    #     return not schedule.is_empty()
 
     def propagate(self) -> None:
         """Execute constraint propagation to fixed-point.
@@ -596,14 +582,6 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
                 for constraint in constraints:
                     constraint.on_infeasibility(task_id, machine_id, state)
 
-            elif field == PAUSE:
-                for constraint in constraints:
-                    constraint.on_pause(task_id, machine_id, state)
-
-            elif field == BOUNDS_RESET:
-                for constraint in constraints:
-                    constraint.on_bound_reset(task_id, state)
-
             # FUTURE: This should be resolved when the event is created to allow
             # discovering the causal effect that lead to infeasibility.
             # In the current version, the event queue is not cleared to make
@@ -622,49 +600,6 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
         self.event_count += idx
         event_queue.clear()
-
-    def update_runtime(self) -> None:
-        """Process runtime events and trigger callbacks.
-
-        Dequeues task events (started, completed, paused, infeasible) and
-        invokes callbacks on the objective and observation modules.
-        """
-        state = self.state
-        runtime_event_queue = state.runtime_event_queue
-        objective = self.objective
-        observation = self.observation
-
-        task_ids = runtime_event_queue.task_ids
-        kinds = runtime_event_queue.kinds
-        machine_ids = runtime_event_queue.machine_ids
-
-        for i in range(len(runtime_event_queue)):
-            task_id = task_ids[i]
-            kind = kinds[i]
-            machine_id = machine_ids[i]
-
-            if kind == TASK_STARTED:
-                objective.on_task_started(task_id, machine_id, state)
-                observation.on_task_started(task_id, machine_id, state)
-
-            elif kind == TASK_PAUSED:
-                objective.on_task_paused(task_id, machine_id, state)
-                observation.on_task_paused(task_id, machine_id, state)
-
-            elif kind == TASK_COMPLETED:
-                objective.on_task_completed(task_id, machine_id, state)
-                observation.on_task_completed(task_id, machine_id, state)
-
-            elif kind == TASK_MACHINE_INFEASIBLE:
-                objective.on_task_machine_infeasible(task_id, machine_id, state)
-                observation.on_task_machine_infeasible(
-                    task_id, machine_id, state
-                )
-
-            else:
-                assert_never(kind)
-
-        runtime_event_queue.clear()
 
     # Environment API methods
     def reset(
@@ -827,7 +762,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
         schedule = self.schedule
 
-        while not state.is_terminal() and self.advance_clock():
+        while not state.is_terminal():
             for event in schedule.instruction_queue(state):
                 for tracer in self.tracers:
                     tracer.step(state, event)
@@ -841,7 +776,6 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
         # Gymnasium-like step return
 
-        self.update_runtime()
         self.observation.update(state)
 
         obj_value = self.objective.get_current(state)

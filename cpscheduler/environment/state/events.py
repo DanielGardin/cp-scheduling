@@ -12,7 +12,7 @@ from cpscheduler.environment.constants import (
     TaskID,
 )
 
-VarFieldType = Literal[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+VarFieldType = Literal[0, 1, 2, 3, 4, 5, 6, 7, 8]
 
 
 class VarField(Enum):
@@ -42,13 +42,7 @@ class VarField(Enum):
     MACHINE_INFEASIBLE: Final[Literal[7]] = 7
     """A machine became infeasible for the given task."""
 
-    PAUSE: Final[Literal[8]] = 8
-    """A running task was paused; its remaining time and bounds were updated."""
-
-    BOUNDS_RESET: Final[Literal[9]] = 9
-    """Task bounds were reset to the current time horizon."""
-
-    STATE_INFEASIBLE: Final[Literal[10]] = 10
+    STATE_INFEASIBLE: Final[Literal[8]] = 8
     """Global infeasibility flag signalled by a propagator."""
 
 
@@ -105,66 +99,66 @@ class DomainEventQueue(EzPickle):
         return bool(self.task_ids)
 
 
-EventKindType = Literal[0, 1, 2, 3]
+# EventKindType = Literal[0, 1, 2, 3]
 
 
-class RuntimeEventKind(Enum):
-    """Runtime event kinds used to trigger objective and observation callbacks."""
+# class RuntimeEventKind(Enum):
+#     """Runtime event kinds used to trigger objective and observation callbacks."""
 
-    TASK_STARTED: Final[Literal[0]] = 0
-    TASK_PAUSED: Final[Literal[1]] = 1
-    TASK_COMPLETED: Final[Literal[2]] = 2
-    TASK_MACHINE_INFEASIBLE: Final[Literal[3]] = 3
+#     TASK_STARTED: Final[Literal[0]] = 0
+#     TASK_PAUSED: Final[Literal[1]] = 1
+#     TASK_COMPLETED: Final[Literal[2]] = 2
+#     TASK_MACHINE_INFEASIBLE: Final[Literal[3]] = 3
 
 
-@mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
-class RuntimeEventQueue(EzPickle):
-    """Container for runtime events generated during schedule execution."""
+# @mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
+# class RuntimeEventQueue(EzPickle):
+#     """Container for runtime events generated during schedule execution."""
 
-    task_ids: list[TaskID]
-    kinds: list[EventKindType]
-    machine_ids: list[MachineID]
+#     task_ids: list[TaskID]
+#     kinds: list[EventKindType]
+#     machine_ids: list[MachineID]
 
-    def __init__(self) -> None:
-        """Initialize an empty RuntimeEventQueue."""
-        self.task_ids = []
-        self.kinds = []
-        self.machine_ids = []
+#     def __init__(self) -> None:
+#         """Initialize an empty RuntimeEventQueue."""
+#         self.task_ids = []
+#         self.kinds = []
+#         self.machine_ids = []
 
-    def add_event(
-        self,
-        task_id: TaskID,
-        kind: EventKindType,
-        machine_id: MachineID = GLOBAL_MACHINE_ID,
-    ) -> None:
-        """Add a runtime event to the queue."""
-        self.task_ids.append(task_id)
-        self.kinds.append(kind)
-        self.machine_ids.append(machine_id)
+#     def add_event(
+#         self,
+#         task_id: TaskID,
+#         kind: EventKindType,
+#         machine_id: MachineID = GLOBAL_MACHINE_ID,
+#     ) -> None:
+#         """Add a runtime event to the queue."""
+#         self.task_ids.append(task_id)
+#         self.kinds.append(kind)
+#         self.machine_ids.append(machine_id)
 
-    def __len__(self) -> int:
-        """Return the number of events in the queue."""
-        return len(self.task_ids)
+#     def __len__(self) -> int:
+#         """Return the number of events in the queue."""
+#         return len(self.task_ids)
 
-    def clear(self) -> None:
-        """Clear all events from the queue."""
-        self.task_ids.clear()
-        self.kinds.clear()
-        self.machine_ids.clear()
+#     def clear(self) -> None:
+#         """Clear all events from the queue."""
+#         self.task_ids.clear()
+#         self.kinds.clear()
+#         self.machine_ids.clear()
 
-    def __repr__(self) -> str:
-        """Return a string representation of the RuntimeEventQueue."""
-        return f"RuntimeEventQueue(num_events={len(self.task_ids)})"
+#     def __repr__(self) -> str:
+#         """Return a string representation of the RuntimeEventQueue."""
+#         return f"RuntimeEventQueue(num_events={len(self.task_ids)})"
 
-    def __eq__(self, other: object) -> bool:
-        """Check equality of two RuntimeEventQueue instances."""
-        return (
-            isinstance(other, RuntimeEventQueue)
-            and self.task_ids == other.task_ids
-            and self.kinds == other.kinds
-            and self.machine_ids == other.machine_ids
-        )
+#     def __eq__(self, other: object) -> bool:
+#         """Check equality of two RuntimeEventQueue instances."""
+#         return (
+#             isinstance(other, RuntimeEventQueue)
+#             and self.task_ids == other.task_ids
+#             and self.kinds == other.kinds
+#             and self.machine_ids == other.machine_ids
+#         )
 
-    def __bool__(self) -> bool:
-        """Return True if the queue has any events, False otherwise."""
-        return bool(self.task_ids)
+#     def __bool__(self) -> bool:
+#         """Return True if the queue has any events, False otherwise."""
+#         return bool(self.task_ids)
