@@ -121,6 +121,9 @@ class Observation(EzPickle, Generic[Serialized_Obs]):
         self.fingerprint = instance.fingerprint
         self.symbols = concrete_symbols
 
+    def reset(self, state: ScheduleState) -> None:
+        """Reset the observation to its initial state."""
+
     def update(self, state: ScheduleState) -> None:
         """Update the observation from the current stable scheduling state.
 
