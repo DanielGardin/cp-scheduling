@@ -52,20 +52,20 @@ BOUNDS: dict[ValueType, tuple[float, float]] = {
 _DTYPE = type[np.floating[Any]] | type[np.integer[Any]]
 DTYPE_MAPPING: dict[ValueType, _DTYPE] = {
     "continuous": np.float32,
-    "discrete": np.int32,
+    "discrete": np.int64,
     "binary": np.int8,
-    "count": np.int32,
+    "count": np.int64,
     "normalized": np.float32,
     "probability": np.float32,
-    "time": np.int32,
-    "duration": np.int32,
+    "time": np.int64,
+    "duration": np.int64,
     "cost": np.float32,
-    "id": np.int32,
-    "task_id": np.int32,
-    "job_id": np.int32,
-    "machine_id": np.int32,
-    "order": np.int32,
-    "categorical": np.int32,
+    "id": np.int64,
+    "task_id": np.int64,
+    "job_id": np.int64,
+    "machine_id": np.int64,
+    "order": np.int64,
+    "categorical": np.int64,
 }
 
 

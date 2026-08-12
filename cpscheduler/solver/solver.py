@@ -78,7 +78,7 @@ class SchedulingSolver(Generic[R]):
             core_env.load_instance(*ensure_iterable(instance))
             core_env.reset()
 
-        elif not env.running:
+        elif not core_env.running:
             raise ValueError(
                 "Environment must be loaded and reset before initializing the solver."
             )
