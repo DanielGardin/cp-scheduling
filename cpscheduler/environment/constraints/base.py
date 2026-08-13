@@ -8,19 +8,6 @@ from typing_extensions import override
 from cpscheduler.environment.component import Component
 from cpscheduler.environment.constants import MachineID, TaskID, Time
 from cpscheduler.environment.state import ScheduleState
-from cpscheduler.environment.state.events import VarField
-
-ASSIGNMENT = VarField.ASSIGNMENT
-START_LB = VarField.START_LB
-START_UB = VarField.START_UB
-END_LB = VarField.END_LB
-END_UB = VarField.END_UB
-PRESENCE = VarField.PRESENCE
-ABSENCE = VarField.ABSENCE
-MACHINE_INFEASIBLE = VarField.MACHINE_INFEASIBLE
-PAUSE = VarField.PAUSE
-BOUNDS_RESET = VarField.BOUNDS_RESET
-STATE_INFEASIBLE = VarField.STATE_INFEASIBLE
 
 constraints: dict[str, type["Constraint"]] = {}
 
@@ -76,14 +63,6 @@ class Constraint(Component):
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:
         """Handle the event of a task being marked as infeasible on a machine."""
-
-    def on_pause(
-        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
-    ) -> None:
-        """Handle the invalidation of bounds of a task that was paused."""
-
-    def on_bound_reset(self, task_id: TaskID, state: ScheduleState) -> None:
-        """Handle the bound invalidation of a given task."""
 
     def on_time_update(self, time: Time, state: ScheduleState) -> None:
         """Handle the event of the current time being updated."""
@@ -167,18 +146,4 @@ class PassiveConstraint(Constraint):
         """Passive constraint does not handle infeasibility events."""
         raise RuntimeError(
             "Passive constraint does not handle infeasibility events."
-        )
-
-    @final
-    def on_pause(
-        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
-    ) -> None:
-        """Handle the invalidation of bounds of a task that was paused."""
-        raise RuntimeError("Passive constraint does not handle pause events.")
-
-    @final
-    def on_bound_reset(self, task_id: TaskID, state: ScheduleState) -> None:
-        """Handle the bound invalidation of a given task."""
-        raise RuntimeError(
-            "Passive constraint does not handle bound reset events."
         )

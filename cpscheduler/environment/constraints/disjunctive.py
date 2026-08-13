@@ -107,17 +107,3 @@ class NonOverlapConstraint(Constraint):
 
             for other_task_id in group_tasks:
                 state.tight_start_lb(other_task_id, end_time)
-
-    @override
-    def on_pause(
-        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
-    ) -> None:
-        for i, group_tasks in enumerate(self.groups.value):
-            if task_id not in group_tasks:
-                continue
-
-            cur_group_tasks = self.current_groups[i]
-            for other_task_id in cur_group_tasks:
-                state.reset_bounds(other_task_id)
-
-            self.current_groups[i].add(task_id)

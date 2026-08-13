@@ -61,16 +61,6 @@ class MachineConstraint(Constraint):
         for other_task_id in self.machine_map[machine_id]:
             state.tight_start_lb(other_task_id, end_time, machine_id)
 
-    @override
-    def on_pause(
-        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
-    ) -> None:
-        for other_task_id in self.machine_map[machine_id]:
-            state.reset_bounds(other_task_id)
-
-        for machine in state.get_original_machines(task_id):
-            self.machine_map[machine].add(task_id)
-
 
 class MachineBreakdownConstraint(Constraint):
     """Machine breakdown constraint for the scheduling environment.
@@ -206,7 +196,7 @@ class MachineBreakdownConstraint(Constraint):
         for machine in self.next_breakdown:
             self.next_breakdown[machine] = 0
 
-        self.on_time_update(state.time, state)
+        self.on_time_update(0, state)
 
     @override
     def on_time_update(self, time: Time, state: ScheduleState) -> None:
@@ -224,7 +214,7 @@ class MachineBreakdownConstraint(Constraint):
                     continue
 
                 if start <= time < end:
-                    for task_id in state.get_awaiting_tasks():
+                    for task_id in state.get_unassigned_tasks():
                         start_lb = state.get_start_lb(task_id, machine)
 
                         if start_lb < end:
@@ -315,7 +305,7 @@ class BatchConstraint(Constraint):
     def reset(self, state: ScheduleState) -> None:
         for machine_id, capacity in enumerate(self.capacity.value):
             if capacity <= 0:
-                for task_id in state.get_awaiting_tasks():
+                for task_id in state.get_unassigned_tasks():
                     if machine_id in state.get_machines(task_id):
                         state.forbid_machine(task_id, machine_id)
 
@@ -362,28 +352,6 @@ class BatchConstraint(Constraint):
         ):
             for other_task_id in self.machine_map[machine_id]:
                 state.tight_start_lb(other_task_id, end_time, machine_id)
-
-    @override
-    def on_pause(
-        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
-    ) -> None:
-        # Decrement the running task count on the machine
-        self.running_tasks[machine_id].discard(task_id)
-
-        if self.running_tasks[machine_id]:
-            self.next_free_time[machine_id] = max(
-                state.get_end_lb(running_task_id)
-                for running_task_id in self.running_tasks[machine_id]
-            )
-
-        else:
-            self.next_free_time[machine_id] = state.time
-
-            for other_task_id in self.machine_map[machine_id]:
-                state.reset_bounds(other_task_id)
-
-        for machine in state.get_original_machines(task_id):
-            self.machine_map[machine].add(task_id)
 
     @override
     def on_time_update(self, time: Time, state: ScheduleState) -> None:
