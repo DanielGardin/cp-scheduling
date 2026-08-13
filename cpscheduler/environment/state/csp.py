@@ -307,7 +307,6 @@ class TaskDomains(EzPickle):
         """Assign a task to a machine."""
         self.fixed[task_id] = True
         self.assignment[task_id] = machine_id
-        self.presence[task_id] = PRESENT
         self.feasible_machines[task_id].clear()
         self.feasible_machines[task_id].add(machine_id)
 
