@@ -1,4 +1,4 @@
-"""Common types and utilities for DES actions and instructions."""
+"""Common interface for actions in all schedule backends."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, cast
 
 from mypy_extensions import mypyc_attr
-from typing_extensions import TypeIs, TypeVar, Unpack, override
+from typing_extensions import TypeIs, TypeVar, Unpack
 
 from cpscheduler.environment.constants import EzPickle, Int, Time
 
@@ -36,25 +36,7 @@ class Instruction(EzPickle, Generic[_Backend]):
 
     """
 
-    spec: ClassVar[str] = ""
     backend: ClassVar[str] = ""
-
-    @override
-    def __init_subclass__(cls) -> None:
-        if not cls.spec and cls.__name__.startswith("_"):
-            raise ValueError(
-                f"Introduced instruction `{cls.__name__}` has no spec. "
-                "When subclassing Instruction, add a spec class var with its name."
-            )
-
-        if not cls.backend:
-            raise ValueError(
-                f"Introduced instruction `{cls.__name__}` has no explicit backend "
-                "support. When subclassing Instruction, indicate which backend "
-                "supports it."
-            )
-
-        instructions[cls.backend][cls.spec] = cls
 
     def resolve(self, state: ScheduleState) -> Instruction:
         """Return the resolved instruction. Defaults to self."""
@@ -64,17 +46,30 @@ class Instruction(EzPickle, Generic[_Backend]):
         """Process the instruction, modifying the schedule state accordingly."""
 
 
+def register_instruction(
+    instruction: type[Instruction], spec: str, backend: str
+) -> None:
+    """Register an instruction as an action for a backend."""
+    instruction.backend = backend
+    instructions.setdefault(backend, {})[spec] = instruction
+
+
 def validate_instruction(
-    instruction: Instruction, state: ScheduleState
+    instruction: Instruction, state: ScheduleState, max_depth: int = 100
 ) -> Instruction:
     """Resolve the instruction to a fixed point."""
-    while True:
+    for _ in range(max_depth):
         validated_instruction = instruction.resolve(state)
 
         if instruction is validated_instruction:
             return instruction
 
         instruction = validated_instruction
+
+    raise RuntimeError(
+        f"Instruction {instruction} failed to reach a fixed point after "
+        f"{max_depth} resolutions."
+    )
 
 
 SchedulerArgs = Int

@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar, override
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from mypy_extensions import mypyc_attr
+from typing_extensions import override
 
-from cpscheduler.environment.constants import EzPickle, Time
+from cpscheduler.environment.constants import EzPickle, TaskID, Time
 
 if TYPE_CHECKING:
     from cpscheduler.environment.backend.actions import Instruction
@@ -56,12 +57,17 @@ class ScheduleBackend(EzPickle):
 
     def reset(self) -> None:
         """Reset the schedule to its initial empty state."""
+        self._next_event_id = 0
 
     def dispatch_instruction(self, state: ScheduleState) -> Instruction | None:
         """Return the next instruction to be processed in the environment."""
         raise NotImplementedError(
             f"Backend {self.backend} has no instruction dispatch."
         )
+
+    def get_eligible_set(self, state: ScheduleState) -> list[TaskID]:
+        """Return the set of tasks that will be shown as available to the observer."""
+        return state.get_unlocked_tasks()
 
     def add_instruction(
         self,
@@ -73,3 +79,7 @@ class ScheduleBackend(EzPickle):
         event_id = self._next_event_id
         self._next_event_id += 1
         return event_id
+
+    def get_info(self) -> dict[str, Any]:
+        """Expose backend-related information to the environment."""
+        return {}
