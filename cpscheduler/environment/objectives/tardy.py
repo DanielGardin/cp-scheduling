@@ -80,13 +80,10 @@ class TotalTardyJobs(CompletionTimeObjective):
         self._n_tardy_jobs = 0
 
     @override
-    def on_task_completed(
-        self,
-        task_id: TaskID,
-        machine_id: MachineID,
-        state: ScheduleState,
+    def on_assignment(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:
-        super().on_task_completed(task_id, machine_id, state)
+        super().on_assignment(task_id, machine_id, state)
 
         job_id = state.instance.job_ids[task_id]
 
@@ -100,12 +97,13 @@ class TotalTardyJobs(CompletionTimeObjective):
             self._tardy_jobs[job_id] = True
             self._n_tardy_jobs += 1
 
+    @property
     @override
-    def get_current(self, state: ScheduleState) -> float:
+    def current(self) -> float:
         return float(self._n_tardy_jobs)
 
     @override
-    def __call__(self, state: ScheduleState) -> float:
+    def compute(self, state: ScheduleState) -> float:
         return float(
             sum(
                 C_j > d_j
@@ -200,16 +198,13 @@ class WeightedTardyJobs(TotalTardyJobs):
         self._weighted_tardy_jobs = 0.0
 
     @override
-    def on_task_completed(
-        self,
-        task_id: TaskID,
-        machine_id: MachineID,
-        state: ScheduleState,
+    def on_assignment(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:
         job_id = state.instance.job_ids[task_id]
         already_tardy = self._tardy_jobs[job_id]
 
-        super().on_task_completed(task_id, machine_id, state)
+        super().on_assignment(task_id, machine_id, state)
 
         if already_tardy:
             return
@@ -217,12 +212,13 @@ class WeightedTardyJobs(TotalTardyJobs):
         if self._tardy_jobs[job_id]:
             self._weighted_tardy_jobs += self.weights.value[job_id]
 
+    @property
     @override
-    def get_current(self, state: ScheduleState) -> float:
+    def current(self) -> float:
         return self._weighted_tardy_jobs
 
     @override
-    def __call__(self, state: ScheduleState) -> float:
+    def compute(self, state: ScheduleState) -> float:
         return sum(
             w_j
             for w_j, d_j, C_j in zip(

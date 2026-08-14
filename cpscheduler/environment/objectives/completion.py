@@ -19,12 +19,13 @@ class TotalCompletionTime(RegularObjective):
     jobs, i.e., ΣC_j.
     """
 
+    @property
     @override
-    def get_current(self, state: ScheduleState) -> float:
+    def current(self) -> float:
         return float(sum(self._job_completion))
 
     @override
-    def __call__(self, state: ScheduleState) -> float:
+    def compute(self, state: ScheduleState) -> float:
         return float(sum(self.completion_times(state)))
 
     @classmethod
@@ -86,8 +87,9 @@ class WeightedCompletionTime(TotalCompletionTime):
     def regular(self) -> bool:
         return all(weight >= 0 for weight in self.weights.value)
 
+    @property
     @override
-    def get_current(self, state: ScheduleState) -> float:
+    def current(self) -> float:
         weights = self.weights.value
 
         return sum(
@@ -96,7 +98,7 @@ class WeightedCompletionTime(TotalCompletionTime):
         )
 
     @override
-    def __call__(self, state: ScheduleState) -> float:
+    def compute(self, state: ScheduleState) -> float:
         weights = self.weights.value
 
         return sum(
@@ -151,8 +153,9 @@ class DiscountedTotalCompletionTime(RegularObjective):
 
         self.discount_factor.own_data(discount_factor)
 
+    @property
     @override
-    def get_current(self, state: ScheduleState) -> float:
+    def current(self) -> float:
         alpha = self.discount_factor.value
 
         return -sum(expm1(-alpha * float(C_j)) for C_j in self._job_completion)
@@ -225,8 +228,9 @@ class TotalFlowTime(RegularObjective):
     def _load_release_times(self, release_times: Iterable[Int]) -> list[Time]:
         return convert_to_list(release_times, Time)
 
+    @property
     @override
-    def get_current(self, state: ScheduleState) -> float:
+    def current(self) -> float:
         return float(
             sum(
                 C_j - r_j
@@ -237,7 +241,7 @@ class TotalFlowTime(RegularObjective):
         )
 
     @override
-    def __call__(self, state: ScheduleState) -> float:
+    def compute(self, state: ScheduleState) -> float:
         return float(
             sum(
                 C_j - r_j

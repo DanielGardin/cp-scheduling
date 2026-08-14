@@ -58,8 +58,9 @@ class TotalEarliness(CompletionTimeObjective):
     def _load_due_dates(self, due_dates: Iterable[Time]) -> list[Time]:
         return convert_to_list(due_dates, Time)
 
+    @property
     @override
-    def get_current(self, state: ScheduleState) -> float:
+    def current(self) -> float:
         return float(
             sum(
                 max(d_j - C_j, 0)
@@ -70,7 +71,7 @@ class TotalEarliness(CompletionTimeObjective):
         )
 
     @override
-    def __call__(self, state: ScheduleState) -> float:
+    def compute(self, state: ScheduleState) -> float:
         return float(
             sum(
                 max(d_j - C_j, 0)
@@ -150,8 +151,9 @@ class WeightedEarliness(TotalEarliness):
     def regular(self) -> bool:
         return all(weight >= 0 for weight in self.weights.value)
 
+    @property
     @override
-    def get_current(self, state: ScheduleState) -> float:
+    def current(self) -> float:
         return float(
             sum(
                 w_j * float(max(d_j - C_j, 0))
@@ -165,7 +167,7 @@ class WeightedEarliness(TotalEarliness):
         )
 
     @override
-    def __call__(self, state: ScheduleState) -> float:
+    def compute(self, state: ScheduleState) -> float:
         return float(
             sum(
                 w_j * float(max(d_j - C_j, 0))
