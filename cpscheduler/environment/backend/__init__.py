@@ -2,6 +2,7 @@
 
 __all__ = [
     "ActionType",
+    "DESBackend",
     "Instruction",
     "ScheduleBackend",
     "SingleAction",
@@ -19,3 +20,4 @@ from .actions import (
     validate_instruction,
 )
 from .backend import ScheduleBackend
+from .des import DESBackend

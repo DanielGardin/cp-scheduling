@@ -1,8 +1,8 @@
 """DES Backend class."""
 
 from collections.abc import Iterator
-from heapq import heapify, heappop, heappush
-from typing import Any, Literal
+from heapq import heappop, heappush
+from typing import Any
 
 from mypy_extensions import mypyc_attr
 from typing_extensions import override
@@ -56,8 +56,16 @@ class DESBackend(ScheduleBackend):
     _tail: Time | None
 
     time: Time
-    stage: Literal[0, 1, 2]
+    stage: int
     instruction_idx: int
+
+    # Explicit dispatch state for the time slot currently being processed.
+    _current_time_slot: TimeSlot | None
+    _timed_snapshot: list[ScheduledEvent]
+    _non_timed_snapshot: list[ScheduledEvent]
+    _timed_index: int
+    _non_timed_index: int
+    _deferred_events: list[ScheduledEvent]
 
     def __init__(self) -> None:
         """Initialize the Schedule with empty event queues and reset state."""
@@ -74,6 +82,13 @@ class DESBackend(ScheduleBackend):
         self.stage = TIMED_STAGE
         self.instruction_idx = 0
 
+        self._current_time_slot = None
+        self._timed_snapshot = []
+        self._non_timed_snapshot = []
+        self._timed_index = 0
+        self._non_timed_index = 0
+        self._deferred_events = []
+
     def reset(self) -> None:
         """Reset the schedule to its initial empty state."""
         self._time_slots.clear()
@@ -89,7 +104,12 @@ class DESBackend(ScheduleBackend):
         self.stage = TIMED_STAGE
         self.instruction_idx = 0
 
-        self._active_queue = None
+        self._current_time_slot = None
+        self._timed_snapshot = []
+        self._non_timed_snapshot = []
+        self._timed_index = 0
+        self._non_timed_index = 0
+        self._deferred_events = []
 
     @override
     def get_eligible_set(self, state: ScheduleState) -> list[TaskID]:
@@ -99,10 +119,6 @@ class DESBackend(ScheduleBackend):
         """Check if there are no scheduled events."""
         return not self._heap
 
-    def next_time(self) -> Time:
-        """Get the next scheduled time for events."""
-        return self._heap[0]
-
     def _create_time_slot(self, time: Time) -> TimeSlot:
         """Create a new time slot for events, ensuring the heap is updated."""
         if time not in self._time_slots:
@@ -111,39 +127,136 @@ class DESBackend(ScheduleBackend):
 
         return self._time_slots[time]
 
-    def _may_remove_time_slot(self, time: Time) -> None:
-        """Remove a time slot if it has no more events, ensuring the heap is updated."""
-        if time in self._time_slots and self._time_slots[time].is_empty():
-            del self._time_slots[time]
-
-            self._heap.remove(time)
-            heapify(self._heap)
-
-            if self._tail == time:
-                self._tail = None
-
-    # TODO: Make this method stateful
     def dispatch_instruction(
         self, state: ScheduleState
     ) -> SimulationEvent | None:
         """Dispatch the next event by consuming an internal generator."""
         while self._heap:
-            if self._active_queue is None:
-                self._active_queue = self.instruction_queue(state)
+            if self.stage == TIMED_STAGE:
+                event = self._step_timed_stage(state)
 
-            try:
-                return next(self._active_queue)
+            elif self.stage == NON_TIMED_STAGE:
+                event = self._step_non_timed_stage(state)
 
-            except StopIteration:
-                self._active_queue = None
+            else:
+                raise RuntimeError(f"Invalid dispatch stage: {self.stage}")
+
+            if event is not None:
+                return event
+
+        self.stage = TIME_ADVANCE_STAGE
 
         next_time = max(self.time, state.get_earliest_start_lb())
-
         self.time = (
             next_time if next_time < MAX_TIME else state.get_latest_end()
         )
 
+        self.stage = TIMED_STAGE
         return None
+
+    def _step_timed_stage(self, state: ScheduleState) -> SimulationEvent | None:
+        """Process one timed event of the current time slot, or advance to the non-timed stage."""
+        if self._current_time_slot is None:
+            time = self._heap[0]
+            self.time = time
+
+            self._current_time_slot = self._time_slots.pop(time)
+            self._timed_snapshot = list(self._current_time_slot.timed_events)
+            self._timed_index = 0
+
+        if self._timed_index < len(self._timed_snapshot):
+            entry = self._timed_snapshot[self._timed_index]
+            event = entry.event
+
+            if not event.is_ready(state, self):
+                raise ValueError(
+                    f"Event is not ready to be processed: {event} at time {self.time}"
+                )
+
+            self._timed_index += 1
+            del self._event_cache[entry.event_id]
+
+            return event
+
+        self.stage = NON_TIMED_STAGE
+        self._non_timed_snapshot = list(
+            self._current_time_slot.non_timed_events
+        )
+        self._non_timed_index = 0
+        self._deferred_events.clear()
+
+        return None
+
+    def _step_non_timed_stage(
+        self, state: ScheduleState
+    ) -> SimulationEvent | None:
+        """Process one non-timed event of the current time slot, or finalize the slot."""
+        assert self._current_time_slot is not None
+        slot = self._current_time_slot
+
+        if self._non_timed_index < len(self._non_timed_snapshot):
+            entry = self._non_timed_snapshot[self._non_timed_index]
+            event = entry.event
+
+            if event.is_ready(state, self):
+                self._non_timed_index += 1
+                slot.remove_event(entry.event_id)
+                del self._event_cache[entry.event_id]
+
+                return event
+
+            if event.blocking:
+                next_time = event.earliest_time(state)
+                self._defer_blocking_event(event, next_time)
+                self._finalize_time_slot()
+
+                return None
+
+            self._deferred_events.append(entry)
+            self._non_timed_index += 1
+            return None
+
+        for entry in self._deferred_events:
+            self._reschedule_event(entry, state)
+
+        self._finalize_time_slot()
+        return None
+
+    def _defer_blocking_event(
+        self, event: SimulationEvent, next_time: Time | None
+    ) -> None:
+        """Handle a blocking, not-ready non-timed event: sweep remaining entries forward and end the slot."""
+        assert self._current_time_slot is not None
+        time = self.time
+
+        if next_time is None or next_time <= self.time:
+            raise RuntimeError(
+                f"Event {event} is potentially deadlocking the event "
+                "queue: It is not ready, but its earliest time is earlier than "
+                f"the current time ({next_time} <= {self.time})"
+            )
+
+        if next_time > time:
+            next_time_slot = self._create_time_slot(next_time)
+
+            next_time_slot.extend_non_timed_events(
+                self._current_time_slot.non_timed_events.events
+            )
+
+        if self._tail is None or next_time > self._tail:
+            self._tail = next_time
+
+    def _finalize_time_slot(self) -> None:
+        """Close out the current time slot and pop it from the heap."""
+        heappop(self._heap)
+
+        self._current_time_slot = None
+        self._timed_snapshot.clear()
+        self._non_timed_snapshot.clear()
+        self._timed_index = 0
+        self._non_timed_index = 0
+        self._deferred_events.clear()
+        self.stage = TIMED_STAGE
 
     def _reschedule_event(
         self, entry: ScheduledEvent, state: ScheduleState
@@ -152,13 +265,11 @@ class DESBackend(ScheduleBackend):
 
         time = event.earliest_time(state)
 
-        if time is None or time == self.time:
-            # This guardrail is stronger than we need, it will block
-            # feasible paths that use non-timed and timed events together
+        if time is None or time <= self.time:
             raise RuntimeError(
                 f"Event {event} is potentially deadlocking the event "
-                "queue due to an action-dependent dependency that may "
-                "never happen."
+                "queue: It is not ready, but its earliest time is earlier than "
+                f"the current time ({time} <= {self.time})"
             )
 
         if time > self.time:
@@ -173,81 +284,6 @@ class DESBackend(ScheduleBackend):
                 f"Cannot reschedule events triggered by {event} to the past: "
                 f"{time} < {self.time}."
             )
-
-    def instruction_queue(
-        self, state: ScheduleState
-    ) -> Iterator[SimulationEvent]:
-        """Iterate over the events waiting to be processed at the current time step.
-
-        This method implements the three-phased approach to processing events,
-        yielding timed events first, followed by non-timed events, sorted by
-        priority and order.
-        """
-        time = self._heap[0]
-        self.time = time
-
-        time_slot = self._time_slots.pop(time)
-        time_cache = self._event_cache
-
-        for entry in time_slot.timed_events:
-            event = entry.event
-
-            if not event.is_ready(state, self):
-                raise ValueError(
-                    f"Event is not ready to be processed: {event} at time {time}"
-                )
-
-            yield event
-
-            del time_cache[entry.event_id]
-
-        deferred_events: list[ScheduledEvent] = []
-        for entry in time_slot.non_timed_events:
-            event = entry.event
-
-            if event.is_ready(state, self):
-                yield event
-                time_slot.remove_event(entry.event_id)
-                del time_cache[entry.event_id]
-                continue
-
-            if event.blocking:
-                next_time = event.earliest_time(state)
-
-                if next_time is None:
-                    next_time = self.time
-
-                if self._tail is None or next_time > self._tail:
-                    self._tail = next_time
-
-                if next_time > time:
-                    next_time_slot = self._create_time_slot(next_time)
-
-                    next_time_slot.extend_non_timed_events(
-                        time_slot.non_timed_events.events
-                    )
-
-                elif next_time == time:
-                    raise RuntimeError(
-                        f"Event {event} is potentially deadlocking the event "
-                        "queue due to an action-dependent dependency that may "
-                        "never happen."
-                    )
-
-                else:
-                    raise ValueError(
-                        f"Cannot reschedule events triggered by {event} to the past: "
-                        f"{time} < {self.time}."
-                    )
-
-                break
-
-            deferred_events.append(entry)
-
-        for entry in deferred_events:
-            self._reschedule_event(entry, state)
-
-        heappop(self._heap)
 
     @override
     def get_info(self) -> dict[str, Any]:
@@ -332,7 +368,6 @@ class DESBackend(ScheduleBackend):
 
         time = self._event_cache.pop(event_id).time
         self._time_slots[time].remove_event(event_id)
-        self._may_remove_time_slot(time)
 
     def reschedule_event(
         self, event_id: EventID, state: ScheduleState, new_time: Time
@@ -349,18 +384,15 @@ class DESBackend(ScheduleBackend):
         if event_id in time_slot.non_timed_events:
             raise ValueError("Cannot reschedule non-timed events.")
 
-        if old_time < new_time:
-            time_slot.remove_event(event_id)
-
-            new_time_slot = self._create_time_slot(new_time)
-            new_time_slot.add_timed_event(entry)
-
-            self._may_remove_time_slot(old_time)
-
-        elif new_time < self.time:
+        if new_time < self.time:
             raise ValueError(
                 f"Cannot reschedule event to the past: {new_time} < {self.time}"
             )
+
+        time_slot.remove_event(event_id)
+
+        new_time_slot = self._create_time_slot(new_time)
+        new_time_slot.add_timed_event(entry)
 
     def change_event_priority(
         self, event_id: EventID, new_priority: PriorityValue
