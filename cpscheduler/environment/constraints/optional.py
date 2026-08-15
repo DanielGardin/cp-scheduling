@@ -5,7 +5,7 @@ from collections.abc import Iterable
 from typing_extensions import override
 
 import cpscheduler.environment.utils.debug as debug
-from cpscheduler.environment.constants import Int, MachineID, TaskID
+from cpscheduler.environment.constants import Int, TaskID
 from cpscheduler.environment.constraints.base import (
     Constraint,
     PassiveConstraint,
@@ -98,12 +98,6 @@ class AtMostOneConstraint(Constraint):
                 state.forbid_task(other_task)
 
     @override
-    def on_assignment(
-        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
-    ) -> None:
-        self.on_presence(task_id, state)
-
-    @override
     def on_absence(self, task_id: TaskID, state: ScheduleState) -> None:
         for tasks in self.current_tasks:
             tasks.discard(task_id)
@@ -133,12 +127,6 @@ class ExactlyOneConstraint(AtMostOneConstraint):
 
             for other_task in tasks:
                 state.forbid_task(other_task)
-
-    @override
-    def on_assignment(
-        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
-    ) -> None:
-        self.on_presence(task_id, state)
 
     @override
     def on_absence(self, task_id: TaskID, state: ScheduleState) -> None:

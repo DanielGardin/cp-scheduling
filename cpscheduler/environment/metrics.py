@@ -11,8 +11,8 @@ from copy import deepcopy
 from math import sqrt
 from typing import Any
 
-from cpscheduler.environment.constants import MachineID, TaskID, Time
-from cpscheduler.environment.des import ActionType
+from cpscheduler.environment.backend import ActionType
+from cpscheduler.environment.constants import EzPickle, MachineID, TaskID, Time
 from cpscheduler.environment.env import SchedulingEnv
 from cpscheduler.environment.state import ScheduleState
 
@@ -21,45 +21,24 @@ def machine_utilization(state: ScheduleState) -> float:
     """Calculate the percentage of time that machines are utilized during the scheduling period.
 
     When time is 0, the utilization is defined as 100% utilization.
+    It can exceed 100% when machines are not unary, thus measuring the average
+    amount of tasks executed per unit time.
     """
-    time = state.time
+    latest_completion = [0] * state.n_machines
+    busy_time = 0
 
-    total_time = float(time * state.n_machines)
-    busy_time: Time = 0
-    for history in state.runtime.history:
-        for entry in history:
-            end_time = entry.end_time
-            start_time = entry.start_time
+    for task_id in state.get_assigned_tasks():
+        start = state.get_start(task_id)
+        end = state.get_end(task_id)
 
-            busy_time += (
-                end_time - start_time if end_time <= time else time - start_time
-            )
+        machine = state.get_assignment(task_id)
 
-    return float(busy_time) / total_time if total_time > 0 else 1
+        latest_completion[machine] = max(latest_completion[machine], end)
+        busy_time += end - start
 
+    total_time = sum(latest_completion)
 
-def num_preemptions(state: ScheduleState) -> int:
-    """Calculate the total number of preemption switches that occurred during the scheduling period."""
-    total_switches = 0
-
-    for task_id in state.runtime.completed_tasks:
-        history = state.runtime.history[task_id]
-        total_switches += len(history) - 1
-
-    return total_switches
-
-
-def max_preemptions(state: ScheduleState) -> int:
-    """Calculate the maximum number of preemption switches that occurred during the scheduling period."""
-    max_switches = 0
-    for task_id in state.runtime.completed_tasks:
-        history = state.runtime.history[task_id]
-        n_switches = len(history) - 1
-
-        if n_switches > max_switches:
-            max_switches = n_switches
-
-    return max_switches
+    return busy_time / total_time if total_time > 0 else 1.0
 
 
 def _count_inversions(arr: list[Any]) -> int:
@@ -88,12 +67,12 @@ def _count_inversions(arr: list[Any]) -> int:
     return inversions
 
 
-class ReferenceScheduleMetrics:
+class ReferenceScheduleMetrics(EzPickle):
     """Compute comparison metrics between a reference and executed schedule.
 
     The class captures the reference schedule by executing it on a copy of the
     provided `SchedulingEnv` and recording each task's final start time and
-    machine assignment (preemption is not modeled in the reference).
+    machine assignment.
 
     After construction, calling the instance with a `ScheduleState` returns a
     dictionary of numeric metrics comparing the reference against the provided
@@ -103,7 +82,7 @@ class ReferenceScheduleMetrics:
     start_times: dict[TaskID, Time]
     assignments: dict[TaskID, MachineID]
 
-    sorted_start_times: list[tuple[TaskID, Time]]
+    _sorted_start_times: list[tuple[TaskID, Time]]
 
     def __init__(self, env: SchedulingEnv, reference_schedule: ActionType):
         """Record the reference start times and assignments.
@@ -122,17 +101,20 @@ class ReferenceScheduleMetrics:
         self.assignments = {}
 
         cpy_env = deepcopy(env)
-        runtime = cpy_env.state.runtime
+        state = cpy_env.state
 
-        already_completed = runtime.completed_tasks.copy()
+        already_completed = set(state.get_assigned_tasks())
 
         cpy_env.step(reference_schedule)
 
-        for task_id in runtime.completed_tasks - already_completed:
-            self.assignments[task_id] = runtime.get_assignment(task_id)
-            self.start_times[task_id] = runtime.get_start(task_id)
+        for task_id in state.get_assigned_tasks():
+            if task_id in already_completed:
+                continue
 
-        self.sorted_start_times = sorted(
+            self.assignments[task_id] = state.get_assignment(task_id)
+            self.start_times[task_id] = state.get_start(task_id)
+
+        self._sorted_start_times = sorted(
             [(task_id, start) for task_id, start in self.start_times.items()],
             key=lambda x: x[1],
         )
@@ -160,13 +142,11 @@ class ReferenceScheduleMetrics:
         distance = 0
         count = 0
 
-        runtime = state.runtime
-        for task_id in runtime.completed_tasks:
-            if task_id not in self.start_times:
+        for task_id, ref_start in self.start_times.items():
+            if not state.is_fixed(task_id):
                 continue
 
-            ref_start = self.start_times[task_id]
-            actual_start = runtime.get_start(task_id)
+            actual_start = state.get_start(task_id)
 
             distance += (
                 ref_start - actual_start
@@ -186,13 +166,11 @@ class ReferenceScheduleMetrics:
         early_count = 0
         count = 0
 
-        runtime = state.runtime
-        for task_id in state.runtime.completed_tasks:
-            if task_id not in self.start_times:
+        for task_id, ref_start in self.start_times.items():
+            if not state.is_fixed(task_id):
                 continue
 
-            ref_start = self.start_times[task_id]
-            actual_start = runtime.get_start(task_id)
+            actual_start = state.get_start(task_id)
 
             if actual_start < ref_start:
                 early_count += 1
@@ -210,13 +188,11 @@ class ReferenceScheduleMetrics:
         late_count = 0
         count = 0
 
-        runtime = state.runtime
-        for task_id in runtime.completed_tasks:
-            if task_id not in self.start_times:
+        for task_id, ref_start in self.start_times.items():
+            if not state.is_fixed(task_id):
                 continue
 
-            ref_start = self.start_times[task_id]
-            actual_start = runtime.get_start(task_id)
+            actual_start = state.get_start(task_id)
 
             if actual_start > ref_start:
                 late_count += 1
@@ -233,11 +209,10 @@ class ReferenceScheduleMetrics:
         This metric is the ratio of the number of tasks that maintain their order
         in the reference schedule to the total number of tasks.
         """
-        runtime = state.runtime
         actual_times = [
-            runtime.get_start(task_id)
-            for task_id, _ in self.sorted_start_times
-            if task_id in runtime.completed_tasks
+            state.get_start(task_id)
+            for task_id, _ in self._sorted_start_times
+            if state.is_fixed(task_id)
         ]
 
         n = len(actual_times)
@@ -257,14 +232,12 @@ class ReferenceScheduleMetrics:
         """
         ref_order = [
             task_id
-            for task_id, _ in self.sorted_start_times
-            if task_id in state.runtime.completed_tasks
+            for task_id, _ in self._sorted_start_times
+            if state.is_fixed(task_id)
         ]
 
-        actual_order = sorted(
-            ref_order,
-            key=lambda task_id: state.runtime.get_start(task_id),
-        )
+        actual_order = sorted(ref_order, key=state.get_start)
+
         # reference order is just the task_ids in sorted_start_times order
         matches = 0
         for ref_task, act_task in zip(ref_order, actual_order, strict=False):
@@ -280,12 +253,10 @@ class ReferenceScheduleMetrics:
         indicating identical order and values closer to -1 indicating
         strong disagreement.
         """
-        runtime = state.runtime
-
         actual_times = [
-            runtime.get_start(task_id)
-            for task_id, _ in self.sorted_start_times
-            if task_id in runtime.completed_tasks
+            state.get_start(task_id)
+            for task_id, _ in self._sorted_start_times
+            if state.is_fixed(task_id)
         ]
         n = len(actual_times)
         if n < 2:
@@ -314,13 +285,11 @@ class ReferenceScheduleMetrics:
         matches = 0
         count = 0
 
-        runtime = state.runtime
-        for task_id in state.runtime.completed_tasks:
-            if task_id not in self.assignments:
+        for task_id, ref_machine in self.assignments.items():
+            if not state.is_fixed(task_id):
                 continue
 
-            ref_machine = self.assignments[task_id]
-            actual_machine = runtime.get_assignment(task_id)
+            actual_machine = state.get_assignment(task_id)
 
             if ref_machine == actual_machine:
                 matches += 1

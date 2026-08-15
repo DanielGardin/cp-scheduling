@@ -6,7 +6,8 @@ from typing import Any, Generic
 from mypy_extensions import mypyc_attr
 from typing_extensions import TypeVar
 
-from cpscheduler.environment.constants import EzPickle, MachineID, TaskID
+from cpscheduler.environment.backend import ScheduleBackend
+from cpscheduler.environment.constants import EzPickle
 from cpscheduler.environment.instance import ProblemInstance
 from cpscheduler.environment.specs import ObservationSpec
 from cpscheduler.environment.state import ScheduleState
@@ -89,8 +90,10 @@ class Observation(EzPickle, Generic[Serialized_Obs]):
         """Return the number of jobs within the instance."""
         return self.symbols["n_jobs"]
 
-    def compile(self, instance: ProblemInstance) -> ObservationSpec:
-        """Compile the instance configuration into an observation spec.
+    def compile(
+        self, instance: ProblemInstance, backend: ScheduleBackend
+    ) -> ObservationSpec:
+        """Compile the instance and backend configuration into an observation spec.
 
         This method declares the structure created by `serialize`, which will
         be further populated by a symbol table.
@@ -101,8 +104,10 @@ class Observation(EzPickle, Generic[Serialized_Obs]):
             f"compile() was not implemented for {type(self).__name__}."
         )
 
-    def initialize(self, instance: ProblemInstance) -> None:
-        """Initialize the observation with the scheduling instance."""
+    def initialize(
+        self, instance: ProblemInstance, backend: ScheduleBackend
+    ) -> None:
+        """Initialize the observation with problem instance and backend configuration."""
         concrete_symbols = instance.symbol_values
 
         for symbol, value in self._default_symbols.items():
@@ -121,33 +126,13 @@ class Observation(EzPickle, Generic[Serialized_Obs]):
         self.fingerprint = instance.fingerprint
         self.symbols = concrete_symbols
 
-    def update(self, state: ScheduleState) -> None:
+    def update(self, state: ScheduleState, backend: ScheduleBackend) -> None:
         """Update the observation from the current stable scheduling state.
 
         This function is called immediatelly before the observation is returned
         in the `step` and `reset` methods.
         Consider this method as a importer of the most recent
         """
-
-    def on_task_started(
-        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
-    ) -> None:
-        """Handle a task start event."""
-
-    def on_task_paused(
-        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
-    ) -> None:
-        """Handle a task pause event."""
-
-    def on_task_completed(
-        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
-    ) -> None:
-        """Handle a task completion event."""
-
-    def on_task_machine_infeasible(
-        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
-    ) -> None:
-        """Handle a task-machine infeasibility event."""
 
     def serialize(self) -> Serialized_Obs:
         """Return a serialized representation of the observation.

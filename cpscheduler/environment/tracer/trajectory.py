@@ -1,12 +1,10 @@
 """Trajectory-tracing utilities for the environment."""
 
 from copy import deepcopy
-from typing import Any
 
 from typing_extensions import override
 
-from cpscheduler.environment.constants import MachineID, TaskID, Time
-from cpscheduler.environment.des import ExecuteEvent, SimulationEvent
+from cpscheduler.environment.backend import Instruction, ScheduleBackend
 from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.tracer.base import Tracer
 
@@ -23,7 +21,7 @@ class FullTrajectoryTracer(Tracer):
 
     tracer_name = "full_trajectory"
 
-    trajectory: list[tuple[ScheduleState, SimulationEvent]]
+    trajectory: list[tuple[Instruction, ScheduleState, ScheduleBackend]]
 
     def __init__(self) -> None:
         self.trajectory = []
@@ -33,53 +31,12 @@ class FullTrajectoryTracer(Tracer):
         self.trajectory.clear()
 
     @override
-    def step(self, state: ScheduleState, action: SimulationEvent) -> None:
-        self.trajectory.append((deepcopy(state), deepcopy(action)))
-
-
-class ExecutionTrajectoryTracer(Tracer):
-    """Tracer that records a partial trajectory of the environment.
-
-    This tracker only logs the decision outcomes when executing a task, including
-    the task id, the machine id, the current time and the set of available tasks
-    at the time of the decision.
-    """
-
-    tracer_name = "trajectory"
-
-    tasks: list[TaskID]
-    machines: list[MachineID]
-    times: list[Time]
-    feasible_sets: list[list[TaskID]]
-
-    def __init__(self) -> None:
-        self.tasks = []
-        self.machines = []
-        self.times = []
-        self.feasible_sets = []
-
-    @override
-    def reset(self, state: ScheduleState) -> None:
-        self.tasks.clear()
-        self.machines.clear()
-        self.times.clear()
-        self.feasible_sets.clear()
-
-    @override
-    def step(self, state: ScheduleState, action: SimulationEvent) -> None:
-        if isinstance(action, ExecuteEvent):
-            available_tasks = state.get_available_tasks()
-
-            self.tasks.append(action.task_id)
-            self.machines.append(action.resolve_machine(state))
-            self.times.append(state.time)
-            self.feasible_sets.append(available_tasks)
-
-    @override
-    def export(self) -> dict[str, Any]:
-        return {
-            "tasks": self.tasks,
-            "machines": self.machines,
-            "times": self.times,
-            "feasible_sets": self.feasible_sets,
-        }
+    def step(
+        self,
+        action: Instruction,
+        state: ScheduleState,
+        backend: ScheduleBackend,
+    ) -> None:
+        self.trajectory.append(
+            (deepcopy(action), deepcopy(state), deepcopy(backend))
+        )

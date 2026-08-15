@@ -14,7 +14,6 @@ from typing import (
     Any,
     ClassVar,
     Final,
-    Literal,
     SupportsFloat,
     SupportsIndex,
     SupportsInt,
@@ -109,53 +108,6 @@ class Enum:
     def count(cls) -> int:
         """Return the total number of enumeration values defined in the subclass."""
         return cls.__enum_count__
-
-
-StatusType = Literal[0, 1, 2, 3]
-
-
-class Status(Enum):
-    """Enumeration of task execution states.
-
-    Tasks transition between execution states during schedule evaluation:
-
-    ``AWAITING -> EXECUTING -> COMPLETED``
-
-    If preemption is enabled, tasks may additionally transition through
-    ``PAUSED`` states before completion.
-
-    Attributes
-    ----------
-    AWAITING : Literal[0]
-        Task is eligible for future execution but is not currently running.
-
-    PAUSED : Literal[1]
-        Task execution has been temporarily suspended.
-
-    EXECUTING : Literal[2]
-        Task is actively executing on an assigned machine.
-
-    COMPLETED : Literal[3]
-        Task execution has finished.
-
-    Notes
-    -----
-    - Enumeration values are stable integer constants.
-    - ``PAUSED`` is only relevant for preemptive scheduling models.
-
-    """
-
-    AWAITING: Final[Literal[0]] = 0
-    """Task is awaiting execution, typically when time <= start_lb."""
-
-    PAUSED: Final[Literal[1]] = 1
-    """Task has been started, but has been paused and now is waiting to be resumed."""
-
-    EXECUTING: Final[Literal[2]] = 2
-    """Task is currently executing on a machine."""
-
-    COMPLETED: Final[Literal[3]] = 3
-    """Task has been completed and is no longer active in the schedule."""
 
 
 # ------------------------------------------------------------------------------

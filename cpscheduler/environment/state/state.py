@@ -11,6 +11,7 @@ from mypy_extensions import mypyc_attr
 from cpscheduler.environment.constants import (
     GLOBAL_MACHINE_ID,
     MAX_TIME,
+    MIN_TIME,
     EzPickle,
     JobID,
     MachineID,
@@ -52,6 +53,7 @@ GLOBAL_TIME = VarField.GLOBAL_TIME
 UNKNOWN_TASK: TaskID = -1
 
 
+# FUTURE: Study implementing backtracking functionality via trails
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
 class ScheduleState(EzPickle):
     """Core state kernel for scheduling problems.
@@ -118,46 +120,6 @@ class ScheduleState(EzPickle):
     def is_terminal(self) -> bool:
         """Return True if the problem is infeasible or all tasks are assigned."""
         return self.infeasible or self.remaining_tasks == 0
-
-    # def advance_time_(self, new_time: Time) -> None:
-    #     """Advance simulation time.
-
-    #     Moves the simulation clock forward (must be monotonically increasing) and
-    #     marks any executing tasks that have reached their planned end times as
-    #     completed.
-    #     Queues TASK_COMPLETED events for each completed task.
-
-    #     Parameters
-    #     ----------
-    #     new_time : Time
-    #         New simulation time (must be > current time).
-
-    #     """
-    #     assert new_time > self.time, (
-    #         "Advance time must be monotonic increasing."
-    #     )
-
-    #     self.time = new_time
-
-    #     runtime = self.runtime
-
-    #     executing_tasks = runtime.executing_tasks
-    #     completed_tasks = runtime.completed_tasks
-    #     status = runtime.status
-
-    #     for task_id in list(executing_tasks):
-    #         history = runtime.history[task_id]
-    #         end_time = history[-1].end_time
-    #         assignment = history[-1].machine_id
-
-    #         if end_time <= new_time:
-    #             executing_tasks.remove(task_id)
-    #             completed_tasks.add(task_id)
-
-    #             status[task_id] = COMPLETED
-    #             self.runtime_event_queue.add_event(
-    #                 task_id, TASK_COMPLETED, assignment
-    #             )
 
     # Problem Instance API methods
 
@@ -267,8 +229,8 @@ class ScheduleState(EzPickle):
 
     def can_start(
         self,
-        time: Time,
         task_id: TaskID,
+        time: Time,
         machine_id: MachineID = GLOBAL_MACHINE_ID,
     ) -> bool:
         """Return whether a task can be scheduled on the given machine at the time.
@@ -320,6 +282,16 @@ class ScheduleState(EzPickle):
             task_id
             for task_id, fixed in enumerate(self.domains.fixed)
             if not fixed and self.can_start(task_id, time)
+        ]
+
+    def get_assigned_tasks(self) -> list[TaskID]:
+        """Return a list of tasks with assigned machines."""
+        presence = self.domains.presence
+
+        return [
+            task_id
+            for task_id, fixed in enumerate(self.domains.fixed)
+            if fixed and presence[task_id] == PRESENT
         ]
 
     ## Dependency-resolving methods
@@ -805,13 +777,34 @@ class ScheduleState(EzPickle):
 
     # Runtime utils
 
+    def get_start(self, task_id: TaskID) -> Time:
+        """Return the start time of a fixed task."""
+        if not self.domains.fixed[task_id]:
+            raise ValueError(f"Task {task_id} is not fixed yet.")
+
+        if self.domains.presence[task_id] != PRESENT:
+            raise ValueError(f"Task {task_id} is not present.")
+
+        return self.domains.start.get_global_ub(task_id)
+
+    def get_end(self, task_id: TaskID) -> Time:
+        """Return the end time of a fixed task."""
+        if not self.domains.fixed[task_id]:
+            raise ValueError(f"Task {task_id} is not fixed yet.")
+
+        if self.domains.presence[task_id] != PRESENT:
+            raise ValueError(f"Task {task_id} is not present.")
+
+        return self.domains.end.get_global_ub(task_id)
+
     def get_earliest_start_lb(self) -> Time:
         """Return the earliest start lower bound among unlocked tasks."""
         global_lbs = self.domains.start.global_lbs
+        dependencies = self.domains.dependencies
 
         min_lb = MAX_TIME
         for task_id, fixed in enumerate(self.domains.fixed):
-            if fixed:
+            if fixed or dependencies[task_id]:
                 continue
 
             lb = global_lbs[task_id]
@@ -820,6 +813,22 @@ class ScheduleState(EzPickle):
                 min_lb = lb
 
         return min_lb
+
+    def get_latest_end(self) -> Time:
+        """Return the end time of the latest task."""
+        ends = self.domains.end.global_lbs
+
+        max_end = MIN_TIME
+        for task_id, fixed in enumerate(self.domains.fixed):
+            if not fixed:
+                continue
+
+            end = ends[task_id]
+
+            if end > max_end:
+                max_end = end
+
+        return max_end
 
     def __eq__(self, value: Any) -> bool:
         """Return equality based on all state attributes (instance, time, domains, runtime, events)."""

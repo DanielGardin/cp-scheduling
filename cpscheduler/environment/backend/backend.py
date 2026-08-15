@@ -65,6 +65,10 @@ class ScheduleBackend(EzPickle):
             f"Backend {self.backend} has no instruction dispatch."
         )
 
+    # There is a implicit invariant hidden here, at any given time,
+    # if dispatch_instruction returns an execution instruction for task t,
+    # then t must be in the eligible set.
+    # FUTURE: Test this invariant explicitly.
     def get_eligible_set(self, state: ScheduleState) -> list[TaskID]:
         """Return the set of tasks that will be shown as available to the observer."""
         return state.get_unlocked_tasks()
