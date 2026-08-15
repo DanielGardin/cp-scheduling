@@ -2,7 +2,11 @@
 
 from typing_extensions import override
 
-from cpscheduler.environment.render.base import GLASBEY_BW_PALETTE, Renderer
+from cpscheduler.environment.render.base import Renderer
+from cpscheduler.environment.render.utils import (
+    GLASBEY_BW_PALETTE,
+    iter_task_intervals,
+)
 from cpscheduler.environment.state import ScheduleState
 
 LABEL_WIDTH = 6
@@ -60,12 +64,6 @@ class AnsiRenderer(Renderer):
     max_n_ticks: int
     color: bool
 
-    # Maximum percentage of the current time, e.g.
-    # ▐████████▐█████  ▐█
-    # ├────────────────────▶
-    # 0                  ^ (<=95% of the gantt width)
-    cursor_max_mult = 0.95
-
     def __init__(
         self,
         width: int = 80,
@@ -101,7 +99,7 @@ class AnsiRenderer(Renderer):
         gantt_width: int,
         block_per_time: float,
         time_window: float,
-        current_time: int,
+        current_time: int | None = None,
     ) -> tuple[list[str], list[str]]:
         ticks = ["─"] * gantt_width
         ticklabels = [" "] * gantt_width
@@ -120,8 +118,10 @@ class AnsiRenderer(Renderer):
         blocks_per_tick = gantt_width // n_ticks
         time_per_tick = int(time_window / n_ticks)
 
-        cursor = int(current_time * block_per_time)
-        ticklabels[cursor] = "^"
+        if current_time is not None:
+            cursor = int(current_time * block_per_time)
+            ticklabels[cursor] = "^"
+
         for tick in range(1, n_ticks):
             pos = tick * blocks_per_tick
 
@@ -140,11 +140,9 @@ class AnsiRenderer(Renderer):
 
     @override
     def build_gantt(self, state: ScheduleState) -> str:
-        current_time = int(state.time)
-        makespan = int(state.runtime.last_completion_time)
+        makespan = int(state.get_latest_end())
 
         time_window = max(
-            current_time / self.cursor_max_mult,
             makespan,
             self.width - LABEL_WIDTH,
         )
@@ -155,41 +153,28 @@ class AnsiRenderer(Renderer):
 
         machine_chars = [[" "] * gantt_width for _ in range(state.n_machines)]
 
-        history = state.runtime.history
+        for _, job, machine, start, end in iter_task_intervals(state):
+            job_color = (
+                ansi_fg(GLASBEY_BW_PALETTE[job % 256]) if self.color else ""
+            )
 
-        for task_id, task_history in enumerate(history):
-            if not task_history:
-                continue
+            start_block = int(int(start) * block_per_time)
+            end_block = min(int(int(end) * block_per_time), gantt_width)
+
+            machine_chars[machine][start_block] = f"{job_color}{JOB_START_CHAR}"
+
+            for block in range(start_block + 1, end_block):
+                machine_chars[machine][block] = BLOCK
 
             if self.color:
-                job_id = state.get_job(task_id)
-                job_color = ansi_fg(GLASBEY_BW_PALETTE[job_id % 256])
-
-            else:
-                job_color = ""
-
-            for entry in history[task_id]:
-                start = int(int(entry.start_time) * block_per_time)
-                end = min(
-                    int(int(entry.end_time) * block_per_time), gantt_width
-                )
-                machine = entry.machine_id
-
-                machine_chars[machine][start] = f"{job_color}{JOB_START_CHAR}"
-
-                for slot in range(start + 1, end):
-                    machine_chars[machine][slot] = BLOCK
-
-                if self.color:
-                    pos = end - 1 if end > start else start
-                    machine_chars[machine][pos] += ANSI_RESET
+                pos = end_block - 1 if end_block > start_block else start_block
+                machine_chars[machine][pos] += ANSI_RESET
 
         ansi_reset = ANSI_RESET if self.color else ""
         ticks, ticklabels = self._build_axis(
             gantt_width=gantt_width,
             block_per_time=block_per_time,
             time_window=time_window,
-            current_time=state.time,
         )
 
         return (

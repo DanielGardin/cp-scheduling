@@ -10,7 +10,7 @@ from collections.abc import Iterable, Mapping
 from typing import Any, overload
 
 from gymnasium import Env, Space
-from typing_extensions import TypeVar
+from typing_extensions import TypeVar, override
 
 from cpscheduler.environment import (
     Constraint,
@@ -157,7 +157,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         self._current_fingerprint = self.fingerprint
         self.observation_space = self._get_observation_space()
         self.metadata = {
-            "render_modes": ["human"],
+            "render_modes": ["ansi"],
             "render_fps": 50,
         }
 
@@ -369,3 +369,10 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
     def get_entry(self) -> str:
         """Get a string representation of the environment's configuration."""
         return self._core.get_entry()
+
+    @override
+    def render(self) -> Any:
+        if self.render_mode == "ansi":
+            return self._core.renderer.build_gantt(self._core.state)
+
+        return None
