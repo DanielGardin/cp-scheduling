@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from mypy_extensions import mypyc_attr
-from typing_extensions import override
+from typing_extensions import Self, override
 
 from cpscheduler.environment.constants import EzPickle, TaskID, Time
 
@@ -75,7 +75,7 @@ class ScheduleBackend(EzPickle):
 
     def add_instruction(
         self,
-        instruction: Instruction,
+        instruction: Instruction[Self],
         time: Time | None = None,
         priority: float | None = None,
     ) -> EventID:

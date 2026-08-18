@@ -6,7 +6,7 @@ from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, cast
 
 from mypy_extensions import mypyc_attr
-from typing_extensions import TypeIs, TypeVar, Unpack
+from typing_extensions import Self, TypeIs, TypeVar, Unpack
 
 from cpscheduler.environment.constants import EzPickle, Int, Time
 
@@ -16,11 +16,13 @@ if TYPE_CHECKING:
 
 instructions: dict[str, dict[str, type[Instruction[Any]]]] = {}
 
-_Backend = TypeVar("_Backend", bound="ScheduleBackend", default=Any)
+B_contra = TypeVar(
+    "B_contra", bound="ScheduleBackend", default=Any, contravariant=True
+)
 
 
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=True)
-class Instruction(EzPickle, Generic[_Backend]):
+class Instruction(EzPickle, Generic[B_contra]):
     """Intermediate representation of an action in the environment.
 
     To create a new event, subclass this class to define the instruction type
@@ -38,16 +40,16 @@ class Instruction(EzPickle, Generic[_Backend]):
 
     backend: ClassVar[str] = ""
 
-    def resolve(self, state: ScheduleState) -> Instruction:
+    def resolve(self, state: ScheduleState) -> Self:
         """Return the resolved instruction. Defaults to self."""
         return self
 
-    def process(self, state: ScheduleState, backend: _Backend) -> None:
+    def process(self, state: ScheduleState, backend: B_contra) -> None:
         """Process the instruction, modifying the schedule state accordingly."""
 
 
 def register_instruction(
-    instruction: type[Instruction], spec: str, backend: str
+    instruction: type[Instruction[Any]], spec: str, backend: str
 ) -> None:
     """Register an instruction as an action for a backend."""
     instruction.backend = backend
@@ -73,7 +75,7 @@ def validate_instruction(
 
 
 SchedulerArgs = Int
-InstructionSpec = str | type[Instruction]
+InstructionSpec = str | type[Instruction[Any]]
 InstructionArgs = tuple[Int, ...]
 # Mypy does not support Any in Unpack, so we use Int as a placeholder
 
@@ -109,7 +111,7 @@ def _parse_args(args: list[Any]) -> tuple[Any, ...]:
 
 def parse_instruction(
     action: SingleAction, backend: str
-) -> tuple[Instruction, Time | None, float | None]:
+) -> tuple[Instruction[Any], Time | None, float | None]:
     """Parse a single action action into an Instruction.
 
     Parameters

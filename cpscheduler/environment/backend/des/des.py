@@ -1,13 +1,13 @@
 """DES Backend class."""
 
-from collections.abc import Iterator
+from __future__ import annotations
+
 from heapq import heappop, heappush
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from mypy_extensions import mypyc_attr
 from typing_extensions import override
 
-from cpscheduler.environment.backend import Instruction
 from cpscheduler.environment.backend.backend import ScheduleBackend
 from cpscheduler.environment.backend.des.base import (
     EventID,
@@ -18,13 +18,30 @@ from cpscheduler.environment.backend.des.base import (
     TimeSlot,
 )
 from cpscheduler.environment.constants import MAX_TIME, TaskID, Time
-from cpscheduler.environment.state import ScheduleState
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from cpscheduler.environment.backend import Instruction
+    from cpscheduler.environment.state import ScheduleState
+
 
 TIMED_STAGE = 0
 NON_TIMED_STAGE = 1
 TIME_ADVANCE_STAGE = 2
 
 
+# FUTURE: There are a lot of changes I want to make in this backend that I
+# cannot implement in the current version (0.9.0) due to other higher priority changes.
+# Here is a list of changes that I think may enhance this backend:
+#   1. A better way of detecting whether an instruction is deadlocked is by
+# implementing a method alongside `earliest_start`, like `is_unlocked`, which
+# hints to the backend whether the time in the earliest start is exact, or an heuristic.
+#
+#   2. There is no way of a ready instruction to block other non-timed instructions.
+# This behavior is valuable for the case where we introduce the NOOP instruction.
+# Instead of trying to execute a task now, the NOOP jumps to the next decision point.
+# This is the mechanism in some RL environmnts to avoid a forced non-delay generation.
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
 class DESBackend(ScheduleBackend):
     """Discrete Event Schedule kernel for managing and processing events in the simulation.
@@ -296,7 +313,7 @@ class DESBackend(ScheduleBackend):
     @override
     def add_instruction(
         self,
-        instruction: Instruction,
+        instruction: Instruction[DESBackend],
         time: Time | None = None,
         priority: float | None = None,
     ) -> EventID:

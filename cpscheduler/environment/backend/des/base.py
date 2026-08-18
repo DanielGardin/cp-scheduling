@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, ClassVar, TypeAlias
 
-from typing_extensions import override
-
 from cpscheduler.environment.backend.actions import Instruction
 from cpscheduler.environment.constants import EzPickle, Time
 
@@ -46,10 +44,6 @@ class SimulationEvent(Instruction["DESBackend"]):
 
     blocking: ClassVar[bool] = False
 
-    @override
-    def resolve(self, state: ScheduleState) -> SimulationEvent:
-        return self
-
     # This are only used for C events
     def earliest_time(self, state: ScheduleState) -> Time | None:
         """Calculate the earliest time this event can be processed, given the current state.
@@ -60,10 +54,6 @@ class SimulationEvent(Instruction["DESBackend"]):
     def is_ready(self, state: ScheduleState, backend: DESBackend) -> bool:
         """Check if the event is ready to be processed, given the current state."""
         return True
-
-    @override
-    def process(self, state: ScheduleState, backend: DESBackend) -> None:
-        pass
 
 
 # B-events (rank=-1) are processed before any C-event (rank>=0)
