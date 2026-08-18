@@ -7,9 +7,10 @@ with constraint propagation.
 """
 
 from collections.abc import Iterable, Mapping
-from typing import TYPE_CHECKING, Any, Generic, Literal, cast
+from enum import Enum
+from typing import TYPE_CHECKING, Any, Generic, cast
 
-from typing_extensions import TypeVar, assert_never
+from typing_extensions import TypeVar
 
 from cpscheduler.environment.backend import (
     ActionType,
@@ -43,18 +44,19 @@ from cpscheduler.environment.utils import (
 if TYPE_CHECKING:
     from cpscheduler.environment.component import Component
 
-# Event fields and kinds
 
-EnvStatusType = Literal[0, 1, 2]
+class EnvStatus(Enum):
+    """Environment control flow."""
 
-# No instance loaded. Constraints and Objectives can be added
-UNLOADED: Literal[0] = 0
+    UNLOADED = 0
+    """No instance loaded. Constraints and Objectives can be added"""
 
-# Instance loaded and components initialized, configuration frozen
-LOADED: Literal[1] = 1
+    LOADED = 1
+    """Instance loaded and components initialized, configuration frozen"""
 
-# State globally consistent, instance frozen
-RUNNING: Literal[2] = 2
+    RUNNING = 2
+    """State globally consistent, instance frozen"""
+
 
 ASSIGNMENT = VarField.ASSIGNMENT
 START_LB = VarField.START_LB
@@ -135,7 +137,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
     # Helper variables
     event_count: int
 
-    _status: EnvStatusType
+    _status: EnvStatus
 
     # FUTURE: Mypyc issue https://github.com/mypyc/mypyc/issues/961
     # The trick used here produces a false-positive when type checking:
@@ -234,7 +236,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             Defaults to False.
 
         """
-        self._status = UNLOADED
+        self._status = EnvStatus.UNLOADED
 
         machine_setup = machine_setup or ScheduleSetup()
         constraints = constraints or ()
@@ -312,12 +314,12 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
     @property
     def loaded(self) -> bool:
         """Indicates whether an instance has been loaded and the environment is initialized."""
-        return self._status != UNLOADED
+        return self._status != EnvStatus.UNLOADED
 
     @property
     def running(self) -> bool:
         """Indicates whether the environment is currently running an episode."""
-        return self._status == RUNNING
+        return self._status == EnvStatus.RUNNING
 
     @property
     def all_constraints(self) -> tuple[Constraint, ...]:
@@ -328,13 +330,13 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         """Return a string representation of the environment's configuration and state."""
         entry = self.get_entry()
 
-        if self._status == UNLOADED:
+        if self._status == EnvStatus.UNLOADED:
             return f"SchedulingEnv({entry}, n_tasks=0)"
 
         state = self.state
         n_tasks = state.n_tasks
 
-        if self._status == LOADED:
+        if self._status == EnvStatus.LOADED:
             return f"SchedulingEnv({entry}, n_tasks={n_tasks})"
 
         if state.infeasible:
@@ -354,7 +356,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         and objective modifications.
         """
         self.instance.reset()
-        self._status = UNLOADED
+        self._status = EnvStatus.UNLOADED
 
     def required_features(
         self, show_optional: bool = False
@@ -413,7 +415,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             tracer.initialize(problem_instance)
 
         self.state = ScheduleState(problem_instance)
-        self._status = LOADED
+        self._status = EnvStatus.LOADED
 
     def add_metric(self, name: str, metric: Metric) -> None:
         """Add a metric to the environment."""
@@ -575,7 +577,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
                 return
 
             else:
-                assert_never(field)
+                raise ValueError(f"UNREACHABLE: No field named {field.name}")
 
             idx += 1
 
@@ -642,7 +644,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
                 self.load_instance(*ensure_iterable(sample))
 
-        if self._status == UNLOADED:
+        if self._status == EnvStatus.UNLOADED:
             raise ValueError(
                 "Environment has not been loaded with an instance. "
                 "Please call reset(options={'instance':<instance>}) or "
@@ -674,7 +676,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         observation.update(state, self.backend)
         self.reward.reset(state)
 
-        self._status = RUNNING
+        self._status = EnvStatus.RUNNING
 
         return observation, self.get_info()
 
@@ -725,8 +727,8 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         """
         state = self.state
 
-        if self._status != RUNNING:
-            if self._status == UNLOADED:
+        if self._status != EnvStatus.RUNNING:
+            if self._status == EnvStatus.UNLOADED:
                 raise RuntimeError(
                     "Environment was not reset after loading an instance, or "
                     "wasn't loaded. Please either call "
@@ -775,7 +777,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             If environment is not in RUNNING state.
 
         """
-        if self._status != RUNNING:
+        if self._status != EnvStatus.RUNNING:
             raise RuntimeError(
                 "Cannot render an environment during configuration."
             )

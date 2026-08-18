@@ -1,23 +1,19 @@
 """CSP domain containers for scheduling variables."""
 
-from typing import Final, Literal
+from enum import Enum
 
 from mypy_extensions import mypyc_attr
-from typing_extensions import assert_never
 
 from cpscheduler.environment.constants import (
     GLOBAL_MACHINE_ID,
     MAX_TIME,
     MIN_TIME,
-    Enum,
     EzPickle,
     MachineID,
     TaskID,
     Time,
 )
 from cpscheduler.environment.instance import ProblemInstance
-
-PresenceType = Literal[0b00, 0b01, 0b10, 0b11]
 
 
 class Presence(Enum):
@@ -37,40 +33,31 @@ class Presence(Enum):
 
     """
 
-    INFEASIBLE: Final[Literal[0b00]] = 0b00
+    INFEASIBLE = 0b00
     "Task cannot be present nor absent, domain wipeout (infeasible)."
 
-    PRESENT: Final[Literal[0b01]] = 0b01
+    PRESENT = 0b01
     "Task must be present in the final schedule."
 
-    ABSENT: Final[Literal[0b10]] = 0b10
+    ABSENT = 0b10
     "Task must be absent from the final schedule."
 
-    UNDEFINED: Final[Literal[0b11]] = 0b11
+    UNDEFINED = 0b11
     "Task may be present or absent (initial value for optional tasks)."
+
+    def contains_present(self) -> bool:
+        """Return whether its presence can be PRESENT."""
+        return bool(self.value & 0b01)
+
+    def contains_absent(self) -> bool:
+        """Return whether its presence can be PRESENT."""
+        return bool(self.value & 0b10)
 
 
 INFEASIBLE = Presence.INFEASIBLE
 PRESENT = Presence.PRESENT
 ABSENT = Presence.ABSENT
 UNDEFINED = Presence.UNDEFINED
-
-
-def presence_to_str(presence: PresenceType) -> str:
-    """Return the string name for a presence flag."""
-    if presence == INFEASIBLE:
-        return "INFEASIBLE"
-
-    if presence == PRESENT:
-        return "PRESENT"
-
-    if presence == ABSENT:
-        return "ABSENT"
-
-    if presence == UNDEFINED:
-        return "UNDEFINED"
-
-    assert_never(presence)
 
 
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
@@ -171,7 +158,7 @@ class TaskDomains(EzPickle):
     remaining_times: list[Time]
 
     assignment: list[MachineID]
-    presence: list[PresenceType]
+    presence: list[Presence]
 
     start: Bounds
     end: Bounds
@@ -203,7 +190,7 @@ class TaskDomains(EzPickle):
         remaining_times = [MAX_TIME] * (n_tasks * n_machines)
 
         assignment = [GLOBAL_MACHINE_ID] * n_tasks
-        presence: list[PresenceType] = [
+        presence: list[Presence] = [
             UNDEFINED if optional else PRESENT for optional in instance.optional
         ]
 

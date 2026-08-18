@@ -4,7 +4,7 @@ This module provides ScheduleState, the core kernel for maintaining and querying
 the state of a constraint satisfaction problem (CSP).
 """
 
-from typing import Any, Literal, cast
+from typing import Any
 
 from mypy_extensions import mypyc_attr
 
@@ -19,16 +19,10 @@ from cpscheduler.environment.constants import (
     Time,
 )
 from cpscheduler.environment.instance import ProblemInstance
-from cpscheduler.environment.state.csp import (
-    Presence,
-    PresenceType,
-    TaskDomains,
-    presence_to_str,
-)
+from cpscheduler.environment.state.csp import Presence, TaskDomains
 from cpscheduler.environment.state.events import (
     DomainEventQueue,
     VarField,
-    VarFieldType,
 )
 from cpscheduler.environment.utils.debug import (
     validate_domain_bounds,
@@ -304,16 +298,13 @@ class ScheduleState(EzPickle):
         self.domains.dependencies[task_id].discard(name)
 
     ## Event-emitting methods
-    def _restrict_presence(
-        self, task_id: TaskID, mask: Literal[0b01, 0b10]
-    ) -> None:
+    def _restrict_presence(self, task_id: TaskID, mask: Presence) -> None:
         domains = self.domains
         old_presence = domains.presence[task_id]
         # Bitwise operations on Literal unions are inferred as int by type checkers.
         # Explicitly narrow back to PresenceType.
-        new_presence = cast("PresenceType", old_presence & mask)
+        new_presence = Presence(old_presence.value & mask.value)
 
-        field: VarFieldType
         if new_presence == old_presence:
             return
 
@@ -728,11 +719,11 @@ class ScheduleState(EzPickle):
                 )
 
             presence = domains.presence[task_id]
-            if (presence & PRESENT) == 0:
+            if not presence.contains_present():
                 raise RuntimeError(
                     f"Cannot assign task {task_id} to machine {machine_id} at time "
                     f"{start_time}, it violates the presence constraints for that "
-                    f"task: presence = {presence_to_str(presence)}."
+                    f"task: presence = {presence.name}."
                 )
 
         self.require_task(task_id)

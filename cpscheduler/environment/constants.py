@@ -52,65 +52,6 @@ MAX_TIME: Final[Time] = (1 << 31) - 1
 GLOBAL_MACHINE_ID: MachineID = -1
 
 # ------------------------------------------------------------------------------
-# Enums
-
-
-@mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
-class Enum:
-    """Lightweight namespace-style enumeration base class.
-
-    Subclasses define enumeration members as class attributes. The total
-    number of declared members is computed automatically during subclass
-    creation.
-
-    This implementation is intended for low-overhead use in mypyc-compiled
-    code and does not provide the full semantics of :class:`enum.Enum`.
-
-    Methods
-    -------
-    count() -> int
-        Return the number of enumeration members defined on the subclass.
-
-    Examples
-    --------
-    >>> class MyEnum(Enum):
-    ...     FIRST = 0
-    ...     SECOND = 1
-    >>> MyEnum.count()
-    2
-
-    Notes
-    -----
-    - Enumeration classes cannot be instantiated.
-    - Any non-dunder class attribute contributes to the enumeration count.
-
-    """
-
-    __enum_count__: ClassVar[int] = 0
-
-    def __new__(cls) -> Self:
-        """Prevent instantiation of enum classes.
-
-        Enums are not meant to be instantiated, they serve as namespaces for
-        constant values.
-        """
-        raise TypeError(f"Cannot instantiate enum class {cls.__name__}")
-
-    def __init_subclass__(cls) -> None:
-        """Compute the number of enumeration members defined by the subclass."""
-        cls.__enum_count__ = sum(
-            1
-            for k in vars(cls)
-            if not (k.startswith("__") and k.endswith("__"))
-        )
-
-    @classmethod
-    def count(cls) -> int:
-        """Return the total number of enumeration values defined in the subclass."""
-        return cls.__enum_count__
-
-
-# ------------------------------------------------------------------------------
 # Singletons
 
 
