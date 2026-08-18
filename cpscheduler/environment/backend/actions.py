@@ -157,7 +157,14 @@ def parse_instruction(
     args = _parse_args(spec_args)
 
     if isinstance(spec, str):
-        cls = instructions[backend][spec]
+        instruction_set = instructions[backend]
+
+        if spec not in instruction_set:
+            raise ValueError(
+                f"Instruction '{spec}' is not defined for backend {backend}."
+            )
+
+        cls = instruction_set[spec]
 
         return cls(*args), time, None
 
