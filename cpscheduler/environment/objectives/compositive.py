@@ -4,7 +4,7 @@ from collections.abc import Iterable
 
 from typing_extensions import override
 
-from cpscheduler.environment.constants import Float, MachineID, TaskID
+from cpscheduler.environment.constants import Float, MachineID, TaskID, Time
 from cpscheduler.environment.instance import ProblemInstance
 from cpscheduler.environment.objectives.base import Objective
 from cpscheduler.environment.state import ScheduleState
@@ -63,9 +63,9 @@ class ComposedObjective(Objective):
     @override
     def regular(self) -> bool:
         return all(
-            (coefficient == 0 or objective.regular)
-            and not (coefficient < 0 and objective.regular)
-            for objective, coefficient in zip(
+            (coef == 0 or objective.regular)
+            and not (coef < 0 and objective.regular)
+            for objective, coef in zip(
                 self.objectives, self.coefficients, strict=False
             )
         )
@@ -80,47 +80,97 @@ class ComposedObjective(Objective):
         for objective in self.objectives:
             objective.initialize(instance)
 
+    @property
     @override
-    def on_task_started(
-        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
-    ) -> None:
-        for objective in self.objectives:
-            objective.on_task_started(task_id, machine_id, state)
-
-    @override
-    def on_task_paused(
-        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
-    ) -> None:
-        for objective in self.objectives:
-            objective.on_task_paused(task_id, machine_id, state)
-
-    @override
-    def on_task_completed(
-        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
-    ) -> None:
-        for objective in self.objectives:
-            objective.on_task_completed(task_id, machine_id, state)
-
-    @override
-    def on_task_machine_infeasible(
-        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
-    ) -> None:
-        for objective in self.objectives:
-            objective.on_task_machine_infeasible(task_id, machine_id, state)
-
-    @override
-    def get_current(self, state: ScheduleState) -> float:
+    def lb(self) -> float:
         return sum(
-            coefficient * objective.get_current(state)
-            for objective, coefficient in zip(
+            coef * (objective.lb if coef >= 0 else objective.ub)
+            for objective, coef in zip(
+                self.objectives, self.coefficients, strict=False
+            )
+        )
+
+    @property
+    @override
+    def ub(self) -> float:
+        return sum(
+            coef * (objective.ub if coef >= 0 else objective.lb)
+            for objective, coef in zip(
+                self.objectives, self.coefficients, strict=False
+            )
+        )
+
+    @property
+    @override
+    def current(self) -> float:
+        return sum(
+            coef * objective.current
+            for objective, coef in zip(
                 self.objectives, self.coefficients, strict=False
             )
         )
 
     @override
-    def __call__(self, state: ScheduleState) -> float:
+    def on_assignment(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        for objective in self.objectives:
+            objective.on_assignment(task_id, machine_id, state)
+
+    @override
+    def on_start_lb(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        for objective in self.objectives:
+            objective.on_assignment(task_id, machine_id, state)
+
+    @override
+    def on_start_ub(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        for objective in self.objectives:
+            objective.on_start_ub(task_id, machine_id, state)
+
+    @override
+    def on_end_lb(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        for objective in self.objectives:
+            objective.on_end_lb(task_id, machine_id, state)
+
+    @override
+    def on_end_ub(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        for objective in self.objectives:
+            objective.on_end_ub(task_id, machine_id, state)
+
+    @override
+    def on_presence(self, task_id: TaskID, state: ScheduleState) -> None:
+        for objective in self.objectives:
+            objective.on_presence(task_id, state)
+
+    @override
+    def on_absence(self, task_id: TaskID, state: ScheduleState) -> None:
+        for objective in self.objectives:
+            objective.on_absence(task_id, state)
+
+    @override
+    def on_infeasibility(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        for objective in self.objectives:
+            objective.on_infeasibility(task_id, machine_id, state)
+
+    @override
+    def on_time_update(self, time: Time, state: ScheduleState) -> None:
+        for objective in self.objectives:
+            objective.on_time_update(time, state)
+
+    @override
+    def compute(self, state: ScheduleState) -> float:
         return sum(
-            coefficient * objective(state)
+            coefficient * objective.compute(state)
             for objective, coefficient in zip(
                 self.objectives, self.coefficients, strict=False
             )

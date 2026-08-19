@@ -1,8 +1,12 @@
 """Renderer for visualizing task schedules using the Plotly backend."""
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-from cpscheduler.environment.render.base import GLASBEY_BW_PALETTE, Renderer
+from cpscheduler.environment.render import Renderer
+from cpscheduler.environment.render.utils import (
+    GLASBEY_BW_PALETTE,
+    iter_task_intervals,
+)
 from cpscheduler.environment.state import ScheduleState
 
 if TYPE_CHECKING:
@@ -26,58 +30,29 @@ class PlotlyRenderer(Renderer):
 
         fig = Figure()
 
-        start_times: list[int] = []
-        durations: list[int] = []
-        machines: list[int] = []
-        task_ids: list[int] = []
         template = (
             "Task %{customdata[0]} [Job %{customdata[1]}]:<br>"
             "Period: %{customdata[2]}-%{customdata[3]}<br>"
             "Machine: %{y}<extra></extra>"
         )
-        instance = state.instance
-        history = state.runtime.history
 
-        for job_id, job_tasks in enumerate(instance.job_tasks):
-            start_times.clear()
-            durations.clear()
-            machines.clear()
-            task_ids.clear()
-
-            for task_id in job_tasks:
-                for entry in history[task_id]:
-                    start_times.append(entry.start_time)
-                    durations.append(entry.end_time - entry.start_time)
-                    machines.append(entry.machine_id)
-                    task_ids.append(task_id)
-
-            customdata: Any = [
-                [
-                    task_ids[i],
-                    job_id,
-                    start_times[i],
-                    start_times[i] + durations[i],
-                ]
-                for i in range(len(start_times))
-            ]
-
+        for task, job, machine, start, end in iter_task_intervals(state):
             fig.add_trace(
                 Bar(
-                    x=durations,
-                    y=machines,
-                    base=start_times,
+                    x=[end - start],
+                    y=[machine],
+                    base=[start],
                     orientation="h",
-                    name=f"Job {job_id}",
-                    customdata=customdata,
+                    customdata=(task, job, start, end),
                     hovertemplate=template,
                     marker={
-                        "color": GLASBEY_BW_PALETTE[job_id % 256],
+                        "color": GLASBEY_BW_PALETTE[job % 256],
                         "line": {"color": "white", "width": 0.5},
                     },
                 )
             )
 
-        max_time = max(float(state.time) / 0.95, 1.0)
+        max_time = max(int(state.get_latest_end()), 1)
 
         fig.update_layout(
             width=1600,

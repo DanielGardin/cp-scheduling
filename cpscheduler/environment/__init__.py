@@ -72,8 +72,15 @@ __all__ = [  # noqa: RUF022
     "WeightedTardyJobs",
     "TotalFlowTime",
     "DiscountedTotalCompletionTime",
+    # Observations
+    "DefaultObservation",
+    # Backends
+    "DESBackend",
+    # Rewards
+    "DenseRewardStrategy",
 ]
 
+from .backend import DESBackend
 from .constraints import (
     BatchConstraint,
     ConstantProcessingTime,
@@ -114,6 +121,8 @@ from .objectives import (
     WeightedTardiness,
     WeightedTardyJobs,
 )
+from .observation import DefaultObservation
+from .reward import DenseRewardStrategy
 from .setups import (
     FlexibleJobShopSetup,
     FlowShopSetup,

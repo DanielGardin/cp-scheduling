@@ -16,10 +16,12 @@ class PreemptionConstraint(PassiveConstraint):
     and resumed later.
     """
 
-    @override
-    def initialize(self, instance: ProblemInstance) -> None:
-        for task_id in range(instance.n_tasks):
-            instance.set_preemption(task_id)
+    def __init__(self) -> None:
+        from cpscheduler import __version__
+
+        raise NotImplementedError(
+            f"Preemption is not supported as in version {__version__}."
+        )
 
     @classmethod
     @override

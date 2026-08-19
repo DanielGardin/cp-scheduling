@@ -182,35 +182,3 @@ def test_observation_space_updates_on_load_instance_and_reset_options() -> None:
     obs3, _ = env.reset(options={})
     assert env.observation_space.contains(obs2)
     assert env.observation_space.contains(obs3)
-
-
-def test_from_env_delegation_and_info_mapping_preserved() -> None:
-    pytest.importorskip("gymnasium")
-
-    from cpscheduler.environment import SchedulingEnv, SingleMachineSetup
-    from cpscheduler.gym import SchedulingEnvGym
-
-    core = SchedulingEnv(
-        SingleMachineSetup(disjunctive=False), instance={"processing_time": [1]}
-    )
-    core.reset()
-
-    gym_env = SchedulingEnvGym.from_env(core)
-
-    # `core` attribute should reference the same underlying env
-    assert gym_env.core is core
-
-    _, info = gym_env.reset()
-    assert isinstance(info, dict)
-
-    # step should return a plain dict for info (mapping preserved)
-    *_, info2 = gym_env.step(("execute", 0))
-    assert isinstance(info2, dict)
-
-    # attribute access should delegate to core (e.g., get_entry exists on core)
-    assert gym_env.get_entry() == core.get_entry()
-
-    *_, terminated, truncated, _ = gym_env.step(("execute", 0))
-
-    assert not truncated
-    assert isinstance(terminated, bool)

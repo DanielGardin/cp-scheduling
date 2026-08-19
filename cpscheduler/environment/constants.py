@@ -14,7 +14,6 @@ from typing import (
     Any,
     ClassVar,
     Final,
-    Literal,
     SupportsFloat,
     SupportsIndex,
     SupportsInt,
@@ -51,112 +50,6 @@ MAX_TIME: Final[Time] = (1 << 31) - 1
 
 # Sentinel machine identifier representing non-machine-specific operations.
 GLOBAL_MACHINE_ID: MachineID = -1
-
-# ------------------------------------------------------------------------------
-# Enums
-
-
-@mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
-class Enum:
-    """Lightweight namespace-style enumeration base class.
-
-    Subclasses define enumeration members as class attributes. The total
-    number of declared members is computed automatically during subclass
-    creation.
-
-    This implementation is intended for low-overhead use in mypyc-compiled
-    code and does not provide the full semantics of :class:`enum.Enum`.
-
-    Methods
-    -------
-    count() -> int
-        Return the number of enumeration members defined on the subclass.
-
-    Examples
-    --------
-    >>> class MyEnum(Enum):
-    ...     FIRST = 0
-    ...     SECOND = 1
-    >>> MyEnum.count()
-    2
-
-    Notes
-    -----
-    - Enumeration classes cannot be instantiated.
-    - Any non-dunder class attribute contributes to the enumeration count.
-
-    """
-
-    __enum_count__: ClassVar[int] = 0
-
-    def __new__(cls) -> Self:
-        """Prevent instantiation of enum classes.
-
-        Enums are not meant to be instantiated, they serve as namespaces for
-        constant values.
-        """
-        raise TypeError(f"Cannot instantiate enum class {cls.__name__}")
-
-    def __init_subclass__(cls) -> None:
-        """Compute the number of enumeration members defined by the subclass."""
-        cls.__enum_count__ = sum(
-            1
-            for k in vars(cls)
-            if not (k.startswith("__") and k.endswith("__"))
-        )
-
-    @classmethod
-    def count(cls) -> int:
-        """Return the total number of enumeration values defined in the subclass."""
-        return cls.__enum_count__
-
-
-StatusType = Literal[0, 1, 2, 3]
-
-
-class Status(Enum):
-    """Enumeration of task execution states.
-
-    Tasks transition between execution states during schedule evaluation:
-
-    ``AWAITING -> EXECUTING -> COMPLETED``
-
-    If preemption is enabled, tasks may additionally transition through
-    ``PAUSED`` states before completion.
-
-    Attributes
-    ----------
-    AWAITING : Literal[0]
-        Task is eligible for future execution but is not currently running.
-
-    PAUSED : Literal[1]
-        Task execution has been temporarily suspended.
-
-    EXECUTING : Literal[2]
-        Task is actively executing on an assigned machine.
-
-    COMPLETED : Literal[3]
-        Task execution has finished.
-
-    Notes
-    -----
-    - Enumeration values are stable integer constants.
-    - ``PAUSED`` is only relevant for preemptive scheduling models.
-
-    """
-
-    AWAITING: Final[Literal[0]] = 0
-    """Task is awaiting execution, typically when time <= start_lb."""
-
-    PAUSED: Final[Literal[1]] = 1
-    """Task has been started, but has been paused and now is waiting to be resumed."""
-
-    EXECUTING: Final[Literal[2]] = 2
-    """Task is currently executing on a machine."""
-
-    COMPLETED: Final[Literal[3]] = 3
-    """Task has been completed and is no longer active in the schedule."""
-
 
 # ------------------------------------------------------------------------------
 # Singletons

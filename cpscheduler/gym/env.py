@@ -10,7 +10,7 @@ from collections.abc import Iterable, Mapping
 from typing import Any, overload
 
 from gymnasium import Env, Space
-from typing_extensions import TypeVar
+from typing_extensions import TypeVar, override
 
 from cpscheduler.environment import (
     Constraint,
@@ -18,11 +18,12 @@ from cpscheduler.environment import (
     ScheduleSetup,
     SchedulingEnv,
 )
-from cpscheduler.environment.des import ActionType
+from cpscheduler.environment.backend import ActionType, ScheduleBackend
 from cpscheduler.environment.instance import FeatureMetadata
 from cpscheduler.environment.observation import Observation
 from cpscheduler.environment.observation.default import DefaultObsType
 from cpscheduler.environment.render import Renderer
+from cpscheduler.environment.reward import RewardStrategy
 from cpscheduler.environment.specs import ObservationSpec
 from cpscheduler.environment.tracer import Tracer
 from cpscheduler.environment.utils import InstanceGenerator
@@ -56,6 +57,8 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         constraints: Iterable[Constraint] | None = None,
         objective: Objective | None = None,
         observation: None = None,
+        backend: ScheduleBackend | str = "des",
+        reward: RewardStrategy | None = None,
         instance: InstanceTypes | None = None,
         metrics: Mapping[str, Metric[Any]] | None = None,
         tracers: Iterable[Tracer] | None = None,
@@ -71,6 +74,8 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         objective: Objective | None = None,
         *,
         observation: Observation[ObsType],
+        backend: ScheduleBackend | str = "des",
+        reward: RewardStrategy | None = None,
         instance: InstanceTypes | None = None,
         metrics: Mapping[str, Metric[Any]] | None = None,
         tracers: Iterable[Tracer] | None = None,
@@ -83,6 +88,8 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         constraints: Iterable[Constraint] | None = None,
         objective: Objective | None = None,
         observation: Observation[ObsType] | None = None,
+        backend: ScheduleBackend | str = "des",
+        reward: RewardStrategy | None = None,
         instance: InstanceTypes | None = None,
         metrics: Mapping[str, Metric[Any]] | None = None,
         tracers: Iterable[Tracer] | None = None,
@@ -115,6 +122,14 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         observation : ObsT_co, optional
             Observation class used to build RL observations. Defaults to
             `DefaultObservation`.
+
+        backend: ScheduleBackend, str, optional
+            The schdeule dispatcher used in the environment. Defaults to the
+            DES kernel.
+
+        reward: RewardStrategy, optional
+            The reward strategy employed to the objective class. Defaults to
+            sparse reward at the terminal state.
 
         instance : InstanceTypes or InstanceGenerator, optional
             Either concrete instance data or a generator stored for lazy sampling.
@@ -157,7 +172,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         self._current_fingerprint = self.fingerprint
         self.observation_space = self._get_observation_space()
         self.metadata = {
-            "render_modes": ["human"],
+            "render_modes": ["ansi"],
             "render_fps": 50,
         }
 
@@ -369,3 +384,10 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
     def get_entry(self) -> str:
         """Get a string representation of the environment's configuration."""
         return self._core.get_entry()
+
+    @override
+    def render(self) -> Any:
+        if self.render_mode == "ansi":
+            return self._core.renderer.build_gantt(self._core.state)
+
+        return None

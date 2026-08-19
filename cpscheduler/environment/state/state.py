@@ -1,41 +1,29 @@
 """Scheduling Environment State Module.
 
 This module provides ScheduleState, the core kernel for maintaining and querying
-the state of a constraint satisfaction problem (CSP) combined with discrete event
-simulation (DES). The state objects coordinate between domain constraints
-(e.g., task start/end time bounds, machine feasibility) and runtime simulation
-(e.g., task execution, completion events).
+the state of a constraint satisfaction problem (CSP).
 """
 
-from typing import Any, Literal, cast
+from typing import Any
 
 from mypy_extensions import mypyc_attr
 
 from cpscheduler.environment.constants import (
     GLOBAL_MACHINE_ID,
     MAX_TIME,
+    MIN_TIME,
     EzPickle,
     JobID,
     MachineID,
-    Status,
     TaskID,
     Time,
 )
 from cpscheduler.environment.instance import ProblemInstance
-from cpscheduler.environment.state.csp import (
-    Presence,
-    PresenceType,
-    TaskDomains,
-    presence_to_str,
-)
+from cpscheduler.environment.state.csp import Presence, TaskDomains
 from cpscheduler.environment.state.events import (
     DomainEventQueue,
-    RuntimeEventKind,
-    RuntimeEventQueue,
     VarField,
-    VarFieldType,
 )
-from cpscheduler.environment.state.runtime import RuntimeState, TaskHistory
 from cpscheduler.environment.utils.debug import (
     validate_domain_bounds,
     validate_machine_id,
@@ -45,11 +33,6 @@ PRESENT = Presence.PRESENT
 ABSENT = Presence.ABSENT
 INFEASIBLE = Presence.INFEASIBLE
 
-AWAITING = Status.AWAITING
-PAUSED = Status.PAUSED
-EXECUTING = Status.EXECUTING
-COMPLETED = Status.COMPLETED
-
 ASSIGNMENT = VarField.ASSIGNMENT
 START_LB = VarField.START_LB
 START_UB = VarField.START_UB
@@ -58,39 +41,22 @@ END_UB = VarField.END_UB
 PRESENCE = VarField.PRESENCE
 ABSENCE = VarField.ABSENCE
 MACHINE_INFEASIBLE = VarField.MACHINE_INFEASIBLE
-PAUSE = VarField.PAUSE
-BOUNDS_RESET = VarField.BOUNDS_RESET
 STATE_INFEASIBLE = VarField.STATE_INFEASIBLE
-
-TASK_STARTED = RuntimeEventKind.TASK_STARTED
-TASK_PAUSED = RuntimeEventKind.TASK_PAUSED
-TASK_COMPLETED = RuntimeEventKind.TASK_COMPLETED
-TASK_MACHINE_INFEASIBLE = RuntimeEventKind.TASK_MACHINE_INFEASIBLE
+GLOBAL_TIME = VarField.GLOBAL_TIME
 
 UNKNOWN_TASK: TaskID = -1
 
 
+# FUTURE: Study implementing backtracking functionality via trails
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
 class ScheduleState(EzPickle):
-    """Core CSP/DES state kernel for scheduling problems.
+    """Core state kernel for scheduling problems.
 
     ScheduleState maintains the constraint satisfaction problem (CSP) state
-    (variable domains) and discrete event simulation (DES) state (task execution
-    and completion) for a scheduling environment.
+    (variable domains) for a scheduling environment.
     It provides a API to read and mutate state, delegating constraint
     propagation logic to the environment via event queues.
 
-    The state maintains two views:
-
-    1. **CSP View (Domains)**: Represents the feasible space containing the domain variables:
-        - Start/End time bounds (per task and machine)
-        - Machine feasibility sets (which machines can process each task)
-        - Presence bitfield (whether each task can be present, absent, or is infeasible)
-
-    2. **DES View (Runtime)**: Represents the dynamic execution state of the schedule:
-       - Task scheduling history (machine assignment, start/end times)
-       - Task dependencies and lock status
-       - Current task statuses (AWAITING, EXECUTING, PAUSED, COMPLETED)
     """
 
     instance: ProblemInstance
@@ -98,16 +64,12 @@ class ScheduleState(EzPickle):
     n_jobs: int
     n_machines: int
 
-    time: Time
-
     infeasible: bool
+    remaining_tasks: int
 
     domains: TaskDomains
 
-    runtime: RuntimeState
-
     domain_event_queue: DomainEventQueue
-    runtime_event_queue: RuntimeEventQueue
 
     _debug: bool
 
@@ -125,16 +87,14 @@ class ScheduleState(EzPickle):
         self.n_jobs = instance.n_jobs
         self.n_machines = instance.n_machines
 
-        self.time = 0
-
         self.infeasible = False
+        self.remaining_tasks = self.n_tasks
+
         self._debug = instance.debug
 
         self.domains = TaskDomains(instance)
-        self.runtime = RuntimeState(instance)
 
         self.domain_event_queue = DomainEventQueue()
-        self.runtime_event_queue = RuntimeEventQueue()
 
     # Properties
     @property
@@ -145,67 +105,19 @@ class ScheduleState(EzPickle):
     # Flow control methods
     def reset(self) -> None:
         """Reset state to initial condition while preserving the problem instance."""
-        self.time = 0
         self.infeasible = False
+        self.remaining_tasks = self.instance.n_tasks
 
         self.domains = TaskDomains(self.instance)
-        self.runtime = RuntimeState(self.instance)
-
         self.domain_event_queue.clear()
-        self.runtime_event_queue.clear()
 
     def is_terminal(self) -> bool:
-        """Return True if the problem is infeasible or all tasks are completed/absent."""
-        return self.infeasible or (
-            not self.runtime.awaiting_tasks and not self.runtime.executing_tasks
-        )
-
-    def advance_time_(self, new_time: Time) -> None:
-        """Advance simulation time.
-
-        Moves the simulation clock forward (must be monotonically increasing) and
-        marks any executing tasks that have reached their planned end times as
-        completed.
-        Queues TASK_COMPLETED events for each completed task.
-
-        Parameters
-        ----------
-        new_time : Time
-            New simulation time (must be > current time).
-
-        """
-        assert new_time > self.time, (
-            "Advance time must be monotonic increasing."
-        )
-
-        self.time = new_time
-
-        runtime = self.runtime
-
-        executing_tasks = runtime.executing_tasks
-        completed_tasks = runtime.completed_tasks
-        status = runtime.status
-
-        for task_id in list(executing_tasks):
-            history = runtime.history[task_id]
-            end_time = history[-1].end_time
-            assignment = history[-1].machine_id
-
-            if end_time <= new_time:
-                executing_tasks.remove(task_id)
-                completed_tasks.add(task_id)
-
-                status[task_id] = COMPLETED
-                self.runtime_event_queue.add_event(
-                    task_id, TASK_COMPLETED, assignment
-                )
+        """Return True if the problem is infeasible or all tasks are assigned."""
+        return self.infeasible or self.remaining_tasks == 0
 
     # Problem Instance API methods
 
     ## Getter methods for instance parameters
-    def is_preemptive(self, task_id: TaskID) -> bool:
-        """Return whether a task allows preemption."""
-        return self.instance.preemptive[task_id]
 
     def is_optional(self, task_id: TaskID) -> bool:
         """Return whether a task is optional (can be left unassigned)."""
@@ -232,7 +144,7 @@ class ScheduleState(EzPickle):
         """Return a list of all machines that can process a task."""
         return self.instance.get_machines(task_id)
 
-    def get_job(self, task_id: TaskID) -> JobID:
+    def get_job_id(self, task_id: TaskID) -> JobID:
         """Return the job the task belongs to."""
         return self.instance.job_ids[task_id]
 
@@ -280,8 +192,12 @@ class ScheduleState(EzPickle):
         return self.domains.get_feasible_machines(task_id)
 
     def is_fixed(self, task_id: TaskID) -> bool:
-        """Return whether a task have been assigned to a specific machine."""
-        return self.domains.assignment[task_id] != GLOBAL_MACHINE_ID
+        """Return whether a task has been fixed."""
+        return self.domains.fixed[task_id]
+
+    def is_locked(self, task_id: TaskID) -> bool:
+        """Return whether a task has unresolved dependencies."""
+        return bool(self.domains.dependencies[task_id])
 
     def is_present(self, task_id: TaskID) -> bool:
         """Return whether a task is required to execute."""
@@ -305,28 +221,90 @@ class ScheduleState(EzPickle):
 
         return machine_id in machines
 
-    ## Setter methods for variable values, triggering constraint propagation through events
-    def _recompute_all_bounds(self, task_id: TaskID) -> None:
-        """Recompute all four global bounds (start/end, lb/ub) for a task."""
+    def can_start(
+        self,
+        task_id: TaskID,
+        time: Time,
+        machine_id: MachineID = GLOBAL_MACHINE_ID,
+    ) -> bool:
+        """Return whether a task can be scheduled on the given machine at the time.
+
+        A task is available if it is unlocked (all dependencies resolved) and the
+        time falls within the feasible start window [start_lb, start_ub)
+        on the machine(s).
+        """
+        if self.domains.dependencies[task_id]:
+            return False
+
+        start = self.domains.start
+
+        if machine_id == GLOBAL_MACHINE_ID:
+            row = task_id * self.n_machines
+
+            return any(
+                start.lbs[row + m_id] <= time < start.ubs[row + m_id]
+                for m_id in self.domains.feasible_machines[task_id]
+            )
+
+        if machine_id not in self.domains.feasible_machines[task_id]:
+            return False
+
+        idx = task_id * self.n_machines + machine_id
+        return start.lbs[idx] <= time < start.ubs[idx]
+
+    def get_unassigned_tasks(self) -> list[TaskID]:
+        """Return a list of unassigned task IDs."""
+        return [
+            task_id
+            for task_id, fixed in enumerate(self.domains.fixed)
+            if not fixed
+        ]
+
+    def get_unlocked_tasks(self) -> list[TaskID]:
+        """Return a list of unlocked task IDs (all dependencies resolved)."""
+        dependencies = self.domains.dependencies
+
+        return [
+            task_id
+            for task_id, fixed in enumerate(self.domains.fixed)
+            if not fixed and not dependencies[task_id]
+        ]
+
+    def get_available_tasks(self, time: Time) -> list[TaskID]:
+        """Return a list of available task IDs at that time."""
+        return [
+            task_id
+            for task_id, fixed in enumerate(self.domains.fixed)
+            if not fixed and self.can_start(task_id, time)
+        ]
+
+    def get_assigned_tasks(self) -> list[TaskID]:
+        """Return a list of tasks with assigned machines."""
+        presence = self.domains.presence
+
+        return [
+            task_id
+            for task_id, fixed in enumerate(self.domains.fixed)
+            if fixed and presence[task_id] == PRESENT
+        ]
+
+    ## Dependency-resolving methods
+    def add_dependency(self, task_id: TaskID, name: str) -> None:
+        """Add a named dependency to lock a task (remove from unlocked_tasks)."""
+        self.domains.dependencies[task_id].add(name)
+
+    def resolve_dependency(self, task_id: TaskID, name: str) -> None:
+        """Remove a named dependency from a task; add to unlocked if all resolved."""
+        self.domains.dependencies[task_id].discard(name)
+
+    ## Event-emitting methods
+    def _restrict_presence(self, task_id: TaskID, mask: Presence) -> None:
         domains = self.domains
-
-        domains.recompute_global_start_ubs(task_id)
-        domains.recompute_global_start_lbs(task_id)
-        domains.recompute_global_end_ubs(task_id)
-        domains.recompute_global_end_lbs(task_id)
-
-    def _restrict_presence(
-        self, task_id: TaskID, mask: Literal[0b01, 0b10]
-    ) -> None:
-        domains = self.domains
-        runtime = self.runtime
-
         old_presence = domains.presence[task_id]
         # Bitwise operations on Literal unions are inferred as int by type checkers.
         # Explicitly narrow back to PresenceType.
-        new_presence = cast("PresenceType", old_presence & mask)
+        new_presence = Presence(old_presence.value & mask.value)
 
-        field: VarFieldType
         if new_presence == old_presence:
             return
 
@@ -339,11 +317,8 @@ class ScheduleState(EzPickle):
             field = PRESENCE
 
         elif new_presence == ABSENT:
-            runtime.awaiting_tasks.discard(task_id)
-            runtime.unlocked_tasks.discard(task_id)
-
-            self.runtime_event_queue.add_event(task_id, TASK_MACHINE_INFEASIBLE)
-
+            domains.fixed[task_id] = True
+            self.remaining_tasks -= 1
             field = ABSENCE
 
         else:
@@ -379,13 +354,10 @@ class ScheduleState(EzPickle):
         feasible_machines.remove(machine_id)
 
         if feasible_machines:
-            self._recompute_all_bounds(task_id)
+            domains.recompute_all_global_bounds(task_id)
 
             self.domain_event_queue.add_event(
                 task_id, MACHINE_INFEASIBLE, machine_id
-            )
-            self.runtime_event_queue.add_event(
-                task_id, TASK_MACHINE_INFEASIBLE, machine_id
             )
 
         else:
@@ -431,7 +403,12 @@ class ScheduleState(EzPickle):
                 domains.recompute_global_start_lbs(task_id)
                 domains.recompute_global_end_lbs(task_id)
 
-            self.domain_event_queue.add_event(task_id, START_LB, machine_id)
+            self.domain_event_queue.add_event(
+                task_id=task_id,
+                field=START_LB,
+                machine_id=machine_id,
+                time=value,
+            )
             return
 
         row = task_id * self.n_machines
@@ -451,7 +428,11 @@ class ScheduleState(EzPickle):
         domains.recompute_global_end_lbs(task_id)
 
         if domains.feasible_machines[task_id]:
-            self.domain_event_queue.add_event(task_id, START_LB)
+            self.domain_event_queue.add_event(
+                task_id=task_id,
+                field=START_LB,
+                time=value,
+            )
 
     def tight_start_ub(
         self,
@@ -493,7 +474,12 @@ class ScheduleState(EzPickle):
                 domains.recompute_global_start_ubs(task_id)
                 domains.recompute_global_end_ubs(task_id)
 
-            self.domain_event_queue.add_event(task_id, START_UB, machine_id)
+            self.domain_event_queue.add_event(
+                task_id=task_id,
+                field=START_UB,
+                machine_id=machine_id,
+                time=value,
+            )
             return
 
         row = task_id * self.n_machines
@@ -514,7 +500,11 @@ class ScheduleState(EzPickle):
         domains.recompute_global_end_ubs(task_id)
 
         if domains.feasible_machines[task_id]:
-            self.domain_event_queue.add_event(task_id, START_UB)
+            self.domain_event_queue.add_event(
+                task_id=task_id,
+                field=START_UB,
+                time=value,
+            )
 
     def tight_end_lb(
         self,
@@ -556,7 +546,12 @@ class ScheduleState(EzPickle):
                 domains.recompute_global_end_lbs(task_id)
                 domains.recompute_global_start_lbs(task_id)
 
-            self.domain_event_queue.add_event(task_id, END_LB, machine_id)
+            self.domain_event_queue.add_event(
+                task_id=task_id,
+                field=END_LB,
+                machine_id=machine_id,
+                time=value,
+            )
             return
 
         row = task_id * self.n_machines
@@ -577,7 +572,11 @@ class ScheduleState(EzPickle):
         domains.recompute_global_start_lbs(task_id)
 
         if domains.feasible_machines[task_id]:
-            self.domain_event_queue.add_event(task_id, END_LB)
+            self.domain_event_queue.add_event(
+                task_id=task_id,
+                field=END_LB,
+                time=value,
+            )
 
     def tight_end_ub(
         self,
@@ -619,7 +618,12 @@ class ScheduleState(EzPickle):
                 domains.recompute_global_end_ubs(task_id)
                 domains.recompute_global_start_ubs(task_id)
 
-            self.domain_event_queue.add_event(task_id, END_UB, machine_id)
+            self.domain_event_queue.add_event(
+                task_id=task_id,
+                field=END_UB,
+                machine_id=machine_id,
+                time=value,
+            )
 
             return
 
@@ -641,7 +645,11 @@ class ScheduleState(EzPickle):
         domains.recompute_global_start_ubs(task_id)
 
         if domains.feasible_machines[task_id]:
-            self.domain_event_queue.add_event(task_id, END_UB)
+            self.domain_event_queue.add_event(
+                task_id=task_id,
+                field=END_UB,
+                time=value,
+            )
 
     def forbid_machine(self, task_id: TaskID, machine_id: MachineID) -> None:
         """Remove a machine from the feasible set of a task."""
@@ -653,210 +661,15 @@ class ScheduleState(EzPickle):
             if other_machine != machine_id:
                 self.forbid_machine(task_id, other_machine)
 
-    def reset_bounds(
-        self, task_id: TaskID, machine_id: MachineID = GLOBAL_MACHINE_ID
+    def assign_task(
+        self,
+        task_id: TaskID,
+        machine_id: MachineID,
+        start_time: Time,
     ) -> None:
-        """Reset start/end time bounds to allow rescheduling from current time.
-
-        Relaxes domain bounds to [current_time, MAX_TIME] interval and adds the
-        machine(s) back to feasible set.
-        Used after pausing or to recover from constraint conflicts.
-        """
-        domains = self.domains
-        time = self.time
-
-        if self._debug:
-            validate_machine_id(
-                task_id,
-                machine_id,
-                self.instance,
-                origin="reset_bounds",
-                allow_global=True,
-            )
-
-        if task_id not in self.runtime.awaiting_tasks:
-            return
-
-        start = domains.start
-        end = domains.end
-
-        remaining_times = domains.remaining_times
-        feasible_machines = domains.feasible_machines[task_id]
-
-        row = task_id * self.n_machines
-        if machine_id != GLOBAL_MACHINE_ID:
-            idx = row + machine_id
-            remaining_time = remaining_times[idx]
-
-            start.lbs[idx] = time
-            start.ubs[idx] = MAX_TIME - remaining_time
-            end.lbs[idx] = time + remaining_time
-            end.ubs[idx] = MAX_TIME
-
-            feasible_machines.add(machine_id)
-
-            start.global_lbs[task_id] = time
-            domains.recompute_global_start_ubs(task_id)
-
-            domains.recompute_global_end_lbs(task_id)
-            end.global_ubs[task_id] = MAX_TIME
-
-            if self._debug:
-                validate_domain_bounds(
-                    task_id, self, machine_id=machine_id, origin="reset_bounds"
-                )
-
-            return
-
-        for m_id in self.instance.get_machines(task_id):
-            idx = row + m_id
-
-            start.lbs[idx] = time
-            start.ubs[idx] = MAX_TIME - remaining_times[idx]
-            end.lbs[idx] = time + remaining_times[idx]
-            end.ubs[idx] = MAX_TIME
-
-            feasible_machines.add(m_id)
-
-        start.global_lbs[task_id] = time
-        self.domains.recompute_global_start_ubs(task_id)
-
-        self.domains.recompute_global_end_lbs(task_id)
-        end.global_ubs[task_id] = MAX_TIME
-
-        self.domain_event_queue.add_event(task_id, BOUNDS_RESET)
-
-        if self._debug:
-            validate_domain_bounds(task_id, self, origin="reset_bounds")
-
-    def fail(self, task_id: TaskID = UNKNOWN_TASK) -> None:
-        """Mark the problem as infeasible.
-
-        Constraints should prefer domain reductions via restrict_machine or
-        tight_* methods instead of this method.
-        It is reserved for hard global conflicts or defensive safeguards.
-        """
-        self.infeasible = True
-        self.runtime.awaiting_tasks.clear()
-        self.runtime.unlocked_tasks.clear()
-
-        self.domain_event_queue.add_event(task_id, STATE_INFEASIBLE)
-
-    # Discrete event simulation API methods
-
-    ## Getter methods for variable values
-
-    def get_awaiting_tasks(self) -> list[TaskID]:
-        """Return a list of awaiting task IDs (unlocked, feasible, not started)."""
-        return list(self.runtime.awaiting_tasks)
-
-    def get_unlocked_tasks(self) -> list[TaskID]:
-        """Return a list of unlocked task IDs (all dependencies resolved)."""
-        return list(self.runtime.unlocked_tasks)
-
-    def get_available_tasks(self) -> list[TaskID]:
-        """Return a list of available task IDs (can be executed now)."""
-        return [
-            task_id
-            for task_id in self.runtime.unlocked_tasks
-            if self.is_available(task_id)
-        ]
-
-    def get_executing_tasks(self) -> list[TaskID]:
-        """Return a list of currently executing task IDs."""
-        return list(self.runtime.executing_tasks)
-
-    def get_completed_tasks(self) -> list[TaskID]:
-        """Return a list of completed task IDs."""
-        return list(self.runtime.completed_tasks)
-
-    def get_history(self, task_id: TaskID, segment: int = -1) -> TaskHistory:
-        """Return the scheduling history entry for a task (most recent by default)."""
-        return self.runtime.history[task_id][segment]
-
-    def is_awaiting(self, task_id: TaskID) -> bool:
-        """Return whether a task is in the awaiting queue."""
-        return task_id in self.runtime.awaiting_tasks
-
-    def is_available(
-        self, task_id: TaskID, machine_id: MachineID = GLOBAL_MACHINE_ID
-    ) -> bool:
-        """Return whether a task can be scheduled now on the given machine.
-
-        A task is available if it is unlocked (all dependencies resolved) and the
-        current time falls within the feasible start window [start_lb, start_ub)
-        on the machine(s).
-        """
-        if task_id not in self.runtime.unlocked_tasks:
-            return False
-
-        t = self.time
-        start = self.domains.start
-
-        if machine_id == GLOBAL_MACHINE_ID:
-            row = task_id * self.n_machines
-
-            return any(
-                start.lbs[row + m_id] <= t < start.ubs[row + m_id]
-                for m_id in self.domains.feasible_machines[task_id]
-            )
-
-        if machine_id not in self.domains.feasible_machines[task_id]:
-            return False
-
-        idx = task_id * self.n_machines + machine_id
-        return start.lbs[idx] <= t < start.ubs[idx]
-
-    def is_paused(self, task_id: TaskID) -> bool:
-        """Return whether a task is paused."""
-        return self.runtime.status[task_id] == PAUSED
-
-    def is_executing(self, task_id: TaskID) -> bool:
-        """Return whether a task is currently executing."""
-        return self.runtime.status[task_id] == EXECUTING
-
-    def is_completed(self, task_id: TaskID) -> bool:
-        """Return whether a task is completed."""
-        return self.runtime.status[task_id] == COMPLETED
-
-    def is_locked(self, task_id: TaskID) -> bool:
-        """Return whether a task has unresolved dependencies."""
-        return bool(self.runtime.dependencies[task_id])
-
-    def get_end(self, task_id: TaskID) -> Time:
-        """Return the end time of a fixed task; raises RuntimeError if task not assigned."""
-        if not self.is_fixed(task_id):
-            raise RuntimeError(f"Task {task_id} has not been commited yet.")
-
-        return self.runtime.get_end(task_id)
-
-    def get_start(self, task_id: TaskID) -> Time:
-        """Return the start time of a fixed task; raises RuntimeError if task not assigned."""
-        if not self.is_fixed(task_id):
-            raise RuntimeError(f"Task {task_id} has not been commited yet.")
-
-        return self.runtime.get_start(task_id)
-
-    ## Setter methods for variable values, triggering constraint propagation through events
-    def add_dependency(self, task_id: TaskID, name: str) -> None:
-        """Add a named dependency to lock a task (remove from unlocked_tasks)."""
-        self.runtime.dependencies[task_id].add(name)
-        self.runtime.unlocked_tasks.discard(task_id)
-
-    def resolve_dependency(self, task_id: TaskID, name: str) -> None:
-        """Remove a named dependency from a task; add to unlocked if all resolved."""
-        dependencies = self.runtime.dependencies[task_id]
-
-        dependencies.discard(name)
-        if not dependencies:
-            self.runtime.unlocked_tasks.add(task_id)
-
-    def execute_task(self, task_id: TaskID, machine_id: MachineID) -> None:
         """Commit a task to a machine and begin executing it at current time.
 
-        Major DES operation: fixes the task assignment to the given machine,
-        transitions the task to EXECUTING and queues TASK_STARTED and ASSIGNMENT
-        events.
+        Fixes the task assignment to the given machine, queues ASSIGNMENT events.
 
         Parameters
         ----------
@@ -865,6 +678,9 @@ class ScheduleState(EzPickle):
 
         machine_id : MachineID
             Machine to execute on (must be a real machine, not GLOBAL_MACHINE_ID).
+
+        start_time: Time
+            Time to execute the task, must be a feasible start time.
 
         Raises
         ------
@@ -880,16 +696,14 @@ class ScheduleState(EzPickle):
                 f"Cannot assign to the global machine {GLOBAL_MACHINE_ID}."
             )
 
-        start_time = self.time
         domains = self.domains
-        runtime = self.runtime
 
         if self.debug:
             validate_machine_id(
                 task_id,
                 machine_id,
                 self.instance,
-                origin="execute_task",
+                origin="assign_task",
                 allow_global=False,
             )
 
@@ -905,193 +719,114 @@ class ScheduleState(EzPickle):
                 )
 
             presence = domains.presence[task_id]
-            if (presence & PRESENT) == 0:
+            if not presence.contains_present():
                 raise RuntimeError(
                     f"Cannot assign task {task_id} to machine {machine_id} at time "
                     f"{start_time}, it violates the presence constraints for that "
-                    f"task: presence = {presence_to_str(presence)}."
+                    f"task: presence = {presence.name}."
                 )
 
-        idx = task_id * self.n_machines + machine_id
-        duration = domains.remaining_times[idx]
-
-        end_time = start_time + duration
-
+        self.require_task(task_id)
         self.tight_start_lb(task_id, start_time, machine_id)
         self.tight_start_ub(task_id, start_time, machine_id)
 
-        domains.assignment[task_id] = machine_id
-        domains.presence[task_id] = PRESENT
-        domains.feasible_machines[task_id].clear()
-        domains.feasible_machines[task_id].add(machine_id)
+        if self.infeasible:
+            return
 
-        self.domain_event_queue.add_event(task_id, ASSIGNMENT, machine_id)
-        self.runtime_event_queue.add_event(task_id, TASK_STARTED, machine_id)
+        domains.assign(task_id, machine_id)
+        self.remaining_tasks -= 1
 
-        runtime.last_completion_time = max(
-            runtime.last_completion_time, end_time
-        )
-
-        runtime.unlocked_tasks.remove(task_id)
-        runtime.awaiting_tasks.remove(task_id)
-        runtime.executing_tasks.add(task_id)
-        runtime.status[task_id] = EXECUTING
-
-        runtime.history[task_id].append(
-            TaskHistory(machine_id, start_time, end_time)
+        self.domain_event_queue.add_event(
+            task_id=task_id,
+            field=ASSIGNMENT,
+            machine_id=machine_id,
+            time=start_time,
         )
 
         if self._debug:
             validate_domain_bounds(
-                task_id, self, machine_id=machine_id, origin="execute_task"
+                task_id, self, machine_id=machine_id, origin="assign_task"
             )
 
-    def pause_task(self, task_id: TaskID) -> None:
-        """Suspend an executing task and allow rescheduling with reduced work.
+    def tight_global_time(self, time: Time) -> None:
+        """Contraint all tasks to only execute after a given time."""
+        self.domain_event_queue.add_event(
+            task_id=UNKNOWN_TASK,
+            field=GLOBAL_TIME,
+            time=time,
+        )
 
-        Major DES operation for preemption: computes work done proportionally to
-        elapsed time, reduces remaining_time on all machines, and resets bounds to
-        allow rescheduling from current time.
-        Queues PAUSE and TASK_PAUSED events.
+    def fail(self, task_id: TaskID = UNKNOWN_TASK) -> None:
+        """Mark the problem as infeasible.
 
-        Parameters
-        ----------
-        task_id : TaskID
-            Executing task identifier.
-
-        Raises
-        ------
-        RuntimeError
-            If task is not currently executing.
-
+        Constraints should prefer domain reductions via restrict_machine or
+        tight_* methods instead of this method.
+        It is reserved for hard global conflicts or defensive safeguards.
         """
-        pause_time = self.time
-
-        if not self.is_executing(task_id):
-            raise RuntimeError(
-                f"Cannot pause task {task_id} at {pause_time}, the task is not "
-                f"currently executing."
-            )
-
-        domains = self.domains
-        runtime = self.runtime
-
-        start = domains.start
-        end = domains.end
-
-        expected_end = end.global_ubs[task_id]
-        task_start = start.global_lbs[task_id]
-
-        expected_duration = expected_end - task_start
-        actual_duration = pause_time - task_start
-
-        remaining_times = domains.remaining_times
-        prev_assignment = domains.assignment[task_id]
-
-        row = task_id * self.n_machines
-
-        feasible_machines = domains.feasible_machines[task_id]
-
-        if expected_duration == 0:
-            expected_duration = 1
-
-        for m_id in self.instance.get_machines(task_id):
-            idx = row + m_id
-
-            remaining_time = remaining_times[idx]
-            remaining_time -= (actual_duration * remaining_time) // (
-                expected_duration
-            )
-
-            start.lbs[idx] = pause_time
-            start.ubs[idx] = MAX_TIME - remaining_time
-            end.lbs[idx] = pause_time + remaining_time
-            end.ubs[idx] = MAX_TIME
-            remaining_times[idx] -= remaining_time
-
-            feasible_machines.add(m_id)
-
-        start.global_lbs[task_id] = pause_time
-        domains.recompute_global_start_ubs(task_id)
-
-        domains.recompute_global_end_lbs(task_id)
-        end.global_ubs[task_id] = MAX_TIME
-
-        domains.assignment[task_id] = GLOBAL_MACHINE_ID
-
-        runtime.executing_tasks.remove(task_id)
-        runtime.awaiting_tasks.add(task_id)
-        runtime.unlocked_tasks.add(task_id)
-
-        history = runtime.history[task_id]
-
-        prev_entry = history.pop()
-        history.append(
-            TaskHistory(
-                prev_entry.machine_id, prev_entry.start_time, pause_time
-            )
-        )
-
-        runtime.status[task_id] = PAUSED
-
-        self.domain_event_queue.add_event(task_id, PAUSE, prev_assignment)
-        self.runtime_event_queue.add_event(
-            task_id, TASK_PAUSED, prev_entry.machine_id
-        )
-
-        if prev_entry.end_time == runtime.last_completion_time:
-            runtime.recompute_last_completion_time()
-
-        if self._debug:
-            validate_domain_bounds(task_id, self, origin="pause_task")
+        self.infeasible = True
+        self.domain_event_queue.add_event(task_id, STATE_INFEASIBLE)
 
     # Runtime utils
 
-    def get_next_start_lb(self) -> Time:
-        """Return the minimum start lower bound among unlocked tasks, or current time if any task available now."""
+    def get_start(self, task_id: TaskID) -> Time:
+        """Return the start time of a fixed task."""
+        if not self.domains.fixed[task_id]:
+            raise ValueError(f"Task {task_id} is not fixed yet.")
+
+        if self.domains.presence[task_id] != PRESENT:
+            raise ValueError(f"Task {task_id} is not present.")
+
+        return self.domains.start.get_global_ub(task_id)
+
+    def get_end(self, task_id: TaskID) -> Time:
+        """Return the end time of a fixed task."""
+        if not self.domains.fixed[task_id]:
+            raise ValueError(f"Task {task_id} is not fixed yet.")
+
+        if self.domains.presence[task_id] != PRESENT:
+            raise ValueError(f"Task {task_id} is not present.")
+
+        return self.domains.end.get_global_ub(task_id)
+
+    def get_earliest_start_lb(self) -> Time:
+        """Return the earliest start lower bound among unlocked tasks."""
         global_lbs = self.domains.start.global_lbs
-        unlocked_tasks = self.runtime.unlocked_tasks
-        current_time = self.time
+        dependencies = self.domains.dependencies
 
         min_lb = MAX_TIME
-        for task_id in unlocked_tasks:
+        for task_id, fixed in enumerate(self.domains.fixed):
+            if fixed or dependencies[task_id]:
+                continue
+
             lb = global_lbs[task_id]
 
-            if lb <= current_time:
-                return current_time
-
             if lb < min_lb:
-                min_lb = global_lbs[task_id]
+                min_lb = lb
 
         return min_lb
 
-    def get_last_completion_time(self) -> Time:
-        """Return the latest completion time seen so far in the schedule."""
-        return self.runtime.last_completion_time
+    def get_latest_end(self) -> Time:
+        """Return the end time of the latest task."""
+        ends = self.domains.end.global_lbs
 
-    def get_machine_execution(self) -> dict[MachineID, list[TaskID]]:
-        """Return a dict mapping each machine to its currently executing task IDs."""
-        assignments: dict[MachineID, list[TaskID]] = {
-            machine_id: [] for machine_id in range(self.n_machines)
-        }
+        max_end = MIN_TIME
+        for task_id, fixed in enumerate(self.domains.fixed):
+            if not fixed:
+                continue
 
-        runtime = self.runtime
-        for task_id in runtime.executing_tasks:
-            machine_id = runtime.get_assignment(task_id)
-            assignments[machine_id].append(task_id)
+            end = ends[task_id]
 
-        return assignments
+            if end > max_end:
+                max_end = end
+
+        return max_end
 
     def __eq__(self, value: Any) -> bool:
         """Return equality based on all state attributes (instance, time, domains, runtime, events)."""
         return (
             isinstance(value, ScheduleState)
             and self.instance == value.instance
-            and self.time == value.time
-            and self.infeasible == value.infeasible
-            and self._debug == value._debug
             and self.domains == value.domains
-            and self.runtime == value.runtime
             and self.domain_event_queue == value.domain_event_queue
-            and self.runtime_event_queue == value.runtime_event_queue
+            and self._debug == value._debug
         )

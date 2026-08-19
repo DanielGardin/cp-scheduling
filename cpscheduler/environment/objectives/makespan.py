@@ -23,8 +23,6 @@ class Makespan(Objective):
     This objective function aims to minimize the time at which all tasks are completed.
     """
 
-    _value: Time
-
     @property
     @override
     def regular(self) -> bool:
@@ -34,21 +32,22 @@ class Makespan(Objective):
     def reset(self, state: ScheduleState) -> None:
         super().reset(state)
 
-        self._value = 0
+        self._current = 0.0
+
+    @property
+    @override
+    def current(self) -> float:
+        return self._current
 
     @override
-    def on_task_completed(
+    def on_assignment(
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:
-        self._value = max(self._value, state.get_end(task_id))
+        self._current = max(self._current, float(state.get_end(task_id)))
 
     @override
-    def get_current(self, state: ScheduleState) -> float:
-        return float(self._value)
-
-    @override
-    def __call__(self, state: ScheduleState) -> float:
-        completed_tasks = state.get_completed_tasks()
+    def compute(self, state: ScheduleState) -> float:
+        completed_tasks = state.get_assigned_tasks()
 
         if not completed_tasks:
             return 0.0
@@ -121,7 +120,7 @@ class MaximumLateness(Objective):
         self._value = -MAX_TIME
 
     @override
-    def on_task_completed(
+    def on_assignment(
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:
         job_id = state.instance.job_ids[task_id]
@@ -129,13 +128,14 @@ class MaximumLateness(Objective):
 
         self._value = max(self._value, state.get_end(task_id) - d_j)
 
+    @property
     @override
-    def get_current(self, state: ScheduleState) -> float:
+    def current(self) -> float:
         return float(self._value)
 
     @override
-    def __call__(self, state: ScheduleState) -> float:
-        completed_tasks = state.get_completed_tasks()
+    def compute(self, state: ScheduleState) -> float:
+        completed_tasks = state.get_assigned_tasks()
 
         if not completed_tasks:
             return float(-MAX_TIME)

@@ -55,8 +55,9 @@ class TotalTardiness(RegularObjective):
     def _load_due_dates(self, due_dates: Iterable[Int]) -> list[Time]:
         return convert_to_list(due_dates, Time)
 
+    @property
     @override
-    def get_current(self, state: ScheduleState) -> float:
+    def current(self) -> float:
         return float(
             sum(
                 max(C_j - d_j, 0)
@@ -67,7 +68,7 @@ class TotalTardiness(RegularObjective):
         )
 
     @override
-    def __call__(self, state: ScheduleState) -> float:
+    def compute(self, state: ScheduleState) -> float:
         return float(
             sum(
                 max(C_j - d_j, 0)
@@ -149,8 +150,9 @@ class WeightedTardiness(TotalTardiness):
     def regular(self) -> bool:
         return all(weight >= 0 for weight in self.weights.value)
 
+    @property
     @override
-    def get_current(self, state: ScheduleState) -> float:
+    def current(self) -> float:
         return sum(
             w_j * float(max(C_j - d_j, 0))
             for w_j, d_j, C_j in zip(
@@ -162,7 +164,7 @@ class WeightedTardiness(TotalTardiness):
         )
 
     @override
-    def __call__(self, state: ScheduleState) -> float:
+    def compute(self, state: ScheduleState) -> float:
         return float(
             sum(
                 w_j * float(max(C_j - d_j, 0))

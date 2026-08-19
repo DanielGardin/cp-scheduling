@@ -1,23 +1,19 @@
 """CSP domain containers for scheduling variables."""
 
-from typing import Final, Literal
+from enum import Enum
 
 from mypy_extensions import mypyc_attr
-from typing_extensions import assert_never
 
 from cpscheduler.environment.constants import (
     GLOBAL_MACHINE_ID,
     MAX_TIME,
     MIN_TIME,
-    Enum,
     EzPickle,
     MachineID,
     TaskID,
     Time,
 )
 from cpscheduler.environment.instance import ProblemInstance
-
-PresenceType = Literal[0b00, 0b01, 0b10, 0b11]
 
 
 class Presence(Enum):
@@ -37,17 +33,25 @@ class Presence(Enum):
 
     """
 
-    INFEASIBLE: Final[Literal[0b00]] = 0b00
+    INFEASIBLE = 0b00
     "Task cannot be present nor absent, domain wipeout (infeasible)."
 
-    PRESENT: Final[Literal[0b01]] = 0b01
+    PRESENT = 0b01
     "Task must be present in the final schedule."
 
-    ABSENT: Final[Literal[0b10]] = 0b10
+    ABSENT = 0b10
     "Task must be absent from the final schedule."
 
-    UNDEFINED: Final[Literal[0b11]] = 0b11
+    UNDEFINED = 0b11
     "Task may be present or absent (initial value for optional tasks)."
+
+    def contains_present(self) -> bool:
+        """Return whether its presence can be PRESENT."""
+        return bool(self.value & 0b01)
+
+    def contains_absent(self) -> bool:
+        """Return whether its presence can be PRESENT."""
+        return bool(self.value & 0b10)
 
 
 INFEASIBLE = Presence.INFEASIBLE
@@ -56,26 +60,6 @@ ABSENT = Presence.ABSENT
 UNDEFINED = Presence.UNDEFINED
 
 
-def presence_to_str(presence: PresenceType) -> str:
-    """Return the string name for a presence flag."""
-    if presence == INFEASIBLE:
-        return "INFEASIBLE"
-
-    if presence == PRESENT:
-        return "PRESENT"
-
-    if presence == ABSENT:
-        return "ABSENT"
-
-    if presence == UNDEFINED:
-        return "UNDEFINED"
-
-    assert_never(presence)
-
-
-# FUTURE: Consider going back to store bounds in nested lists (list[list[Time]])
-# The access pattern is almost always task_id -> machine_id, which is trivialized
-# by tlb = lb[task_id], and then tlb[machine_id].
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
 class Bounds(EzPickle):
     """Integer bound container used for start/end variables.
@@ -90,7 +74,7 @@ class Bounds(EzPickle):
 
     """
 
-    n_machines: int
+    pad: int
 
     lbs: list[Time]
     global_lbs: list[Time]
@@ -118,7 +102,7 @@ class Bounds(EzPickle):
         ubs = [MIN_TIME] * (nm)
         global_ubs = [MIN_TIME] * n_tasks
 
-        self.n_machines = n_machines
+        self.pad = n_machines
         self.lbs = lbs
         self.global_lbs = global_lbs
         self.ubs = ubs
@@ -137,20 +121,20 @@ class Bounds(EzPickle):
         if machine_id == GLOBAL_MACHINE_ID:
             return self.global_lbs[task_id]
 
-        return self.lbs[task_id * self.n_machines + machine_id]
+        return self.lbs[task_id * self.pad + machine_id]
 
     def get_ub(self, task_id: TaskID, machine_id: MachineID) -> Time:
         """Get the upper bound for a task on a specific machine."""
         if machine_id == GLOBAL_MACHINE_ID:
             return self.global_ubs[task_id]
 
-        return self.ubs[task_id * self.n_machines + machine_id]
+        return self.ubs[task_id * self.pad + machine_id]
 
     def __eq__(self, value: object, /) -> bool:
         """Check equality of Bounds containers."""
         return (
             isinstance(value, Bounds)
-            and self.n_machines == value.n_machines
+            and self.pad == value.pad
             and self.lbs == value.lbs
             and self.global_lbs == value.global_lbs
             and self.ubs == value.ubs
@@ -160,16 +144,28 @@ class Bounds(EzPickle):
 
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
 class TaskDomains(EzPickle):
-    """Aggregate container for task variables used by the CSP kernel."""
+    """Aggregate container for task variables used by the CSP kernel.
+
+    Represents the feasible space containing the domain variables:
+        - Start/End time bounds (per task and machine)
+        - Machine feasibility sets (which machines can process each task)
+        - Presence bitfield (whether each task can be present, absent, or is infeasible)
+        - Dependencies set (Mark that the task may no be available at start_lb)
+
+    """
 
     feasible_machines: list[set[MachineID]]
     remaining_times: list[Time]
 
     assignment: list[MachineID]
-    presence: list[PresenceType]
+    presence: list[Presence]
 
     start: Bounds
     end: Bounds
+
+    dependencies: list[set[str]]
+
+    fixed: list[bool]
 
     def __init__(self, instance: ProblemInstance) -> None:
         """Initialize the TaskDomains with a problem instance.
@@ -194,7 +190,7 @@ class TaskDomains(EzPickle):
         remaining_times = [MAX_TIME] * (n_tasks * n_machines)
 
         assignment = [GLOBAL_MACHINE_ID] * n_tasks
-        presence: list[PresenceType] = [
+        presence: list[Presence] = [
             UNDEFINED if optional else PRESENT for optional in instance.optional
         ]
 
@@ -232,10 +228,13 @@ class TaskDomains(EzPickle):
             self.recompute_global_end_lbs(task_id)
             end.global_ubs[task_id] = MAX_TIME
 
+        self.dependencies = [set() for _ in range(n_tasks)]
+        self.fixed = [False] * n_tasks
+
     def recompute_global_start_lbs(self, task_id: TaskID) -> None:
         """Recompute the global lower bound for the start variable of a task."""
         start = self.start
-        row = task_id * start.n_machines
+        row = task_id * start.pad
 
         global_lb = MAX_TIME
         for machine_id in self.feasible_machines[task_id]:
@@ -248,7 +247,7 @@ class TaskDomains(EzPickle):
     def recompute_global_start_ubs(self, task_id: TaskID) -> None:
         """Recompute the global upper bound for the start variable of a task."""
         start = self.start
-        row = task_id * start.n_machines
+        row = task_id * start.pad
 
         global_ub = MIN_TIME
         for machine_id in self.feasible_machines[task_id]:
@@ -261,7 +260,7 @@ class TaskDomains(EzPickle):
     def recompute_global_end_lbs(self, task_id: TaskID) -> None:
         """Recompute the global lower bound for the end variable of a task."""
         end = self.end
-        row = task_id * end.n_machines
+        row = task_id * end.pad
 
         global_lb = MAX_TIME
         for machine_id in self.feasible_machines[task_id]:
@@ -274,7 +273,7 @@ class TaskDomains(EzPickle):
     def recompute_global_end_ubs(self, task_id: TaskID) -> None:
         """Recompute the global upper bound for the end variable of a task."""
         end = self.end
-        row = task_id * end.n_machines
+        row = task_id * end.pad
 
         global_ub = MIN_TIME
         for machine_id in self.feasible_machines[task_id]:
@@ -283,6 +282,20 @@ class TaskDomains(EzPickle):
                 global_ub = ub
 
         end.global_ubs[task_id] = global_ub
+
+    def recompute_all_global_bounds(self, task_id: TaskID) -> None:
+        """Recompute all four global bounds (start/end, lb/ub) for a task."""
+        self.recompute_global_start_ubs(task_id)
+        self.recompute_global_start_lbs(task_id)
+        self.recompute_global_end_ubs(task_id)
+        self.recompute_global_end_lbs(task_id)
+
+    def assign(self, task_id: TaskID, machine_id: MachineID) -> None:
+        """Assign a task to a machine."""
+        self.fixed[task_id] = True
+        self.assignment[task_id] = machine_id
+        self.feasible_machines[task_id].clear()
+        self.feasible_machines[task_id].add(machine_id)
 
     def is_machine_feasible(
         self, task_id: TaskID, machine_id: MachineID

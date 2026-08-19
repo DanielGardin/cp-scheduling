@@ -177,14 +177,6 @@ class PrecedenceConstraint(Constraint):
                 state.resolve_dependency(child_id, f"precedence:{task_id}")
 
     @override
-    def on_pause(
-        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
-    ) -> None:
-        if task_id in self.children:
-            for child_id in self.children[task_id]:
-                state.add_dependency(child_id, f"precedence:{task_id}")
-
-    @override
     def on_start_lb(
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:

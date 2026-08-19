@@ -194,7 +194,7 @@ class ResourceConstraint(Constraint):
         for j in range(idx, len(available_resources)):
             available_resources[j] -= resource_usage
 
-        for other_task in state.get_awaiting_tasks():
+        for other_task in state.get_unassigned_tasks():
             resource_usage = resources[other_task]
 
             if resource_usage <= 0:
@@ -204,22 +204,15 @@ class ResourceConstraint(Constraint):
                 available_resources, resource_usage, decreasing=True
             )
 
-            earliest_start = (
-                next_available_time[idx]
-                if idx < len(available_resources)
-                else state.time
-            )
-
-            state.tight_start_lb(other_task, earliest_start)
+            if idx < len(available_resources):
+                state.tight_start_lb(other_task, next_available_time[idx])
 
     @override
     def on_time_update(self, time: Time, state: ScheduleState) -> None:
         next_available_time = self._next_available_time
         available_resources = self._available_resources
 
-        current_time = state.time
-
-        while next_available_time and next_available_time[-1] <= current_time:
+        while next_available_time and next_available_time[-1] <= time:
             next_available_time.pop()
             available_resources.pop()
 
@@ -320,7 +313,7 @@ class NonRenewableResourceConstraint(Constraint):
         current_capacity = self._current_capacity - resource_usage
         self._current_capacity = current_capacity
 
-        for other_task in state.get_awaiting_tasks():
+        for other_task in state.get_unassigned_tasks():
             other_usage = resources[other_task]
 
             if other_usage <= 0:

@@ -6,11 +6,9 @@ from typing import Literal
 
 from mypy_extensions import mypyc_attr
 
-from cpscheduler.environment.constants import Status, StatusType, TaskID
-from cpscheduler.environment.des import SingleInstruction
+from cpscheduler.environment.backend import SingleAction
+from cpscheduler.environment.constants import TaskID
 from cpscheduler.environment.observation import DefaultObservation
-
-EXECUTING_STATUS = Status.EXECUTING
 
 
 def prob_to_lmbda(prob: float, size: int, n_iter: int) -> float:
@@ -80,11 +78,11 @@ def solve_p_star_temperature(
 
 def select_task(
     priorities: list[float],
-    available_tasks: set[TaskID],
+    eligible_tasks: list[TaskID],
     temperature: float = 0.0,
     *,
     rng: random.Random | None = None,
-) -> SingleInstruction | None:
+) -> SingleAction | None:
     """Select a task to dispatch based on the given priorities.
 
     This method uses the Gumbel-max trick to sample from a Plackett-Luce model
@@ -97,7 +95,7 @@ def select_task(
     best_prio = float("-inf")
 
     dispatching_task: TaskID | None = None
-    for task_id in sorted(available_tasks):
+    for task_id in sorted(eligible_tasks):
         prio = priorities[task_id]
 
         if temperature > 0.0:
@@ -184,11 +182,11 @@ class PriorityDispatchingRule:
     def _priority_score(self, obs: DefaultObservation) -> list[float]:
         return self.priority_score(obs)
 
-    def __call__(self, obs: DefaultObservation) -> SingleInstruction | None:
+    def __call__(self, obs: DefaultObservation) -> SingleAction | None:
         """Deterministically select a task to dispatch based on the current observation."""
         priorities = self._priority_score(obs)
 
-        return select_task(priorities, obs.available_tasks)
+        return select_task(priorities, obs.eligible_tasks)
 
     def sample(
         self,
@@ -197,7 +195,7 @@ class PriorityDispatchingRule:
         temperature: float = 1.0,
         target_prob: float | None = None,
         n_iter: int = 5,
-    ) -> SingleInstruction | None:
+    ) -> SingleAction | None:
         """Stochastically select a task to dispatch based on the current observation.
 
         This method uses a softmax model to select a task to dispatch.
@@ -224,7 +222,7 @@ class PriorityDispatchingRule:
 
         Returns
         -------
-        SingleInstruction | None
+        SingleAction | None
             A tuple of the form ("execute", task_id) if a task is selected, or None
             if no task is available to dispatch.
 
@@ -233,7 +231,7 @@ class PriorityDispatchingRule:
 
         if target_prob is not None:
             available_priorities = [
-                priorities[task_id] for task_id in obs.available_tasks
+                priorities[task_id] for task_id in obs.eligible_tasks
             ]
 
             temperature = solve_p_star_temperature(
@@ -241,14 +239,14 @@ class PriorityDispatchingRule:
             )
 
         return select_task(
-            priorities, obs.available_tasks, temperature, rng=self._internal_rng
+            priorities, obs.eligible_tasks, temperature, rng=self._internal_rng
         )
 
     def ranking(
         self,
         obs: DefaultObservation,
         schedule_generation: SCHEDULE_GENERATION_METHODS,
-    ) -> list[SingleInstruction]:
+    ) -> list[SingleAction]:
         """Return a ranking of the available tasks based on their priority scores.
 
         This method returns a list of tasks sorted by their priority scores,
@@ -272,30 +270,23 @@ class PriorityDispatchingRule:
 
         """
         priorities = self._priority_score(obs)
+        filtered_priorities = sorted(
+            [(-prio, task_id) for task_id, prio in enumerate(priorities)]
+        )
 
         if schedule_generation == "parallel":
-            filtered_priorities = sorted(
-                [(-prio, task_id) for task_id, prio in enumerate(priorities)]
+            instruction = "submit"
+
+        elif schedule_generation == "serial":
+            instruction = "execute"
+
+        else:
+            raise ValueError(
+                f"Invalid schedule generation method: {schedule_generation}. "
+                f"Expected one of: 'serial', 'parallel'."
             )
 
-            return [("submit", task_id) for _, task_id in filtered_priorities]
-
-        if schedule_generation == "serial":
-            status: list[StatusType] = obs["status"]
-            filtered_priorities = sorted(
-                [
-                    (-prio, task_id)
-                    for task_id, prio in enumerate(priorities)
-                    if status[task_id] < EXECUTING_STATUS
-                ]
-            )
-
-            return [("execute", task_id) for _, task_id in filtered_priorities]
-
-        raise ValueError(
-            f"Invalid schedule generation method: {schedule_generation}. "
-            f"Expected one of: 'serial', 'parallel'."
-        )
+        return [(instruction, task_id) for _, task_id in filtered_priorities]
 
     def sample_ranking(
         self,
@@ -305,7 +296,7 @@ class PriorityDispatchingRule:
         temperature: float = 1.0,
         target_prob: float | None = None,
         n_iter: int = 5,
-    ) -> list[SingleInstruction]:
+    ) -> list[SingleAction]:
         """Return a stochastically sampled ranking of the available tasks.
 
         This method returns a list of tasks, sampled from a Plackett-Luce model
@@ -347,7 +338,7 @@ class PriorityDispatchingRule:
 
         if target_prob is not None:
             available_priorities = [
-                priorities[task_id] for task_id in obs.available_tasks
+                priorities[task_id] for task_id in obs.eligible_tasks
             ]
 
             temperature = solve_p_star_temperature(
@@ -355,34 +346,26 @@ class PriorityDispatchingRule:
             )
 
         rng = self._internal_rng
+        filtered_priorities = sorted(
+            [
+                (-prio + temperature * -log(-log(rng.random())), task_id)
+                for task_id, prio in enumerate(priorities)
+            ]
+        )
 
         if schedule_generation == "parallel":
-            filtered_priorities = sorted(
-                [
-                    (-prio + temperature * -log(-log(rng.random())), task_id)
-                    for task_id, prio in enumerate(priorities)
-                ]
+            instruction = "submit"
+
+        elif schedule_generation == "serial":
+            instruction = "execute"
+
+        else:
+            raise ValueError(
+                f"Invalid schedule generation method: {schedule_generation}. "
+                f"Expected one of: 'serial', 'parallel'."
             )
 
-            return [("submit", task_id) for _, task_id in filtered_priorities]
-
-        if schedule_generation == "serial":
-            status: list[StatusType] = obs["status"]
-
-            filtered_priorities = sorted(
-                [
-                    (-prio + temperature * -log(-log(rng.random())), task_id)
-                    for task_id, prio in enumerate(priorities)
-                    if status[task_id] < EXECUTING_STATUS
-                ]
-            )
-
-            return [("execute", task_id) for _, task_id in filtered_priorities]
-
-        raise ValueError(
-            f"Invalid schedule generation method: {schedule_generation}. "
-            f"Expected one of: 'serial', 'parallel'."
-        )
+        return [(instruction, task_id) for _, task_id in filtered_priorities]
 
 
 class StaticPriorityDispatchingRule(PriorityDispatchingRule):

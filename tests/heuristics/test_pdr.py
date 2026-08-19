@@ -57,7 +57,8 @@ def test_pdr(instance_name: str, heuristic: str) -> None:
 
     assert terminated
     assert (
-        info["current_time"] == pdr_expected_results[instance_name][heuristic]
+        info["objective_value"]
+        == pdr_expected_results[instance_name][heuristic]
     )
 
 
@@ -72,11 +73,12 @@ def test_dynamic(instance_name: str, heuristic: str) -> None:
 
     done = False
     while not done:
-        assert obs.available_tasks
+        assert obs.eligible_tasks
 
         single_action = pdr(obs)
         obs, _, done, _, info = env.step(single_action)
 
     assert (
-        info["current_time"] == pdr_expected_results[instance_name][heuristic]
+        info["objective_value"]
+        == pdr_expected_results[instance_name][heuristic]
     )

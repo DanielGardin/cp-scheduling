@@ -14,7 +14,7 @@ from typing import Any, Generic, TypeVar
 
 from cpscheduler.common import AnySchedulingEnv, unwrap_env
 from cpscheduler.environment import SchedulingEnv
-from cpscheduler.environment.des import ActionType
+from cpscheduler.environment.backend import ActionType
 from cpscheduler.environment.utils import InstanceTypes, ensure_iterable
 from cpscheduler.solver.formulation import Formulation, formulations
 
@@ -148,7 +148,7 @@ class SchedulingSolver(Generic[R]):
         objective_value = self.formulation.get_objective_value()
 
         actions: list[tuple[int, str, int, int]] = []
-        for task_id in self.env.state.runtime.awaiting_tasks:
+        for task_id in self.env.state.get_unassigned_tasks():
             machine_id, start_time = self.formulation.get_assignment(task_id)
             actions.append((start_time, "execute", task_id, machine_id))
 

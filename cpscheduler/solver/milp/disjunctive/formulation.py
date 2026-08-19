@@ -64,7 +64,6 @@ class DisjunctiveMILPFormulation(PyomoFormulation):
         super().initialize_model(env)
 
         state = env.state
-        runtime = state.runtime
 
         n_tasks = state.n_tasks
         n_machines = state.n_machines
@@ -78,9 +77,9 @@ class DisjunctiveMILPFormulation(PyomoFormulation):
 
         for task_id in range(n_tasks):
             if state.is_fixed(task_id):
-                self.start_times[task_id] = runtime.get_start(task_id)
-                self.end_times[task_id] = runtime.get_end(task_id)
-                self.assignments[task_id][runtime.get_assignment(task_id)] = 1
+                self.start_times[task_id] = state.get_start(task_id)
+                self.end_times[task_id] = state.get_end(task_id)
+                self.assignments[task_id][state.get_assignment(task_id)] = 1
                 self.present[task_id] = 1
                 continue
 
@@ -126,11 +125,6 @@ class DisjunctiveMILPFormulation(PyomoFormulation):
                 f"assignment_{task_id}",
             )
 
-            if state.is_preemptive(task_id):
-                raise NotImplementedError(
-                    "Preemptive tasks are not yet supported in the disjunctive formulation."
-                )
-
             processing_time = sum(
                 assignments[machine_id]
                 * int(state.get_remaining_time(task_id, machine_id))
@@ -158,21 +152,22 @@ class DisjunctiveMILPFormulation(PyomoFormulation):
             if not state.is_fixed(task_id):
                 continue
 
-            start_time = state.runtime.get_start(task_id)
+            start_time = state.get_start(task_id)
             self.set_initial_value(self.start_times[task_id], start_time)
 
-            end_time = state.runtime.get_end(task_id)
+            end_time = state.get_end(task_id)
             self.set_initial_value(self.end_times[task_id], end_time)
 
-            machine_id = state.runtime.get_assignment(task_id)
+            machine_id = state.get_assignment(task_id)
             for m_id, var in enumerate(self.assignments[task_id]):
                 self.set_initial_value(var, 1 if m_id == machine_id else 0)
 
         for (i, j), var in self.orders.items():
-            start_i = state.runtime.get_start(i)
-            end_i = state.runtime.get_end(i)
-            start_j = state.runtime.get_start(j)
-            end_j = state.runtime.get_end(j)
+            start_i = state.get_start(i)
+            end_i = state.get_end(i)
+
+            start_j = state.get_start(j)
+            end_j = state.get_end(j)
 
             if end_i <= start_j:
                 self.set_initial_value(var, 1)
@@ -183,7 +178,7 @@ class DisjunctiveMILPFormulation(PyomoFormulation):
         if not env.objective.regular or not state.is_terminal():
             return
 
-        makespan = int(state.runtime.last_completion_time)
+        makespan = int(state.get_latest_end())
 
         for task_id in range(state.n_tasks):
             if self.get_ub(self.end_times[task_id]) > makespan:

@@ -6,7 +6,8 @@ from typing import Any
 from mypy_extensions import mypyc_attr
 from typing_extensions import override
 
-from cpscheduler.environment.constants import Status, TaskID, Time
+from cpscheduler.environment.backend import ScheduleBackend
+from cpscheduler.environment.constants import TaskID
 from cpscheduler.environment.instance import ProblemInstance
 from cpscheduler.environment.observation.base import Observation
 from cpscheduler.environment.specs import (
@@ -18,9 +19,6 @@ from cpscheduler.environment.specs import (
 from cpscheduler.environment.state import ScheduleState
 
 DefaultObsType = dict[str, Any]
-
-AWAITING = Status.AWAITING
-
 
 FEATURE_SELECTION = (
     Iterable[str] | Mapping[str, str | FeatureViewSpec[Any, Any]] | None
@@ -44,11 +42,7 @@ class DefaultObservation(Observation[DefaultObsType]):
     _features: dict[str, str | FeatureViewSpec[Any, Any]]
     feature_specs: dict[str, FeatureViewSpec[Any, Any]]
 
-    _time: Time
-    _status: list[int]
-    _available: list[bool]
-
-    available_tasks: set[TaskID]
+    _eligible: list[bool]
 
     _obs: DefaultObsType
 
@@ -108,53 +102,35 @@ class DefaultObservation(Observation[DefaultObsType]):
         self._obs = {}
 
     @property
-    def time(self) -> Time:
-        """Return the current time in the schedule."""
-        return self._time
+    def eligible_tasks(self) -> list[TaskID]:
+        """Return a list with currently eligible tasks."""
+        return [
+            task_id
+            for task_id, eligible in enumerate(self._eligible)
+            if eligible
+        ]
 
     @override
-    def compile(self, instance: ProblemInstance) -> ObservationSpec:
+    def compile(
+        self, instance: ProblemInstance, backend: ScheduleBackend
+    ) -> ObservationSpec:
         feature_specs: dict[str, FeatureViewSpec[Any, Any]] = {}
 
         if self._all_features:
             self._features = dict.fromkeys(instance.features.keys(), "default")
-            self._features |= dict.fromkeys(
-                ["status", "available", "time"], "default"
-            )
+            self._features["eligible"] = "default"
 
-        if "status" in self._features:
-            if self._features["status"] != "default":
+        if "eligible" in self._features:
+            if self._features["eligible"] != "default":
                 raise ValueError(
-                    "The 'status' feature does not have any other view than "
+                    "The 'eligible' feature does not have any other view than "
                     "the default."
                 )
 
-            feature_specs["status"] = DenseViewSpec(
-                value_type="categorical",
-                shape=("n_tasks",),
-                n_categories=Status.count(),
-            )
-
-        if "available" in self._features:
-            if self._features["available"] != "default":
-                raise ValueError(
-                    "The 'available' feature does not have any other view than "
-                    "the default."
-                )
-
-            feature_specs["available"] = DenseViewSpec(
+            feature_specs["eligible"] = DenseViewSpec(
                 value_type="binary",
                 shape=("n_tasks",),
             )
-
-        if "time" in self._features:
-            if self._features["time"] != "default":
-                raise ValueError(
-                    "The 'time' feature does not have any other view than "
-                    "the default."
-                )
-
-            feature_specs["time"] = DenseViewSpec(value_type="time", shape=())
 
         for feature_name, features in instance.features.items():
             if feature_name not in self._features:
@@ -179,19 +155,16 @@ class DefaultObservation(Observation[DefaultObsType]):
         return DictSpec(feature_specs)
 
     @override
-    def initialize(self, instance: ProblemInstance) -> None:
-        super().initialize(instance)
+    def initialize(
+        self, instance: ProblemInstance, backend: ScheduleBackend
+    ) -> None:
+        super().initialize(instance, backend)
 
-        self.available_tasks = set()
-        self._status = [AWAITING] * instance.n_tasks
-        self._available = [False] * instance.n_tasks
-        self._time = 0
+        self._eligible = [False] * instance.n_tasks
 
         obs = self._obs
 
-        obs["status"] = self._status
-        obs["available"] = self._available
-        obs["time"] = self._time
+        obs["eligible"] = self._eligible
 
         for feat_name, features in instance.features.items():
             if feat_name not in self.feature_specs:
@@ -206,26 +179,12 @@ class DefaultObservation(Observation[DefaultObsType]):
             obs[feat_name] = features[0].materialize(spec, **self.symbols)
 
     @override
-    def update(self, state: ScheduleState) -> None:
-        obs = self._obs
+    def update(self, state: ScheduleState, backend: ScheduleBackend) -> None:
+        eligible = self._eligible
+        eligible[:] = [False] * state.n_tasks
 
-        self._time = state.time
-
-        if "time" in obs:
-            obs["time"] = state.time
-
-        self._status[:] = state.runtime.status
-
-        available = self._available
-        available_tasks = self.available_tasks
-
-        available[:] = [False] * state.n_tasks
-        available_tasks.clear()
-
-        for task_id in state.runtime.unlocked_tasks:
-            if state.is_available(task_id):
-                available[task_id] = True
-                available_tasks.add(task_id)
+        for task_id in backend.get_eligible_set(state):
+            eligible[task_id] = True
 
     def __getitem__(self, key: str) -> Any:
         """Get the features of the specified scope."""

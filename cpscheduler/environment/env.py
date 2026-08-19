@@ -7,26 +7,29 @@ with constraint propagation.
 """
 
 from collections.abc import Iterable, Mapping
-from typing import TYPE_CHECKING, Any, Generic, Literal, cast
+from enum import Enum
+from typing import TYPE_CHECKING, Any, Generic, cast
 
-from typing_extensions import TypeVar, assert_never
+from typing_extensions import TypeVar
 
-from cpscheduler.environment.constants import EzPickle
-from cpscheduler.environment.constraints import Constraint, PassiveConstraint
-from cpscheduler.environment.des import (
+from cpscheduler.environment.backend import (
     ActionType,
-    Schedule,
+    ScheduleBackend,
     is_single_action,
     parse_instruction,
+    validate_instruction,
 )
+from cpscheduler.environment.constants import EzPickle
+from cpscheduler.environment.constraints import Constraint, PassiveConstraint
 from cpscheduler.environment.instance import FeatureMetadata, ProblemInstance
 from cpscheduler.environment.objectives import Objective
 from cpscheduler.environment.observation import DefaultObservation, Observation
 from cpscheduler.environment.render import Renderer
+from cpscheduler.environment.reward import DenseRewardStrategy, RewardStrategy
 from cpscheduler.environment.setups import ScheduleSetup
 from cpscheduler.environment.specs import ObservationSpec
 from cpscheduler.environment.state import ScheduleState
-from cpscheduler.environment.state.events import RuntimeEventKind, VarField
+from cpscheduler.environment.state.events import VarField
 from cpscheduler.environment.tracer import Tracer
 from cpscheduler.environment.utils import (
     InfoType,
@@ -41,18 +44,19 @@ from cpscheduler.environment.utils import (
 if TYPE_CHECKING:
     from cpscheduler.environment.component import Component
 
-# Event fields and kinds
 
-EnvStatusType = Literal[0, 1, 2]
+class EnvStatus(Enum):
+    """Environment control flow."""
 
-# No instance loaded. Constraints and Objectives can be added
-UNLOADED: Literal[0] = 0
+    UNLOADED = 0
+    """No instance loaded. Constraints and Objectives can be added"""
 
-# Instance loaded and components initialized, configuration frozen
-LOADED: Literal[1] = 1
+    LOADED = 1
+    """Instance loaded and components initialized, configuration frozen"""
 
-# State globally consistent, instance frozen
-RUNNING: Literal[2] = 2
+    RUNNING = 2
+    """State globally consistent, instance frozen"""
+
 
 ASSIGNMENT = VarField.ASSIGNMENT
 START_LB = VarField.START_LB
@@ -62,14 +66,8 @@ END_UB = VarField.END_UB
 PRESENCE = VarField.PRESENCE
 ABSENCE = VarField.ABSENCE
 MACHINE_INFEASIBLE = VarField.MACHINE_INFEASIBLE
-PAUSE = VarField.PAUSE
-BOUNDS_RESET = VarField.BOUNDS_RESET
 STATE_INFEASIBLE = VarField.STATE_INFEASIBLE
-
-TASK_STARTED = RuntimeEventKind.TASK_STARTED
-TASK_PAUSED = RuntimeEventKind.TASK_PAUSED
-TASK_COMPLETED = RuntimeEventKind.TASK_COMPLETED
-TASK_MACHINE_INFEASIBLE = RuntimeEventKind.TASK_MACHINE_INFEASIBLE
+GLOBAL_TIME = VarField.GLOBAL_TIME
 
 
 def _join_info(info: InfoType, key: str, new_item: InfoType | Any) -> None:
@@ -133,13 +131,13 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
     instance: ProblemInstance
     instance_generator: InstanceGenerator | None
     state: ScheduleState
-    schedule: Schedule
+    backend: ScheduleBackend
+    reward: RewardStrategy
 
     # Helper variables
-    _prev_obj_value: float
     event_count: int
 
-    _status: EnvStatusType
+    _status: EnvStatus
 
     # FUTURE: Mypyc issue https://github.com/mypyc/mypyc/issues/961
     # The trick used here produces a false-positive when type checking:
@@ -178,6 +176,8 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         constraints: Iterable[Constraint] | None = None,
         objective: Objective | None = None,
         observation: ObsT_co | None = None,
+        backend: ScheduleBackend | str = "des",
+        reward: RewardStrategy | None = None,
         instance: InstanceTypes | InstanceGenerator | None = None,
         metrics: Mapping[str, Metric] | None = None,
         tracers: Iterable[Tracer] | None = None,
@@ -211,6 +211,14 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             Observation class used to build RL observations. Defaults to
             `DefaultObservation`.
 
+        backend: ScheduleBackend, str, optional
+            The schdeule dispatcher used in the environment. Defaults to the
+            DES kernel.
+
+        reward: RewardStrategy, optional
+            The reward strategy employed to the objective class. Defaults to
+            sparse reward at the terminal state.
+
         instance : InstanceTypes or InstanceGenerator, optional
             Either concrete instance data or a generator stored for lazy sampling.
 
@@ -228,19 +236,16 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             Defaults to False.
 
         """
-        self._status = UNLOADED
+        self._status = EnvStatus.UNLOADED
 
-        if machine_setup is None:
-            machine_setup = ScheduleSetup()
+        machine_setup = machine_setup or ScheduleSetup()
+        constraints = constraints or ()
+        objective = objective or Objective()
+        observation = observation or cast("ObsT_co", DefaultObservation())
+        reward = reward or DenseRewardStrategy()
 
-        if constraints is None:
-            constraints = ()
-
-        if objective is None:
-            objective = Objective()
-
-        if observation is None:
-            observation = cast("ObsT_co", DefaultObservation())
+        if isinstance(backend, str):
+            backend = ScheduleBackend.from_register(backend)
 
         setup_constraints = machine_setup.setup_constraints()
 
@@ -267,7 +272,10 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         self.constraints = tuple(constraints)
         self.objective = objective
         self.observation = observation
-        self.observation_spec = observation.compile(problem_instance)
+        self.backend = backend
+        self.reward = reward
+
+        self.observation_spec = observation.compile(problem_instance, backend)
 
         self.metrics = dict(metrics) if metrics is not None else {}
         self.tracers = tuple(tracers) if tracers is not None else ()
@@ -279,8 +287,6 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             if not isinstance(constraint, PassiveConstraint)
         )
         self.instance = problem_instance
-
-        self.schedule = Schedule()
 
         self.instance_generator = None
         if isinstance(instance, InstanceGenerator):
@@ -308,12 +314,12 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
     @property
     def loaded(self) -> bool:
         """Indicates whether an instance has been loaded and the environment is initialized."""
-        return self._status != UNLOADED
+        return self._status != EnvStatus.UNLOADED
 
     @property
     def running(self) -> bool:
         """Indicates whether the environment is currently running an episode."""
-        return self._status == RUNNING
+        return self._status == EnvStatus.RUNNING
 
     @property
     def all_constraints(self) -> tuple[Constraint, ...]:
@@ -324,28 +330,22 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         """Return a string representation of the environment's configuration and state."""
         entry = self.get_entry()
 
-        if self._status == UNLOADED:
+        if self._status == EnvStatus.UNLOADED:
             return f"SchedulingEnv({entry}, n_tasks=0)"
 
         state = self.state
         n_tasks = state.n_tasks
 
-        if self._status == LOADED:
+        if self._status == EnvStatus.LOADED:
             return f"SchedulingEnv({entry}, n_tasks={n_tasks})"
 
-        time = state.time
-
         if state.infeasible:
-            return (
-                f"SchedulingEnv({entry}, n_tasks={n_tasks}, "
-                f"current_time={time}, infeasible=True)"
-            )
+            return f"SchedulingEnv({entry}, n_tasks={n_tasks}, infeasible=True)"
 
-        obj_value = self.objective.get_current(state)
+        obj_value = self.objective.current
 
         return (
-            f"SchedulingEnv({entry}, n_tasks={n_tasks}, "
-            f"current_time={time}, objective={obj_value})"
+            f"SchedulingEnv({entry}, n_tasks={n_tasks}, objective={obj_value})"
         )
 
     # Environment configuration public methods
@@ -356,7 +356,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         and objective modifications.
         """
         self.instance.reset()
-        self._status = UNLOADED
+        self._status = EnvStatus.UNLOADED
 
     def required_features(
         self, show_optional: bool = False
@@ -409,13 +409,13 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         ]:
             component.initialize(problem_instance)
 
-        self.observation.initialize(problem_instance)
+        self.observation.initialize(problem_instance, self.backend)
 
         for tracer in self.tracers:
             tracer.initialize(problem_instance)
 
         self.state = ScheduleState(problem_instance)
-        self._status = LOADED
+        self._status = EnvStatus.LOADED
 
     def add_metric(self, name: str, metric: Metric) -> None:
         """Add a metric to the environment."""
@@ -441,10 +441,10 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
     def get_info(self) -> InfoType:
         """Retrieve additional information about the environment."""
         info = {
-            "current_time": self.state.time,
-            "objective_value": self._prev_obj_value,
+            "objective_value": self.objective.current,
             "event_count": self.event_count,
             "infeasible": self.state.infeasible,
+            **self.backend.get_info(),
         }
 
         for tracer in self.tracers:
@@ -471,65 +471,17 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         if action is None:
             return
 
+        backend = self.backend.backend
         state = self.state
 
         if is_single_action(action):
-            instruction, time, priority = parse_instruction(action)
-            self.schedule.add_event(instruction, state, time, priority)
+            action = [action]
 
-            return
+        for act in action:
+            instruction, time, priority = parse_instruction(act, backend)
+            instruction = validate_instruction(instruction, state)
 
-        for instruction_args in action:
-            instruction, time, priority = parse_instruction(instruction_args)
-            self.schedule.add_event(instruction, state, time, priority)
-
-    def advance_clock(self) -> bool:
-        """Advance simulation time to the next event horizon.
-
-        Determines the next time step based on scheduled instructions or state,
-        updates all constraints, and triggers propagation.
-        Halts when the schedule is empty, awaiting the next policy action.
-
-        The next time is determined by the following logic:
-        - If the schedule has pending instructions, advance to the next instruction time.
-        - If the schedule is empty but there are unlocked tasks, advance to the earliest start_lb
-            among unlocked tasks.
-        - If the schedule is empty and no unlocked tasks, advance to the last completion time.
-
-        This logic ensures that the simulation advances to the next decision
-        point where the state may change, either due to scheduled events or
-        lower bounds for next possible instructions.
-
-        Returns
-        -------
-        bool
-            True if schedule is not empty (more events to process).
-            False if inconsistency detected or schedule is empty.
-
-        """
-        schedule = self.schedule
-        state = self.state
-
-        empty_schedule = schedule.is_empty()
-
-        if not empty_schedule:
-            next_time = schedule.next_time()
-
-        elif state.runtime.unlocked_tasks:
-            next_time = state.get_next_start_lb()
-
-        else:
-            next_time = state.get_last_completion_time()
-
-        if next_time > state.time:
-            self.state.advance_time_(next_time)
-
-            for constraint in self._all_constraints:
-                constraint.on_time_update(next_time, self.state)
-
-            self.propagate()
-
-        return not schedule.is_empty()
+            self.backend.add_instruction(instruction, time, priority)
 
     def propagate(self) -> None:
         """Execute constraint propagation to fixed-point.
@@ -548,6 +500,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         state = self.state
         event_queue = state.domain_event_queue
         constraints = self._all_constraints
+        objective = self.objective
 
         # FUTURE: For performance, consider subscribing constraints such that,
         # constraint.fields() -> Sequence[VarFieldType]
@@ -557,6 +510,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         task_ids = event_queue.task_ids
         fields = event_queue.fields
         machine_ids = event_queue.machine_ids
+        times = event_queue.times
 
         idx = 0
         while idx < len(event_queue):
@@ -567,42 +521,49 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             if field == ASSIGNMENT:
                 for constraint in constraints:
                     constraint.on_assignment(task_id, machine_id, state)
+                objective.on_assignment(task_id, machine_id, state)
 
             elif field == START_LB:
                 for constraint in constraints:
                     constraint.on_start_lb(task_id, machine_id, state)
+                objective.on_start_lb(task_id, machine_id, state)
 
             elif field == START_UB:
                 for constraint in constraints:
                     constraint.on_start_ub(task_id, machine_id, state)
+                objective.on_start_ub(task_id, machine_id, state)
 
             elif field == END_LB:
                 for constraint in constraints:
                     constraint.on_end_lb(task_id, machine_id, state)
+                objective.on_end_lb(task_id, machine_id, state)
 
             elif field == END_UB:
                 for constraint in constraints:
                     constraint.on_end_ub(task_id, machine_id, state)
+                objective.on_end_ub(task_id, machine_id, state)
 
             elif field == PRESENCE:
                 for constraint in constraints:
                     constraint.on_presence(task_id, state)
+                objective.on_presence(task_id, state)
 
             elif field == ABSENCE:
                 for constraint in constraints:
                     constraint.on_absence(task_id, state)
+                objective.on_absence(task_id, state)
 
             elif field == MACHINE_INFEASIBLE:
                 for constraint in constraints:
                     constraint.on_infeasibility(task_id, machine_id, state)
+                objective.on_infeasibility(task_id, machine_id, state)
 
-            elif field == PAUSE:
-                for constraint in constraints:
-                    constraint.on_pause(task_id, machine_id, state)
+            elif field == GLOBAL_TIME:
+                time = times[idx]
 
-            elif field == BOUNDS_RESET:
                 for constraint in constraints:
-                    constraint.on_bound_reset(task_id, state)
+                    constraint.on_time_update(time, state)
+                objective.on_time_update(time, state)
 
             # FUTURE: This should be resolved when the event is created to allow
             # discovering the causal effect that lead to infeasibility.
@@ -616,55 +577,12 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
                 return
 
             else:
-                assert_never(field)
+                raise ValueError(f"UNREACHABLE: No field named {field.name}")
 
             idx += 1
 
         self.event_count += idx
         event_queue.clear()
-
-    def update_runtime(self) -> None:
-        """Process runtime events and trigger callbacks.
-
-        Dequeues task events (started, completed, paused, infeasible) and
-        invokes callbacks on the objective and observation modules.
-        """
-        state = self.state
-        runtime_event_queue = state.runtime_event_queue
-        objective = self.objective
-        observation = self.observation
-
-        task_ids = runtime_event_queue.task_ids
-        kinds = runtime_event_queue.kinds
-        machine_ids = runtime_event_queue.machine_ids
-
-        for i in range(len(runtime_event_queue)):
-            task_id = task_ids[i]
-            kind = kinds[i]
-            machine_id = machine_ids[i]
-
-            if kind == TASK_STARTED:
-                objective.on_task_started(task_id, machine_id, state)
-                observation.on_task_started(task_id, machine_id, state)
-
-            elif kind == TASK_PAUSED:
-                objective.on_task_paused(task_id, machine_id, state)
-                observation.on_task_paused(task_id, machine_id, state)
-
-            elif kind == TASK_COMPLETED:
-                objective.on_task_completed(task_id, machine_id, state)
-                observation.on_task_completed(task_id, machine_id, state)
-
-            elif kind == TASK_MACHINE_INFEASIBLE:
-                objective.on_task_machine_infeasible(task_id, machine_id, state)
-                observation.on_task_machine_infeasible(
-                    task_id, machine_id, state
-                )
-
-            else:
-                assert_never(kind)
-
-        runtime_event_queue.clear()
 
     # Environment API methods
     def reset(
@@ -726,7 +644,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
                 self.load_instance(*ensure_iterable(sample))
 
-        if self._status == UNLOADED:
+        if self._status == EnvStatus.UNLOADED:
             raise ValueError(
                 "Environment has not been loaded with an instance. "
                 "Please call reset(options={'instance':<instance>}) or "
@@ -734,8 +652,9 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             )
 
         state = self.state
+        backend = self.backend
 
-        self.schedule.reset()
+        backend.reset()
         state.reset()
 
         for tracer in self.tracers:
@@ -755,11 +674,11 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
         observation = self.observation
 
-        observation.reset(state)
-        observation.update(state)
-        self._prev_obj_value = self.objective.get_current(state)  # Cold start
+        observation.reset(state, backend)
+        observation.update(state, backend)
+        self.reward.reset(state)
 
-        self._status = RUNNING
+        self._status = EnvStatus.RUNNING
 
         return observation, self.get_info()
 
@@ -810,8 +729,8 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         """
         state = self.state
 
-        if self._status != RUNNING:
-            if self._status == UNLOADED:
+        if self._status != EnvStatus.RUNNING:
+            if self._status == EnvStatus.UNLOADED:
                 raise RuntimeError(
                     "Environment was not reset after loading an instance, or "
                     "wasn't loaded. Please either call "
@@ -826,32 +745,25 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
         self.schedule_action(action)
 
-        schedule = self.schedule
+        backend = self.backend
 
-        while not state.is_terminal() and self.advance_clock():
-            for event in schedule.instruction_queue(state):
-                for tracer in self.tracers:
-                    tracer.step(state, event)
+        while True:
+            instruction = backend.dispatch_instruction(state)
 
-                event.process(state, schedule)
+            if instruction is None:
+                break
 
-                self.propagate()
+            for tracer in self.tracers:
+                tracer.step(instruction, state, backend)
 
-                if state.infeasible:
-                    break
+            instruction.process(state, backend)
+            self.propagate()
 
         # Gymnasium-like step return
 
-        self.update_runtime()
-        self.observation.update(state)
+        self.observation.update(state, backend)
 
-        obj_value = self.objective.get_current(state)
-        reward = obj_value - self._prev_obj_value
-        self._prev_obj_value = obj_value
-
-        if self.objective.minimize:
-            reward = -reward
-
+        reward = self.reward.compute(state, self.objective)
         truncated = state.infeasible
         terminal = state.is_terminal()
         info = self.get_info()
@@ -867,7 +779,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             If environment is not in RUNNING state.
 
         """
-        if self._status != RUNNING:
+        if self._status != EnvStatus.RUNNING:
             raise RuntimeError(
                 "Cannot render an environment during configuration."
             )

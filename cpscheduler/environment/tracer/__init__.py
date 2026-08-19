@@ -8,10 +8,9 @@ their own tracers by subclassing the `Tracer` class.
 """
 
 __all__ = [
-    "ExecutionTrajectoryTracer",
     "FullTrajectoryTracer",
     "Tracer",
 ]
 
 from .base import Tracer
-from .trajectory import ExecutionTrajectoryTracer, FullTrajectoryTracer
+from .trajectory import FullTrajectoryTracer

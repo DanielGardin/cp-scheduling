@@ -2,8 +2,8 @@
 
 from typing import Any, ClassVar
 
+from cpscheduler.environment.backend import Instruction, ScheduleBackend
 from cpscheduler.environment.constants import EzPickle
-from cpscheduler.environment.des import SimulationEvent
 from cpscheduler.environment.instance import ProblemInstance
 from cpscheduler.environment.state import ScheduleState
 
@@ -11,7 +11,7 @@ from cpscheduler.environment.state import ScheduleState
 class Tracer(EzPickle):
     """Base class for tracers in the CPScheduler environment.
 
-    Tracers are called before each decision step, dispatched by the DES scheduler.
+    Tracers are called before each decision step, dispatched by the backend.
     They are often used as a snapshot of the environment's internal state right
     before an action, used in learning planning policies, for example.
     """
@@ -25,7 +25,12 @@ class Tracer(EzPickle):
     def reset(self, state: ScheduleState) -> None:
         """Reset the tracer to its initial state."""
 
-    def step(self, state: ScheduleState, action: SimulationEvent) -> None:
+    def step(
+        self,
+        action: Instruction,
+        state: ScheduleState,
+        backend: ScheduleBackend,
+    ) -> None:
         """Process a step in the tracer.
 
         During each step, the tracer can access the current state and action in

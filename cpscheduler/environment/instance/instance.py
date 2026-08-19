@@ -106,7 +106,6 @@ class ProblemInstance(EzPickle):
     n_machines: int
     symbol_values: dict[str, int]
 
-    _preemptive: Feature[list[bool]]
     _optional: Feature[list[bool]]
     _processing_times: Feature[list[list[Time]]]
     _machine_mask: Feature[list[list[bool]]]
@@ -132,12 +131,6 @@ class ProblemInstance(EzPickle):
 
         """
         self.job_tasks = []
-        self._preemptive = Feature(
-            name="preemptive",
-            shape=("n_tasks",),
-            owner=True,
-            value_type="binary",
-        )
 
         self._optional = Feature(
             name="optional", shape=("n_tasks",), owner=True, value_type="binary"
@@ -163,7 +156,6 @@ class ProblemInstance(EzPickle):
 
         # Setting features without self.register(...)
         self.features = {
-            "preemptive": [self._preemptive],
             "optional": [self._optional],
             "all_processing_times": [self._processing_times],
             "machine_mask": [self._machine_mask],
@@ -203,14 +195,6 @@ class ProblemInstance(EzPickle):
     def debug(self) -> bool:
         """Whether the instance is in debug mode."""
         return self._debug
-
-    @property
-    def preemptive(self) -> list[bool]:
-        """Preemptivity of each task in the instance.
-
-        Gathered from the `preemptive` feature, has shape (n_tasks,).
-        """
-        return self._preemptive.value
 
     @property
     def optional(self) -> list[bool]:
@@ -315,7 +299,6 @@ class ProblemInstance(EzPickle):
                 feature.reset()
 
         # Remove stale data from internal features
-        self._preemptive.empty()
         self._optional.empty()
         self._processing_times.empty()
         self._machine_mask.empty()
@@ -368,7 +351,6 @@ class ProblemInstance(EzPickle):
                 f"n_machines={setup.n_machines}."
             )
 
-        self._preemptive.own_data([False] * n_tasks)
         self._optional.own_data([False] * n_tasks)
 
         if not self._job_ids.loaded:
@@ -480,12 +462,6 @@ class ProblemInstance(EzPickle):
         self._machine_mask.value[task_id][machine_id] = False
         self._processing_times.value[task_id][machine_id] = MAX_TIME
 
-    def set_preemption(
-        self, task_id: TaskID, allow_preemption: bool = True
-    ) -> None:
-        """Set the preemptivity of a task in the instance."""
-        self._preemptive.value[task_id] = allow_preemption
-
     def set_optionality(self, task_id: TaskID, optional: bool = True) -> None:
         """Set the optional status of a task in the instance."""
         self._optional.value[task_id] = optional
@@ -509,7 +485,6 @@ class ProblemInstance(EzPickle):
             and self.features == value.features
             and self._job_ids == value._job_ids
             and self.job_tasks == value.job_tasks
-            and self._preemptive == value._preemptive
             and self._optional == value._optional
             and self._processing_times == value._processing_times
             and self.n_tasks == value.n_tasks

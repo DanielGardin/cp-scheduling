@@ -9,8 +9,8 @@ from gymnasium.spaces import Box, Discrete, Sequence, Space
 from numpy import int64
 from typing_extensions import override
 
+from cpscheduler.environment.backend import ActionType
 from cpscheduler.environment.constants import Int
-from cpscheduler.environment.des import ActionType
 from cpscheduler.environment.utils.protocols import Options
 
 if TYPE_CHECKING:

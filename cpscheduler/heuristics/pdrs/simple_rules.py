@@ -165,6 +165,4 @@ class FirstInFirstOut(StaticPriorityDispatchingRule):
 
     @override
     def priority_score(self, obs: DefaultObservation) -> list[float]:
-        t = obs.time
-
-        return [float(t - r) for r in obs["task"][self.release_time]]
+        return [-float(r) for r in obs["task"][self.release_time]]
