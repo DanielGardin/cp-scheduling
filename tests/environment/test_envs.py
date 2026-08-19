@@ -28,7 +28,7 @@ def test_blocking_instruction(instance_name: str) -> None:
 
     with pytest.raises(
         RuntimeError,
-        match=r"is potentially deadlocking the event queue due to an action-dependent dependency that may never happen.",
+        match=r"is potentially deadlocking the event queue",
     ):
         env.step(deadlock_action)
 
