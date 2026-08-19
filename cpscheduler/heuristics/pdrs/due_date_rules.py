@@ -6,6 +6,11 @@ from cpscheduler.environment.observation import DefaultObservation
 from cpscheduler.heuristics.pdrs.base import PriorityDispatchingRule
 
 
+# FUTURE: As we introduced Tetris backend, the concept or time now is
+# not as clear as we had with DES (global clock).
+# Most of the uses of such concept are actually used for estimating the lower
+# bound for start and end times. Maybe we should include bounds in the default
+# observation(?).
 class ModifiedDueDate(PriorityDispatchingRule):
     """Modified Due Date (MDD) heuristic.
 
@@ -45,7 +50,7 @@ class ModifiedDueDate(PriorityDispatchingRule):
 
     @override
     def priority_score(self, obs: DefaultObservation) -> list[float]:
-        t = obs.time
+        t = 0
         due_dates = obs[self.due_date]
         processing_times = obs[self.processing_time]
 
@@ -103,7 +108,7 @@ class WeightedModifiedDueDate(PriorityDispatchingRule):
 
     @override
     def priority_score(self, obs: DefaultObservation) -> list[float]:
-        t = obs.time
+        t = 0
         due_dates = obs[self.due_date]
         processing_times = obs[self.processing_time]
         weights = obs[self.weight]
@@ -163,7 +168,7 @@ class MinimumSlackTime(PriorityDispatchingRule):
 
     @override
     def priority_score(self, obs: DefaultObservation) -> list[float]:
-        t = obs.time
+        t = 0
 
         processing_times = obs[self.processing_time]
         due_dates = obs[self.due_date]

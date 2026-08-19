@@ -5,11 +5,9 @@ from cpscheduler.environment.constraints.base import Constraint
 from cpscheduler.environment.env import (
     ABSENCE,
     ASSIGNMENT,
-    BOUNDS_RESET,
     END_LB,
     END_UB,
     MACHINE_INFEASIBLE,
-    PAUSE,
     PRESENCE,
     START_LB,
     START_UB,
@@ -17,7 +15,7 @@ from cpscheduler.environment.env import (
 )
 from cpscheduler.environment.setups import SingleMachineSetup
 from cpscheduler.environment.state import ScheduleState
-from cpscheduler.environment.state.events import VarFieldType
+from cpscheduler.environment.state.events import VarField
 
 
 class _RecordingConstraint(Constraint):
@@ -60,14 +58,6 @@ class _RecordingConstraint(Constraint):
     ) -> None:
         self.calls.append(("infeasibility", task_id, machine_id))
 
-    def on_pause(
-        self, task_id: int, machine_id: int, state: ScheduleState
-    ) -> None:
-        self.calls.append(("pause", task_id, machine_id))
-
-    def on_bound_reset(self, task_id: int, state: ScheduleState) -> None:
-        self.calls.append(("bound_reset", task_id, None))
-
 
 @pytest.mark.parametrize(
     ("field", "machine_id", "expected"),
@@ -80,12 +70,10 @@ class _RecordingConstraint(Constraint):
         (PRESENCE, GLOBAL_MACHINE_ID, ("presence", 0, None)),
         (ABSENCE, GLOBAL_MACHINE_ID, ("absence", 0, None)),
         (MACHINE_INFEASIBLE, 4, ("infeasibility", 0, 4)),
-        (PAUSE, 3, ("pause", 0, 3)),
-        (BOUNDS_RESET, GLOBAL_MACHINE_ID, ("bound_reset", 0, None)),
     ],
 )
 def test_propagate_dispatches_domain_events(
-    field: VarFieldType, machine_id: int, expected: tuple[str, int, int | None]
+    field: VarField, machine_id: int, expected: tuple[str, int, int | None]
 ) -> None:
     recorder = _RecordingConstraint()
 
