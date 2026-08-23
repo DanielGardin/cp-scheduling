@@ -60,7 +60,7 @@ ABSENT = Presence.ABSENT
 UNDEFINED = Presence.UNDEFINED
 
 
-@mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
+@mypyc_attr(native_class=True, allow_interpreted_subclasses=False, acyclic=True)
 class Bounds(EzPickle):
     """Integer bound container used for start/end variables.
 
@@ -142,7 +142,7 @@ class Bounds(EzPickle):
         )
 
 
-@mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
+@mypyc_attr(native_class=True, allow_interpreted_subclasses=False, acyclic=True)
 class TaskDomains(EzPickle):
     """Aggregate container for task variables used by the CSP kernel.
 

@@ -14,6 +14,7 @@ from mypy_extensions import mypyc_attr
 from cpscheduler.environment.constants import (
     MAX_TIME,
     EzPickle,
+    JobID,
     MachineID,
     TaskID,
     Time,
@@ -109,7 +110,7 @@ class ProblemInstance(EzPickle):
     _optional: Feature[list[bool]]
     _processing_times: Feature[list[list[Time]]]
     _machine_mask: Feature[list[list[bool]]]
-    _job_ids: Feature[list[TaskID]]
+    _job_ids: Feature[list[JobID]]
 
     _debug: bool
 
@@ -222,7 +223,7 @@ class ProblemInstance(EzPickle):
         return self._processing_times.value
 
     @property
-    def job_ids(self) -> list[TaskID]:
+    def job_ids(self) -> list[JobID]:
         """Job ID of each task in the instance.
 
         Gathered from the `job` feature, has shape (n_tasks,).

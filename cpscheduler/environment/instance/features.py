@@ -290,6 +290,7 @@ VISITING = 1
 VISITED = 2
 
 
+@mypyc_attr(native_class=True, allow_interpreted_subclasses=True)
 class DAGFeature(Feature[dict[int, list[int]]]):
     """Feature class for representing Directed Acyclic Graphs (DAGs).
 

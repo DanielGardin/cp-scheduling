@@ -13,6 +13,8 @@ import ast
 from collections.abc import Sequence
 from typing import Any, Literal, TypeAlias, overload
 
+from mypy_extensions import mypyc_attr
+
 from cpscheduler.environment.constants import EzPickle
 
 BuiltinSymbols = Literal["n_tasks", "n_jobs", "n_machines"]
@@ -113,6 +115,7 @@ def _visit_mult(
     result[sym_node.id] += sign * coef.value
 
 
+@mypyc_attr(native_class=True, allow_interpreted_subclasses=False, acyclic=True)
 class SymbolicDim(EzPickle):
     """Represents a symbolic shape dimension as an affine expression of known symbols.
 

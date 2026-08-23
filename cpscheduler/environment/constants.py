@@ -220,7 +220,7 @@ def _collect_fields(cls: type) -> tuple[str, ...]:
     return tuple(result)
 
 
-@mypyc_attr(native_class=True, allow_interpreted_subclasses=True)
+@mypyc_attr(native_class=True, allow_interpreted_subclasses=True, acyclic=True)
 class EzPickle:
     """Automatic pickle support for mypyc-compatible classes.
 

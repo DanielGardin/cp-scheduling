@@ -49,7 +49,7 @@ class VarField(Enum):
     """All remaining tasks must execute after a global time."""
 
 
-@mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
+@mypyc_attr(native_class=True, allow_interpreted_subclasses=False, acyclic=True)
 class DomainEventQueue(EzPickle):
     """Container for domain events generated during constraint propagation."""
 

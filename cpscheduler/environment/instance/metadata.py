@@ -2,6 +2,8 @@
 
 from typing import Any, Literal
 
+from mypy_extensions import mypyc_attr
+
 from cpscheduler.environment.constants import EzPickle
 from cpscheduler.environment.utils.symbols import (
     BaseShapeDim,
@@ -52,6 +54,7 @@ _BOUNDS: dict[ValueType, tuple[float, float | None]] = {
 }
 
 
+@mypyc_attr(native_class=True, allow_interpreted_subclasses=False, acyclic=True)
 class FeatureMetadata(EzPickle):
     """Metadata for a scheduling instance feature."""
 
