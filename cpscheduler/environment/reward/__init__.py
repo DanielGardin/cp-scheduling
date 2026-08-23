@@ -1,8 +1,8 @@
 """Reward calculation module."""
 
 __all__ = [
-    "DenseRewardStrategy",
     "RewardStrategy",
+    "SparseRewardStrategy",
 ]
 
-from .base import DenseRewardStrategy, RewardStrategy
+from .base import RewardStrategy, SparseRewardStrategy

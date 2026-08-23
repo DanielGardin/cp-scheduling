@@ -23,9 +23,11 @@ class RewardStrategy(EzPickle):
         )
 
 
-class DenseRewardStrategy(RewardStrategy):
+class SparseRewardStrategy(RewardStrategy):
     """Reward strategy that returns the objective value only in the terminal state."""
 
     @override
     def compute(self, state: ScheduleState, objective: Objective) -> float:
-        return objective.current if state.is_terminal() else 0.0
+        reward = objective.current if state.is_terminal() else 0.0
+
+        return -reward if objective.minimize else reward
