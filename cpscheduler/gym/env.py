@@ -39,6 +39,8 @@ from cpscheduler.gym.obs_spaces import to_gym_space
 ObsType = TypeVar("ObsType", default=DefaultObsType)
 _T = TypeVar("_T", covariant=True)
 
+RENDER_MODES = ("ansi",)
+
 
 class SchedulingEnvGym(Env[ObsType, ActionType]):
     """Reinforcement Learning environment for scheduling problems.
@@ -151,6 +153,8 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
                 machine_setup=machine_setup,
                 constraints=constraints,
                 objective=objective,
+                backend=backend,
+                reward=reward,
                 instance=instance,
                 metrics=metrics,
                 tracers=tracers,
@@ -163,6 +167,8 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
                 constraints=constraints,
                 objective=objective,
                 observation=observation,
+                backend=backend,
+                reward=reward,
                 instance=instance,
                 metrics=metrics,
                 tracers=tracers,
@@ -172,7 +178,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         self._current_fingerprint = self.fingerprint
         self.observation_space = self._get_observation_space()
         self.metadata = {
-            "render_modes": ["ansi"],
+            "render_modes": RENDER_MODES,
             "render_fps": 50,
         }
 
@@ -199,7 +205,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         self._current_fingerprint = self.fingerprint
         self.observation_space = self._get_observation_space()
         self.metadata = {
-            "render_modes": ["human"],
+            "render_modes": RENDER_MODES,
             "render_fps": 50,
         }
 
