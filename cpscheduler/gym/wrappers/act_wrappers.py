@@ -44,7 +44,7 @@ class SchedulingActionWrapper(ActionWrapper[_Obs, _Act, ActionType], ABC):
         """Reset the environment and update the action space if necessary."""
         fingerprint: int = self.get_wrapper_attr("fingerprint")
 
-        obs, info = super().reset(
+        obs, info = self.env.reset(
             seed=seed, options=dict(options) if options else None
         )
 
@@ -129,4 +129,26 @@ class SingleActionWrapper(SchedulingActionWrapper[_Obs, Int]):
 
     @override
     def action(self, action: Int) -> ActionType:
+        return ("execute", action)
+
+
+class SingleActionNoopWrapper(SchedulingActionWrapper[_Obs, Int]):
+    """A wrapper for a single task execution per step, including noop."""
+
+    _n_tasks: int
+
+    @override
+    def _get_action_space(self) -> Space[Int]:
+        env: SchedulingEnv = self.get_wrapper_attr("core")
+
+        n_tasks = env.observation.n_tasks
+        self._n_tasks = n_tasks
+
+        return Discrete(n_tasks + 1)
+
+    @override
+    def action(self, action: Int) -> ActionType:
+        if action == self._n_tasks:
+            return ("noop",)
+
         return ("execute", action)

@@ -19,7 +19,7 @@ from cpscheduler.environment.backend import (
     parse_instruction,
     validate_instruction,
 )
-from cpscheduler.environment.constants import EzPickle
+from cpscheduler.environment.constants import EzPickle, TaskID
 from cpscheduler.environment.constraints import Constraint, PassiveConstraint
 from cpscheduler.environment.instance import FeatureMetadata, ProblemInstance
 from cpscheduler.environment.objectives import Objective
@@ -363,6 +363,10 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
     ) -> dict[str, FeatureMetadata]:
         """Return a dictionary of all required features from the setup, constraints, and objective."""
         return self.instance.required_features(show_optional)
+
+    def get_action_support(self) -> list[TaskID]:
+        """Retrieve the current feasible action set."""
+        return self.backend.get_eligible_set(self.state)
 
     def set_generator(self, instance_generator: InstanceGenerator) -> None:
         """Set the instance generator.
