@@ -59,6 +59,12 @@ class ScheduleBackend(EzPickle):
         """Reset the schedule to its initial empty state."""
         self._next_event_id = 0
 
+    def is_empty(self) -> bool:
+        """Return whether the backend has scheduled instructions or not."""
+        raise NotImplementedError(
+            f"Backend {self.backend} has no `is_empty` method."
+        )
+
     def dispatch_instruction(self, state: ScheduleState) -> Instruction | None:
         """Return the next instruction to be processed in the environment."""
         raise NotImplementedError(
