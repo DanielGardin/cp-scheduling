@@ -25,7 +25,7 @@ from cpscheduler.environment.instance import FeatureMetadata, ProblemInstance
 from cpscheduler.environment.objectives import Objective
 from cpscheduler.environment.observation import DefaultObservation, Observation
 from cpscheduler.environment.render import Renderer
-from cpscheduler.environment.reward import DenseRewardStrategy, RewardStrategy
+from cpscheduler.environment.reward import RewardStrategy, SparseRewardStrategy
 from cpscheduler.environment.setups import ScheduleSetup
 from cpscheduler.environment.specs import ObservationSpec
 from cpscheduler.environment.state import ScheduleState
@@ -242,7 +242,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         constraints = constraints or ()
         objective = objective or Objective()
         observation = observation or cast("ObsT_co", DefaultObservation())
-        reward = reward or DenseRewardStrategy()
+        reward = reward or SparseRewardStrategy()
 
         if isinstance(backend, str):
             backend = ScheduleBackend.from_register(backend)
@@ -676,7 +676,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
         observation.reset(state, backend)
         observation.update(state, backend)
-        self.reward.reset(state)
+        self.reward.reset(state, self.objective)
 
         self._status = EnvStatus.RUNNING
 

@@ -12,7 +12,7 @@ from cpscheduler.environment.state import ScheduleState
 class RewardStrategy(EzPickle):
     """General reward strategy computation class."""
 
-    def reset(self, state: ScheduleState) -> None:
+    def reset(self, state: ScheduleState, objective: Objective) -> None:
         """Reset the internal reward state."""
 
     def compute(self, state: ScheduleState, objective: Objective) -> float:
