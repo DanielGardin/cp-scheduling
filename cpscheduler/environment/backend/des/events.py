@@ -1,16 +1,22 @@
 """Implementation of events for the discrete event simulation environment."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from typing_extensions import Self, override
 
 from cpscheduler.environment.backend.des.base import SimulationEvent
-from cpscheduler.environment.backend.des.des import DESBackend
 from cpscheduler.environment.constants import (
     GLOBAL_MACHINE_ID,
     MachineID,
     TaskID,
     Time,
 )
-from cpscheduler.environment.state import ScheduleState
+
+if TYPE_CHECKING:
+    from cpscheduler.environment.backend.des.des import DESBackend
+    from cpscheduler.environment.state import ScheduleState
 
 
 def select_machine(
@@ -61,8 +67,6 @@ class ExecuteEvent(SimulationEvent):
             the event will attempt to resolve the machine at runtime.
 
         """
-        super().__init__()
-
         self.task_id = task_id
         self.machine_id = machine_id
 
@@ -160,15 +164,7 @@ class SkipEvent(SimulationEvent):
 
 
 class CheckpointEvent(SimulationEvent):
-    """Event representing a checkpoint in the schedule.
-
-    This is a no-op, non-blocking event, mostly used for marking unskippable
-    simulation times in the schedule.
-    For example, it can be produced by a CompleteEvent at the end time of a task,
-    to ensure that the schedule advances to at least that time.
-    """
-
-    blocking = False
+    """Event representing a checkpoint in the schedule."""
 
     time: Time
 
@@ -182,3 +178,43 @@ class CheckpointEvent(SimulationEvent):
     @override
     def process(self, state: ScheduleState, backend: DESBackend) -> None:
         return state.tight_global_time(backend.time)
+
+
+class HaltEvent(SimulationEvent):
+    """Event for halting the environment when processed."""
+
+    blocking = True
+
+    @override
+    def process(self, state: ScheduleState, backend: DESBackend) -> None:
+        backend.halt()
+
+
+class NOOPEvent(SimulationEvent):
+    """Event indicating that no other non-timed instruction must be executed."""
+
+    blocking = True
+
+    @override
+    def process(self, state: ScheduleState, backend: DESBackend) -> None:
+        next_time = state.get_next_decision_point(backend.time)
+
+        backend.advance_to(next_time)
+
+
+class CompleteEvent(SimulationEvent):
+    """Wait for a task to complete to execute other instructions."""
+
+    blocking = True
+    task_id: TaskID
+
+    def __init__(self, task_id: TaskID) -> None:
+        self.task_id = task_id
+
+    @override
+    def is_ready(self, state: ScheduleState, backend: DESBackend) -> bool:
+        return state.is_fixed(self.task_id)
+
+    @override
+    def process(self, state: ScheduleState, backend: DESBackend) -> None:
+        backend.advance_to(state.get_end(self.task_id))

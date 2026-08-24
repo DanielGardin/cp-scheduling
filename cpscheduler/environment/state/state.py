@@ -805,6 +805,23 @@ class ScheduleState(EzPickle):
 
         return min_lb
 
+    def get_next_decision_point(self, time: Time) -> Time:
+        """Return the earliest start lower bound greater than `time`."""
+        global_lbs = self.domains.start.global_lbs
+        dependencies = self.domains.dependencies
+
+        next_time = MAX_TIME
+        for task_id, fixed in enumerate(self.domains.fixed):
+            if fixed or dependencies[task_id]:
+                continue
+
+            lb = global_lbs[task_id]
+
+            if time < lb < next_time:
+                next_time = lb
+
+        return next_time
+
     def get_latest_end(self) -> Time:
         """Return the end time of the latest task."""
         ends = self.domains.end.global_lbs

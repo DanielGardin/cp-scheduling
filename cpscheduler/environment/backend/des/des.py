@@ -17,31 +17,23 @@ from cpscheduler.environment.backend.des.base import (
     SimulationEvent,
     TimeSlot,
 )
-from cpscheduler.environment.constants import MAX_TIME, TaskID, Time
+from cpscheduler.environment.backend.des.events import CheckpointEvent
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from cpscheduler.environment.backend import Instruction
+    from cpscheduler.environment.constants import TaskID, Time
     from cpscheduler.environment.state import ScheduleState
 
 
 TIMED_STAGE = 0
 NON_TIMED_STAGE = 1
-TIME_ADVANCE_STAGE = 2
 
 
-# FUTURE: There are a lot of changes I want to make in this backend that I
-# cannot implement in the current version (0.9.0) due to other higher priority changes.
-# Here is a list of changes that I think may enhance this backend:
-#   1. A better way of detecting whether an instruction is deadlocked is by
+# FUTURE: A better way of detecting whether an instruction is deadlocked is by
 # implementing a method alongside `earliest_start`, like `is_unlocked`, which
 # hints to the backend whether the time in the earliest start is exact, or an heuristic.
-#
-#   2. There is no way of a ready instruction to block other non-timed instructions.
-# This behavior is valuable for the case where we introduce the NOOP instruction.
-# Instead of trying to execute a task now, the NOOP jumps to the next decision point.
-# This is the mechanism in some RL environmnts to avoid a forced non-delay generation.
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
 class DESBackend(ScheduleBackend):
     """Discrete Event Schedule kernel for managing and processing events in the simulation.
@@ -84,6 +76,10 @@ class DESBackend(ScheduleBackend):
     _non_timed_index: int
     _deferred_events: list[ScheduledEvent]
 
+    # Queue control variables
+    _explicit_defer_time: Time
+    _explicit_halt: bool
+
     def __init__(self) -> None:
         """Initialize the Schedule with empty event queues and reset state."""
         self._time_slots = {}
@@ -105,6 +101,9 @@ class DESBackend(ScheduleBackend):
         self._timed_index = 0
         self._non_timed_index = 0
         self._deferred_events = []
+
+        self._explicit_defer_time = 0
+        self._explicit_halt = False
 
     def reset(self) -> None:
         """Reset the schedule to its initial empty state."""
@@ -148,24 +147,45 @@ class DESBackend(ScheduleBackend):
         self, state: ScheduleState
     ) -> SimulationEvent | None:
         """Dispatch the next event by consuming an internal generator."""
+        if self._explicit_halt:
+            self._explicit_halt = False
+            return None
+
         while self._heap:
+            # Stage A: Advance time to the earliest event
+            if self._current_time_slot is None:
+                time = self._heap[0]
+                self.time = time
+
+                current_slot = self._time_slots.pop(time)
+
+                self._current_time_slot = current_slot
+                self._timed_snapshot = list(current_slot.timed_events)
+                self._timed_index = 0
+
+            event = None
+            # Stage B: Run all unconditional events
             if self.stage == TIMED_STAGE:
                 event = self._step_timed_stage(state)
 
-            elif self.stage == NON_TIMED_STAGE:
+            # Stage C: Check conditional events
+            if self.stage == NON_TIMED_STAGE:
                 event = self._step_non_timed_stage(state)
-
-            else:
-                raise RuntimeError(f"Invalid dispatch stage: {self.stage}")
 
             if event is not None:
                 return event
 
-        self.stage = TIME_ADVANCE_STAGE
+            self._finalize_time_slot(state)
 
-        next_time = max(self.time, state.get_earliest_start_lb())
-        self.time = (
-            next_time if next_time < MAX_TIME else state.get_latest_end()
+        # Termination Phase: Advance to a potential next event
+        # This is the behavior that make DES non-delay by default, the termination
+        # phase always jumps to a state where |eligible_tasks| > 0, or to
+        # the latest end, when such state does not exist.
+        self.time = max(
+            self.time,
+            state.get_latest_end()
+            if state.is_terminal()
+            else state.get_earliest_start_lb(),
         )
 
         self.stage = TIMED_STAGE
@@ -173,16 +193,19 @@ class DESBackend(ScheduleBackend):
 
     def _step_timed_stage(self, state: ScheduleState) -> SimulationEvent | None:
         """Process one timed event of the current time slot, or advance to the non-timed stage."""
-        if self._current_time_slot is None:
-            time = self._heap[0]
-            self.time = time
+        assert self._current_time_slot is not None
 
-            self._current_time_slot = self._time_slots.pop(time)
-            self._timed_snapshot = list(self._current_time_slot.timed_events)
-            self._timed_index = 0
+        idx = self._timed_index
+        snapshot = self._timed_snapshot
+        size = len(snapshot)
 
-        if self._timed_index < len(self._timed_snapshot):
-            entry = self._timed_snapshot[self._timed_index]
+        while idx < size:
+            entry = snapshot[self._timed_index]
+
+            if entry.stale:
+                idx += 1
+                continue
+
             event = entry.event
 
             if not event.is_ready(state, self):
@@ -190,8 +213,8 @@ class DESBackend(ScheduleBackend):
                     f"Event is not ready to be processed: {event} at time {self.time}"
                 )
 
-            self._timed_index += 1
             del self._event_cache[entry.event_id]
+            self._timed_index = idx + 1
 
             return event
 
@@ -209,63 +232,92 @@ class DESBackend(ScheduleBackend):
     ) -> SimulationEvent | None:
         """Process one non-timed event of the current time slot, or finalize the slot."""
         assert self._current_time_slot is not None
-        slot = self._current_time_slot
 
-        if self._non_timed_index < len(self._non_timed_snapshot):
-            entry = self._non_timed_snapshot[self._non_timed_index]
+        if self._explicit_defer_time:
+            self._defer_remaining_events(self._explicit_defer_time)
+
+            # Not sure if we really need this guy, I imagine so because it
+            # triggers `tight_global_time` in the state, which is only required
+            # when the schedule is non-delay (conjecture)
+            self.add_instruction(
+                CheckpointEvent(self._explicit_defer_time),
+                self._explicit_defer_time,
+            )
+            self._explicit_defer_time = 0
+
+            return None
+
+        idx = self._non_timed_index
+        snapshot = self._non_timed_snapshot
+        size = len(snapshot)
+
+        while idx < size:
+            entry = snapshot[idx]
+            idx += 1
+
+            if entry.stale:
+                self._remove_event(entry.event_id)
+                continue
+
             event = entry.event
 
             if event.is_ready(state, self):
-                self._non_timed_index += 1
-                slot.remove_event(entry.event_id)
-                del self._event_cache[entry.event_id]
+                self._remove_event(entry.event_id)
 
+                self._non_timed_index = idx
                 return event
 
             if event.blocking:
                 next_time = event.earliest_time(state)
-                self._defer_blocking_event(event, next_time)
-                self._finalize_time_slot()
+
+                if next_time is None or next_time <= self.time:
+                    next_time = self.time if next_time is None else next_time
+
+                    raise RuntimeError(
+                        f"Event {event} is potentially deadlocking the event "
+                        "queue: It is not ready, but its earliest time is earlier than "
+                        f"the current time ({next_time} <= {self.time})"
+                    )
+
+                self._defer_remaining_events(next_time)
 
                 return None
 
             self._deferred_events.append(entry)
-            self._non_timed_index += 1
-            return None
 
-        for entry in self._deferred_events:
-            self._reschedule_event(entry, state)
-
-        self._finalize_time_slot()
         return None
 
-    def _defer_blocking_event(
-        self, event: SimulationEvent, next_time: Time | None
-    ) -> None:
-        """Handle a blocking, not-ready non-timed event: sweep remaining entries forward and end the slot."""
+    def _remove_event(self, event_id: EventID) -> None:
         assert self._current_time_slot is not None
-        time = self.time
 
-        if next_time is None or next_time <= self.time:
+        self._current_time_slot.non_timed_events.remove(event_id)
+        del self._event_cache[event_id]
+
+    def _defer_remaining_events(self, next_time: Time) -> None:
+        """Defer all remaining C-events due to a blocking signal to `next time`."""
+        assert self._current_time_slot is not None
+        current_time = self.time
+
+        if next_time <= current_time:
             raise RuntimeError(
-                f"Event {event} is potentially deadlocking the event "
-                "queue: It is not ready, but its earliest time is earlier than "
-                f"the current time ({next_time} <= {self.time})"
+                "Cannot defer C-events to a time earlier than the current time "
+                f"({next_time} <= {self.time})."
             )
 
-        if next_time > time:
-            next_time_slot = self._create_time_slot(next_time)
-
-            next_time_slot.extend_non_timed_events(
-                self._current_time_slot.non_timed_events.events
-            )
+        next_time_slot = self._create_time_slot(next_time)
+        next_time_slot.extend_non_timed_events(
+            self._current_time_slot.non_timed_events.events
+        )
 
         if self._tail is None or next_time > self._tail:
             self._tail = next_time
 
-    def _finalize_time_slot(self) -> None:
+    def _finalize_time_slot(self, state: ScheduleState) -> None:
         """Close out the current time slot and pop it from the heap."""
         heappop(self._heap)
+
+        for entry in self._deferred_events:
+            self._reschedule_event(entry, state)
 
         self._current_time_slot = None
         self._timed_snapshot.clear()
@@ -383,12 +435,17 @@ class DESBackend(ScheduleBackend):
         if event_id not in self._event_cache:
             raise KeyError(f"Event {event_id} is not scheduled")
 
-        time = self._event_cache.pop(event_id).time
-        self._time_slots[time].remove_event(event_id)
+        entry = self._event_cache.pop(event_id)
+        time = entry.time
 
-    def reschedule_event(
-        self, event_id: EventID, state: ScheduleState, new_time: Time
-    ) -> None:
+        if time == self.time:
+            # We cannot simply remove it, as it is already cached.
+            entry.invalidate()
+
+        else:
+            self._time_slots[time].remove_event(event_id)
+
+    def reschedule_event(self, event_id: EventID, new_time: Time) -> None:
         """Reschedule an existing timed event to a new time."""
         if event_id not in self._event_cache:
             raise ValueError(f"Event {event_id} is not scheduled")
@@ -442,3 +499,43 @@ class DESBackend(ScheduleBackend):
 
         for entry in time_slot.non_timed_events:
             yield entry.event
+
+    def halt(self) -> None:
+        """Trigger a stop in the simulation."""
+        self._explicit_halt = True
+
+    # FUTURE: The interaction between non-blocking events and advancement is
+    # not entirely known. We should make tests that stress that interface.
+    def advance_to(self, time: Time) -> None:
+        """Trigger an advancement requirement in the simulation.
+
+        Note
+        ----
+        This method does not make the global clock advance, because this would
+        violate a timed event that needs to be executed before `time`.
+        The expected behavior is that any C-events are deferred to the
+        advancement time, yielding a proper jump when no B-events exist.
+        """
+        if time < self.time:
+            raise RuntimeError(
+                "Cannot advance to a time earlier than the current time "
+                f"({time} <= {self.time})."
+            )
+
+        self._explicit_defer_time = time
+
+
+# Why `advance_to`, and in which scenario it is used?
+#
+# The deferring process in the DES kernel can only happen for an event that
+# is both _Blocking_ and _Not Ready_, which indicates that only time, or
+# other instruction can unblock the queue and let other instruction in the
+# C-event queue to run. The potential earliest time which this can happen is
+# the implementation of `earliest_time`.
+#
+# What does it not cover? When an event want to defer other instructions, but
+# want to be removed from the queue.
+# This behavior cannot happen in the scenario above, because not being ready is
+# a requirement for deferring. `advance_to` fills this specific gap, it is removed
+# when ready, but can tell the simulator to defer other instructions to an
+# "earliest time" given as a parameter (`advance_to(time)`).

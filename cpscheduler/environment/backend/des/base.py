@@ -66,6 +66,7 @@ class ScheduledEvent(EzPickle):
     event_id: EventID
     time: Time
     event: SimulationEvent
+    stale: bool
 
     rank: Rank
     priority: PriorityValue
@@ -83,6 +84,7 @@ class ScheduledEvent(EzPickle):
         self.event = event
         self.rank = rank
         self.priority = priority
+        self.stale = False
 
     def __lt__(self, other: ScheduledEvent) -> bool:
         """Compare two ScheduledEvents for ordering in the event queue."""
@@ -103,6 +105,10 @@ class ScheduledEvent(EzPickle):
             isinstance(other, ScheduledEvent)
             and self.event_id == other.event_id
         )
+
+    def invalidate(self) -> None:
+        """Invalidate the event, used when removing an event."""
+        self.stale = True
 
 
 class _EventQueue(EzPickle):
@@ -183,6 +189,10 @@ class TimeSlot(EzPickle):
             event_id in self.timed_events or event_id in self.non_timed_events
         )
 
+    def __bool__(self) -> bool:
+        """Return whether the time slot is empty or not."""
+        return not self.timed_events and not self.non_timed_events
+
     def get_event(self, event_id: EventID) -> ScheduledEvent:
         """Return the event by its ID."""
         if event_id in self.timed_events:
@@ -195,7 +205,7 @@ class TimeSlot(EzPickle):
 
     def is_empty(self) -> bool:
         """Return whether this time slot has no events."""
-        return not self.timed_events and not self.non_timed_events
+        return bool(self)
 
     def add_timed_event(self, entry: ScheduledEvent) -> None:
         """Add a timed event to the time slot."""
