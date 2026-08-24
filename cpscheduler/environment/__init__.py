@@ -77,7 +77,7 @@ __all__ = [  # noqa: RUF022
     # Backends
     "DESBackend",
     # Rewards
-    "DenseRewardStrategy",
+    "SparseRewardStrategy",
 ]
 
 from .backend import DESBackend
@@ -122,7 +122,7 @@ from .objectives import (
     WeightedTardyJobs,
 )
 from .observation import DefaultObservation
-from .reward import DenseRewardStrategy
+from .reward import SparseRewardStrategy
 from .setups import (
     FlexibleJobShopSetup,
     FlowShopSetup,
