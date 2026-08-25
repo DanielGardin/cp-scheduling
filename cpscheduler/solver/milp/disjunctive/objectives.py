@@ -4,7 +4,7 @@ from cpscheduler.environment.objectives import (
     ComposedObjective,
     Makespan,
     MaximumLateness,
-    Objective,
+    SatisfactionObjective,
     TotalCompletionTime,
     TotalEarliness,
     TotalFlowTime,
@@ -38,11 +38,11 @@ def _jobs_makespan(
     return makespans
 
 
-@DisjunctiveMILPFormulation.register_objective(Objective)
+@DisjunctiveMILPFormulation.register_objective(SatisfactionObjective)
 def _objective(
     formulation: DisjunctiveMILPFormulation,
     state: ScheduleState,
-    objective: Objective,
+    objective: SatisfactionObjective,
 ) -> int:
     formulation.set_objective(0)
     return 0

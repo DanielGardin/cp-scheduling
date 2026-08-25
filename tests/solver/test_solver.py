@@ -26,7 +26,7 @@ def test_solve(instance_name: str, formulation: str) -> None:
 
     time = -perf_counter()
     solver: SchedulingSolver[Any] = SchedulingSolver(
-        env, formulation=formulation, horizon=10000
+        env, formulation=formulation
     )
     solver.warm_start(
         [("submit", task_id) for task_id in range(env.state.n_tasks)]

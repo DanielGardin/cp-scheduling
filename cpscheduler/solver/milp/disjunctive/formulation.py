@@ -1,5 +1,7 @@
 """Module for defining the disjunctive MILP formulation."""
 
+from copy import deepcopy
+
 from typing_extensions import override
 
 from cpscheduler.environment import SchedulingEnv
@@ -137,13 +139,30 @@ class DisjunctiveMILPFormulation(PyomoFormulation):
                 f"non_preemptive_{task_id}",
             )
 
-        if self.horizon is not None:
-            horizon = self.horizon
+        if self.horizon is None:
+            self._tightening_maybe(env)
 
+        else:
+            horizon = self.horizon
             for task_id in range(n_tasks):
                 self.add_constraint(
                     self.end_times[task_id] <= horizon, f"horizon_{task_id}"
                 )
+
+    def _tightening_maybe(self, env: SchedulingEnv) -> None:
+        """Try tightening the upper bounds for a better-behaved model."""
+        obj = env.objective
+        backend = env.backend
+
+        if not obj.regular:
+            return
+
+        if backend.backend == "des":
+            cpy_env = deepcopy(env)
+            cpy_env.step(
+                [("submit", t) for t in env.state.get_unassigned_tasks()]
+            )
+            self.warm_start(cpy_env)
 
     @override
     def warm_start(self, env: SchedulingEnv) -> None:
