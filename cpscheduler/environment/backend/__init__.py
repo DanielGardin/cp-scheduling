@@ -9,7 +9,6 @@ __all__ = [
     "TetrisBackend",
     "is_single_action",
     "parse_instruction",
-    "validate_instruction",
 ]
 
 from .actions import (
@@ -18,7 +17,6 @@ from .actions import (
     SingleAction,
     is_single_action,
     parse_instruction,
-    validate_instruction,
 )
 from .backend import ScheduleBackend
 from .des import DESBackend

@@ -17,7 +17,6 @@ from cpscheduler.environment.backend import (
     ScheduleBackend,
     is_single_action,
     parse_instruction,
-    validate_instruction,
 )
 from cpscheduler.environment.constants import EzPickle, TaskID
 from cpscheduler.environment.constraints import Constraint, PassiveConstraint
@@ -464,8 +463,6 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         return info
 
     # Environment internal methods for simulation
-
-    # TODO: Add a meaningful error message when the action is not parseable.
     def schedule_action(self, action: ActionType) -> None:
         """Parse action and add instruction(s) to the event schedule.
 
@@ -481,10 +478,11 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         if is_single_action(action):
             action = [action]
 
-        for act in action:
-            instruction, time, priority = parse_instruction(act, backend)
-            instruction = validate_instruction(instruction, state)
+        validated_instruction = [
+            parse_instruction(act, backend, state) for act in action
+        ]
 
+        for instruction, time, priority in validated_instruction:
             self.backend.add_instruction(instruction, time, priority)
 
     def propagate(self) -> None:
@@ -580,9 +578,6 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
                 self.event_count += idx + 1
                 return
 
-            else:
-                raise ValueError(f"UNREACHABLE: No field named {field.name}")
-
             idx += 1
 
         self.event_count += idx
@@ -664,6 +659,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         for tracer in self.tracers:
             tracer.reset(state)
 
+        component: Component
         for component in [self.setup, *self._all_constraints, self.objective]:
             component.reset(state)
 
@@ -727,8 +723,8 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         Raises
         ------
         RuntimeError
-            If environment is not in RUNNING state.
-            Ensure you called `reset()` before `step()`.
+            If environment is not in RUNNING state, for instance, due to not
+            loading an instance or not calling `reset()`.
 
         """
         state = self.state

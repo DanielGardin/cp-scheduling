@@ -43,7 +43,7 @@ class PlotlyRenderer(Renderer):
                     y=[machine],
                     base=[start],
                     orientation="h",
-                    customdata=(task, job, start, end),
+                    customdata=(int(task), int(job), int(start), int(end)),
                     hovertemplate=template,
                     marker={
                         "color": GLASBEY_BW_PALETTE[job % 256],

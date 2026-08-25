@@ -34,6 +34,11 @@ NON_TIMED_STAGE = 1
 # FUTURE: A better way of detecting whether an instruction is deadlocked is by
 # implementing a method alongside `earliest_start`, like `is_unlocked`, which
 # hints to the backend whether the time in the earliest start is exact, or an heuristic.
+#
+# FUTURE: This backend has a lot of error handling, which is good for debugging,
+# but it is bad for RL training when an infeasible action is not masked.
+# An idea is to implement an explicit parameter to tell how to handle errors,
+# for instance: raise, terminate, truncate, ignore...
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
 class DESBackend(ScheduleBackend):
     """Discrete Event Schedule kernel for managing and processing events in the simulation.

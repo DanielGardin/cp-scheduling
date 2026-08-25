@@ -56,24 +56,6 @@ def register_instruction(
     instructions.setdefault(backend, {})[spec] = instruction
 
 
-def validate_instruction(
-    instruction: Instruction, state: ScheduleState, max_depth: int = 100
-) -> Instruction:
-    """Resolve the instruction to a fixed point."""
-    for _ in range(max_depth):
-        validated_instruction = instruction.resolve(state)
-
-        if instruction is validated_instruction:
-            return instruction
-
-        instruction = validated_instruction
-
-    raise RuntimeError(
-        f"Instruction {instruction} failed to reach a fixed point after "
-        f"{max_depth} resolutions."
-    )
-
-
 SchedulerArgs = Int
 InstructionSpec = str | type[Instruction[Any]]
 InstructionArgs = tuple[Int, ...]
@@ -110,7 +92,10 @@ def _parse_args(args: list[Any]) -> tuple[Any, ...]:
 
 
 def parse_instruction(
-    action: SingleAction, backend: str
+    action: SingleAction,
+    backend: str,
+    state: ScheduleState,
+    max_depth: int = 100,
 ) -> tuple[Instruction[Any], Time | None, float | None]:
     """Parse a single action action into an Instruction.
 
@@ -124,6 +109,13 @@ def parse_instruction(
 
     backend: str
         The backend used for dispatching in the current environment.
+
+    state: ScheduleState
+        The current state of the schedule, used for validating the instruction.
+
+    max_depth: int, optional
+        The maximum number of times to resolve the instruction to reach a fixed point.
+        Default is 100.
 
     Returns
     -------
@@ -139,6 +131,16 @@ def parse_instruction(
         None if not specified.
 
 
+    Raises
+    ------
+    ValueError
+        If the action is not a valid BAction or CAction, or if the instruction
+        name is not defined for the specified backend.
+
+    RuntimeError
+        If the instruction fails to reach a fixed point after the specified
+        number of resolutions (max_depth).
+
     Notes
     -----
     Priority is currently not supported in the instruction format.
@@ -147,7 +149,19 @@ def parse_instruction(
     """
     time: Time | None = None
 
+    if not action:
+        raise ValueError(
+            "Action must have at least one element: (instruction_name, *args), "
+            f"but got {action}."
+        )
+
     if isinstance(action[0], Int):
+        if len(action) < 2:
+            raise ValueError(
+                "BAction must have at least two elements: (time, instruction_name, *args), "
+                f"but got {action}."
+            )
+
         s_args, spec, *spec_args = cast("BAction", action)
         time = Time(s_args)
 
@@ -164,15 +178,28 @@ def parse_instruction(
                 f"Instruction '{spec}' is not defined for backend {backend}."
             )
 
-        cls = instruction_set[spec]
+        spec = instruction_set[spec]
 
-        return cls(*args), time, None
-
-    if spec.backend != backend:
+    elif spec.backend != backend:
         text_args = ", ".join(str(arg) for arg in args)
-        raise RuntimeError(
+        raise ValueError(
             f"Instruction {spec.__name__}({text_args}) is only defined for "
             f"backend {spec.backend}, which is incompatible with {backend}."
         )
 
-    return spec(*args), time, None
+    instruction = spec(*args)
+    for _ in range(max_depth):
+        validated_instruction = instruction.resolve(state)
+
+        if instruction is validated_instruction:
+            break
+
+        instruction = validated_instruction
+
+    else:
+        raise RuntimeError(
+            f"Instruction {instruction} failed to reach a fixed point after "
+            f"{max_depth} resolutions."
+        )
+
+    return instruction, time, None

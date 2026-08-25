@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from mypy_extensions import mypyc_attr
@@ -20,7 +21,7 @@ backends: dict[str, type[ScheduleBackend]] = {}
 
 
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
-class ScheduleBackend(EzPickle):
+class ScheduleBackend(ABC, EzPickle):
     """Schedule backend used for dispatching tasks.
 
     This class stores and manages the current schedule.
@@ -59,17 +60,13 @@ class ScheduleBackend(EzPickle):
         """Reset the schedule to its initial empty state."""
         self._next_event_id = 0
 
+    @abstractmethod
     def is_empty(self) -> bool:
         """Return whether the backend has scheduled instructions or not."""
-        raise NotImplementedError(
-            f"Backend {self.backend} has no `is_empty` method."
-        )
 
+    @abstractmethod
     def dispatch_instruction(self, state: ScheduleState) -> Instruction | None:
         """Return the next instruction to be processed in the environment."""
-        raise NotImplementedError(
-            f"Backend {self.backend} has no instruction dispatch."
-        )
 
     # There is a implicit invariant hidden here, at any given time,
     # if dispatch_instruction returns an execution instruction for task t,
