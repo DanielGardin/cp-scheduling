@@ -262,6 +262,8 @@ GraphRepresentation = Literal[
 ]
 
 
+# FUTURE: This spec is underspecified, there is no standard, or checking whether
+# some data follows the "GraphSpec structure", if some exist.
 class GraphSpec(ObservationSpec):
     """Observation spec for a graph-structured observation.
 
