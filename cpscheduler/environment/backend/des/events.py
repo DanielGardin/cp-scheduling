@@ -212,6 +212,10 @@ class CompleteEvent(SimulationEvent):
         self.task_id = task_id
 
     @override
+    def earliest_time(self, state: ScheduleState) -> Time | None:
+        return state.get_start_lb(self.task_id)
+
+    @override
     def is_ready(self, state: ScheduleState, backend: DESBackend) -> bool:
         return state.is_fixed(self.task_id)
 

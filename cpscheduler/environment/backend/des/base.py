@@ -191,7 +191,7 @@ class TimeSlot(EzPickle):
 
     def __bool__(self) -> bool:
         """Return whether the time slot is empty or not."""
-        return not self.timed_events and not self.non_timed_events
+        return bool(self.timed_events) and bool(self.non_timed_events)
 
     def get_event(self, event_id: EventID) -> ScheduledEvent:
         """Return the event by its ID."""
@@ -205,7 +205,7 @@ class TimeSlot(EzPickle):
 
     def is_empty(self) -> bool:
         """Return whether this time slot has no events."""
-        return bool(self)
+        return not self
 
     def add_timed_event(self, entry: ScheduledEvent) -> None:
         """Add a timed event to the time slot."""
