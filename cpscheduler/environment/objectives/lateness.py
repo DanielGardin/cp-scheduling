@@ -5,9 +5,8 @@ from collections.abc import Iterable
 from typing_extensions import override
 
 from cpscheduler.environment.constants import Int, Time
-from cpscheduler.environment.instance import Feature
+from cpscheduler.environment.instance import Feature, ProblemInstance
 from cpscheduler.environment.objectives.base import RegularObjective
-from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.utils.general import convert_to_list
 
 
@@ -55,27 +54,13 @@ class TotalTardiness(RegularObjective):
     def _load_due_dates(self, due_dates: Iterable[Int]) -> list[Time]:
         return convert_to_list(due_dates, Time)
 
-    @property
     @override
-    def current(self) -> float:
+    def evaluate(self, job_completions: list[Time]) -> float:
         return float(
             sum(
                 max(C_j - d_j, 0)
                 for d_j, C_j in zip(
-                    self.due_dates.value, self._job_completion, strict=False
-                )
-            )
-        )
-
-    @override
-    def compute(self, state: ScheduleState) -> float:
-        return float(
-            sum(
-                max(C_j - d_j, 0)
-                for d_j, C_j in zip(
-                    self.due_dates.value,
-                    self.completion_times(state),
-                    strict=False,
+                    self.due_dates.value, job_completions, strict=False
                 )
             )
         )
@@ -145,35 +130,20 @@ class WeightedTardiness(TotalTardiness):
     def _load_weights(self, weights: Iterable[float]) -> list[float]:
         return convert_to_list(weights, float)
 
-    @property
     @override
-    def regular(self) -> bool:
-        return all(weight >= 0 for weight in self.weights.value)
+    def initialize(self, instance: ProblemInstance) -> None:
+        if any(weight < 0 for weight in self.weights.value):
+            raise ValueError("Regular objectives require non-negative weights.")
 
-    @property
     @override
-    def current(self) -> float:
+    def evaluate(self, job_completions: list[Time]) -> float:
         return sum(
             w_j * float(max(C_j - d_j, 0))
             for w_j, d_j, C_j in zip(
                 self.weights.value,
                 self.due_dates.value,
-                self._job_completion,
+                job_completions,
                 strict=False,
-            )
-        )
-
-    @override
-    def compute(self, state: ScheduleState) -> float:
-        return float(
-            sum(
-                w_j * float(max(C_j - d_j, 0))
-                for w_j, d_j, C_j in zip(
-                    self.weights.value,
-                    self.due_dates.value,
-                    self.completion_times(state),
-                    strict=False,
-                )
             )
         )
 

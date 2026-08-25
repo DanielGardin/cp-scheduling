@@ -102,9 +102,9 @@ class ComposedObjective(Objective):
 
     @property
     @override
-    def current(self) -> float:
+    def value(self) -> float:
         return sum(
-            coef * objective.current
+            coef * objective.value
             for objective, coef in zip(
                 self.objectives, self.coefficients, strict=False
             )

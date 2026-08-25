@@ -7,17 +7,14 @@ from typing_extensions import override
 from cpscheduler.environment.constants import (
     Float,
     Int,
-    MachineID,
-    TaskID,
     Time,
 )
 from cpscheduler.environment.instance import Feature, ProblemInstance
-from cpscheduler.environment.objectives.base import CompletionTimeObjective
-from cpscheduler.environment.state import ScheduleState
+from cpscheduler.environment.objectives.base import RegularObjective
 from cpscheduler.environment.utils.general import convert_to_list
 
 
-class TotalTardyJobs(CompletionTimeObjective):
+class TotalTardyJobs(RegularObjective):
     """Total Tardy Jobs objective.
 
     This objective function aims to minimize the number of tardy jobs.
@@ -25,9 +22,6 @@ class TotalTardyJobs(CompletionTimeObjective):
     """
 
     due_dates: Feature[list[Time]]
-
-    _tardy_jobs: list[bool]
-    _n_tardy_jobs: int
 
     def __init__(
         self,
@@ -64,53 +58,12 @@ class TotalTardyJobs(CompletionTimeObjective):
         return convert_to_list(due_dates, Time)
 
     @override
-    def initialize(self, instance: ProblemInstance) -> None:
-        super().initialize(instance)
-
-        self._tardy_jobs = [False] * instance.n_jobs
-        self._n_tardy_jobs = 0
-
-    @override
-    def reset(self, state: ScheduleState) -> None:
-        super().reset(state)
-
-        for job_id in range(state.n_jobs):
-            self._tardy_jobs[job_id] = False
-
-        self._n_tardy_jobs = 0
-
-    @override
-    def on_assignment(
-        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
-    ) -> None:
-        super().on_assignment(task_id, machine_id, state)
-
-        job_id = state.instance.job_ids[task_id]
-
-        if self._tardy_jobs[job_id]:
-            return
-
-        C_j = self._job_completion[job_id]
-        d_j = self.due_dates.value[job_id]
-
-        if C_j > d_j:
-            self._tardy_jobs[job_id] = True
-            self._n_tardy_jobs += 1
-
-    @property
-    @override
-    def current(self) -> float:
-        return float(self._n_tardy_jobs)
-
-    @override
-    def compute(self, state: ScheduleState) -> float:
+    def evaluate(self, job_completions: list[Time]) -> float:
         return float(
             sum(
                 C_j > d_j
-                for C_j, d_j in zip(
-                    self.completion_times(state),
-                    self.due_dates.value,
-                    strict=False,
+                for d_j, C_j in zip(
+                    self.due_dates.value, job_completions, strict=True
                 )
             )
         )
@@ -130,8 +83,6 @@ class WeightedTardyJobs(TotalTardyJobs):
     """
 
     weights: Feature[list[float]]
-
-    _weighted_tardy_jobs: float
 
     def __init__(
         self,
@@ -180,51 +131,19 @@ class WeightedTardyJobs(TotalTardyJobs):
     def _load_weights(self, weights: Iterable[Float]) -> list[float]:
         return convert_to_list(weights, float)
 
-    @property
-    @override
-    def regular(self) -> bool:
-        return all(weight >= 0.0 for weight in self.weights.value)
-
     @override
     def initialize(self, instance: ProblemInstance) -> None:
-        super().initialize(instance)
-
-        self._weighted_tardy_jobs = 0.0
-
-    @override
-    def reset(self, state: ScheduleState) -> None:
-        super().reset(state)
-
-        self._weighted_tardy_jobs = 0.0
+        if any(weight < 0 for weight in self.weights.value):
+            raise ValueError("Regular objectives require non-negative weights.")
 
     @override
-    def on_assignment(
-        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
-    ) -> None:
-        job_id = state.instance.job_ids[task_id]
-        already_tardy = self._tardy_jobs[job_id]
-
-        super().on_assignment(task_id, machine_id, state)
-
-        if already_tardy:
-            return
-
-        if self._tardy_jobs[job_id]:
-            self._weighted_tardy_jobs += self.weights.value[job_id]
-
-    @property
-    @override
-    def current(self) -> float:
-        return self._weighted_tardy_jobs
-
-    @override
-    def compute(self, state: ScheduleState) -> float:
+    def evaluate(self, job_completions: list[Time]) -> float:
         return sum(
             w_j
             for w_j, d_j, C_j in zip(
                 self.weights.value,
                 self.due_dates.value,
-                self.completion_times(state),
+                job_completions,
                 strict=False,
             )
             if C_j > d_j

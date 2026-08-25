@@ -22,9 +22,6 @@ class Objective(Component):
     """
 
     minimize: bool
-    _lb: float
-    _ub: float
-    _current: float
 
     @override
     def __init_subclass__(cls) -> None:
@@ -43,9 +40,6 @@ class Objective(Component):
 
         """
         self.minimize = minimize
-        self._lb = float("-inf")
-        self._ub = float("inf")
-        self._current = float("-inf")
 
     @property
     def regular(self) -> bool:
@@ -60,17 +54,23 @@ class Objective(Component):
     @property
     def lb(self) -> float:
         """Return a lower bound for the current objective value."""
-        return self._lb
+        raise ValueError(
+            f"Objective {type(self).__name__} has no current lower bound."
+        )
 
     @property
     def ub(self) -> float:
         """Return a upper bound for the current objective value."""
-        return self._ub
+        raise ValueError(
+            f"Objective {type(self).__name__} has no current upper bound."
+        )
 
     @property
-    def current(self) -> float:
+    def value(self) -> float:
         """Return the current objective value derived only from fixed tasks."""
-        return self._current
+        raise ValueError(
+            f"Objective {type(self).__name__} has no current value."
+        )
 
     def __repr__(self) -> str:
         """Return a string representation of the objective function."""
@@ -129,60 +129,166 @@ class Objective(Component):
         return self.compute(state)
 
 
-class _CompletionTimeObjective(Objective):
-    """Base class for objectives that depend on job completion times.
+class SatisfactionObjective(Objective):
+    """Satisfaction problem.
 
-    This class provides a common implementation for tracking job completion times and
-    computing the objective value based on them, not specific to any particular objective.
+    A satisfaction problem is a scheduling problem where the goal is finding
+    a feasible schedule.
+    This objective takes value of 1 whenever the current schedule is feasible
+    and complete, and 0 otherwise.
+
+    This is the default objective when none is passed explicitly to the
+    environment.
     """
 
-    _job_completion: list[Time]
+    _value: float
+    _lb: float
+    _ub: float
+
+    @property
+    @override
+    def regular(self) -> bool:
+        return True
+
+    @property
+    @override
+    def lb(self) -> float:
+        return self._lb
+
+    @property
+    @override
+    def ub(self) -> float:
+        return self._ub
+
+    @property
+    @override
+    def value(self) -> float:
+        return self._value
 
     @override
-    def initialize(self, instance: ProblemInstance) -> None:
-        self._job_completion = [0] * instance.n_jobs
+    def reset(self, state: "ScheduleState") -> None:
+        self._value = 0.0
+        self._lb = 0.0
+        self._ub = 1.0
+
+    def compute(self, state: ScheduleState) -> float:
+        """Cold computation of the realized objective value."""
+        return float(state.remaining_tasks == 0 and not state.infeasible)
 
     @override
-    def reset(self, state: ScheduleState) -> None:
-        self._job_completion[:] = [0] * state.n_jobs
+    def on_infeasibility(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        if state.infeasible:
+            self._ub = 0.0
 
     @override
     def on_assignment(
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:
-        job_id = state.instance.job_ids[task_id]
+        if state.remaining_tasks == 0 and not state.infeasible:
+            self._value = 1.0
+            self._lb = 1.0
+
+    @classmethod
+    @override
+    def get_general_entry(cls) -> str:
+        return "—"
+
+
+def completion_times(state: ScheduleState) -> list[Time]:
+    """Compute the makespan of a set of tasks."""
+    makespans: list[Time] = [0] * state.n_jobs
+
+    job_ids = state.instance.job_ids
+
+    for task_id in state.get_assigned_tasks():
+        job_id = job_ids[task_id]
         C_j = state.get_end(task_id)
-        self._job_completion[job_id] = max(self._job_completion[job_id], C_j)
 
-    @staticmethod
-    def completion_times(state: ScheduleState) -> list[Time]:
-        """Compute the makespan of a set of tasks."""
-        makespans: list[Time] = [0] * state.n_jobs
+        makespans[job_id] = max(makespans[job_id], C_j)
 
-        job_ids = state.instance.job_ids
-
-        for task_id in state.get_assigned_tasks():
-            job_id = job_ids[task_id]
-            C_j = state.get_end(task_id)
-
-            makespans[job_id] = max(makespans[job_id], C_j)
-
-        return makespans
+    return makespans
 
 
-CompletionTimeObjective = _CompletionTimeObjective
+class _CompletionTimeObjective(Objective):
+    """Util class for objectives that depend on job completion times."""
+
+    _job_completion: list[Time]
+    _job_completion_lb: list[Time]
+    _job_completion_ub: list[Time]
+
+    def initialize(self, instance: ProblemInstance) -> None:
+        self._job_completion = [0] * instance.n_jobs
+        self._job_completion_lb = [0] * instance.n_jobs
+        self._job_completion_ub = [0] * instance.n_jobs
+
+    @override
+    def reset(self, state: ScheduleState) -> None:
+        self._job_completion[:] = [0] * state.n_jobs
+        self._job_completion_lb[:] = [0] * state.n_jobs
+        self._job_completion_ub[:] = [0] * state.n_jobs
+
+    def on_start_lb(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        job_id = state.get_job_id(task_id)
+        end_lb = state.get_end_lb(task_id)
+        self._job_completion[job_id] = max(self._job_completion[job_id], end_lb)
+
+    def on_end_lb(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        job_id = state.get_job_id(task_id)
+        end_lb = state.get_end_lb(task_id)
+        self._job_completion_lb[job_id] = max(
+            self._job_completion_lb[job_id], end_lb
+        )
+
+    @override
+    def on_assignment(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        job_id = state.get_job_id(task_id)
+        C_j = state.get_end(task_id)
+        self._job_completion_lb[job_id] = max(
+            self._job_completion_lb[job_id], C_j
+        )
+
+    def on_start_ub(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        job_id = state.get_job_id(task_id)
+        end_ub = state.get_end_ub(task_id)
+        self._job_completion_ub[job_id] = max(
+            self._job_completion_ub[job_id], end_ub
+        )
+
+    def on_end_ub(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        job_id = state.get_job_id(task_id)
+        end_ub = state.get_end_ub(task_id)
+        self._job_completion_ub[job_id] = max(
+            self._job_completion_ub[job_id], end_ub
+        )
+
+    def compute(self, state: ScheduleState) -> float:
+        return self.evaluate(completion_times(state))
+
+    def evaluate(self, job_completions: list[Time]) -> float:
+        """Evaluate f(C_1, ..., C_n)."""
+        raise NotImplementedError(
+            f"Objective {type(self).__name__} has no implementation of "
+            "the `evaluate` method."
+        )
 
 
-class _RegularObjective(CompletionTimeObjective):
-    """Base class for regular objectives that depend on job completion times.
+class _RegularObjective(_CompletionTimeObjective):
+    """Base class for regular objectives.
 
-    A regular objective is one that is non-decreasing with respect to the
-    completion times of the jobs.
-    They are a common class of objectives in scheduling problems due to their
-    desirable properties for optimization and analysis.
-
-    This base class provides a common implementation for regular objectives
-    that depend on job completion times.
+    An objective is called regular when it is represented by a non-decreasing
+    function f(C_1, ..., C_n), where C_i is job i's completion times,
     """
 
     @property
@@ -190,5 +296,49 @@ class _RegularObjective(CompletionTimeObjective):
     def regular(self) -> bool:
         return True
 
+    @property
+    def lb(self) -> float:
+        return self.evaluate(self._job_completion_lb)
+
+    @property
+    def ub(self) -> float:
+        return self.evaluate(self._job_completion_ub)
+
+    @property
+    def value(self) -> float:
+        """Return the current objective value derived only from fixed tasks."""
+        return self.evaluate(self._job_completion)
+
 
 RegularObjective = _RegularObjective
+
+
+class _AntiRegularObjective(_CompletionTimeObjective):
+    """Base class for objectives that depend on job completion times.
+
+    To compute the objective value, just implement the `evaluate` method that
+    takes completion time estimates per job and return a single value.
+    Note that the values computed here are only valid when the objective is
+    regular, that is, the `evaluate` function is element-wise non-decreasing.
+    """
+
+    @property
+    @override
+    def regular(self) -> bool:
+        return False
+
+    @property
+    def lb(self) -> float:
+        return self.evaluate(self._job_completion_ub)
+
+    @property
+    def ub(self) -> float:
+        return self.evaluate(self._job_completion_lb)
+
+    @property
+    def value(self) -> float:
+        """Return the current objective value derived only from fixed tasks."""
+        return self.evaluate(self._job_completion)
+
+
+AntiRegularObjective = _AntiRegularObjective

@@ -28,6 +28,6 @@ class SparseRewardStrategy(RewardStrategy):
 
     @override
     def compute(self, state: ScheduleState, objective: Objective) -> float:
-        reward = objective.current if state.is_terminal() else 0.0
+        reward = objective.value if state.is_terminal() else 0.0
 
         return -reward if objective.minimize else reward

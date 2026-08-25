@@ -6,9 +6,8 @@ from math import expm1
 from typing_extensions import override
 
 from cpscheduler.environment.constants import Float, Int, Time
-from cpscheduler.environment.instance import Feature
+from cpscheduler.environment.instance import Feature, ProblemInstance
 from cpscheduler.environment.objectives.base import RegularObjective
-from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.utils.general import convert_to_list
 
 
@@ -19,14 +18,9 @@ class TotalCompletionTime(RegularObjective):
     jobs, i.e., ΣC_j.
     """
 
-    @property
     @override
-    def current(self) -> float:
-        return float(sum(self._job_completion))
-
-    @override
-    def compute(self, state: ScheduleState) -> float:
-        return float(sum(self.completion_times(state)))
+    def evaluate(self, job_completions: list[Time]) -> float:
+        return float(sum(job_completions))
 
     @classmethod
     @override
@@ -82,30 +76,18 @@ class WeightedCompletionTime(TotalCompletionTime):
     def _load_weights(self, weights: Iterable[Float]) -> list[float]:
         return convert_to_list(weights, float)
 
-    @property
     @override
-    def regular(self) -> bool:
-        return all(weight >= 0 for weight in self.weights.value)
+    def initialize(self, instance: ProblemInstance) -> None:
+        if any(weight < 0 for weight in self.weights.value):
+            raise ValueError("Regular objectives require non-negative weights.")
 
-    @property
     @override
-    def current(self) -> float:
+    def evaluate(self, job_completions: list[Time]) -> float:
         weights = self.weights.value
 
         return sum(
             weight * float(C_j)
-            for weight, C_j in zip(weights, self._job_completion, strict=False)
-        )
-
-    @override
-    def compute(self, state: ScheduleState) -> float:
-        weights = self.weights.value
-
-        return sum(
-            weight * float(C_j)
-            for weight, C_j in zip(
-                weights, self.completion_times(state), strict=False
-            )
+            for weight, C_j in zip(weights, job_completions, strict=False)
         )
 
     @classmethod
@@ -153,20 +135,11 @@ class DiscountedTotalCompletionTime(RegularObjective):
 
         self.discount_factor.own_data(discount_factor)
 
-    @property
     @override
-    def current(self) -> float:
+    def evaluate(self, job_completions: list[Time]) -> float:
         alpha = self.discount_factor.value
 
-        return -sum(expm1(-alpha * float(C_j)) for C_j in self._job_completion)
-
-    @override
-    def __call__(self, state: ScheduleState) -> float:
-        alpha = self.discount_factor.value
-
-        return -sum(
-            expm1(-alpha * float(C_j)) for C_j in self.completion_times(state)
-        )
+        return -sum(expm1(-alpha * float(C_j)) for C_j in job_completions)
 
     @override
     def get_entry(self) -> str:
@@ -228,27 +201,13 @@ class TotalFlowTime(RegularObjective):
     def _load_release_times(self, release_times: Iterable[Int]) -> list[Time]:
         return convert_to_list(release_times, Time)
 
-    @property
     @override
-    def current(self) -> float:
+    def evaluate(self, job_completions: list[Time]) -> float:
         return float(
             sum(
                 C_j - r_j
                 for r_j, C_j in zip(
-                    self.release_times.value, self._job_completion, strict=False
-                )
-            )
-        )
-
-    @override
-    def compute(self, state: ScheduleState) -> float:
-        return float(
-            sum(
-                C_j - r_j
-                for r_j, C_j in zip(
-                    self.release_times.value,
-                    self.completion_times(state),
-                    strict=False,
+                    self.release_times.value, job_completions, strict=False
                 )
             )
         )

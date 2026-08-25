@@ -58,7 +58,8 @@ __all__ = [  # noqa: RUF022
     # Gamma objectives
     "Objective",
     "RegularObjective",
-    "CompletionTimeObjective",
+    "AntiRegularObjective",
+    "SatisfactionObjective",
     "ComposedObjective",
     "Makespan",
     "TotalCompletionTime",
@@ -104,13 +105,14 @@ from .constraints import (
 )
 from .env import SchedulingEnv
 from .objectives import (
-    CompletionTimeObjective,
+    AntiRegularObjective,
     ComposedObjective,
     DiscountedTotalCompletionTime,
     Makespan,
     MaximumLateness,
     Objective,
     RegularObjective,
+    SatisfactionObjective,
     TotalCompletionTime,
     TotalEarliness,
     TotalFlowTime,

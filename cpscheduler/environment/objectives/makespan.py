@@ -23,6 +23,10 @@ class Makespan(Objective):
     This objective function aims to minimize the time at which all tasks are completed.
     """
 
+    _value: Time
+    _lb: Time
+    _ub: Time
+
     @property
     @override
     def regular(self) -> bool:
@@ -32,18 +36,54 @@ class Makespan(Objective):
     def reset(self, state: ScheduleState) -> None:
         super().reset(state)
 
-        self._current = 0.0
+        self._value = 0
+        self._lb = 0
+        self._ub = 0
 
     @property
     @override
-    def current(self) -> float:
-        return self._current
+    def lb(self) -> float:
+        return float(self._lb)
+
+    @property
+    @override
+    def ub(self) -> float:
+        return float(self._ub)
+
+    @property
+    @override
+    def value(self) -> float:
+        return float(self._value)
 
     @override
     def on_assignment(
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:
-        self._current = max(self._current, float(state.get_end(task_id)))
+        self._value = max(self._value, state.get_end(task_id))
+
+    @override
+    def on_start_lb(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        self._lb = max(self._lb, state.get_end_lb(task_id))
+
+    @override
+    def on_start_ub(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        self._ub = max(self._ub, state.get_end_ub(task_id))
+
+    @override
+    def on_end_lb(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        self._lb = max(self._lb, state.get_end_lb(task_id))
+
+    @override
+    def on_end_ub(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        self._ub = max(self._ub, state.get_end_ub(task_id))
 
     @override
     def compute(self, state: ScheduleState) -> float:
@@ -69,6 +109,8 @@ class MaximumLateness(Objective):
     """
 
     _value: Time
+    _lb: Time
+    _ub: Time
 
     due_dates: Feature[list[Time]]
 
@@ -114,24 +156,65 @@ class MaximumLateness(Objective):
     def regular(self) -> bool:
         return True
 
+    @property
     @override
-    def reset(self, state: ScheduleState) -> None:
-        super().reset(state)
-        self._value = -MAX_TIME
+    def lb(self) -> float:
+        return float(self._lb)
+
+    @property
+    @override
+    def ub(self) -> float:
+        return float(self._ub)
+
+    @property
+    @override
+    def value(self) -> float:
+        return float(self._value)
 
     @override
     def on_assignment(
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:
-        job_id = state.instance.job_ids[task_id]
+        job_id = state.get_job_id(task_id)
         d_j = self.due_dates.value[job_id]
 
         self._value = max(self._value, state.get_end(task_id) - d_j)
 
-    @property
     @override
-    def current(self) -> float:
-        return float(self._value)
+    def on_start_lb(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        job_id = state.get_job_id(task_id)
+        d_j = self.due_dates.value[job_id]
+
+        self._lb = max(self._lb, state.get_end_lb(task_id) - d_j)
+
+    @override
+    def on_start_ub(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        job_id = state.get_job_id(task_id)
+        d_j = self.due_dates.value[job_id]
+
+        self._ub = max(self._ub, state.get_end_ub(task_id) - d_j)
+
+    @override
+    def on_end_lb(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        job_id = state.get_job_id(task_id)
+        d_j = self.due_dates.value[job_id]
+
+        self._lb = max(self._lb, state.get_end_lb(task_id) - d_j)
+
+    @override
+    def on_end_ub(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        job_id = state.get_job_id(task_id)
+        d_j = self.due_dates.value[job_id]
+
+        self._ub = max(self._ub, state.get_end_ub(task_id) - d_j)
 
     @override
     def compute(self, state: ScheduleState) -> float:

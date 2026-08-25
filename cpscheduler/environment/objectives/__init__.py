@@ -9,13 +9,14 @@ implementing the required methods.
 """
 
 __all__ = [
-    "CompletionTimeObjective",
+    "AntiRegularObjective",
     "ComposedObjective",
     "DiscountedTotalCompletionTime",
     "Makespan",
     "MaximumLateness",
     "Objective",
     "RegularObjective",
+    "SatisfactionObjective",
     "TotalCompletionTime",
     "TotalEarliness",
     "TotalFlowTime",
@@ -29,9 +30,10 @@ __all__ = [
 ]
 
 from .base import (
-    CompletionTimeObjective,
+    AntiRegularObjective,
     Objective,
     RegularObjective,
+    SatisfactionObjective,
     objectives,
 )
 from .completion import (

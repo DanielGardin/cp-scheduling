@@ -22,7 +22,7 @@ from cpscheduler.environment.backend import (
 from cpscheduler.environment.constants import EzPickle, TaskID
 from cpscheduler.environment.constraints import Constraint, PassiveConstraint
 from cpscheduler.environment.instance import FeatureMetadata, ProblemInstance
-from cpscheduler.environment.objectives import Objective
+from cpscheduler.environment.objectives import Objective, SatisfactionObjective
 from cpscheduler.environment.observation import DefaultObservation, Observation
 from cpscheduler.environment.render import Renderer
 from cpscheduler.environment.reward import RewardStrategy, SparseRewardStrategy
@@ -240,7 +240,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
         machine_setup = machine_setup or ScheduleSetup()
         constraints = constraints or ()
-        objective = objective or Objective()
+        objective = objective or SatisfactionObjective()
         observation = observation or cast("ObsT_co", DefaultObservation())
         reward = reward or SparseRewardStrategy()
 
@@ -342,7 +342,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         if state.infeasible:
             return f"SchedulingEnv({entry}, n_tasks={n_tasks}, infeasible=True)"
 
-        obj_value = self.objective.current
+        obj_value = self.objective.value
 
         return (
             f"SchedulingEnv({entry}, n_tasks={n_tasks}, objective={obj_value})"
@@ -445,7 +445,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
     def get_info(self) -> InfoType:
         """Retrieve additional information about the environment."""
         info = {
-            "objective_value": self.objective.current,
+            "objective_value": self.objective.value,
             "event_count": self.event_count,
             "infeasible": self.state.infeasible,
             **self.backend.get_info(),
