@@ -9,6 +9,7 @@ This module defines:
 
 """
 
+import hashlib
 from inspect import get_annotations
 from typing import (
     Any,
@@ -122,6 +123,45 @@ class Singleton:
 PickleState = list[tuple[str, Any]]
 
 
+def _frame(b: bytes) -> bytes:
+    return len(b).to_bytes(8, byteorder="big") + b
+
+
+def _canonical_bytes(obj: Any) -> bytes:
+    if obj is None:
+        return b"N"
+    if isinstance(obj, bool):
+        return b"b1" if obj else b"b0"
+    if isinstance(obj, int):
+        return b"i" + str(obj).encode()
+    if isinstance(obj, float):
+        return b"f" + repr(obj).encode()
+    if isinstance(obj, str):
+        return b"s" + obj.encode()
+    if isinstance(obj, bytes):
+        return b"y" + obj
+
+    if isinstance(obj, dict):
+        items = sorted(
+            _frame(_canonical_bytes(k)) + _frame(_canonical_bytes(v))
+            for k, v in obj.items()
+        )
+        return b"d" + b"".join(items)
+
+    if isinstance(obj, (list, tuple)):
+        tag = b"l" if isinstance(obj, list) else b"t"
+        return tag + b"".join(_frame(_canonical_bytes(item)) for item in obj)
+
+    if isinstance(obj, (set, frozenset)):
+        items = sorted(_frame(_canonical_bytes(item)) for item in obj)
+        return b"e" + b"".join(items)
+
+    if isinstance(obj, EzPickle):
+        return b"z" + _frame(_canonical_bytes(sorted(obj.__getstate__())))
+
+    return b"r" + repr(obj).encode("utf-8")
+
+
 def hash_anything(obj: Any) -> int:
     """Compute a hash for any object, including nested containers.
 
@@ -143,25 +183,8 @@ def hash_anything(obj: Any) -> int:
         (e.g., custom class without __hash__).
 
     """
-    if isinstance(obj, dict):
-        return hash(
-            tuple(
-                sorted(
-                    (hash_anything(k), hash_anything(v)) for k, v in obj.items()
-                )
-            )
-        )
-
-    if isinstance(obj, list | tuple):
-        return hash(tuple(hash_anything(item) for item in obj))
-
-    if isinstance(obj, set):
-        return hash(tuple(sorted(hash_anything(item) for item in obj)))
-
-    if isinstance(obj, EzPickle):
-        return hash(sorted(obj.__getstate__()))
-
-    return hash(obj)
+    digest = hashlib.sha256(_canonical_bytes(obj)).digest()
+    return int.from_bytes(digest[:8], "big")
 
 
 def _collect_fields(cls: type) -> tuple[str, ...]:

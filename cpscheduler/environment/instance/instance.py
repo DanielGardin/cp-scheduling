@@ -18,6 +18,7 @@ from cpscheduler.environment.constants import (
     MachineID,
     TaskID,
     Time,
+    hash_anything,
 )
 from cpscheduler.environment.instance.features import Feature
 from cpscheduler.environment.instance.metadata import FeatureMetadata
@@ -406,13 +407,11 @@ class ProblemInstance(EzPickle):
 
                     feature.shared_data(provider)
 
-        self._fingerprint = hash(
-            tuple(
-                sorted(
-                    (name, features[0].compute_hash())
-                    for name, features in self.features.items()
-                )
-            )
+        self._fingerprint = hash_anything(
+            [
+                (name, features[0].compute_hash())
+                for name, features in self.features.items()
+            ]
         )
 
     def has_feature(self, feat_name: str) -> bool:
@@ -433,6 +432,10 @@ class ProblemInstance(EzPickle):
             )
 
         return self.features[feat_name][0]
+
+    def get(self, feat_name: str) -> Any:
+        """Get the value of a feature given its name."""
+        return self.get_feature(feat_name).value
 
     def get_machines(self, task_id: TaskID) -> list[MachineID]:
         """Get the list of eligible machines for a given task."""
