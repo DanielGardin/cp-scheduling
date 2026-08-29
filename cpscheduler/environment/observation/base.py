@@ -76,19 +76,19 @@ class Observation(EzPickle, Generic[Serialized_Obs]):
         self.symbols = self._default_symbols.copy()
 
     @property
-    def n_tasks(self) -> int:
+    def n_tasks(self) -> int | None:
         """Return the number of tasks within the instance."""
-        return self.symbols["n_tasks"]
+        return self.symbols.get("n_tasks")
 
     @property
-    def n_machines(self) -> int:
+    def n_machines(self) -> int | None:
         """Return the number of machines within the instance."""
-        return self.symbols["n_machines"]
+        return self.symbols.get("n_machines")
 
     @property
-    def n_jobs(self) -> int:
+    def n_jobs(self) -> int | None:
         """Return the number of jobs within the instance."""
-        return self.symbols["n_jobs"]
+        return self.symbols.get("n_jobs")
 
     def compile(
         self, instance: ProblemInstance, backend: ScheduleBackend

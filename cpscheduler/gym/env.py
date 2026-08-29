@@ -186,6 +186,10 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         env = self._core
         symbols = env.observation.symbols
 
+        for symbol in env.instance.symbols:
+            if symbol not in symbols:
+                symbols[symbol] = 0
+
         return to_gym_space(env.observation_spec, "observation", symbols)
 
     # FUTURE: There is an issue with this method, it does not recognize

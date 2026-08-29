@@ -75,6 +75,9 @@ class MostWorkRemaining(StaticPriorityDispatchingRule):
 
     @override
     def priority_score(self, obs: DefaultObservation) -> list[float]:
+        if obs.n_tasks is None:
+            raise ValueError("The given observation is probably unitialized.")
+
         parents: dict[TaskID, list[TaskID]] = obs[self.precedence_label]
         processing_times: list[Time] = obs[self.processing_time]
 
@@ -122,6 +125,9 @@ class MostOperationsRemaining(StaticPriorityDispatchingRule):
 
     @override
     def priority_score(self, obs: DefaultObservation) -> list[float]:
+        if obs.n_tasks is None:
+            raise ValueError("The given observation is probably unitialized.")
+
         parents: dict[TaskID, list[TaskID]] = obs[self.precedence_label]
 
         priorities = [1] * obs.n_tasks

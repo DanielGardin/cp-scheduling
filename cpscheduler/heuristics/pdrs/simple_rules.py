@@ -14,6 +14,9 @@ class RandomPriority(StaticPriorityDispatchingRule):
 
     @override
     def priority_score(self, obs: DefaultObservation) -> list[float]:
+        if obs.n_tasks is None:
+            raise ValueError("The given observation is probably unitialized.")
+
         return [self._internal_rng.random() for _ in range(obs.n_tasks)]
 
 

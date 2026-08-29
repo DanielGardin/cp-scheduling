@@ -11,11 +11,14 @@ from typing_extensions import override
 
 from cpscheduler.environment.backend import ActionType
 from cpscheduler.environment.constants import Int
+from cpscheduler.environment.utils import Instance_T
 from cpscheduler.environment.utils.protocols import Options
 
 if TYPE_CHECKING:
     from cpscheduler.environment import SchedulingEnv
 
+
+MAX_INT = 2 << 31 - 1
 
 _Obs = TypeVar("_Obs")
 _Act = TypeVar("_Act")
@@ -42,16 +45,49 @@ class SchedulingActionWrapper(ActionWrapper[_Obs, _Act, ActionType], ABC):
         options: Options | None = None,
     ) -> tuple[_Obs, dict[str, Any]]:
         """Reset the environment and update the action space if necessary."""
-        fingerprint: int = self.get_wrapper_attr("fingerprint")
+        fingerprint: int = self.fingerprint
 
         obs, info = self.env.reset(
             seed=seed, options=dict(options) if options else None
         )
 
-        if self.get_wrapper_attr("fingerprint") != fingerprint:
+        if self.fingerprint != fingerprint:
             self.action_space = self._get_action_space()
 
         return obs, info
+
+    @property
+    def fingerprint(self) -> int:
+        """Return the instance fingerprint of the current loaded instance."""
+        return self.env.get_wrapper_attr("fingerprint")
+
+    def load_instance(self, *instances: Instance_T) -> None:
+        """Load a scheduling instance and initialize the environment.
+
+        Prepares the environment for simulation by loading instance data,
+        validating constraints, and propagating domain bounds.
+
+        Parameters
+        ----------
+        *instances : InstanceTypes
+            One or more instance data objects to load.
+            If multiple instances are provided, they are merged.
+            Allows for heterogeneous instance data sources.
+
+        Raises
+        ------
+        ValueError
+            If setup constraints produce invalid features.
+
+        RuntimeError
+            If constraint propagation detects initial infeasibility.
+
+        """
+        fingerprint: int = self.fingerprint
+        self.env.get_wrapper_attr("load_instance")(*instances)
+
+        if self.fingerprint != fingerprint:
+            self.action_space = self._get_action_space()
 
     @abstractmethod
     def _get_action_space(self) -> Space[_Act]:
@@ -107,7 +143,7 @@ class PermutationActionWrapper(SchedulingActionWrapper[_Obs, Iterable[Int]]):
     def _get_action_space(self) -> Space[Iterable[Int]]:
         env: SchedulingEnv = self.get_wrapper_attr("core")
 
-        n_tasks = env.observation.n_tasks
+        n_tasks = env.observation.n_tasks or MAX_INT
 
         return Sequence(Box(low=0, high=n_tasks - 1, dtype=int64), stack=True)
 
@@ -123,13 +159,13 @@ class SingleActionWrapper(SchedulingActionWrapper[_Obs, Int]):
     def _get_action_space(self) -> Space[Int]:
         env: SchedulingEnv = self.get_wrapper_attr("core")
 
-        n_tasks = env.observation.n_tasks
+        n_tasks = env.observation.n_tasks or MAX_INT
 
         return Discrete(n_tasks)
 
     @override
     def action(self, action: Int) -> ActionType:
-        return ("execute", action)
+        return ("execute", int(action))
 
 
 class SingleActionNoopWrapper(SchedulingActionWrapper[_Obs, Int]):
@@ -141,7 +177,7 @@ class SingleActionNoopWrapper(SchedulingActionWrapper[_Obs, Int]):
     def _get_action_space(self) -> Space[Int]:
         env: SchedulingEnv = self.get_wrapper_attr("core")
 
-        n_tasks = env.observation.n_tasks
+        n_tasks = env.observation.n_tasks or MAX_INT
         self._n_tasks = n_tasks
 
         return Discrete(n_tasks + 1)
@@ -151,4 +187,4 @@ class SingleActionNoopWrapper(SchedulingActionWrapper[_Obs, Int]):
         if action == self._n_tasks:
             return ("noop",)
 
-        return ("execute", action)
+        return ("execute", int(action))

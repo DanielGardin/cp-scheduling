@@ -263,10 +263,6 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         if "n_machines" not in observation.symbols:
             observation.symbols["n_machines"] = machine_setup.n_machines
 
-        for symbol in problem_instance.symbols:
-            if symbol not in observation.symbols:
-                observation.symbols[symbol] = 0
-
         self.setup = machine_setup
         self.constraints = tuple(constraints)
         self.objective = objective
