@@ -75,7 +75,7 @@ def is_single_action(
     action: Any,
 ) -> TypeIs[SingleAction]:
     """Check if the action is a single instruction or a iterable of instructions."""
-    if not isinstance(action, tuple):
+    if not isinstance(action, tuple) or not action:
         return False
 
     spec = action[1] if isinstance(action[0], Int) else action[0]

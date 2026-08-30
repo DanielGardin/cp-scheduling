@@ -59,7 +59,7 @@ class SchedulingActionWrapper(ActionWrapper[_Obs, _Act, ActionType], ABC):
     @property
     def fingerprint(self) -> int:
         """Return the instance fingerprint of the current loaded instance."""
-        return self.env.get_wrapper_attr("fingerprint")
+        return int(self.env.get_wrapper_attr("fingerprint"))
 
     def load_instance(self, *instances: Instance_T) -> None:
         """Load a scheduling instance and initialize the environment.
