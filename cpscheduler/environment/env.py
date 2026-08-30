@@ -499,6 +499,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         event_queue = state.domain_event_queue
         constraints = self._all_constraints
         objective = self.objective
+        observation = self.observation
 
         # FUTURE: For performance, consider subscribing constraints such that,
         # constraint.fields() -> Sequence[VarFieldType]
@@ -520,6 +521,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
                 for constraint in constraints:
                     constraint.on_assignment(task_id, machine_id, state)
                 objective.on_assignment(task_id, machine_id, state)
+                observation.on_assignment(task_id, machine_id, state)
 
             elif field == START_LB:
                 for constraint in constraints:
