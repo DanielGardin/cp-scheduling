@@ -1,5 +1,6 @@
 """Generic feature-based instance generator."""
 
+from collections.abc import Mapping
 from random import Random
 from typing import Any, cast
 
@@ -172,7 +173,7 @@ class Generator(EzPickle, InstanceGenerator):
         n_machines: int,
         n_jobs: int | None = None,
         *,
-        samplers: dict[str, Sampler[Any]] | None = None,
+        samplers: Mapping[str, Sampler[Any]] | None = None,
         seed: int | None = None,
         use_default_samplers: bool = True,
         **symbols: int,
@@ -287,7 +288,7 @@ class Generator(EzPickle, InstanceGenerator):
         n_machines: int | None = None,
         n_jobs: int | None = None,
         *,
-        samplers: dict[str, Sampler[Any]] | None = None,
+        samplers: Mapping[str, Sampler[Any]] | None = None,
         seed: int | None = None,
         use_default_samplers: bool = True,
         **symbols: int,
@@ -330,7 +331,6 @@ class Generator(EzPickle, InstanceGenerator):
 
         **symbols: int
             Additional symbols that can be used in feature specs and samplers.
-            Currently unused.
 
         Raises
         ------
