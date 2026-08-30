@@ -4,45 +4,40 @@ import math
 from bisect import bisect
 from collections.abc import Iterable
 from random import Random
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from typing_extensions import override
 
+from cpscheduler.environment.utils.symbols import SymbolicDim
 from cpscheduler.instances.distributions.base import Distribution, Sampler
 
 
 class UniformInt(Distribution[int]):
     """Discrete uniform distribution on [low, high]."""
 
-    low: int
-    high: int
+    low: SymbolicDim
+    high: SymbolicDim
 
-    def __init__(self, low: int, high: int) -> None:
+    def __init__(self, low: int | str, high: int | str) -> None:
         """Initialize a UniformInt distribution.
 
         Parameters
         ----------
-        low : int
-            Lower bound of the distribution (inclusive).
+        low : int | str
+            Lower bound of the distribution (inclusive). Can be symbolic.
 
-        high : int
-            Upper bound of the distribution (inclusive).
-
-        Raises
-        ------
-        ValueError
-            If low > high.
+        high : int | str
+            Upper bound of the distribution (inclusive). Can be symbolic.
 
         """
-        if low > high:
-            raise ValueError(f"Expected low <= high, received {low} > {high}.")
-
-        self.low = low
-        self.high = high
+        self.low = SymbolicDim.from_shapedim(low)
+        self.high = SymbolicDim.from_shapedim(high)
 
     @override
-    def sample(self, rng: Random, **context: object) -> int:
-        return rng.randint(self.low, self.high)
+    def sample(self, rng: Random, **context: Any) -> int:
+        return rng.randint(
+            self.low.resolve(**context), self.high.resolve(**context)
+        )
 
     @override
     def __repr__(self) -> str:
@@ -249,18 +244,18 @@ class Poisson(Distribution[int]):
 class Multinomial(Sampler[list[int]]):
     """Multinomial distribution."""
 
-    n: int
+    n: SymbolicDim
     pvals: tuple[float, ...]
 
     _cdf: tuple[float, ...]
 
-    def __init__(self, n: int, pvals: Iterable[float]) -> None:
+    def __init__(self, n: int | str, pvals: Iterable[float]) -> None:
         """Initialize a Multinomial distribution.
 
         Parameters
         ----------
-        n : int
-            Number of trials.
+        n : int | str
+            Number of trials. Can be symbolic.
 
         pvals : Iterable[float]
             Probabilities of each category (need not sum to 1).
@@ -268,13 +263,10 @@ class Multinomial(Sampler[list[int]]):
         Raises
         ------
         ValueError
-            If `n` is negative, or if any probability in `pvals` is negative.
+            If any probability in `pvals` is negative.
 
         """
-        if n < 0:
-            raise ValueError(f"Expected n >= 0, received {n}.")
-
-        self.n = n
+        self.n = SymbolicDim.from_shapedim(n)
         self.pvals = tuple(pvals)
 
         cdf = [0.0] * len(self.pvals)
@@ -291,13 +283,13 @@ class Multinomial(Sampler[list[int]]):
         self._cdf = tuple(cdf)
 
     @override
-    def sample(self, rng: Random, **context: object) -> list[int]:
+    def sample(self, rng: Random, **context: Any) -> list[int]:
         counts = [0] * len(self.pvals)
 
         cdf = self._cdf
         total = cdf[-1]
 
-        for _ in range(self.n):
+        for _ in range(self.n.resolve(**context)):
             u = rng.random() * total
             category = bisect(cdf, u)
             counts[category] += 1
