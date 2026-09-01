@@ -11,9 +11,9 @@ This module defines:
 
 import hashlib
 from inspect import get_annotations
+from threading import Lock
 from typing import (
     Any,
-    ClassVar,
     Final,
     SupportsFloat,
     SupportsIndex,
@@ -56,44 +56,34 @@ GLOBAL_MACHINE_ID: MachineID = -1
 # Singletons
 
 
+_instances: dict["type[Singleton]", "Singleton"] = {}
+_lock = Lock()
+
+
+def _get_singleton_instance(cls: "type[Singleton]") -> "Singleton":
+    return _instances[cls]
+
+
 class Singleton:
     """Base class enforcing unique-instance semantics.
 
-    Each subclass may be instantiated at most once during program execution.
-    Additional instantiation attempts raise :class:`ValueError`.
+    Each subclass has exactly one instance. Subsequent instantiation attempts
+    return the existing instance.
 
-    Intended primarily for sentinel objects and globally unique markers.
-
-    Notes
-    -----
-    - Singleton instances evaluate to ``False`` in boolean contexts.
-    - Copy and deepcopy operations preserve identity.
-    - Instance creation is not thread-safe.
-
-    Examples
-    --------
-    >>> class Missing(Singleton):
-    ...     pass
-    >>> x = Missing()
-    >>> Missing()
-    Traceback (most recent call last):
-        ...
-    ValueError
-
+    Singleton creation is thread-safe, and copying, deep-copying, and pickling
+    preserve identity.
     """
 
-    _created: ClassVar[bool] = False
-
     def __new__(cls) -> Self:
-        """Allow exactly one instance of each Singleton subclass. Subsequent calls raise ValueError."""
-        if cls._created:
-            raise ValueError(
-                f"Singleton class {cls.__name__} can only be instantiated once."
-            )
+        """Return the unique instance for each Singleton subclass."""
+        with _lock:
+            if cls in _instances:
+                return cast("Self", _instances[cls])
 
-        instance = super().__new__(cls)
-        cls._created = True
-        return instance
+            instance = super().__new__(cls)
+            _instances[cls] = instance
+
+            return instance
 
     def __repr__(self) -> str:
         """Return a simple string representation of the singleton instance."""
@@ -105,7 +95,7 @@ class Singleton:
 
     def __hash__(self) -> int:
         """Return a unique hash for the singleton instance based on its type."""
-        return hash(type(self))
+        return hash_anything(str(self))
 
     def __copy__(self) -> Self:
         """When copying a singleton, the same instance is returned."""
@@ -114,6 +104,10 @@ class Singleton:
     def __deepcopy__(self, memo: dict[int, Any]) -> Self:
         """Deep copying a singleton returns the same instance."""
         return self
+
+    def __reduce__(self) -> tuple[Any, tuple[type[Self]]]:
+        """Reducing a singleton generates the same instance."""
+        return _get_singleton_instance, (type(self),)
 
 
 # ------------------------------------------------------------------------------
