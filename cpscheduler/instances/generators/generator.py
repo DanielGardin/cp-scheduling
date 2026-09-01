@@ -490,7 +490,7 @@ class Generator(EzPickle, InstanceGenerator):
         ----------
         seed: int | None, optional
             An optional random seed for reproducibility. If `None`, the generator's
-            internal random state is used without modification.
+            internal random state is used.
 
         Returns
         -------
@@ -500,9 +500,7 @@ class Generator(EzPickle, InstanceGenerator):
             features.
 
         """
-        if seed is not None:
-            self._rng.seed(seed)
-
+        rng = self._rng if seed is None else Random(seed)
         instance: dict[str, Any] = {}
 
         context: dict[str, Any] = dict(self._symbols)
@@ -512,7 +510,7 @@ class Generator(EzPickle, InstanceGenerator):
 
             context["feature_name"] = feature_name
 
-            feature_value = sampler.sample(self._rng, **context)
+            feature_value = sampler.sample(rng, **context)
 
             instance[feature_name] = feature_value
             context[feature_name] = feature_value
