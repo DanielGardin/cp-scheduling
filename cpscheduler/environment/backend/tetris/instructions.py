@@ -1,5 +1,7 @@
 """Instructions for the Tetris schedule generation backend."""
 
+from typing import Any
+
 from typing_extensions import Self, override
 
 from cpscheduler.environment.backend.actions import Instruction
@@ -55,17 +57,21 @@ class ExecuteInstruction(Instruction[TetrisBackend]):
 
     @override
     def resolve(self, state: ScheduleState) -> Self:
-        machine_id = self.machine_id
         task_id = self.task_id
-        task_machines = state.get_machines(task_id)
+        if not 0 <= task_id < state.n_tasks:
+            raise ValueError(f"Task {task_id} in {self} does not exist.")
 
+        machine_id = self.machine_id
+        task_machines = state.get_machines(task_id)
         if machine_id != GLOBAL_MACHINE_ID:
             if machine_id not in task_machines:
                 raise ValueError(
-                    f"Machine {machine_id} is not available for task {task_id}"
+                    f"Machine {machine_id} is not available for task {task_id} "
+                    f"in {self}"
                 )
 
         elif len(task_machines) == 1:
+            # Statically resolve the machine if there is only one option
             resolved_machine = next(iter(task_machines))
             return type(self)(task_id, resolved_machine)
 
@@ -92,3 +98,19 @@ class ExecuteInstruction(Instruction[TetrisBackend]):
             machine_id,
             start,
         )
+
+    @override
+    def semantic(
+        self, state: ScheduleState, backend: TetrisBackend
+    ) -> dict[str, Any]:
+        machine_id = (
+            select_machine(state, self.task_id)
+            if self.machine_id == GLOBAL_MACHINE_ID
+            else self.machine_id
+        )
+
+        return {
+            "type": "execution",
+            "task": self.task_id,
+            "machine": machine_id,
+        }

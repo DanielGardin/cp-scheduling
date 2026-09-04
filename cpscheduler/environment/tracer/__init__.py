@@ -10,7 +10,8 @@ their own tracers by subclassing the `Tracer` class.
 __all__ = [
     "FullTrajectoryTracer",
     "Tracer",
+    "TrajectoryTracer",
 ]
 
 from .base import Tracer
-from .trajectory import FullTrajectoryTracer
+from .trajectory import FullTrajectoryTracer, TrajectoryTracer

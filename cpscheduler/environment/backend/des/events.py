@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from typing_extensions import Self, override
 
@@ -72,14 +72,17 @@ class ExecuteEvent(SimulationEvent):
 
     @override
     def resolve(self, state: ScheduleState) -> Self:
-        machine_id = self.machine_id
         task_id = self.task_id
-        task_machines = state.get_machines(task_id)
+        if not 0 <= task_id < state.n_tasks:
+            raise ValueError(f"Task {task_id} in {self} does not exist.")
 
+        machine_id = self.machine_id
+        task_machines = state.get_machines(task_id)
         if machine_id != GLOBAL_MACHINE_ID:
             if machine_id not in task_machines:
                 raise ValueError(
-                    f"Machine {machine_id} is not available for task {task_id}"
+                    f"Machine {machine_id} is not available for task {task_id} "
+                    f"in {self}"
                 )
 
         elif len(task_machines) == 1:
@@ -97,23 +100,34 @@ class ExecuteEvent(SimulationEvent):
     def is_ready(self, state: ScheduleState, backend: DESBackend) -> bool:
         return state.can_start(self.task_id, backend.time, self.machine_id)
 
-    def resolve_machine(
-        self, state: ScheduleState, backend: DESBackend
-    ) -> MachineID:
-        """Resolve the machine for the task given the current state of the schedule."""
-        if self.machine_id != GLOBAL_MACHINE_ID:
-            return self.machine_id
-
-        return select_machine(state, self.task_id, backend.time)
-
     @override
     def process(self, state: ScheduleState, backend: DESBackend) -> None:
         time = backend.time
 
-        if self.machine_id == GLOBAL_MACHINE_ID:
-            self.machine_id = select_machine(state, self.task_id, time)
+        machine_id = (
+            self.machine_id
+            if self.machine_id != GLOBAL_MACHINE_ID
+            else select_machine(state, self.task_id, time)
+        )
 
-        state.assign_task(self.task_id, self.machine_id, time)
+        state.assign_task(self.task_id, machine_id, time)
+
+    @override
+    def semantic(
+        self, state: ScheduleState, backend: DESBackend
+    ) -> dict[str, Any]:
+        machine_id = (
+            select_machine(state, self.task_id, backend.time)
+            if self.machine_id == GLOBAL_MACHINE_ID
+            and self.is_ready(state, backend)
+            else self.machine_id
+        )
+
+        return {
+            "type": "execution",
+            "task": self.task_id,
+            "machine": machine_id,
+        }
 
 
 class SubmitEvent(ExecuteEvent):

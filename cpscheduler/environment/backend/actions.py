@@ -47,6 +47,12 @@ class Instruction(EzPickle, Generic[B_contra]):
     def process(self, state: ScheduleState, backend: B_contra) -> None:
         """Process the instruction, modifying the schedule state accordingly."""
 
+    def semantic(
+        self, state: ScheduleState, backend: B_contra
+    ) -> dict[str, Any] | None:
+        """Return the semantic metadata of this instruction, if any."""
+        return None
+
 
 def register_instruction(
     instruction: type[Instruction[Any]], spec: str, backend: str

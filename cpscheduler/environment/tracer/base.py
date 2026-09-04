@@ -1,11 +1,13 @@
 """Base tracer class for the CPScheduler environment."""
 
-from typing import Any, ClassVar
+from typing import Any, ClassVar, TypeVar
 
 from cpscheduler.environment.backend import Instruction, ScheduleBackend
 from cpscheduler.environment.constants import EzPickle
 from cpscheduler.environment.instance import ProblemInstance
 from cpscheduler.environment.state import ScheduleState
+
+S = TypeVar("S", bound=ScheduleBackend)
 
 
 class Tracer(EzPickle):
@@ -27,9 +29,9 @@ class Tracer(EzPickle):
 
     def step(
         self,
-        action: Instruction,
+        action: Instruction[S],
         state: ScheduleState,
-        backend: ScheduleBackend,
+        backend: S,
     ) -> None:
         """Process a step in the tracer.
 
