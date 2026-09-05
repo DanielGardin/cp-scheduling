@@ -580,7 +580,6 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
         self.event_count += idx
         state.finish_propagation()
-        event_queue.clear()
 
     # Environment API methods
     def reset(
