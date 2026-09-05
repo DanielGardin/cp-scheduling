@@ -579,6 +579,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             idx += 1
 
         self.event_count += idx
+        state.finish_propagation()
         event_queue.clear()
 
     # Environment API methods

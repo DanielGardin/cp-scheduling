@@ -49,8 +49,10 @@ Float = SupportsFloat | float
 MIN_TIME: Final[Time] = 0
 MAX_TIME: Final[Time] = (1 << 31) - 1
 
-# Sentinel machine identifier representing non-machine-specific operations.
+# Sentinel constants.
 GLOBAL_MACHINE_ID: MachineID = -1
+UNKNOWN_TASK: TaskID = -1
+TIMELESS: Time = -1
 
 # ------------------------------------------------------------------------------
 # Singletons

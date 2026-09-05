@@ -12,6 +12,7 @@ from cpscheduler.environment.constants import (
     GLOBAL_MACHINE_ID,
     MAX_TIME,
     MIN_TIME,
+    UNKNOWN_TASK,
     EzPickle,
     JobID,
     MachineID,
@@ -43,8 +44,6 @@ ABSENCE = VarField.ABSENCE
 MACHINE_INFEASIBLE = VarField.MACHINE_INFEASIBLE
 STATE_INFEASIBLE = VarField.STATE_INFEASIBLE
 GLOBAL_TIME = VarField.GLOBAL_TIME
-
-UNKNOWN_TASK: TaskID = -1
 
 
 # FUTURE: Study implementing backtracking functionality via trails
@@ -114,6 +113,10 @@ class ScheduleState(EzPickle):
     def is_terminal(self) -> bool:
         """Return True if the problem is infeasible or all tasks are assigned."""
         return self.infeasible or self.remaining_tasks == 0
+
+    def finish_propagation(self) -> None:
+        """Flush the current event queue after a fixed-point iteration."""
+        self.domain_event_queue.clear()
 
     # Problem Instance API methods
 
