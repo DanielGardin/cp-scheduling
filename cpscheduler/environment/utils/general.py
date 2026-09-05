@@ -71,3 +71,12 @@ def extend_list(lst: list[_T], size: int, default: Callable[[], _T]) -> None:
 
     """
     lst.extend([default() for _ in range(size - len(lst))])
+
+
+def flatten_matrix(matrix: list[list[_T]]) -> list[_T]:
+    """Flatten a list of lists into a flattened list."""
+    flat: list[_T] = []
+    for sublist in matrix:
+        flat.extend(sublist)
+
+    return flat

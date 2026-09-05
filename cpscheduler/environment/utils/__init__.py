@@ -13,6 +13,7 @@ __all__ = [
     "convert_to_list",
     "ensure_iterable",
     "extend_list",
+    "flatten_matrix",
     "job_bounds",
     "machine_bounds",
     "task_bounds",
@@ -27,7 +28,7 @@ from .debug import (
     validate_domain_bounds,
     validate_machine_id,
 )
-from .general import convert_to_list, extend_list
+from .general import convert_to_list, extend_list, flatten_matrix
 from .protocols import (
     ArrayLike,
     DataFrameLike,
