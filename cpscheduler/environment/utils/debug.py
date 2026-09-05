@@ -195,40 +195,64 @@ def validate_domain_bounds(
     """
     domains = state.domains
     intance = state.instance
-    row = task_id * intance.n_machines
 
     if machine_id == GLOBAL_MACHINE_ID:
-        machines = list(domains.feasible_machines[task_id])
+        row = task_id * state.n_machines
+        for m_id in range(state.n_machines):
+            idx = row + m_id
 
-    else:
-        validate_machine_id(task_id, machine_id, intance, origin=origin)
-        machines = [machine_id]
+            start_lb = domains.start.lbs[idx]
+            start_ub = domains.start.ubs[idx]
+            end_lb = domains.end.lbs[idx]
+            end_ub = domains.end.ubs[idx]
+            remaining = domains.remaining_times[idx]
 
-    for m_id in machines:
-        idx = row + m_id
+            if start_lb > start_ub:
+                raise RuntimeError(
+                    f"{origin}: invalid start bounds for task {task_id} on machine {m_id}"
+                )
 
-        start_lb = domains.start.lbs[idx]
-        start_ub = domains.start.ubs[idx]
-        end_lb = domains.end.lbs[idx]
-        end_ub = domains.end.ubs[idx]
-        remaining = domains.remaining_times[idx]
+            if end_lb > end_ub:
+                raise RuntimeError(
+                    f"{origin}: invalid end bounds for task {task_id} on machine {m_id}"
+                )
 
-        if start_lb > start_ub:
-            raise RuntimeError(
-                f"{origin}: invalid start bounds for task {task_id} on machine {m_id}"
-            )
+            if start_lb + remaining > end_ub:
+                raise RuntimeError(
+                    f"{origin}: start_lb + p > end_ub for task {task_id} on machine {m_id}"
+                )
 
-        if end_lb > end_ub:
-            raise RuntimeError(
-                f"{origin}: invalid end bounds for task {task_id} on machine {m_id}"
-            )
+            if end_lb - remaining > start_ub:
+                raise RuntimeError(
+                    f"{origin}: end_lb - p > start_ub for task {task_id} on machine {m_id}"
+                )
+        return
 
-        if start_lb + remaining > end_ub:
-            raise RuntimeError(
-                f"{origin}: start_lb + p > end_ub for task {task_id} on machine {m_id}"
-            )
+    validate_machine_id(task_id, machine_id, intance, origin=origin)
+    idx = task_id * state.n_machines + machine_id
 
-        if end_lb - remaining > start_ub:
-            raise RuntimeError(
-                f"{origin}: end_lb - p > start_ub for task {task_id} on machine {m_id}"
-            )
+    start_lb = domains.start.lbs[idx]
+    start_ub = domains.start.ubs[idx]
+    end_lb = domains.end.lbs[idx]
+    end_ub = domains.end.ubs[idx]
+    remaining = domains.remaining_times[idx]
+
+    if start_lb > start_ub:
+        raise RuntimeError(
+            f"{origin}: invalid start bounds for task {task_id} on machine {machine_id}"
+        )
+
+    if end_lb > end_ub:
+        raise RuntimeError(
+            f"{origin}: invalid end bounds for task {task_id} on machine {machine_id}"
+        )
+
+    if start_lb + remaining > end_ub:
+        raise RuntimeError(
+            f"{origin}: start_lb + p > end_ub for task {task_id} on machine {machine_id}"
+        )
+
+    if end_lb - remaining > start_ub:
+        raise RuntimeError(
+            f"{origin}: end_lb - p > start_ub for task {task_id} on machine {machine_id}"
+        )

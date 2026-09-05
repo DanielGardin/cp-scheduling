@@ -14,24 +14,11 @@ from cpscheduler.environment.constants import (
     Time,
 )
 from cpscheduler.environment.instance import ProblemInstance
+from cpscheduler.environment.utils import flatten_matrix
 
 
 class Presence(Enum):
-    """Domain values for optional task presence.
-
-    The presence domain is represented by a two bit integer XY,
-    where:
-
-    X = 1 if the task can be present in the schedule, 0 otherwise.
-    Y = 1 if the task can be absent from the schedule, 0 otherwise.
-
-    In this sense, the possible domain values are:
-    - 00 = {}, infeasible domain, the task cannot be present nor absent.
-    - 01 = {present}, the task has to be present in the schedule to satisfy the constraints.
-    - 10 = {absent}, the task has to be absent from the schedule to satisfy the constraints
-    - 11 = {present, absent}, the task can be either present or absent.
-
-    """
+    """Domain values for optional task presence."""
 
     INFEASIBLE = 0b00
     "Task cannot be present nor absent, domain wipeout (infeasible)."
@@ -62,17 +49,7 @@ UNDEFINED = Presence.UNDEFINED
 
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=False, acyclic=True)
 class Bounds(EzPickle):
-    """Integer bound container used for start/end variables.
-
-    The container stores per-(task,machine) lower/upper bounds as flat lists
-    (row-major by task) as well as cached global bounds for fast queries.
-
-    Notes
-    -----
-    Do not mutate these lists directly, use :class:`ScheduleState` APIs which
-    ensure correctness and emit domain events.
-
-    """
+    """Integer bound container used for start/end variables."""
 
     pad: int
 
@@ -96,10 +73,10 @@ class Bounds(EzPickle):
         """
         nm = n_tasks * n_machines
 
-        lbs = [MAX_TIME] * (nm)
+        lbs = [MAX_TIME] * nm
         global_lbs = [MAX_TIME] * n_tasks
 
-        ubs = [MIN_TIME] * (nm)
+        ubs = [MIN_TIME] * nm
         global_ubs = [MIN_TIME] * n_tasks
 
         self.pad = n_machines
@@ -143,18 +120,104 @@ class Bounds(EzPickle):
 
 
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=False, acyclic=True)
+class SparseFeasibleSet(EzPickle):
+    """Reversible sparse-set domain over machine ids, per task."""
+
+    pad: int
+
+    order: list[MachineID]
+    sparse: list[int]
+
+    offsets: list[int]
+    sizes: list[int]
+
+    def __init__(self, machine_mask: list[list[bool]]) -> None:
+        n_tasks = len(machine_mask)
+        n_machines = len(machine_mask[0]) if n_tasks else 0
+        self.pad = n_machines
+
+        offsets = [0] * (n_tasks + 1)
+        sizes = [0] * n_tasks
+        for task_id in range(n_tasks):
+            n_feasible = sum(machine_mask[task_id])
+            sizes[task_id] = n_feasible
+            offsets[task_id + 1] = offsets[task_id] + n_feasible
+
+        order: list[MachineID] = [0] * offsets[n_tasks]
+        sparse = [0] * (n_tasks * n_machines)
+
+        for task_id in range(n_tasks):
+            pos = offsets[task_id]
+            row = task_id * n_machines
+
+            for machine_id, feasible in enumerate(machine_mask[task_id]):
+                if feasible:
+                    order[pos] = machine_id
+                    sparse[row + machine_id] = pos
+                    pos += 1
+
+        self.order = order
+        self.sparse = sparse
+        self.offsets = offsets
+        self.sizes = sizes
+
+    def size(self, task_id: TaskID) -> int:
+        """Return the number of feasible machines for a task."""
+        return self.sizes[task_id]
+
+    def is_feasible(self, task_id: TaskID, machine_id: MachineID) -> bool:
+        """Return whether machine_id is currently feasible for task_id. O(1)."""
+        start = self.offsets[task_id]
+        end = start + self.sizes[task_id]
+        pos = self.sparse[task_id * self.pad + machine_id]
+
+        return start <= pos < end and self.order[pos] == machine_id
+
+    def forbid(self, task_id: TaskID, machine_id: MachineID) -> None:
+        """Remove machine_id if present. Returns the old size, or None. O(1)."""
+        row = task_id * self.pad
+        size = self.sizes[task_id]
+        end = self.offsets[task_id] + size
+        last = end - 1
+
+        pos = self.sparse[row + machine_id]
+        last_machine = self.order[last]
+
+        order = self.order
+        order[pos] = last_machine
+        order[last] = machine_id
+
+        self.sparse[row + last_machine] = pos
+
+        self.sizes[task_id] = size - 1
+
+    def restore_size(self, task_id: TaskID, old_size: int) -> None:
+        """Undo: reset the boundary. O(1), no data movement."""
+        self.sizes[task_id] = old_size
+
+    def bounds(self, task_id: TaskID) -> tuple[int, int]:
+        """Return (start, end) into `order` for this task's live machines."""
+        start = self.offsets[task_id]
+        return start, start + self.sizes[task_id]
+
+    def __eq__(self, value: object, /) -> bool:
+        """Check equality of SparseFeasibleSet containers."""
+        return (
+            isinstance(value, SparseFeasibleSet)
+            and self.pad == value.pad
+            and self.offsets == value.offsets
+            and self.sizes == value.sizes
+            and self.order == value.order
+        )
+
+
+@mypyc_attr(native_class=True, allow_interpreted_subclasses=False, acyclic=True)
 class TaskDomains(EzPickle):
-    """Aggregate container for task variables used by the CSP kernel.
+    """Aggregate container for task variables used by the CSP kernel."""
 
-    Represents the feasible space containing the domain variables:
-        - Start/End time bounds (per task and machine)
-        - Machine feasibility sets (which machines can process each task)
-        - Presence bitfield (whether each task can be present, absent, or is infeasible)
-        - Dependencies set (Mark that the task may no be available at start_lb)
+    pad: int
 
-    """
-
-    feasible_machines: list[set[MachineID]]
+    machines: SparseFeasibleSet
     remaining_times: list[Time]
 
     assignment: list[MachineID]
@@ -168,120 +231,112 @@ class TaskDomains(EzPickle):
     fixed: list[bool]
 
     def __init__(self, instance: ProblemInstance) -> None:
-        """Initialize the TaskDomains with a problem instance.
-
-        Parameters
-        ----------
-        instance: ProblemInstance
-            The problem instance containing tasks, machines, processing times, etc.
-
-        """
         n_tasks = instance.n_tasks
         n_machines = instance.n_machines
+        self.pad = n_machines
 
-        feasible_machines = [
-            {
-                machine_id
-                for machine_id, is_feasible in enumerate(machine_mask)
-                if is_feasible
-            }
-            for machine_mask in instance.machine_mask
-        ]
-        remaining_times = [MAX_TIME] * (n_tasks * n_machines)
+        self.machines = SparseFeasibleSet(instance.machine_mask)
 
-        assignment = [GLOBAL_MACHINE_ID] * n_tasks
-        presence: list[Presence] = [
+        remaining_times = flatten_matrix(instance.processing_times)
+        self.remaining_times = remaining_times
+
+        self.assignment = [GLOBAL_MACHINE_ID] * n_tasks
+        self.presence = [
             UNDEFINED if optional else PRESENT for optional in instance.optional
         ]
 
         start = Bounds(n_tasks, n_machines)
         end = Bounds(n_tasks, n_machines)
 
-        self.feasible_machines = feasible_machines
-        self.remaining_times = remaining_times
-
-        self.assignment = assignment
-        self.presence = presence
-
         self.start = start
         self.end = end
 
-        processing_times = instance.processing_times
+        self.dependencies = [set() for _ in range(n_tasks)]
+        self.fixed = [False] * n_tasks
 
+        order = self.machines.order
         for task_id in range(n_tasks):
-            p_times = processing_times[task_id]
+            start_idx, end_idx = self.machines.bounds(task_id)
 
-            start_idx = task_id * n_machines
-            for machine_id in feasible_machines[task_id]:
-                idx = start_idx + machine_id
-
-                p = p_times[machine_id]
+            for i in range(start_idx, end_idx):
+                machine_id = order[i]
+                idx = task_id * n_machines + machine_id
+                p = remaining_times[idx]
 
                 start.lbs[idx] = MIN_TIME
                 start.ubs[idx] = MAX_TIME - p
                 end.lbs[idx] = MIN_TIME + p
                 end.ubs[idx] = MAX_TIME
-                remaining_times[idx] = p
 
+        for task_id in range(n_tasks):
             start.global_lbs[task_id] = MIN_TIME
             self.recompute_global_start_ubs(task_id)
             self.recompute_global_end_lbs(task_id)
             end.global_ubs[task_id] = MAX_TIME
 
-        self.dependencies = [set() for _ in range(n_tasks)]
-        self.fixed = [False] * n_tasks
-
     def recompute_global_start_lbs(self, task_id: TaskID) -> None:
         """Recompute the global lower bound for the start variable of a task."""
-        start = self.start
-        row = task_id * start.pad
+        lbs = self.start.lbs
+        order = self.machines.order
+        start_idx, end_idx = self.machines.bounds(task_id)
+        row = task_id * self.pad
 
         global_lb = MAX_TIME
-        for machine_id in self.feasible_machines[task_id]:
-            lb = start.lbs[row + machine_id]
+        for i in range(start_idx, end_idx):
+            idx = row + order[i]
+            lb = lbs[idx]
             if lb < global_lb:
                 global_lb = lb
 
-        start.global_lbs[task_id] = global_lb
+        self.start.global_lbs[task_id] = global_lb
 
     def recompute_global_start_ubs(self, task_id: TaskID) -> None:
         """Recompute the global upper bound for the start variable of a task."""
-        start = self.start
-        row = task_id * start.pad
+        ubs = self.start.ubs
+        order = self.machines.order
+        start_idx, end_idx = self.machines.bounds(task_id)
+        row = task_id * self.pad
 
         global_ub = MIN_TIME
-        for machine_id in self.feasible_machines[task_id]:
-            ub = start.ubs[row + machine_id]
+        for i in range(start_idx, end_idx):
+            idx = row + order[i]
+            ub = ubs[idx]
             if ub > global_ub:
                 global_ub = ub
 
-        start.global_ubs[task_id] = global_ub
+        self.start.global_ubs[task_id] = global_ub
 
     def recompute_global_end_lbs(self, task_id: TaskID) -> None:
         """Recompute the global lower bound for the end variable of a task."""
-        end = self.end
-        row = task_id * end.pad
+        lbs = self.end.lbs
+        order = self.machines.order
+        start_idx, end_idx = self.machines.bounds(task_id)
+        row = task_id * self.pad
 
         global_lb = MAX_TIME
-        for machine_id in self.feasible_machines[task_id]:
-            lb = end.lbs[row + machine_id]
+        for i in range(start_idx, end_idx):
+            idx = row + order[i]
+            lb = lbs[idx]
             if lb < global_lb:
                 global_lb = lb
 
-        end.global_lbs[task_id] = global_lb
+        self.end.global_lbs[task_id] = global_lb
 
     def recompute_global_end_ubs(self, task_id: TaskID) -> None:
         """Recompute the global upper bound for the end variable of a task."""
-        end = self.end
-        row = task_id * end.pad
+        ubs = self.end.ubs
+        order = self.machines.order
+        start_idx, end_idx = self.machines.bounds(task_id)
+        row = task_id * self.pad
 
         global_ub = MIN_TIME
-        for machine_id in self.feasible_machines[task_id]:
-            ub = end.ubs[row + machine_id]
+        for i in range(start_idx, end_idx):
+            idx = row + order[i]
+            ub = ubs[idx]
             if ub > global_ub:
                 global_ub = ub
 
-        end.global_ubs[task_id] = global_ub
+        self.end.global_ubs[task_id] = global_ub
 
     def recompute_all_global_bounds(self, task_id: TaskID) -> None:
         """Recompute all four global bounds (start/end, lb/ub) for a task."""
@@ -290,31 +345,21 @@ class TaskDomains(EzPickle):
         self.recompute_global_end_ubs(task_id)
         self.recompute_global_end_lbs(task_id)
 
-    def assign(self, task_id: TaskID, machine_id: MachineID) -> None:
-        """Assign a task to a machine."""
-        self.fixed[task_id] = True
-        self.assignment[task_id] = machine_id
-        self.feasible_machines[task_id].clear()
-        self.feasible_machines[task_id].add(machine_id)
-
-    def is_machine_feasible(
-        self, task_id: TaskID, machine_id: MachineID
-    ) -> bool:
-        """Check if a machine is currently feasible for a task."""
-        return machine_id in self.feasible_machines[task_id]
-
-    def get_feasible_machines(self, task_id: TaskID) -> tuple[MachineID, ...]:
-        """Return the tuple of currently feasible machines for a task."""
-        return tuple(self.feasible_machines[task_id])
+    def restore_task(self, task_id: TaskID) -> None:
+        """Recompute derived global bounds for a task after a rollback."""
+        self.recompute_all_global_bounds(task_id)
 
     def __eq__(self, value: object, /) -> bool:
         """Check equality of TaskDomains containers."""
         return (
             isinstance(value, TaskDomains)
-            and self.feasible_machines == value.feasible_machines
+            and self.pad == value.pad
+            and self.machines == value.machines
             and self.remaining_times == value.remaining_times
             and self.assignment == value.assignment
             and self.presence == value.presence
             and self.start == value.start
             and self.end == value.end
+            and self.dependencies == value.dependencies
+            and self.fixed == value.fixed
         )

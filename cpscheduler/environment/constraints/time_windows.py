@@ -44,7 +44,7 @@ class HorizonConstraint(Constraint):
         horizon = self.horizon.value
 
         for task_id in range(state.n_tasks):
-            state.tight_end_ub(task_id, horizon)
+            state.tight_global_end_ub(task_id, horizon)
 
 
 class ReleaseDateConstraint(Constraint):
@@ -97,7 +97,7 @@ class ReleaseDateConstraint(Constraint):
     @override
     def reset(self, state: ScheduleState) -> None:
         for task_id, release_time in enumerate(self.release_dates.value):
-            state.tight_start_lb(task_id, release_time)
+            state.tight_global_start_lb(task_id, release_time)
 
     @classmethod
     @override
@@ -152,7 +152,7 @@ class DeadlineConstraint(Constraint):
     @override
     def reset(self, state: ScheduleState) -> None:
         for task_id, due_time in enumerate(self.due_dates.value):
-            state.tight_end_ub(task_id, due_time)
+            state.tight_global_end_ub(task_id, due_time)
 
     @classmethod
     @override

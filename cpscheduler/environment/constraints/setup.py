@@ -88,4 +88,4 @@ class SetupConstraint(Constraint):
             setup_times_for_task = setup_times.pop(task_id)
 
             for child_id, setup_time in setup_times_for_task.items():
-                state.tight_start_lb(child_id, end_time + setup_time)
+                state.tight_global_start_lb(child_id, end_time + setup_time)

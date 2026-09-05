@@ -165,7 +165,7 @@ class PrecedenceConstraint(Constraint):
             end_time = state.get_end_lb(task_id)
 
             for child_id in self.children[task_id]:
-                state.tight_start_lb(child_id, end_time)
+                state.tight_global_start_lb(child_id, end_time)
                 state.add_dependency(child_id, f"precedence:{task_id}")
 
     @override
@@ -184,7 +184,7 @@ class PrecedenceConstraint(Constraint):
             end_time = state.get_end_lb(task_id)
 
             for child_id in self.children[task_id]:
-                state.tight_start_lb(child_id, end_time)
+                state.tight_global_start_lb(child_id, end_time)
 
     @override
     def on_start_ub(
@@ -196,7 +196,7 @@ class PrecedenceConstraint(Constraint):
             start_time = state.get_start_ub(task_id)
 
             for parent_id in parents[task_id]:
-                state.tight_end_ub(parent_id, start_time)
+                state.tight_global_end_ub(parent_id, start_time)
 
     @override
     def on_end_lb(
@@ -307,7 +307,7 @@ class NoWaitConstraint(PrecedenceConstraint):
             end_time = state.get_end_lb(task_id)
 
             for child_id in self.children[task_id]:
-                state.tight_start_ub(child_id, end_time)
+                state.tight_global_start_ub(child_id, end_time)
 
     @override
     def on_start_lb(
@@ -321,7 +321,7 @@ class NoWaitConstraint(PrecedenceConstraint):
             start_time = state.get_start_lb(task_id)
 
             for parent_id in parents[task_id]:
-                state.tight_end_lb(parent_id, start_time)
+                state.tight_global_end_lb(parent_id, start_time)
 
     @override
     def get_entry(self) -> str:
@@ -399,7 +399,7 @@ class ORPrecedenceConstraint(PrecedenceConstraint):
                     state.get_end_lb(parent_id)
                     for parent_id in parents[task_id]
                 )
-                state.tight_start_lb(task_id, earliest_start)
+                state.tight_global_start_lb(task_id, earliest_start)
 
     @override
     def on_start_lb(
@@ -413,7 +413,7 @@ class ORPrecedenceConstraint(PrecedenceConstraint):
                     state.get_end_lb(parent_id)
                     for parent_id in parents[child_id]
                 )
-                state.tight_start_lb(child_id, earliest_start)
+                state.tight_global_start_lb(child_id, earliest_start)
 
     @override
     def on_start_ub(
@@ -432,10 +432,10 @@ class ORPrecedenceConstraint(PrecedenceConstraint):
 
             if not feasible_parents:
                 any_parent_id = parents[task_id][0]
-                state.tight_end_ub(any_parent_id, start_time)
+                state.tight_global_end_ub(any_parent_id, start_time)
 
             elif len(feasible_parents) == 1:
-                state.tight_end_ub(feasible_parents[0], start_time)
+                state.tight_global_end_ub(feasible_parents[0], start_time)
 
             # When there are multiple feasible parents, we cannot decide which
             # one to tighten, so we do nothing.

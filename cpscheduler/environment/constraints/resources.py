@@ -205,7 +205,9 @@ class ResourceConstraint(Constraint):
             )
 
             if idx < len(available_resources):
-                state.tight_start_lb(other_task, next_available_time[idx])
+                state.tight_global_start_lb(
+                    other_task, next_available_time[idx]
+                )
 
     @override
     def on_time_update(self, time: Time, state: ScheduleState) -> None:

@@ -106,4 +106,4 @@ class NonOverlapConstraint(Constraint):
             end_time = state.get_end_lb(task_id)
 
             for other_task_id in group_tasks:
-                state.tight_start_lb(other_task_id, end_time)
+                state.tight_global_start_lb(other_task_id, end_time)

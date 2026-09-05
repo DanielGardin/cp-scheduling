@@ -187,9 +187,11 @@ class ScheduleState(EzPickle):
         """Return the machine assigned to a task, or GLOBAL_MACHINE_ID if unassigned."""
         return self.domains.assignment[task_id]
 
-    def get_machines(self, task_id: TaskID) -> tuple[MachineID, ...]:
-        """Return the tuple of currently feasible machines for a task."""
-        return self.domains.get_feasible_machines(task_id)
+    def get_machines(self, task_id: TaskID) -> list[MachineID]:
+        """Return a list of currently feasible machines for a task."""
+        machines = self.domains.machines
+        start_idx, end_idx = machines.bounds(task_id)
+        return machines.order[start_idx:end_idx]
 
     def is_fixed(self, task_id: TaskID) -> bool:
         """Return whether a task has been fixed."""
@@ -211,15 +213,15 @@ class ScheduleState(EzPickle):
         self, task_id: TaskID, machine_id: MachineID = GLOBAL_MACHINE_ID
     ) -> bool:
         """Return whether a task is feasible executing on the given machine."""
-        if self.domains.presence[task_id] == INFEASIBLE:
+        domains = self.domains
+
+        if domains.presence[task_id] == INFEASIBLE:
             return False
 
-        machines = self.domains.feasible_machines[task_id]
-
         if machine_id == GLOBAL_MACHINE_ID:
-            return bool(machines)
+            return bool(domains.machines.sizes[task_id])
 
-        return machine_id in machines
+        return domains.machines.is_feasible(task_id, machine_id)
 
     def can_start(
         self,
@@ -233,23 +235,33 @@ class ScheduleState(EzPickle):
         time falls within the feasible start window [start_lb, start_ub)
         on the machine(s).
         """
-        if self.domains.dependencies[task_id]:
+        domains = self.domains
+
+        if (
+            domains.dependencies[task_id]
+            or domains.presence[task_id] == INFEASIBLE
+        ):
             return False
 
-        start = self.domains.start
+        start = domains.start
+        machines = domains.machines
+        row = task_id * self.n_machines
 
         if machine_id == GLOBAL_MACHINE_ID:
-            row = task_id * self.n_machines
+            start_idx, end_idx = machines.bounds(task_id)
+            order = machines.order
 
-            return any(
-                start.lbs[row + m_id] <= time < start.ubs[row + m_id]
-                for m_id in self.domains.feasible_machines[task_id]
-            )
+            for i in range(start_idx, end_idx):
+                idx = row + order[i]
+                if start.lbs[idx] <= time < start.ubs[idx]:
+                    return True
 
-        if machine_id not in self.domains.feasible_machines[task_id]:
             return False
 
-        idx = task_id * self.n_machines + machine_id
+        if not machines.is_feasible(task_id, machine_id):
+            return False
+
+        idx = row + machine_id
         return start.lbs[idx] <= time < start.ubs[idx]
 
     def get_unassigned_tasks(self) -> list[TaskID]:
@@ -338,24 +350,24 @@ class ScheduleState(EzPickle):
         """Force a task to be absent in the schedule."""
         self._restrict_presence(task_id, ABSENT)
 
-    def restrict_machine(self, task_id: TaskID, machine_id: MachineID) -> None:
+    def forbid_machine(self, task_id: TaskID, machine_id: MachineID) -> None:
         """Remove a machine from the feasible set for a task.
 
         If all machines are removed, marks the task as ABSENT.
         Otherwise, queues a MACHINE_INFEASIBLE event.
         """
-        domains = self.domains
-
-        feasible_machines = domains.feasible_machines[task_id]
-
-        if machine_id not in feasible_machines:
+        if machine_id == GLOBAL_MACHINE_ID:
+            self.forbid_task(task_id)
             return
 
-        feasible_machines.remove(machine_id)
+        domains = self.domains
+        if not domains.machines.is_feasible(task_id, machine_id):
+            return
 
-        if feasible_machines:
+        domains.machines.forbid(task_id, machine_id)
+
+        if domains.machines.sizes[task_id]:
             domains.recompute_all_global_bounds(task_id)
-
             self.domain_event_queue.add_event(
                 task_id, MACHINE_INFEASIBLE, machine_id
             )
@@ -363,56 +375,49 @@ class ScheduleState(EzPickle):
         else:
             self._restrict_presence(task_id, ABSENT)
 
-    def tight_start_lb(
-        self,
-        task_id: TaskID,
-        value: Time,
-        machine_id: MachineID = GLOBAL_MACHINE_ID,
-    ) -> None:
-        """Raise the lower bound of task start time (earliest start constraint).
+    def require_machine(self, task_id: TaskID, machine_id: MachineID) -> None:
+        """Fix a task to run on a specific machine by forbidding all others."""
+        if machine_id == GLOBAL_MACHINE_ID:
+            return
 
-        Tightens the start time lower bound, queues START_LB domain events.
-        If bounds become inconsistent, removes the machine from feasible set.
-
-        Supports global (all machines) tightening via GLOBAL_MACHINE_ID.
-        """
         domains = self.domains
 
-        if value <= domains.start.get_lb(task_id, machine_id):
+        if not domains.machines.is_feasible(task_id, machine_id):
+            self.forbid_task(task_id)
+            return
+
+        machines = domains.machines
+        order = machines.order
+        start, end = machines.bounds(task_id)
+
+        i = start
+        while i < end:
+            m_id = order[i]
+            if m_id != machine_id:
+                self.forbid_machine(task_id, m_id)
+                start, end = machines.bounds(task_id)
+
+            else:
+                i += 1
+
+    def tight_global_start_lb(self, task_id: TaskID, value: Time) -> None:
+        """Raise the global lower bound of task start time (earliest start constraint)."""
+        domains = self.domains
+        if value <= domains.start.global_lbs[task_id]:
             return
 
         start_lbs = domains.start.lbs
         start_ubs = domains.start.ubs
         end_lbs = domains.end.lbs
         end_ubs = domains.end.ubs
-
-        if machine_id != GLOBAL_MACHINE_ID:
-            idx = task_id * self.n_machines + machine_id
-
-            old_lb = start_lbs[idx]
-            end_lb = value + domains.remaining_times[idx]
-
-            start_lbs[idx] = value
-            end_lbs[idx] = end_lb
-
-            if value > start_ubs[idx] or end_lb > end_ubs[idx]:
-                self.restrict_machine(task_id, machine_id)
-                return
-
-            if old_lb == domains.start.global_lbs[task_id]:
-                domains.recompute_global_start_lbs(task_id)
-                domains.recompute_global_end_lbs(task_id)
-
-            self.domain_event_queue.add_event(
-                task_id=task_id,
-                field=START_LB,
-                machine_id=machine_id,
-                time=value,
-            )
-            return
-
+        machines = domains.machines
+        order = machines.order
         row = task_id * self.n_machines
-        for machine_id in domains.get_feasible_machines(task_id):
+
+        start_idx, end_idx = machines.bounds(task_id)
+        i = start_idx
+        while i < end_idx:
+            machine_id = order[i]
             idx = row + machine_id
 
             if value > start_lbs[idx]:
@@ -422,69 +427,82 @@ class ScheduleState(EzPickle):
                 end_lbs[idx] = end_lb
 
                 if value > start_ubs[idx] or end_lb > end_ubs[idx]:
-                    self.restrict_machine(task_id, machine_id)
+                    self.forbid_machine(task_id, machine_id)
+                    start_idx, end_idx = machines.bounds(task_id)
+                    continue
+
+            i += 1
 
         domains.recompute_global_start_lbs(task_id)
         domains.recompute_global_end_lbs(task_id)
 
-        if domains.feasible_machines[task_id]:
+        if machines.sizes[task_id]:
             self.domain_event_queue.add_event(
                 task_id=task_id,
                 field=START_LB,
                 time=value,
             )
 
-    def tight_start_ub(
+    def tight_start_lb(
         self,
         task_id: TaskID,
         value: Time,
-        machine_id: MachineID = GLOBAL_MACHINE_ID,
+        machine_id: MachineID,
     ) -> None:
-        """Lower the upper bound of task start time (latest start constraint).
-
-        Tightens the start time upper bound, queues START_UB domain events.
-        If bounds become inconsistent, removes the machine from feasible set.
-
-        Supports global (all machines) tightening via GLOBAL_MACHINE_ID.
-        """
+        """Raise the lower bound of task start time (earliest start constraint)."""
         domains = self.domains
 
-        if value >= domains.start.get_ub(task_id, machine_id):
+        if value <= domains.start.get_lb(task_id, machine_id):
+            return
+
+        if not domains.machines.is_feasible(task_id, machine_id):
             return
 
         start_lbs = domains.start.lbs
         start_ubs = domains.start.ubs
         end_lbs = domains.end.lbs
         end_ubs = domains.end.ubs
+        idx = task_id * self.n_machines + machine_id
 
-        if machine_id != GLOBAL_MACHINE_ID:
-            idx = task_id * self.n_machines + machine_id
+        old_lb = start_lbs[idx]
+        end_lb = value + domains.remaining_times[idx]
 
-            old_ub = start_ubs[idx]
-            end_ub = value + domains.remaining_times[idx]
+        start_lbs[idx] = value
+        end_lbs[idx] = end_lb
 
-            start_ubs[idx] = value
-            end_ubs[idx] = end_ub
-
-            if start_lbs[idx] > value or end_lbs[idx] > end_ub:
-                self.restrict_machine(task_id, machine_id)
-                return
-
-            if old_ub == domains.start.global_ubs[task_id]:
-                domains.recompute_global_start_ubs(task_id)
-                domains.recompute_global_end_ubs(task_id)
-
-            self.domain_event_queue.add_event(
-                task_id=task_id,
-                field=START_UB,
-                machine_id=machine_id,
-                time=value,
-            )
+        if value > start_ubs[idx] or end_lb > end_ubs[idx]:
+            self.forbid_machine(task_id, machine_id)
             return
 
+        if old_lb == domains.start.global_lbs[task_id]:
+            domains.recompute_global_start_lbs(task_id)
+            domains.recompute_global_end_lbs(task_id)
+
+        self.domain_event_queue.add_event(
+            task_id=task_id,
+            field=START_LB,
+            machine_id=machine_id,
+            time=value,
+        )
+
+    def tight_global_start_ub(self, task_id: TaskID, value: Time) -> None:
+        """Lower the global upper bound of task start time (latest start constraint)."""
+        domains = self.domains
+        if value >= domains.start.global_ubs[task_id]:
+            return
+
+        start_lbs = domains.start.lbs
+        start_ubs = domains.start.ubs
+        end_lbs = domains.end.lbs
+        end_ubs = domains.end.ubs
+        machines = domains.machines
+        order = machines.order
         row = task_id * self.n_machines
 
-        for machine_id in domains.get_feasible_machines(task_id):
+        start_idx, end_idx = machines.bounds(task_id)
+        i = start_idx
+        while i < end_idx:
+            machine_id = order[i]
             idx = row + machine_id
 
             if value < start_ubs[idx]:
@@ -493,70 +511,83 @@ class ScheduleState(EzPickle):
                 start_ubs[idx] = value
                 end_ubs[idx] = end_ub
 
-                if start_lbs[idx] > value or end_lbs[idx] > end_ub:
-                    self.restrict_machine(task_id, machine_id)
+                if value < start_lbs[idx] or end_ub < end_lbs[idx]:
+                    self.forbid_machine(task_id, machine_id)
+                    start_idx, end_idx = machines.bounds(task_id)
+                    continue
+
+            i += 1
 
         domains.recompute_global_start_ubs(task_id)
         domains.recompute_global_end_ubs(task_id)
 
-        if domains.feasible_machines[task_id]:
+        if machines.sizes[task_id]:
             self.domain_event_queue.add_event(
                 task_id=task_id,
                 field=START_UB,
                 time=value,
             )
 
-    def tight_end_lb(
+    def tight_start_ub(
         self,
         task_id: TaskID,
         value: Time,
-        machine_id: MachineID = GLOBAL_MACHINE_ID,
+        machine_id: MachineID,
     ) -> None:
-        """Raise the lower bound of task end time (earliest completion constraint).
-
-        Tightens the end time lower bound, queues END_LB domain events.
-        If bounds become inconsistent, removes the machine from feasible set.
-
-        Supports global (all machines) tightening via GLOBAL_MACHINE_ID.
-        """
+        """Lower the upper bound of task start time (latest start constraint)."""
         domains = self.domains
 
-        if value <= domains.end.get_lb(task_id, machine_id):
+        if value >= domains.start.get_ub(task_id, machine_id):
+            return
+
+        if not domains.machines.is_feasible(task_id, machine_id):
             return
 
         start_lbs = domains.start.lbs
         start_ubs = domains.start.ubs
         end_lbs = domains.end.lbs
         end_ubs = domains.end.ubs
+        idx = task_id * self.n_machines + machine_id
 
-        if machine_id != GLOBAL_MACHINE_ID:
-            idx = task_id * self.n_machines + machine_id
+        old_ub = start_ubs[idx]
+        end_ub = value + domains.remaining_times[idx]
 
-            old_lb = end_lbs[idx]
-            start_lb = value - domains.remaining_times[idx]
+        start_ubs[idx] = value
+        end_ubs[idx] = end_ub
 
-            end_lbs[idx] = value
-            start_lbs[idx] = start_lb
-
-            if start_lb > start_ubs[idx] or value > end_ubs[idx]:
-                self.restrict_machine(task_id, machine_id)
-                return
-
-            if old_lb == domains.end.global_lbs[task_id]:
-                domains.recompute_global_end_lbs(task_id)
-                domains.recompute_global_start_lbs(task_id)
-
-            self.domain_event_queue.add_event(
-                task_id=task_id,
-                field=END_LB,
-                machine_id=machine_id,
-                time=value,
-            )
+        if value < start_lbs[idx] or end_ub < end_lbs[idx]:
+            self.forbid_machine(task_id, machine_id)
             return
 
+        if old_ub == domains.start.global_ubs[task_id]:
+            domains.recompute_global_start_ubs(task_id)
+            domains.recompute_global_end_ubs(task_id)
+
+        self.domain_event_queue.add_event(
+            task_id=task_id,
+            field=START_UB,
+            machine_id=machine_id,
+            time=value,
+        )
+
+    def tight_global_end_lb(self, task_id: TaskID, value: Time) -> None:
+        """Raise the global lower bound of task end time (earliest end constraint)."""
+        domains = self.domains
+        if value <= domains.end.global_lbs[task_id]:
+            return
+
+        start_lbs = domains.start.lbs
+        start_ubs = domains.start.ubs
+        end_lbs = domains.end.lbs
+        end_ubs = domains.end.ubs
+        machines = domains.machines
+        order = machines.order
         row = task_id * self.n_machines
 
-        for machine_id in domains.get_feasible_machines(task_id):
+        start_idx, end_idx = machines.bounds(task_id)
+        i = start_idx
+        while i < end_idx:
+            machine_id = order[i]
             idx = row + machine_id
 
             if value > end_lbs[idx]:
@@ -566,15 +597,104 @@ class ScheduleState(EzPickle):
                 start_lbs[idx] = start_lb
 
                 if start_lb > start_ubs[idx] or value > end_ubs[idx]:
-                    self.restrict_machine(task_id, machine_id)
+                    self.forbid_machine(task_id, machine_id)
+                    start_idx, end_idx = machines.bounds(task_id)
+                    continue
 
-        domains.recompute_global_end_lbs(task_id)
+            i += 1
+
         domains.recompute_global_start_lbs(task_id)
+        domains.recompute_global_end_lbs(task_id)
 
-        if domains.feasible_machines[task_id]:
+        if machines.sizes[task_id]:
             self.domain_event_queue.add_event(
                 task_id=task_id,
                 field=END_LB,
+                time=value,
+            )
+
+    def tight_end_lb(
+        self,
+        task_id: TaskID,
+        value: Time,
+        machine_id: MachineID,
+    ) -> None:
+        """Raise the lower bound of task end time (earliest end constraint)."""
+        domains = self.domains
+
+        if value <= domains.end.get_lb(task_id, machine_id):
+            return
+
+        if not domains.machines.is_feasible(task_id, machine_id):
+            return
+
+        start_lbs = domains.start.lbs
+        start_ubs = domains.start.ubs
+        end_lbs = domains.end.lbs
+        end_ubs = domains.end.ubs
+        idx = task_id * self.n_machines + machine_id
+
+        old_lb = end_lbs[idx]
+        start_lb = value - domains.remaining_times[idx]
+
+        end_lbs[idx] = value
+        start_lbs[idx] = start_lb
+
+        if start_lb > start_ubs[idx] or value > end_ubs[idx]:
+            self.forbid_machine(task_id, machine_id)
+            return
+
+        if old_lb == domains.end.global_lbs[task_id]:
+            domains.recompute_global_start_lbs(task_id)
+            domains.recompute_global_end_lbs(task_id)
+
+        self.domain_event_queue.add_event(
+            task_id=task_id,
+            field=END_LB,
+            machine_id=machine_id,
+            time=value,
+        )
+
+    def tight_global_end_ub(self, task_id: TaskID, value: Time) -> None:
+        """Lower the global upper bound of task end time (latest end constraint)."""
+        domains = self.domains
+        if value >= domains.end.global_ubs[task_id]:
+            return
+
+        start_lbs = domains.start.lbs
+        start_ubs = domains.start.ubs
+        end_lbs = domains.end.lbs
+        end_ubs = domains.end.ubs
+        machines = domains.machines
+        order = machines.order
+        row = task_id * self.n_machines
+
+        start_idx, end_idx = machines.bounds(task_id)
+        i = start_idx
+        while i < end_idx:
+            machine_id = order[i]
+            idx = row + machine_id
+
+            if value < end_ubs[idx]:
+                start_ub = value - domains.remaining_times[idx]
+
+                end_ubs[idx] = value
+                start_ubs[idx] = start_ub
+
+                if value < end_lbs[idx] or start_ub < start_lbs[idx]:
+                    self.forbid_machine(task_id, machine_id)
+                    start_idx, end_idx = machines.bounds(task_id)
+                    continue
+
+            i += 1
+
+        domains.recompute_global_start_ubs(task_id)
+        domains.recompute_global_end_ubs(task_id)
+
+        if machines.sizes[task_id]:
+            self.domain_event_queue.add_event(
+                task_id=task_id,
+                field=END_UB,
                 time=value,
             )
 
@@ -582,84 +702,43 @@ class ScheduleState(EzPickle):
         self,
         task_id: TaskID,
         value: Time,
-        machine_id: MachineID = GLOBAL_MACHINE_ID,
+        machine_id: MachineID,
     ) -> None:
-        """Lower the upper bound of task end time (latest completion constraint).
-
-        Tightens the end time upper bound, queues END_UB domain events.
-        If bounds become inconsistent, removes the machine from feasible set.
-
-        Supports global (all machines) tightening via GLOBAL_MACHINE_ID.
-        """
+        """Lower the upper bound of task end time (latest end constraint)."""
         domains = self.domains
 
         if value >= domains.end.get_ub(task_id, machine_id):
+            return
+
+        if not domains.machines.is_feasible(task_id, machine_id):
             return
 
         start_lbs = domains.start.lbs
         start_ubs = domains.start.ubs
         end_lbs = domains.end.lbs
         end_ubs = domains.end.ubs
+        idx = task_id * self.n_machines + machine_id
 
-        if machine_id != GLOBAL_MACHINE_ID:
-            idx = task_id * self.n_machines + machine_id
+        old_ub = end_ubs[idx]
+        start_ub = value - domains.remaining_times[idx]
 
-            old_ub = end_ubs[idx]
-            start_ub = value - domains.remaining_times[idx]
+        end_ubs[idx] = value
+        start_ubs[idx] = start_ub
 
-            end_ubs[idx] = value
-            start_ubs[idx] = start_ub
-
-            if start_lbs[idx] > start_ub or end_lbs[idx] > value:
-                self.restrict_machine(task_id, machine_id)
-                return
-
-            if old_ub == domains.end.global_ubs[task_id]:
-                domains.recompute_global_end_ubs(task_id)
-                domains.recompute_global_start_ubs(task_id)
-
-            self.domain_event_queue.add_event(
-                task_id=task_id,
-                field=END_UB,
-                machine_id=machine_id,
-                time=value,
-            )
-
+        if value < end_lbs[idx] or start_ub < start_lbs[idx]:
+            self.forbid_machine(task_id, machine_id)
             return
 
-        row = task_id * self.n_machines
+        if old_ub == domains.end.global_ubs[task_id]:
+            domains.recompute_global_start_ubs(task_id)
+            domains.recompute_global_end_ubs(task_id)
 
-        for machine_id in domains.get_feasible_machines(task_id):
-            idx = row + machine_id
-
-            if end_ubs[idx] > value:
-                start_ub = value - domains.remaining_times[idx]
-
-                end_ubs[idx] = value
-                start_ubs[idx] = start_ub
-
-                if start_lbs[idx] > start_ub or end_lbs[idx] > value:
-                    self.restrict_machine(task_id, machine_id)
-
-        domains.recompute_global_end_ubs(task_id)
-        domains.recompute_global_start_ubs(task_id)
-
-        if domains.feasible_machines[task_id]:
-            self.domain_event_queue.add_event(
-                task_id=task_id,
-                field=END_UB,
-                time=value,
-            )
-
-    def forbid_machine(self, task_id: TaskID, machine_id: MachineID) -> None:
-        """Remove a machine from the feasible set of a task."""
-        self.restrict_machine(task_id, machine_id)
-
-    def require_machine(self, task_id: TaskID, machine_id: MachineID) -> None:
-        """Fix a task to run on a specific machine by forbidding all others."""
-        for other_machine in self.domains.feasible_machines[task_id]:
-            if other_machine != machine_id:
-                self.forbid_machine(task_id, other_machine)
+        self.domain_event_queue.add_event(
+            task_id=task_id,
+            field=END_UB,
+            machine_id=machine_id,
+            time=value,
+        )
 
     def assign_task(
         self,
@@ -707,8 +786,7 @@ class ScheduleState(EzPickle):
                 allow_global=False,
             )
 
-            feasible_machines = domains.feasible_machines[task_id]
-            if machine_id not in feasible_machines:
+            if not domains.machines.is_feasible(task_id, machine_id):
                 lb = domains.start.get_lb(task_id, machine_id)
                 ub = domains.start.get_ub(task_id, machine_id)
 
@@ -727,13 +805,12 @@ class ScheduleState(EzPickle):
                 )
 
         self.require_task(task_id)
+        self.require_machine(task_id, machine_id)
         self.tight_start_lb(task_id, start_time, machine_id)
         self.tight_start_ub(task_id, start_time, machine_id)
 
-        if self.infeasible:
-            return
-
-        domains.assign(task_id, machine_id)
+        domains.fixed[task_id] = True
+        domains.assignment[task_id] = machine_id
         self.remaining_tasks -= 1
 
         self.domain_event_queue.add_event(
@@ -759,7 +836,7 @@ class ScheduleState(EzPickle):
     def fail(self, task_id: TaskID = UNKNOWN_TASK) -> None:
         """Mark the problem as infeasible.
 
-        Constraints should prefer domain reductions via restrict_machine or
+        Constraints should prefer domain reductions via forbid_machine or
         tight_* methods instead of this method.
         It is reserved for hard global conflicts or defensive safeguards.
         """
