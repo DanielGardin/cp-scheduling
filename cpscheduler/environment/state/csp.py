@@ -174,20 +174,23 @@ class SparseFeasibleSet(EzPickle):
         return start <= pos < end and self.order[pos] == machine_id
 
     def forbid(self, task_id: TaskID, machine_id: MachineID) -> None:
-        """Remove machine_id if present. Returns the old size, or None. O(1)."""
+        """Remove machine_id to the feasible set of a task."""
         row = task_id * self.pad
         size = self.sizes[task_id]
         end = self.offsets[task_id] + size
         last = end - 1
 
-        pos = self.sparse[row + machine_id]
-        last_machine = self.order[last]
-
         order = self.order
+        sparse = self.sparse
+
+        pos = sparse[row + machine_id]
+        last_machine = order[last]
+
         order[pos] = last_machine
         order[last] = machine_id
 
-        self.sparse[row + last_machine] = pos
+        sparse[row + last_machine] = pos
+        sparse[row + machine_id] = last
 
         self.sizes[task_id] = size - 1
 
@@ -208,6 +211,7 @@ class SparseFeasibleSet(EzPickle):
             and self.offsets == value.offsets
             and self.sizes == value.sizes
             and self.order == value.order
+            and self.sparse == value.sparse
         )
 
 
