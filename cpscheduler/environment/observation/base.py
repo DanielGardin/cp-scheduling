@@ -7,7 +7,7 @@ from mypy_extensions import mypyc_attr
 from typing_extensions import TypeVar
 
 from cpscheduler.environment.backend import ScheduleBackend
-from cpscheduler.environment.constants import EzPickle, MachineID, TaskID
+from cpscheduler.environment.constants import EzPickle, MachineID, TaskID, Time
 from cpscheduler.environment.instance import ProblemInstance
 from cpscheduler.environment.specs import ObservationSpec
 from cpscheduler.environment.state import ScheduleState
@@ -133,6 +133,40 @@ class Observation(EzPickle, Generic[Serialized_Obs]):
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:
         """Handle the observation change on task assignment."""
+
+    def on_start_lb(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        """Handle the observation change on start time lower bound update."""
+
+    def on_start_ub(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        """Handle the observation change on start time upper bound update."""
+
+    def on_end_lb(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        """Handle the observation change on end time lower bound update."""
+
+    def on_end_ub(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        """Handle the observation change on end time upper bound update."""
+
+    def on_presence(self, task_id: TaskID, state: ScheduleState) -> None:
+        """Handle the observation change on presence update."""
+
+    def on_absence(self, task_id: TaskID, state: ScheduleState) -> None:
+        """Handle the observation change on absence update."""
+
+    def on_infeasibility(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        """Handle the observation change on infeasibility on a machine."""
+
+    def on_time_update(self, time: Time, state: ScheduleState) -> None:
+        """Handle the observation change on time update."""
 
     def update(self, state: ScheduleState, backend: ScheduleBackend) -> None:
         """Update the observation from the current stable scheduling state.

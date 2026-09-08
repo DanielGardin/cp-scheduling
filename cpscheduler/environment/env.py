@@ -527,36 +527,43 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
                 for constraint in constraints:
                     constraint.on_start_lb(task_id, machine_id, state)
                 objective.on_start_lb(task_id, machine_id, state)
+                observation.on_start_lb(task_id, machine_id, state)
 
             elif field == START_UB:
                 for constraint in constraints:
                     constraint.on_start_ub(task_id, machine_id, state)
                 objective.on_start_ub(task_id, machine_id, state)
+                observation.on_start_ub(task_id, machine_id, state)
 
             elif field == END_LB:
                 for constraint in constraints:
                     constraint.on_end_lb(task_id, machine_id, state)
                 objective.on_end_lb(task_id, machine_id, state)
+                observation.on_end_lb(task_id, machine_id, state)
 
             elif field == END_UB:
                 for constraint in constraints:
                     constraint.on_end_ub(task_id, machine_id, state)
                 objective.on_end_ub(task_id, machine_id, state)
+                observation.on_end_ub(task_id, machine_id, state)
 
             elif field == PRESENCE:
                 for constraint in constraints:
                     constraint.on_presence(task_id, state)
                 objective.on_presence(task_id, state)
+                observation.on_presence(task_id, state)
 
             elif field == ABSENCE:
                 for constraint in constraints:
                     constraint.on_absence(task_id, state)
                 objective.on_absence(task_id, state)
+                observation.on_absence(task_id, state)
 
             elif field == MACHINE_INFEASIBLE:
                 for constraint in constraints:
                     constraint.on_infeasibility(task_id, machine_id, state)
                 objective.on_infeasibility(task_id, machine_id, state)
+                observation.on_infeasibility(task_id, machine_id, state)
 
             elif field == GLOBAL_TIME:
                 time = times[idx]
@@ -564,6 +571,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
                 for constraint in constraints:
                     constraint.on_time_update(time, state)
                 objective.on_time_update(time, state)
+                observation.on_time_update(time, state)
 
             # FUTURE: This should be resolved when the event is created to allow
             # discovering the causal effect that lead to infeasibility.
