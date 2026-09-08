@@ -3,8 +3,8 @@
 from typing import Any, ClassVar, TypeVar
 
 from cpscheduler.environment.backend import Instruction, ScheduleBackend
-from cpscheduler.environment.constants import EzPickle
 from cpscheduler.environment.instance import ProblemInstance
+from cpscheduler.environment.mixins import EzPickle
 from cpscheduler.environment.state import ScheduleState
 
 S = TypeVar("S", bound=ScheduleBackend)

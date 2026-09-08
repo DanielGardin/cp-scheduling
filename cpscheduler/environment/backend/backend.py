@@ -8,10 +8,11 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from mypy_extensions import mypyc_attr
 from typing_extensions import Self, override
 
-from cpscheduler.environment.constants import EzPickle, TaskID, Time
+from cpscheduler.environment.mixins import EzPickle
 
 if TYPE_CHECKING:
     from cpscheduler.environment.backend.actions import Instruction
+    from cpscheduler.environment.constants import TaskID, Time
     from cpscheduler.environment.state import ScheduleState
 
 

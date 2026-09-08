@@ -4,7 +4,7 @@ from collections.abc import Iterable
 
 from typing_extensions import override
 
-from cpscheduler.environment.constants import EzPickle
+from cpscheduler.environment.mixins import EzPickle
 from cpscheduler.environment.utils import InstanceTypes
 from cpscheduler.environment.utils.protocols import InstanceGenerator
 

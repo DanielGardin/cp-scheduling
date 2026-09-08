@@ -3,7 +3,7 @@
 from mypy_extensions import mypyc_attr
 from typing_extensions import override
 
-from cpscheduler.environment.constants import EzPickle
+from cpscheduler.environment.mixins import EzPickle
 from cpscheduler.environment.objectives import Objective
 from cpscheduler.environment.state import ScheduleState
 

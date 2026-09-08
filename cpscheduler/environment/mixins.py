@@ -1,0 +1,290 @@
+"""Mixin classes."""
+
+import hashlib
+from inspect import get_annotations
+from threading import Lock
+from typing import (
+    Any,
+    SupportsIndex,
+    cast,
+    final,
+)
+
+from mypy_extensions import mypyc_attr
+from typing_extensions import Self
+
+# ------------------------------------------------------------------------------
+# Singletons
+
+
+_instances: dict["type[Singleton]", "Singleton"] = {}
+_lock = Lock()
+
+
+def _get_singleton_instance(cls: "type[Singleton]") -> "Singleton":
+    return _instances[cls]
+
+
+class Singleton:
+    """Base class enforcing unique-instance semantics.
+
+    Each subclass has exactly one instance. Subsequent instantiation attempts
+    return the existing instance.
+
+    Singleton creation is thread-safe, and copying, deep-copying, and pickling
+    preserve identity.
+    """
+
+    def __new__(cls) -> Self:
+        """Return the unique instance for each Singleton subclass."""
+        with _lock:
+            if cls in _instances:
+                return cast("Self", _instances[cls])
+
+            instance = super().__new__(cls)
+            _instances[cls] = instance
+
+            return instance
+
+    def __repr__(self) -> str:
+        """Return a simple string representation of the singleton instance."""
+        return f"{type(self).__name__}()"
+
+    def __bool__(self) -> bool:
+        """Singleton instances evaluate to False in boolean context."""
+        return False
+
+    def __hash__(self) -> int:
+        """Return a unique hash for the singleton instance based on its type."""
+        return hash_anything(str(self))
+
+    def __copy__(self) -> Self:
+        """When copying a singleton, the same instance is returned."""
+        return self
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> Self:
+        """Deep copying a singleton returns the same instance."""
+        return self
+
+    def __reduce__(self) -> tuple[Any, tuple[type[Self]]]:
+        """Reducing a singleton generates the same instance."""
+        return _get_singleton_instance, (type(self),)
+
+
+# ------------------------------------------------------------------------------
+# Pickling utils
+
+# Serialized object state represented as (field_name, value) pairs.
+
+
+PickleState = list[tuple[str, Any]]
+
+
+def _frame(b: bytes) -> bytes:
+    return len(b).to_bytes(8, byteorder="big") + b
+
+
+def _canonical_bytes(obj: Any) -> bytes:
+    if obj is None:
+        return b"N"
+    if isinstance(obj, bool):
+        return b"b1" if obj else b"b0"
+    if isinstance(obj, int):
+        return b"i" + str(obj).encode()
+    if isinstance(obj, float):
+        return b"f" + repr(obj).encode()
+    if isinstance(obj, str):
+        return b"s" + obj.encode()
+    if isinstance(obj, bytes):
+        return b"y" + obj
+
+    if isinstance(obj, dict):
+        items = sorted(
+            _frame(_canonical_bytes(k)) + _frame(_canonical_bytes(v))
+            for k, v in obj.items()
+        )
+        return b"d" + b"".join(items)
+
+    if isinstance(obj, (list, tuple)):
+        tag = b"l" if isinstance(obj, list) else b"t"
+        return tag + b"".join(_frame(_canonical_bytes(item)) for item in obj)
+
+    if isinstance(obj, (set, frozenset)):
+        items = sorted(_frame(_canonical_bytes(item)) for item in obj)
+        return b"e" + b"".join(items)
+
+    if isinstance(obj, EzPickle):
+        return b"z" + _frame(_canonical_bytes(sorted(obj.__getstate__())))
+
+    return b"r" + repr(obj).encode("utf-8")
+
+
+def hash_anything(obj: Any) -> int:
+    """Compute a hash for any object, including nested containers.
+
+    Parameters
+    ----------
+    obj : Any
+        The object to convert.
+
+    Returns
+    -------
+    int
+        The hash of the transformed object, suitable for use in sets or as
+        dictionary keys.
+
+    Raises
+    ------
+    TypeError
+        If the object is an unhashable type not handled by this function
+        (e.g., custom class without __hash__).
+
+    """
+    digest = hashlib.sha256(_canonical_bytes(obj)).digest()
+    return int.from_bytes(digest[:8], "big")
+
+
+def _collect_fields(cls: type) -> tuple[str, ...]:
+    """Collect serializable field names for a class.
+
+    Field discovery follows the priority order:
+
+    1. ``__ez_fields__``
+    2. ``__mypyc_attrs__``
+    3. ``__annotations__`` collected across the MRO
+
+    Parameters
+    ----------
+    cls : type
+        Class to inspect.
+
+    Returns
+    -------
+    tuple[str, ...]
+        Ordered tuple of non-dunder field names.
+
+    Notes
+    -----
+    - Inherited annotated fields preserve MRO order.
+    - Used internally by :class:`EzPickle`.
+
+    """
+    fields = getattr(cls, "__ez_fields__", None)
+    if fields is not None:
+        return cast("tuple[str, ...]", fields)
+
+    # mypyc path (authoritative)
+    attrs = getattr(cls, "__mypyc_attrs__", None)
+    if attrs is not None:
+        return tuple(
+            name
+            for name in cast("tuple[str, ...]", attrs)
+            if not (name.startswith("__") and name.endswith("__"))
+        )
+
+    # interpreted fallback: __annotations__ only
+    seen: set[str] = set()
+    result: list[str] = []
+
+    for c in reversed(cls.__mro__):
+        annotations = get_annotations(c).keys()
+
+        for name in annotations:
+            if name.startswith("__") and name.endswith("__"):
+                continue
+
+            if name not in seen:
+                seen.add(name)
+                result.append(name)
+
+    return tuple(result)
+
+
+@mypyc_attr(native_class=True, allow_interpreted_subclasses=True, acyclic=True)
+class EzPickle:
+    """Automatic pickle support for mypyc-compatible classes.
+
+    Object state is serialized as a sequence of ``(field_name, value)``
+    pairs derived from annotated or explicitly registered fields.
+
+    Supports both interpreted Python classes and mypyc-compiled classes.
+
+    Examples
+    --------
+    >>> class Point(EzPickle):
+    ...     x: int
+    ...     y: int
+    ...
+    ...     def __init__(self, x: int, y: int):
+    ...         self.x = x
+    ...         self.y = y
+
+    >>> import pickle
+    >>> p = Point(1, 2)
+    >>> q = pickle.loads(pickle.dumps(p))
+    >>> (q.x, q.y)
+    (1, 2)
+
+    Notes
+    -----
+    - Fields are discovered from annotations or mypyc metadata.
+    - Private fields are serialized but omitted from ``__repr__``.
+    - Lazily initialized attributes are serialized only if present.
+
+    """
+
+    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
+        """Create an uninitialized instance for pickle reconstruction.
+
+        This override ensures compatibility with mypyc-generated constructors
+        during unpickling.
+        """
+        return super().__new__(cls)
+
+    @final
+    def __getstate__(self) -> PickleState:
+        """Collect the state of the object for pickling."""
+        return [
+            (name, getattr(self, name))
+            for name in _collect_fields(type(self))
+            if hasattr(self, name)
+        ]
+
+    @final
+    def __setstate__(self, state: PickleState | dict[str, Any]) -> None:
+        """Restore the state of the object from the pickled state."""
+        items = state.items() if isinstance(state, dict) else state
+        for key, value in items:
+            object.__setattr__(self, key, value)
+
+    def __reduce_ex__(self, protocol: SupportsIndex) -> Any:
+        """Return the pickle reduction tuple for the instance."""
+        cls = type(self)
+
+        return (
+            cls.__new__,
+            (cls,),
+            self.__getstate__(),
+        )
+
+    def __repr__(self) -> str:
+        """Return a repr containing public field values."""
+        cls = type(self)
+        parts = [
+            f"{name}={getattr(self, name)!r}"
+            for name in _collect_fields(cls)
+            if not name.startswith("_") and hasattr(self, name)
+        ]
+
+        return f"{cls.__name__}({', '.join(parts)})"
+
+    def __hash__(self) -> int:
+        """Hash the instance using its inner state."""
+        return hash_anything(self.__getstate__())
+
+    # def __eq__(self, value: object, /) -> bool:
+    #     """Return whether two instances have the same inner state."""
+    #     return (
+    #         isinstance(value, type(self))
+    #         and self.__getstate__() == value.__getstate__()
+    #     )

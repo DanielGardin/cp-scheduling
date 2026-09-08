@@ -11,7 +11,7 @@ from typing import Any, ClassVar
 
 from mypy_extensions import mypyc_attr
 
-from cpscheduler.environment.constants import EzPickle
+from cpscheduler.environment.mixins import EzPickle
 from cpscheduler.environment.state import ScheduleState
 
 renderers: dict[str, "Renderer"] = {}

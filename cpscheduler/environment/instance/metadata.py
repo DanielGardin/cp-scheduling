@@ -4,7 +4,7 @@ from typing import Any, Literal
 
 from mypy_extensions import mypyc_attr
 
-from cpscheduler.environment.constants import EzPickle
+from cpscheduler.environment.mixins import EzPickle
 from cpscheduler.environment.utils.symbols import (
     BaseShapeDim,
     SymbolicDim,

@@ -7,8 +7,8 @@ from typing import Any, Generic
 from mypy_extensions import mypyc_attr
 from typing_extensions import TypeIs, TypeVar, override
 
-from cpscheduler.environment.constants import EzPickle, Singleton, hash_anything
 from cpscheduler.environment.instance.metadata import FeatureMetadata, ValueType
+from cpscheduler.environment.mixins import EzPickle, Singleton, hash_anything
 from cpscheduler.environment.specs.feature_spec import (
     AdjacencyMatrixViewSpec,
     FeatureViewSpec,

@@ -13,15 +13,14 @@ from mypy_extensions import mypyc_attr
 
 from cpscheduler.environment.constants import (
     MAX_TIME,
-    EzPickle,
     JobID,
     MachineID,
     TaskID,
     Time,
-    hash_anything,
 )
 from cpscheduler.environment.instance.features import Feature
 from cpscheduler.environment.instance.metadata import FeatureMetadata
+from cpscheduler.environment.mixins import EzPickle, hash_anything
 from cpscheduler.environment.utils.protocols import Instance_T
 from cpscheduler.environment.utils.symbols import merge_symbols
 

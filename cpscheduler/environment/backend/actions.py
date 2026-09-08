@@ -8,7 +8,8 @@ from typing import TYPE_CHECKING, Any, ClassVar, Generic, cast
 from mypy_extensions import mypyc_attr
 from typing_extensions import Self, TypeIs, TypeVar, Unpack
 
-from cpscheduler.environment.constants import EzPickle, Int, Time
+from cpscheduler.environment.constants import Int, Time
+from cpscheduler.environment.mixins import EzPickle
 
 if TYPE_CHECKING:
     from cpscheduler.environment.backend.backend import ScheduleBackend

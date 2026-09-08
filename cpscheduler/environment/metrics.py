@@ -12,8 +12,9 @@ from math import sqrt
 from typing import Any
 
 from cpscheduler.environment.backend import ActionType
-from cpscheduler.environment.constants import EzPickle, MachineID, TaskID, Time
+from cpscheduler.environment.constants import MachineID, TaskID, Time
 from cpscheduler.environment.env import SchedulingEnv
+from cpscheduler.environment.mixins import EzPickle
 from cpscheduler.environment.state import ScheduleState
 
 

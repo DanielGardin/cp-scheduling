@@ -18,9 +18,10 @@ from cpscheduler.environment.backend import (
     is_single_action,
     parse_instruction,
 )
-from cpscheduler.environment.constants import EzPickle, TaskID
+from cpscheduler.environment.constants import TaskID
 from cpscheduler.environment.constraints import Constraint, PassiveConstraint
 from cpscheduler.environment.instance import FeatureMetadata, ProblemInstance
+from cpscheduler.environment.mixins import EzPickle
 from cpscheduler.environment.objectives import Objective, SatisfactionObjective
 from cpscheduler.environment.observation import DefaultObservation, Observation
 from cpscheduler.environment.render import Renderer

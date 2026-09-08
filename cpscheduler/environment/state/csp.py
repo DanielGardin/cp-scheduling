@@ -8,12 +8,12 @@ from cpscheduler.environment.constants import (
     GLOBAL_MACHINE_ID,
     MAX_TIME,
     MIN_TIME,
-    EzPickle,
     MachineID,
     TaskID,
     Time,
 )
 from cpscheduler.environment.instance import ProblemInstance
+from cpscheduler.environment.mixins import EzPickle
 from cpscheduler.environment.utils import flatten_matrix
 
 

@@ -15,7 +15,7 @@ from typing import Any, Literal, TypeAlias, overload
 
 from mypy_extensions import mypyc_attr
 
-from cpscheduler.environment.constants import EzPickle
+from cpscheduler.environment.mixins import EzPickle
 
 BuiltinSymbols = Literal["n_tasks", "n_jobs", "n_machines"]
 BaseShapeDim = int | BuiltinSymbols | str | None

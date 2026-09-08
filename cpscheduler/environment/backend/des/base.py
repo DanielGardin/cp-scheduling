@@ -5,12 +5,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, ClassVar, TypeAlias
 
 from cpscheduler.environment.backend.actions import Instruction
-from cpscheduler.environment.constants import EzPickle, Time
+from cpscheduler.environment.mixins import EzPickle
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from cpscheduler.environment.backend.des.des import DESBackend
+    from cpscheduler.environment.constants import Time
     from cpscheduler.environment.state import ScheduleState
 
 

@@ -7,11 +7,11 @@ from mypy_extensions import mypyc_attr
 from cpscheduler.environment.constants import (
     GLOBAL_MACHINE_ID,
     TIMELESS,
-    EzPickle,
     MachineID,
     TaskID,
     Time,
 )
+from cpscheduler.environment.mixins import EzPickle
 
 
 class VarField(Enum):

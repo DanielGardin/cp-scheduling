@@ -5,8 +5,8 @@ from random import Random
 from typing import Any, cast
 
 from cpscheduler.common import AnySchedulingEnv, unwrap_env
-from cpscheduler.environment.constants import EzPickle
 from cpscheduler.environment.instance import FeatureMetadata
+from cpscheduler.environment.mixins import EzPickle
 from cpscheduler.environment.utils.protocols import InstanceGenerator
 from cpscheduler.environment.utils.symbols import resolve_shape, symbolic_shape
 from cpscheduler.instances.distributions.base import Sampler

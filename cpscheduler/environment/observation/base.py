@@ -7,8 +7,9 @@ from mypy_extensions import mypyc_attr
 from typing_extensions import TypeVar
 
 from cpscheduler.environment.backend import ScheduleBackend
-from cpscheduler.environment.constants import EzPickle, MachineID, TaskID, Time
+from cpscheduler.environment.constants import MachineID, TaskID, Time
 from cpscheduler.environment.instance import ProblemInstance
+from cpscheduler.environment.mixins import EzPickle
 from cpscheduler.environment.specs import ObservationSpec
 from cpscheduler.environment.state import ScheduleState
 

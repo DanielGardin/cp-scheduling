@@ -13,13 +13,13 @@ from cpscheduler.environment.constants import (
     MAX_TIME,
     MIN_TIME,
     UNKNOWN_TASK,
-    EzPickle,
     JobID,
     MachineID,
     TaskID,
     Time,
 )
 from cpscheduler.environment.instance import ProblemInstance
+from cpscheduler.environment.mixins import EzPickle
 from cpscheduler.environment.state.csp import Presence, TaskDomains
 from cpscheduler.environment.state.events import (
     DomainEventQueue,
