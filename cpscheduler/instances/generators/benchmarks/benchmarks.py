@@ -1,7 +1,7 @@
 """Benchmark registry class for benchmarking instance configuration."""
 
 from collections.abc import Callable, Mapping
-from typing import Any, ClassVar, NoReturn, final
+from typing import Any, ClassVar, final
 
 from cpscheduler.common import AnySchedulingEnv
 from cpscheduler.instances.distributions.base import Sampler
@@ -46,12 +46,6 @@ class Benchmark:
             return fn
 
         return decorator
-
-    def __new__(cls) -> NoReturn:
-        """Benchmark is a register class, do not instantiate it."""
-        raise ValueError(
-            "Cannot instantiate Benchmark, use `Benchmark,create instead`"
-        )
 
     @classmethod
     def create(
