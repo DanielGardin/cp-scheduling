@@ -25,6 +25,7 @@ from cpscheduler.environment.state.events import (
     DomainEventQueue,
     VarField,
 )
+from cpscheduler.environment.state.trail import Trail, TrailField
 from cpscheduler.environment.utils.debug import (
     validate_domain_bounds,
     validate_machine_id,
@@ -44,6 +45,17 @@ ABSENCE = VarField.ABSENCE
 MACHINE_INFEASIBLE = VarField.MACHINE_INFEASIBLE
 STATE_INFEASIBLE = VarField.STATE_INFEASIBLE
 GLOBAL_TIME = VarField.GLOBAL_TIME
+
+T_START_LB = TrailField.START_LB
+T_START_UB = TrailField.START_UB
+T_END_LB = TrailField.END_LB
+T_END_UB = TrailField.END_UB
+T_FEASIBILITY = TrailField.FEASIBILITY
+T_PRESENCE = TrailField.PRESENCE
+T_FIXED = TrailField.FIXED
+T_ASSIGNMENT = TrailField.ASSIGNMENT
+T_REMAINING_TASKS = TrailField.REMAINING_TASKS
+T_INFEASIBLE = TrailField.INFEASIBLE
 
 
 # FUTURE: Study implementing backtracking functionality via trails
@@ -69,6 +81,7 @@ class ScheduleState(EzPickle):
     domains: TaskDomains
 
     domain_event_queue: DomainEventQueue
+    trail: Trail
 
     _debug: bool
 
@@ -94,6 +107,7 @@ class ScheduleState(EzPickle):
         self.domains = TaskDomains(instance)
 
         self.domain_event_queue = DomainEventQueue()
+        self.trail = Trail()
 
     # Properties
     @property
@@ -109,6 +123,7 @@ class ScheduleState(EzPickle):
 
         self.domains = TaskDomains(self.instance)
         self.domain_event_queue.clear()
+        self.trail.clear()
 
     def is_terminal(self) -> bool:
         """Return True if the problem is infeasible or all tasks are assigned."""
@@ -199,6 +214,10 @@ class ScheduleState(EzPickle):
     def is_fixed(self, task_id: TaskID) -> bool:
         """Return whether a task has been fixed."""
         return self.domains.fixed[task_id]
+
+    def is_assigned(self, task_id: TaskID) -> bool:
+        """Return whether a task has been assigned."""
+        return self.domains.assignment[task_id] != GLOBAL_MACHINE_ID
 
     def is_locked(self, task_id: TaskID) -> bool:
         """Return whether a task has unresolved dependencies."""
@@ -306,24 +325,36 @@ class ScheduleState(EzPickle):
     ## Dependency-resolving methods
     def add_dependency(self, task_id: TaskID, name: str) -> None:
         """Add a named dependency to lock a task (remove from unlocked_tasks)."""
-        self.domains.dependencies[task_id].add(name)
+        deps = self.domains.dependencies[task_id]
+        if name not in deps:
+            if self.trail.active:
+                self.trail.record_dependency(task_id, name, True)
+
+            deps.add(name)
 
     def resolve_dependency(self, task_id: TaskID, name: str) -> None:
         """Remove a named dependency from a task; add to unlocked if all resolved."""
-        self.domains.dependencies[task_id].discard(name)
+        deps = self.domains.dependencies[task_id]
+        if name in deps:
+            if self.trail.active:
+                self.trail.record_dependency(task_id, name, False)
+
+            deps.discard(name)
 
     ## Event-emitting methods
     def _restrict_presence(self, task_id: TaskID, mask: Presence) -> None:
         domains = self.domains
+        trail = self.trail
         old_presence = domains.presence[task_id]
-        # Bitwise operations on Literal unions are inferred as int by type checkers.
-        # Explicitly narrow back to PresenceType.
         new_presence = Presence(old_presence.value & mask.value)
 
         if new_presence == old_presence:
             return
 
         if new_presence == INFEASIBLE:
+            if trail.active:
+                trail.record(T_PRESENCE, old_presence.value, task_id)
+
             domains.presence[task_id] = INFEASIBLE
             self.fail(task_id)
             return
@@ -332,6 +363,10 @@ class ScheduleState(EzPickle):
             field = PRESENCE
 
         elif new_presence == ABSENT:
+            if trail.active:
+                trail.record(T_FIXED, domains.fixed[task_id], task_id)
+                trail.record(T_REMAINING_TASKS, self.remaining_tasks)
+
             domains.fixed[task_id] = True
             self.remaining_tasks -= 1
             field = ABSENCE
@@ -340,6 +375,9 @@ class ScheduleState(EzPickle):
             raise RuntimeError(
                 f"Unreachable: unexpected presence value {new_presence!r}"
             )
+
+        if trail.active:
+            trail.record(TrailField.PRESENCE, old_presence.value, task_id)
 
         domains.presence[task_id] = new_presence
 
@@ -366,6 +404,11 @@ class ScheduleState(EzPickle):
         domains = self.domains
         if not domains.machines.is_feasible(task_id, machine_id):
             return
+
+        if self.trail.active:
+            self.trail.record(
+                T_FEASIBILITY, domains.machines.sizes[task_id], task_id
+            )
 
         domains.machines.forbid(task_id, machine_id)
 
@@ -413,6 +456,7 @@ class ScheduleState(EzPickle):
         start_ubs = domains.start.ubs
         end_lbs = domains.end.lbs
         end_ubs = domains.end.ubs
+        trail = self.trail
         machines = domains.machines
         order = machines.order
         row = task_id * self.n_machines
@@ -425,6 +469,12 @@ class ScheduleState(EzPickle):
 
             if value > start_lbs[idx]:
                 end_lb = value + domains.remaining_times[idx]
+
+                if trail.active:
+                    trail.record(
+                        T_START_LB, start_lbs[idx], task_id, machine_id
+                    )
+                    trail.record(T_END_LB, end_lbs[idx], task_id, machine_id)
 
                 start_lbs[idx] = value
                 end_lbs[idx] = end_lb
@@ -465,10 +515,15 @@ class ScheduleState(EzPickle):
         start_ubs = domains.start.ubs
         end_lbs = domains.end.lbs
         end_ubs = domains.end.ubs
+        trail = self.trail
         idx = task_id * self.n_machines + machine_id
 
         old_lb = start_lbs[idx]
         end_lb = value + domains.remaining_times[idx]
+
+        if trail.active:
+            trail.record(T_START_LB, old_lb, task_id, machine_id)
+            trail.record(T_END_LB, end_lbs[idx], task_id, machine_id)
 
         start_lbs[idx] = value
         end_lbs[idx] = end_lb
@@ -498,6 +553,7 @@ class ScheduleState(EzPickle):
         start_ubs = domains.start.ubs
         end_lbs = domains.end.lbs
         end_ubs = domains.end.ubs
+        trail = self.trail
         machines = domains.machines
         order = machines.order
         row = task_id * self.n_machines
@@ -510,6 +566,12 @@ class ScheduleState(EzPickle):
 
             if value < start_ubs[idx]:
                 end_ub = value + domains.remaining_times[idx]
+
+                if trail.active:
+                    trail.record(
+                        T_START_UB, start_ubs[idx], task_id, machine_id
+                    )
+                    trail.record(T_END_UB, end_ubs[idx], task_id, machine_id)
 
                 start_ubs[idx] = value
                 end_ubs[idx] = end_ub
@@ -550,10 +612,15 @@ class ScheduleState(EzPickle):
         start_ubs = domains.start.ubs
         end_lbs = domains.end.lbs
         end_ubs = domains.end.ubs
+        trail = self.trail
         idx = task_id * self.n_machines + machine_id
 
         old_ub = start_ubs[idx]
         end_ub = value + domains.remaining_times[idx]
+
+        if trail.active:
+            trail.record(T_START_UB, old_ub, task_id, machine_id)
+            trail.record(T_END_UB, end_ubs[idx], task_id, machine_id)
 
         start_ubs[idx] = value
         end_ubs[idx] = end_ub
@@ -583,6 +650,7 @@ class ScheduleState(EzPickle):
         start_ubs = domains.start.ubs
         end_lbs = domains.end.lbs
         end_ubs = domains.end.ubs
+        trail = self.trail
         machines = domains.machines
         order = machines.order
         row = task_id * self.n_machines
@@ -595,6 +663,12 @@ class ScheduleState(EzPickle):
 
             if value > end_lbs[idx]:
                 start_lb = value - domains.remaining_times[idx]
+
+                if trail.active:
+                    trail.record(T_END_LB, end_lbs[idx], task_id, machine_id)
+                    trail.record(
+                        T_START_LB, start_lbs[idx], task_id, machine_id
+                    )
 
                 end_lbs[idx] = value
                 start_lbs[idx] = start_lb
@@ -635,10 +709,15 @@ class ScheduleState(EzPickle):
         start_ubs = domains.start.ubs
         end_lbs = domains.end.lbs
         end_ubs = domains.end.ubs
+        trail = self.trail
         idx = task_id * self.n_machines + machine_id
 
         old_lb = end_lbs[idx]
         start_lb = value - domains.remaining_times[idx]
+
+        if trail.active:
+            trail.record(T_END_LB, old_lb, task_id, machine_id)
+            trail.record(T_START_LB, start_lbs[idx], task_id, machine_id)
 
         end_lbs[idx] = value
         start_lbs[idx] = start_lb
@@ -668,6 +747,7 @@ class ScheduleState(EzPickle):
         start_ubs = domains.start.ubs
         end_lbs = domains.end.lbs
         end_ubs = domains.end.ubs
+        trail = self.trail
         machines = domains.machines
         order = machines.order
         row = task_id * self.n_machines
@@ -680,6 +760,12 @@ class ScheduleState(EzPickle):
 
             if value < end_ubs[idx]:
                 start_ub = value - domains.remaining_times[idx]
+
+                if trail.active:
+                    trail.record(T_END_UB, end_ubs[idx], task_id, machine_id)
+                    trail.record(
+                        T_START_UB, start_ubs[idx], task_id, machine_id
+                    )
 
                 end_ubs[idx] = value
                 start_ubs[idx] = start_ub
@@ -720,10 +806,15 @@ class ScheduleState(EzPickle):
         start_ubs = domains.start.ubs
         end_lbs = domains.end.lbs
         end_ubs = domains.end.ubs
+        trail = self.trail
         idx = task_id * self.n_machines + machine_id
 
         old_ub = end_ubs[idx]
         start_ub = value - domains.remaining_times[idx]
+
+        if trail.active:
+            trail.record(T_END_UB, old_ub, task_id, machine_id)
+            trail.record(T_START_UB, start_ubs[idx], task_id, machine_id)
 
         end_ubs[idx] = value
         start_ubs[idx] = start_ub
@@ -779,6 +870,10 @@ class ScheduleState(EzPickle):
             )
 
         domains = self.domains
+        if domains.assignment[task_id] != GLOBAL_MACHINE_ID:
+            raise RuntimeError(
+                f"Task {task_id} have already been assigned before."
+            )
 
         if self.debug:
             validate_machine_id(
@@ -812,6 +907,15 @@ class ScheduleState(EzPickle):
         self.tight_start_lb(task_id, start_time, machine_id)
         self.tight_start_ub(task_id, start_time, machine_id)
 
+        if self.infeasible:
+            return
+
+        trail = self.trail
+        if trail.active:
+            trail.record(T_FIXED, False, task_id)
+            trail.record(T_ASSIGNMENT, GLOBAL_MACHINE_ID, task_id)
+            trail.record(T_REMAINING_TASKS, self.remaining_tasks)
+
         domains.fixed[task_id] = True
         domains.assignment[task_id] = machine_id
         self.remaining_tasks -= 1
@@ -843,8 +947,122 @@ class ScheduleState(EzPickle):
         tight_* methods instead of this method.
         It is reserved for hard global conflicts or defensive safeguards.
         """
+        if self.infeasible:
+            return
+
+        if self.trail.active:
+            self.trail.record(T_INFEASIBLE, False)
+
         self.infeasible = True
         self.domain_event_queue.add_event(task_id, STATE_INFEASIBLE)
+
+    # Backtrack search API
+
+    def checkpoint(self) -> int:
+        """Push a backtracking checkpoint."""
+        if self.domain_event_queue:
+            raise RuntimeError("Cannot create a checkpoint mid propagation.")
+
+        return self.trail.mark()
+
+    def backtrack(self, mark: int) -> set[TaskID]:
+        """Undo all mutations recorded after checkpoint mark."""
+        if self.domain_event_queue:
+            raise RuntimeError(
+                "Cannot backtrack while propagation events are pending."
+            )
+
+        trail = self.trail
+
+        if not trail.has_mark(mark):
+            raise RuntimeError(
+                f"No checkpoint mark {mark} exists, "
+                f"there are only {trail.n_marks} checkpoints recorded."
+            )
+
+        field_mark = trail.marks[mark]
+        dep_mark = trail.dep_marks[mark]
+
+        domains = self.domains
+        changed_tasks: set[TaskID] = set()
+
+        dep_log = trail.dep_log
+        for i in range(len(dep_log) - 1, dep_mark - 1, -1):
+            dep_task_id, name, added = dep_log[i]
+            deps = domains.dependencies[dep_task_id]
+
+            if added:
+                deps.discard(name)
+
+            else:
+                deps.add(name)
+
+        del dep_log[dep_mark:]
+
+        fields = trail.fields
+        tasks = trail.tasks
+        machines = trail.machines
+        values = trail.values
+        n_machines = self.n_machines
+
+        for i in range(len(fields) - 1, field_mark - 1, -1):
+            field = fields[i]
+            task_id = tasks[i]
+            machine_id = machines[i]
+            old_value = values[i]
+
+            if field == T_START_LB:
+                domains.start.lbs[task_id * n_machines + machine_id] = old_value
+                changed_tasks.add(task_id)
+
+            elif field == T_START_UB:
+                domains.start.ubs[task_id * n_machines + machine_id] = old_value
+                changed_tasks.add(task_id)
+
+            elif field == T_END_LB:
+                domains.end.lbs[task_id * n_machines + machine_id] = old_value
+                changed_tasks.add(task_id)
+
+            elif field == T_END_UB:
+                domains.end.ubs[task_id * n_machines + machine_id] = old_value
+                changed_tasks.add(task_id)
+
+            elif field == T_FEASIBILITY:
+                domains.machines.restore_size(task_id, old_value)
+                changed_tasks.add(task_id)
+
+            elif field == T_PRESENCE:
+                domains.presence[task_id] = Presence(old_value)
+                changed_tasks.add(task_id)
+
+            elif field == T_FIXED:
+                domains.fixed[task_id] = bool(old_value)
+                changed_tasks.add(task_id)
+
+            elif field == T_ASSIGNMENT:
+                domains.assignment[task_id] = old_value
+                changed_tasks.add(task_id)
+
+            elif field == T_REMAINING_TASKS:
+                self.remaining_tasks = old_value
+
+            elif field == T_INFEASIBLE:
+                self.infeasible = bool(old_value)
+
+        del trail.marks[mark:]
+        del trail.dep_marks[mark:]
+        del fields[field_mark:]
+        del tasks[field_mark:]
+        del machines[field_mark:]
+        del values[field_mark:]
+
+        for task_id in changed_tasks:
+            domains.restore_task(task_id)
+
+        if not trail.marks:
+            trail.active = False
+
+        return changed_tasks
 
     # Runtime utils
 

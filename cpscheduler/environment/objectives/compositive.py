@@ -19,6 +19,10 @@ class ComposedObjective(Objective):
     and no regular component has a negative coefficient.
     """
 
+    # This is a lie, check whether each sub-objective is backtrack_safe
+    # before backtracking.
+    backtrack_safe = True
+
     objectives: list[Objective]
     coefficients: list[float]
 
@@ -175,6 +179,18 @@ class ComposedObjective(Objective):
                 self.objectives, self.coefficients, strict=False
             )
         )
+
+    @override
+    def checkpoint(self, mark: int) -> None:
+        for objective in self.objectives:
+            objective.checkpoint(mark)
+
+    @override
+    def backtrack(
+        self, mark: int, changed_tasks: set[TaskID], state: ScheduleState
+    ) -> None:
+        for objective in self.objectives:
+            objective.backtrack(mark, changed_tasks, state)
 
     @override
     def get_entry(self) -> str:

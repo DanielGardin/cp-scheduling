@@ -85,6 +85,9 @@ class DESBackend(ScheduleBackend):
     _explicit_defer_time: Time
     _explicit_halt: bool
 
+    # Backtracking
+    _time_trail: list[Time]
+
     def __init__(self) -> None:
         """Initialize the Schedule with empty event queues and reset state."""
         self._time_slots = {}
@@ -110,6 +113,8 @@ class DESBackend(ScheduleBackend):
         self._explicit_defer_time = 0
         self._explicit_halt = False
 
+        self._time_trail = []
+
     def reset(self) -> None:
         """Reset the schedule to its initial empty state."""
         self._time_slots.clear()
@@ -126,11 +131,13 @@ class DESBackend(ScheduleBackend):
         self.instruction_idx = 0
 
         self._current_time_slot = None
-        self._timed_snapshot = []
-        self._non_timed_snapshot = []
+        self._timed_snapshot.clear()
+        self._non_timed_snapshot.clear()
         self._timed_index = 0
         self._non_timed_index = 0
-        self._deferred_events = []
+        self._deferred_events.clear()
+
+        self._time_trail.clear()
 
     @override
     def get_eligible_set(self, state: ScheduleState) -> list[TaskID]:
@@ -528,6 +535,19 @@ class DESBackend(ScheduleBackend):
             )
 
         self._explicit_defer_time = time
+
+    def checkpoint(self, mark: int) -> None:
+        """Push a backtracking checkpoint."""
+        assert len(self._time_trail) == mark
+
+        self._time_trail.append(self.time)
+
+    def backtrack(
+        self, mark: int, changed_tasks: set[TaskID], state: ScheduleState
+    ) -> None:
+        """Undo all mutations recorded after checkpoint mark."""
+        self.time = self._time_trail[mark]
+        del self._time_trail[mark:]
 
 
 # Why `advance_to`, and in which scenario it is used?

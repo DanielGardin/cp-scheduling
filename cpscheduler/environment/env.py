@@ -581,8 +581,8 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
                 assert state.infeasible, (
                     "STATE_INFEASIBLE event produced erroneously."
                 )
-                self.event_count += idx + 1
-                return
+                idx += 1
+                break
 
             idx += 1
 
@@ -791,3 +791,108 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             )
 
         self.renderer.render(self.state)
+
+    def checkpoint(self) -> int:
+        """Save a checkpoint of the current environment state to backtrack later.
+
+        In order to use the backtrack search functionality all constraints and
+        the objective must be backtrack safe.
+        If any component is marked as unsafe, the checkpoint cannot happen
+
+        Returns
+        -------
+        mark: int
+            The checkpoint mark number.
+        """
+        if self._status != EnvStatus.RUNNING:
+            raise RuntimeError(
+                "Cannot checkpoint an environment during configuration."
+            )
+
+        state = self.state
+
+        if not state.trail.active:
+            if any(
+                not constraint.backtrack_safe
+                for constraint in self._all_constraints
+            ):
+                unsafe_constraints = ", ".join(
+                    [
+                        type(constraint).__name__
+                        for constraint in self._all_constraints
+                        if not constraint.backtrack_safe
+                    ]
+                )
+                raise RuntimeError(
+                    f"Cannot checkpoint {self}, because the following constraints "
+                    f"are backtrack-unsafe: {unsafe_constraints}."
+                )
+
+            if not self.objective.backtrack_safe:
+                raise RuntimeError(
+                    f"Cannot checkpoint {self}, because the objective "
+                    f"{type(self.objective).__name__} is backtrack-unsafe."
+                )
+
+        # Checkpoint is not meant to support replayability as sequences of
+        # actions _should_ be deterministic.
+        if not self.backend.is_empty():
+            raise RuntimeError(
+                "Cannot checkpoint while backend events are pending."
+            )
+
+        mark = state.checkpoint()
+
+        for constraint in self._all_constraints:
+            constraint.checkpoint(mark)
+
+        self.objective.checkpoint(mark)
+        self.backend.checkpoint(mark)
+
+        self.observation.checkpoint(mark)
+
+        return mark
+
+    def backtrack(self, mark: int = -1) -> tuple[ObsT_co, InfoType]:
+        """Restore a checkpoint of the environment state given a checkpoint mark.
+
+        You must have called `checkpoint` at least once before backtracking.
+        The resulting environment state will be exactly the same as it was
+        when `checkpoint` was called, following a stack of checkpoints.
+
+        Parameters
+        ----------
+        mark: int, optional
+            The checkpoint mark to backtrack to. Defaults to the last
+            checkpoint.
+
+
+        Returns
+        -------
+        observation : ObsT_co
+            Observation from the checkpoint state.
+
+        info : dict[str, Any]
+            Environment info (time, objective, event count, etc.).
+
+        """
+        if self._status != EnvStatus.RUNNING:
+            raise RuntimeError(
+                "Cannot backtrack in a environment during configuration."
+            )
+
+        state = self.state
+        backend = self.backend
+        observation = self.observation
+        changed_tasks = state.backtrack(mark)
+
+        for constraint in self._all_constraints:
+            constraint.backtrack(mark, changed_tasks, state)
+
+        self.objective.backtrack(mark, changed_tasks, state)
+        backend.backtrack(mark, changed_tasks, state)
+
+        observation.backtrack(mark, changed_tasks, state)
+        observation.update(state, backend)
+
+        return observation, self.get_info()

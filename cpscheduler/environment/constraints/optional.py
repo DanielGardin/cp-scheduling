@@ -107,6 +107,8 @@ class AtMostOneConstraint(Constraint):
 class ExactlyOneConstraint(AtMostOneConstraint):
     """Alternative constraint where exactly one task have to be processed in each one of the groups."""
 
+    backtrack_safe = True
+
     @override
     def reset(self, state: ScheduleState) -> None:
         super().reset(state)

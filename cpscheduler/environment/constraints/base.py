@@ -1,6 +1,6 @@
 """Base constraint class for scheduling environments."""
 
-from typing import NoReturn, final
+from typing import ClassVar, NoReturn, final
 
 from mypy_extensions import mypyc_attr
 from typing_extensions import override
@@ -19,7 +19,17 @@ class Constraint(Component):
     This class provides a common interface for any piece in the scheduling
     environment that interacts with the tasks by limiting when they can be
     executed, how they are assigned to machines, etc.
+
+    If the propagator is stateless and pure, with only event-creating calls
+    inside the propagation functions, then the constraint is safe for backtracking,
+    and the class should have backtrack_safe = True explicitly.
+
+    When backtrack_safe = False, the environment cannot backtrack, because
+    there is no guarantee that returning to a checkpoint will load the correct
+    constraint state, and not a stale one.
     """
+
+    backtrack_safe: ClassVar[bool] = False
 
     @override
     def __init_subclass__(cls) -> None:
@@ -67,6 +77,14 @@ class Constraint(Component):
     def on_time_update(self, time: Time, state: ScheduleState) -> None:
         """Handle the event of the current time being updated."""
 
+    def checkpoint(self, mark: int) -> None:
+        """Checkpoints the current state for backtracking."""
+
+    def backtrack(
+        self, mark: int, changed_tasks: set[TaskID], state: ScheduleState
+    ) -> None:
+        """Restore the inner state when backtracking."""
+
 
 # FUTURE: Remove Passive constraint class when implementing the subscription
 # feature during propagation.
@@ -76,6 +94,8 @@ class PassiveConstraint(Constraint):
     They are used to provide task information and to set up the initial state
     for the scheduler.
     """
+
+    backtrack_safe = True
 
     @final
     def reset(self, state: ScheduleState) -> NoReturn:
@@ -146,4 +166,13 @@ class PassiveConstraint(Constraint):
         """Passive constraint does not handle infeasibility events."""
         raise RuntimeError(
             "Passive constraint does not handle infeasibility events."
+        )
+
+    @final
+    def backtrack(
+        self, mark: int, changed_tasks: set[TaskID], state: ScheduleState
+    ) -> NoReturn:
+        """Passive constraint does not participate in backtracking."""
+        raise RuntimeError(
+            "Passive constraint does not participate in backtracking."
         )

@@ -28,6 +28,8 @@ class MachineConstraint(Constraint):
     `MachineEligibilityConstraint` instead.
     """
 
+    backtrack_safe = True
+
     machine_map: list[set[TaskID]]
 
     @override
@@ -60,6 +62,17 @@ class MachineConstraint(Constraint):
 
         for other_task_id in self.machine_map[machine_id]:
             state.tight_start_lb(other_task_id, end_time, machine_id)
+
+    @override
+    def backtrack(
+        self, mark: int, changed_tasks: set[TaskID], state: ScheduleState
+    ) -> None:
+        for task_id in changed_tasks:
+            if state.is_assigned(task_id):
+                continue
+
+            for machine in state.get_machines(task_id):
+                self.machine_map[machine].add(TaskID(task_id))
 
 
 class MachineBreakdownConstraint(Constraint):

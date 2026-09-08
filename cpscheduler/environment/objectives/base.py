@@ -1,5 +1,7 @@
 """Base class for objective functions in the scheduling environment."""
 
+from typing import ClassVar
+
 from mypy_extensions import mypyc_attr
 from typing_extensions import override
 
@@ -20,6 +22,8 @@ class Objective(Component):
     They can be used to guide the search for an optimal schedule by providing a
     numerical value that represents the quality of the schedule.
     """
+
+    backtrack_safe: ClassVar[bool] = False
 
     minimize: bool
 
@@ -117,6 +121,18 @@ class Objective(Component):
     def on_time_update(self, time: Time, state: ScheduleState) -> None:
         """Handle the event of the current time being updated."""
 
+    def checkpoint(self, mark: int) -> None:
+        """Checkpoints the current state for backtracking."""
+
+    def backtrack(
+        self, mark: int, changed_tasks: set[TaskID], state: ScheduleState
+    ) -> None:
+        """Recompute the objective value when backtracking."""
+        raise NotImplementedError(
+            f"Objective {type(self).__name__} has not implemented backtrack(); "
+            "either implement it or leave backtrack_safe=False."
+        )
+
     def compute(self, state: ScheduleState) -> float:
         """Cold computation of the realized objective value."""
         raise NotImplementedError(
@@ -140,6 +156,8 @@ class SatisfactionObjective(Objective):
     This is the default objective when none is passed explicitly to the
     environment.
     """
+
+    backtrack_safe = True
 
     _value: float
     _lb: float
@@ -190,6 +208,15 @@ class SatisfactionObjective(Objective):
             self._value = 1.0
             self._lb = 1.0
 
+    @override
+    def backtrack(
+        self, mark: int, changed_tasks: set[TaskID], state: ScheduleState
+    ) -> None:
+        done = state.remaining_tasks == 0 and not state.infeasible
+        self._value = float(done)
+        self._lb = float(done)
+        self._ub = 0.0 if state.infeasible else 1.0
+
     @classmethod
     @override
     def get_general_entry(cls) -> str:
@@ -214,6 +241,8 @@ def completion_times(state: ScheduleState) -> list[Time]:
 class _CompletionTimeObjective(Objective):
     """Util class for objectives that depend on job completion times."""
 
+    backtrack_safe = True
+
     _job_completion: list[Time]
     _job_completion_lb: list[Time]
     _job_completion_ub: list[Time]
@@ -234,7 +263,9 @@ class _CompletionTimeObjective(Objective):
     ) -> None:
         job_id = state.get_job_id(task_id)
         end_lb = state.get_end_lb(task_id)
-        self._job_completion[job_id] = max(self._job_completion[job_id], end_lb)
+        self._job_completion_lb[job_id] = max(
+            self._job_completion_lb[job_id], end_lb
+        )
 
     def on_end_lb(
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
@@ -251,9 +282,7 @@ class _CompletionTimeObjective(Objective):
     ) -> None:
         job_id = state.get_job_id(task_id)
         C_j = state.get_end(task_id)
-        self._job_completion_lb[job_id] = max(
-            self._job_completion_lb[job_id], C_j
-        )
+        self._job_completion[job_id] = max(self._job_completion[job_id], C_j)
 
     def on_start_ub(
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
@@ -272,6 +301,28 @@ class _CompletionTimeObjective(Objective):
         self._job_completion_ub[job_id] = max(
             self._job_completion_ub[job_id], end_ub
         )
+
+    def backtrack(
+        self, mark: int, changed_tasks: set[TaskID], state: ScheduleState
+    ) -> None:
+        affected_jobs = {state.get_job_id(task_id) for task_id in changed_tasks}
+
+        job_tasks = state.instance.job_tasks
+        for job_id in affected_jobs:
+            tasks = job_tasks[job_id]
+
+            lb = 0
+            ub = 0
+            completion = 0
+            for task_id in tasks:
+                lb = max(lb, state.get_end_lb(task_id))
+                ub = max(ub, state.get_end_ub(task_id))
+                if state.is_assigned(task_id):
+                    completion = max(completion, state.get_end(task_id))
+
+            self._job_completion_lb[job_id] = lb
+            self._job_completion_ub[job_id] = ub
+            self._job_completion[job_id] = completion
 
     def compute(self, state: ScheduleState) -> float:
         return self.evaluate(completion_times(state))

@@ -14,7 +14,8 @@ from cpscheduler.environment.constants import (
 from cpscheduler.environment.instance import Feature
 from cpscheduler.environment.objectives.base import Objective
 from cpscheduler.environment.state import ScheduleState
-from cpscheduler.environment.utils.general import convert_to_list
+from cpscheduler.environment.utils import convert_to_list
+from cpscheduler.environment.utils.backtrack import GenericTrail
 
 
 class Makespan(Objective):
@@ -22,6 +23,9 @@ class Makespan(Objective):
 
     This objective function aims to minimize the time at which all tasks are completed.
     """
+
+    backtrack_safe = True
+    _trail: GenericTrail
 
     _value: Time
     _lb: Time
@@ -35,6 +39,8 @@ class Makespan(Objective):
     @override
     def reset(self, state: ScheduleState) -> None:
         super().reset(state)
+
+        self._trail = GenericTrail("_value", "_lb", "_ub")
 
         self._value = 0
         self._lb = 0
@@ -94,6 +100,16 @@ class Makespan(Objective):
 
         return float(max(state.get_end(task_id) for task_id in completed_tasks))
 
+    @override
+    def checkpoint(self, mark: int) -> None:
+        self._trail.checkpoint(mark, self)
+
+    @override
+    def backtrack(
+        self, mark: int, changed_tasks: set[TaskID], state: ScheduleState
+    ) -> None:
+        self._trail.backtrack(mark, self)
+
     @classmethod
     @override
     def get_general_entry(cls) -> str:
@@ -107,6 +123,9 @@ class MaximumLateness(Objective):
     Lateness of a job is defined as the amount of time by which its completion time
     exceeds its due date, i.e., L_j = C_j - d_j
     """
+
+    backtrack_safe = True
+    _trail: GenericTrail
 
     _value: Time
     _lb: Time
@@ -147,6 +166,8 @@ class MaximumLateness(Objective):
 
         if due_dates is not None:
             self.due_dates.own_data(due_dates)
+
+        self._trail = GenericTrail("_value", "_lb", "_ub")
 
     def _load_dates(self, dates: Iterable[Int]) -> list[Time]:
         return convert_to_list(dates, Time)

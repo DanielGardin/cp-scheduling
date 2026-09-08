@@ -21,6 +21,8 @@ class HorizonConstraint(Constraint):
     produce a standalone entry in the schedule.
     """
 
+    backtrack_safe = True
+
     horizon: Feature[Time]
 
     def __init__(self, horizon: Int = MAX_TIME):
@@ -60,6 +62,8 @@ class ReleaseDateConstraint(Constraint):
             it refers to a column in the tasks data that contains the release dates for each task.
 
     """
+
+    backtrack_safe = True
 
     release_dates: Feature[list[Time]]
 
@@ -121,6 +125,8 @@ class DeadlineConstraint(Constraint):
             An optional name for the constraint.
 
     """
+
+    backtrack_safe = True
 
     due_dates: Feature[list[Time]]
 

@@ -18,6 +18,8 @@ class PrecedenceConstraint(Constraint):
     must be completed before others can start.
     """
 
+    backtrack_safe = True
+
     parents: DAGFeature
     "A mapping of task IDs to their parent task IDs."
 

@@ -90,3 +90,11 @@ class ScheduleBackend(ABC, EzPickle):
     def get_info(self) -> dict[str, Any]:
         """Expose backend-related information to the environment."""
         return {}
+
+    def checkpoint(self, mark: int) -> None:
+        """Push a backtracking checkpoint."""
+
+    def backtrack(
+        self, mark: int, changed_tasks: set[TaskID], state: ScheduleState
+    ) -> None:
+        """Undo all mutations recorded after checkpoint mark."""

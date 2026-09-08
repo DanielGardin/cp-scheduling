@@ -176,6 +176,14 @@ class Observation(EzPickle, Generic[Serialized_Obs]):
         Consider this method as a importer of the most recent
         """
 
+    def checkpoint(self, mark: int) -> None:
+        """Checkpoints the current state for backtracking."""
+
+    def backtrack(
+        self, mark: int, changed_tasks: set[TaskID], state: ScheduleState
+    ) -> None:
+        """Restore the observation state when backtracking."""
+
     def serialize(self) -> Serialized_Obs:
         """Return a serialized representation of the observation.
 

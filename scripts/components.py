@@ -26,7 +26,7 @@ def print_beta() -> None:
     )
 
     table = PrettyTable()
-    table.field_names = ["Class", "Notation", "Type"]
+    table.field_names = ["Class", "Notation", "Type", "Backtrack-safe"]
     table.set_style(TableStyle.MARKDOWN)
 
     for constraint in constraints.values():
@@ -36,7 +36,9 @@ def print_beta() -> None:
 
         t = "Passive" if issubclass(constraint, PassiveConstraint) else "Active"
 
-        table.add_row([constraint.__name__, entry, t])
+        table.add_row(
+            [constraint.__name__, entry, t, constraint.backtrack_safe]
+        )
 
     table.align = "c"
     print(table)
@@ -47,7 +49,7 @@ def print_gamma() -> None:
     from cpscheduler.environment.objectives import objectives
 
     table = PrettyTable()
-    table.field_names = ["Class", "Notation"]
+    table.field_names = ["Class", "Notation", "Backtrack-safe"]
     table.set_style(TableStyle.MARKDOWN)
 
     for objective in objectives.values():
@@ -56,7 +58,13 @@ def print_gamma() -> None:
         if not entry:
             continue
 
-        table.add_row([objective.__name__, objective.get_general_entry()])
+        table.add_row(
+            [
+                objective.__name__,
+                objective.get_general_entry(),
+                objective.backtrack_safe,
+            ]
+        )
 
     table.align = "c"
     print(table)
