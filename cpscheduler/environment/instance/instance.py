@@ -480,18 +480,3 @@ class ProblemInstance(EzPickle):
             f"n_machines={self.n_machines}, "
             f"features=[{features}])"
         )
-
-    def __eq__(self, value: object, /) -> bool:
-        """Check for equality for ProblemInstance objects."""
-        return (
-            isinstance(value, ProblemInstance)
-            and self.features == value.features
-            and self._job_ids == value._job_ids
-            and self.job_tasks == value.job_tasks
-            and self._optional == value._optional
-            and self._processing_times == value._processing_times
-            and self.n_tasks == value.n_tasks
-            and self.n_jobs == value.n_jobs
-            and self.n_machines == value.n_machines
-            and self._debug == value._debug
-        )

@@ -131,10 +131,6 @@ class Feature(EzPickle, Generic[_T]):
             high=high,
         )
 
-    def __eq__(self, value: object, /) -> bool:
-        """Check equality of features based on their name and specification."""
-        return isinstance(value, Feature) and self.name == value.name
-
     def __repr__(self) -> str:
         """Return a string representation of the feature."""
         attrs = [

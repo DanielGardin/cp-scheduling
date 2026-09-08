@@ -58,6 +58,10 @@ class Singleton:
         """Return a unique hash for the singleton instance based on its type."""
         return hash_anything(str(self))
 
+    def __eq__(self, value: object, /) -> bool:
+        """Return value is singleton."""
+        return self is value
+
     def __copy__(self) -> Self:
         """When copying a singleton, the same instance is returned."""
         return self
@@ -282,9 +286,9 @@ class EzPickle:
         """Hash the instance using its inner state."""
         return hash_anything(self.__getstate__())
 
-    # def __eq__(self, value: object, /) -> bool:
-    #     """Return whether two instances have the same inner state."""
-    #     return (
-    #         isinstance(value, type(self))
-    #         and self.__getstate__() == value.__getstate__()
-    #     )
+    def __eq__(self, value: object, /) -> bool:
+        """Return whether two instances have the same inner state."""
+        return (
+            isinstance(value, type(self))
+            and self.__getstate__() == value.__getstate__()
+        )

@@ -319,10 +319,6 @@ class SymbolicDim(EzPickle):
 
         return NotImplemented
 
-    def __hash__(self) -> int:
-        """Hash based on the coefficients and constant value."""
-        return hash((tuple(self._coefs.items()), self._const_value))
-
     def __repr__(self) -> str:
         """Return a string representation of the symbolic dimension, reconstructing the affine expression."""
         parts: list[str] = []

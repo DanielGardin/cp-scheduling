@@ -11,6 +11,7 @@ easily serialized, statically analyzed and validated.
 from collections.abc import ItemsView, Iterator, KeysView, Mapping, ValuesView
 from typing import Any, Literal
 
+from cpscheduler.environment.mixins import hash_anything
 from cpscheduler.environment.specs.base import ObservationSpec
 from cpscheduler.environment.specs.feature_spec import (
     FeatureViewSpec,
@@ -119,13 +120,9 @@ class StackSpec(ObservationSpec):
         """Resolve the symbolic dimensions in the shape to concrete integers using the provided symbol values."""
         return resolve_shape(self.shape, **symbol_values)
 
-    def __eq__(self, value: object, /) -> bool:
-        """Check equality of StackSpecs."""
-        return isinstance(value, StackSpec) and self.features == value.features
-
     def __hash__(self) -> int:
         """Hash based on the attributes of the StackSpecs."""
-        return hash(self.features)
+        return hash_anything(self.features)
 
 
 class DictSpec(ObservationSpec, Mapping[str, ObservationSpec]):
@@ -172,13 +169,9 @@ class DictSpec(ObservationSpec, Mapping[str, ObservationSpec]):
         """Return the number of fields in the DictSpec."""
         return len(self._fields)
 
-    def __eq__(self, value: object, /) -> bool:
-        """Check equality of DictSpecs."""
-        return isinstance(value, DictSpec) and self._fields == value._fields
-
     def __hash__(self) -> int:
         """Hash based on the attributes of the DictSpecs."""
-        return hash(frozenset(self._fields.items()))
+        return hash_anything(self._fields)
 
     def __repr__(self) -> str:
         """Return a string representation of the DictSpec."""
@@ -232,17 +225,9 @@ class SequenceSpec(ObservationSpec):
             else None
         )
 
-    def __eq__(self, value: object, /) -> bool:
-        """Check equality of SequenceSpecs."""
-        return (
-            isinstance(value, SequenceSpec)
-            and self.element == value.element
-            and self.length == value.length
-        )
-
     def __hash__(self) -> int:
         """Hash based on the attributes of the SequenceSpec."""
-        return hash((self.element, self.length))
+        return hash_anything((self.element, self.length))
 
     def __repr__(self) -> str:
         """Return a string representation of the SequenceSpec."""
@@ -307,15 +292,6 @@ class GraphSpec(ObservationSpec):
         self.edges = edges
         self.representation = representation
 
-    def __eq__(self, value: object, /) -> bool:
-        """Check equality of GraphSpecs."""
-        return (
-            isinstance(value, GraphSpec)
-            and self.nodes == value.nodes
-            and self.edges == value.edges
-            and self.representation == value.representation
-        )
-
     def __hash__(self) -> int:
         """Hash based on the attributes of the GraphSpec."""
-        return hash((self.nodes, self.edges, self.representation))
+        return hash_anything((self.nodes, self.edges, self.representation))

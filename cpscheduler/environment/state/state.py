@@ -4,8 +4,6 @@ This module provides ScheduleState, the core kernel for maintaining and querying
 the state of a constraint satisfaction problem (CSP).
 """
 
-from typing import Any
-
 from mypy_extensions import mypyc_attr
 
 from cpscheduler.environment.constants import (
@@ -1135,13 +1133,3 @@ class ScheduleState(EzPickle):
                 max_end = end
 
         return max_end
-
-    def __eq__(self, value: Any) -> bool:
-        """Return equality based on all state attributes (instance, time, domains, runtime, events)."""
-        return (
-            isinstance(value, ScheduleState)
-            and self.instance == value.instance
-            and self.domains == value.domains
-            and self.domain_event_queue == value.domain_event_queue
-            and self._debug == value._debug
-        )

@@ -112,17 +112,3 @@ class Trail(EzPickle):
     def has_mark(self, mark: int) -> bool:
         """Return whether a checkpoint mark exists."""
         return -len(self.marks) <= mark < len(self.marks)
-
-    def __eq__(self, value: object, /) -> bool:
-        """Return equality between trails."""
-        return (
-            isinstance(value, Trail)
-            and self.active == value.active
-            and self.marks == value.marks
-            and self.dep_marks == value.dep_marks
-            and self.fields == value.fields
-            and self.tasks == value.tasks
-            and self.machines == value.machines
-            and self.values == value.values
-            and self.dep_log == value.dep_log
-        )
