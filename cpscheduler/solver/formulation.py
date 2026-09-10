@@ -14,7 +14,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import Any, ClassVar, Generic, TypeVar
 
-from typing_extensions import Self, final, override
+from typing_extensions import override
 
 from cpscheduler.environment import (
     Constraint,
@@ -22,6 +22,7 @@ from cpscheduler.environment import (
     ScheduleSetup,
     SchedulingEnv,
 )
+from cpscheduler.environment.constants import MachineID, Time
 from cpscheduler.environment.observation import Observation
 from cpscheduler.environment.state import ScheduleState
 
@@ -149,7 +150,7 @@ class Formulation(Generic[SolverResult], ABC):
         return decorator
 
     @abstractmethod
-    def get_assignment(self, task_id: int) -> tuple[int, int]:
+    def get_assignment(self, task_id: int) -> tuple[MachineID, Time]:
         """Get the machine assignment for a specific task.
 
         Parameters
@@ -201,10 +202,7 @@ class Formulation(Generic[SolverResult], ABC):
             f"warm_start method not available for {type(self).__name__}."
         )
 
-    @final
-    def build(
-        self: Self, env: SchedulingEnv, symmetry_break: bool = False
-    ) -> None:
+    def build(self, env: SchedulingEnv) -> None:
         """Build the model for the scheduling problem.
 
         This method initializes the model based on the current instance,

@@ -3,17 +3,20 @@
 __all__ = [
     "DisjunctiveMILPFormulation",
     "Formulation",
+    "NaiveBnBFormulation",
     "SchedulingSolver",
     # "DisjunctiveCPFormulation",
 ]
 
 from .formulation import Formulation, formulations, register_formulation
 from .milp.disjunctive.formulation import DisjunctiveMILPFormulation
+from .naive.bnb_naive import NaiveBnBFormulation
 from .solver import SchedulingSolver
 
 # from .cp import DisjunctiveCPFormulation
 
 register_formulation(DisjunctiveMILPFormulation, "disjunctive")
+register_formulation(NaiveBnBFormulation, "naive")
 # register_formulation(DisjunctiveCPFormulation, "disjunctive_cp")
 
 

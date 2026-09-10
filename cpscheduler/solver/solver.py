@@ -143,13 +143,15 @@ class SchedulingSolver(Generic[R]):
         if not self._built:
             self.build()
 
-        result = self.formulation.solve(*args, **kwargs)
+        form = self.formulation
 
-        objective_value = self.formulation.get_objective_value()
+        result = form.solve(*args, **kwargs)
+
+        objective_value = form.get_objective_value()
 
         actions: list[tuple[int, str, int, int]] = []
         for task_id in self.env.state.get_unassigned_tasks():
-            machine_id, start_time = self.formulation.get_assignment(task_id)
+            machine_id, start_time = form.get_assignment(task_id)
             actions.append((start_time, "execute", task_id, machine_id))
 
         actions.sort(key=lambda x: (x[0], x[2]))
