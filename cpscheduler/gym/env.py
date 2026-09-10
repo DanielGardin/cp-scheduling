@@ -7,7 +7,7 @@ the gymnasium infrastructure and semantics without friction.
 """
 
 from collections.abc import Iterable, Mapping
-from typing import Any, overload
+from typing import Any, cast, overload
 
 from gymnasium import Env, Space
 from typing_extensions import TypeVar, override
@@ -149,7 +149,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         self.action_space = ActionSpace
 
         if observation is None:
-            self._core = SchedulingEnv(
+            env = SchedulingEnv(
                 machine_setup=machine_setup,
                 constraints=constraints,
                 objective=objective,
@@ -160,6 +160,8 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
                 tracers=tracers,
                 render_mode=render_mode,
             )
+
+            self._core = cast("SchedulingEnv[Observation[ObsType]]", env)
 
         else:
             self._core = SchedulingEnv(
@@ -401,3 +403,13 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
             return self._core.renderer.build_gantt(self._core.state)
 
         return None
+
+    def get_wrapper_attr(self, name: str) -> Any:
+        """Get an attribute from core environment."""
+        if hasattr(self, name):
+            return getattr(self, name)
+
+        if hasattr(self._core, name):
+            return getattr(self._core, name)
+
+        raise AttributeError(f"SchedulingEnv has no attribute {name!r}")

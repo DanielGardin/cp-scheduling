@@ -18,7 +18,7 @@ from cpscheduler.environment.backend import (
     is_single_action,
     parse_instruction,
 )
-from cpscheduler.environment.constants import TaskID
+from cpscheduler.environment.constants import MachineID, TaskID, Time
 from cpscheduler.environment.constraints import Constraint, PassiveConstraint
 from cpscheduler.environment.instance import FeatureMetadata, ProblemInstance
 from cpscheduler.environment.mixins import EzPickle
@@ -149,10 +149,13 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
     #     constraints: Iterable[Constraint] | None = None,
     #     objective: Objective | None = None,
     #     observation: None = None,
+    #     backend: ScheduleBackend | str = "des",
+    #     reward: RewardStrategy | None = None,
     #     instance: InstanceTypes | InstanceGenerator | None = None,
     #     metrics: Mapping[str, Metric] | None = None,
     #     tracers: Iterable[Tracer] | None = None,
     #     render_mode: Renderer | str | None = None,
+    #     *,
     #     debug_mode: bool = False,
     # ) -> None: ...
 
@@ -163,10 +166,13 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
     #     constraints: Iterable[Constraint] | None = None,
     #     objective: Objective | None = None,
     #     observation: ObsT_co | None = None,
+    #     backend: ScheduleBackend | str = "des",
+    #     reward: RewardStrategy | None = None,
     #     instance: InstanceTypes | InstanceGenerator | None = None,
     #     metrics: Mapping[str, Metric] | None = None,
     #     tracers: Iterable[Tracer] | None = None,
     #     render_mode: Renderer | str | None = None,
+    #     *,
     #     debug_mode: bool = False,
     # ) -> None: ...
 
@@ -182,6 +188,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         metrics: Mapping[str, Metric] | None = None,
         tracers: Iterable[Tracer] | None = None,
         render_mode: Renderer | str | None = None,
+        *,
         debug_mode: bool = False,
     ):
         """Initialize the scheduling environment.
@@ -360,9 +367,22 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         """Return a dictionary of all required features from the setup, constraints, and objective."""
         return self.instance.required_features(show_optional)
 
+    # FUTURE: Candidate of changing in future API to a machine -> tasks mapping
     def get_action_support(self) -> list[TaskID]:
         """Retrieve the current feasible action set."""
         return self.backend.get_eligible_set(self.state)
+
+    def get_schedule(self) -> dict[TaskID, tuple[MachineID, Time]]:
+        """Return a mapping task_id -> machine_id, time."""
+        state = self.state
+
+        return {
+            task_id: (
+                state.get_assignment(task_id),
+                state.get_start(task_id),
+            )
+            for task_id in state.get_assigned_tasks()
+        }
 
     def set_generator(self, instance_generator: InstanceGenerator) -> None:
         """Set the instance generator.
