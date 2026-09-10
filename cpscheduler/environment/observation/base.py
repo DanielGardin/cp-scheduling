@@ -4,7 +4,7 @@ from copy import deepcopy
 from typing import Any, Generic
 
 from mypy_extensions import mypyc_attr
-from typing_extensions import TypeVar
+from typing_extensions import TypeVar, override
 
 from cpscheduler.environment.backend import ScheduleBackend
 from cpscheduler.environment.constants import MachineID, TaskID, Time
@@ -205,3 +205,17 @@ class Observation(EzPickle, Generic[Serialized_Obs]):
         this logic can be changed directly when required.
         """
         return deepcopy(self.serialize())
+
+
+class NullObservation(Observation[None]):
+    """A Null observation that always produces None."""
+
+    @override
+    def compile(
+        self, instance: ProblemInstance, backend: ScheduleBackend
+    ) -> ObservationSpec:
+        return ObservationSpec()
+
+    @override
+    def serialize(self) -> None:
+        return None

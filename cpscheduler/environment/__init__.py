@@ -75,6 +75,7 @@ __all__ = [  # noqa: RUF022
     "DiscountedTotalCompletionTime",
     # Observations
     "DefaultObservation",
+    "NullObservation",
     # Backends
     "DESBackend",
     # Rewards
@@ -123,7 +124,7 @@ from .objectives import (
     WeightedTardiness,
     WeightedTardyJobs,
 )
-from .observation import DefaultObservation
+from .observation import DefaultObservation, NullObservation
 from .reward import SparseRewardStrategy
 from .setups import (
     FlexibleJobShopSetup,
