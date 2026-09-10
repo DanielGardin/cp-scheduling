@@ -70,7 +70,7 @@ def step_into(
         trace = (*trace, action)
 
         if truncated:
-            eligible = ()
+            eligible.clear()
             break
 
     return trace, tuple(eligible), forced_actions

@@ -22,7 +22,9 @@ if USE_MYPYC:
 
     MYPYC_DIRS = (
         "cpscheduler/environment",
+        "cpscheduler/instances",
         "cpscheduler/heuristics/pdrs",
+        "cpscheduler/solver/naive",
     )
 
     MYPYC_BLACKLIST = frozenset(
