@@ -1,5 +1,6 @@
 """Structured samplers used in scheduling instances."""
 
+from math import fabs, floor, lgamma, log, log2, sqrt
 from random import Random
 from typing import Any
 
@@ -8,6 +9,88 @@ from typing_extensions import override
 from cpscheduler.environment.utils.symbols import BaseShapeDim
 from cpscheduler.instances.distributions.base import Process
 from cpscheduler.instances.distributions.discrete import Multinomial
+
+
+# This implementation is a copy of the `random.Random.binomialvariate` method,
+# which is not available in Python <=3.11.
+def _binomialvariate(rng: Random, n: int = 1, p: float = 0.5) -> int:
+    # Error check inputs and handle edge cases
+    if n < 0:
+        raise ValueError("n must be non-negative")
+    if p <= 0.0 or p >= 1.0:
+        if p == 0.0:
+            return 0
+        if p == 1.0:
+            return n
+        raise ValueError("p must be in the range 0.0 <= p <= 1.0")
+
+    # Fast path for a common case
+    if n == 1:
+        return int(rng.random() < p)
+
+    # Exploit symmetry to establish:  p <= 0.5
+    if p > 0.5:
+        return n - _binomialvariate(rng, n, 1.0 - p)
+
+    if n * p < 10.0:
+        # BG: Geometric method by Devroye with running time of O(np).
+        # https://dl.acm.org/doi/pdf/10.1145/42372.42381
+        x = y = 0
+        c = log2(1.0 - p)
+        if not c:
+            return x
+
+        while True:
+            y += floor(log2(rng.random()) / c) + 1
+            if y > n:
+                return x
+
+            x += 1
+
+    # BTRS: Transformed rejection with squeeze method by Wolfgang Hörmann
+    # https://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.47.8407&rep=rep1&type=pdf
+    assert n * p >= 10.0
+    assert p <= 0.5
+
+    spq = sqrt(n * p * (1.0 - p))  # Standard deviation of the distribution
+    b = 1.15 + 2.53 * spq
+    a = -0.0873 + 0.0248 * b + 0.01 * p
+    c = n * p + 0.5
+    vr = 0.92 - 4.2 / b
+
+    setup_complete = False
+
+    alpha = 0.0
+    lpq = 0.0
+    m = 0
+    h = 0.0
+    while True:
+        u = rng.random()
+        u -= 0.5
+        us = 0.5 - fabs(u)
+        k = floor((2.0 * a / us + b) * u + c)
+        if k < 0 or k > n:
+            continue
+
+        # The early-out "squeeze" test substantially reduces
+        # the number of acceptance condition evaluations.
+        v = rng.random()
+        if us >= 0.07 and v <= vr:
+            return k
+
+        # Acceptance-rejection test.
+        # Note, the original paper erroneously omits the call to log(v)
+        # when comparing to the log of the rescaled binomial distribution.
+        if not setup_complete:
+            alpha = (2.83 + 5.1 / b) * spq
+            lpq = log(p / (1.0 - p))
+            m = floor((n + 1) * p)  # Mode of the distribution
+            h = lgamma(m + 1) + lgamma(n - m + 1)
+            setup_complete = True  # Only needs to be done once
+
+        v *= alpha / (a / (us * us) + b)
+        if log(v) <= h - lgamma(k + 1) - lgamma(n - k + 1) + (k - m) * lpq:
+            return k
 
 
 class PoissonProcess(Process[list[int]]):
@@ -179,7 +262,7 @@ class BernoulliPrecedence(Process[dict[int, list[int]]]):
         precedence: dict[int, list[int]] = {}
 
         for child in range(1, n_tasks):
-            n_parents = rng.binomialvariate(child, self.p)
+            n_parents = _binomialvariate(rng, child, self.p)
 
             if n_parents:
                 precedence[child] = rng.sample(range(child), n_parents)
