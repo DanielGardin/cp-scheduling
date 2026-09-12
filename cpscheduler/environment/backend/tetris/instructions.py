@@ -8,6 +8,7 @@ from cpscheduler.environment.backend.actions import Instruction
 from cpscheduler.environment.backend.tetris.tetris import TetrisBackend
 from cpscheduler.environment.constants import (
     GLOBAL_MACHINE_ID,
+    MAX_TIME,
     MachineID,
     TaskID,
 )
@@ -21,13 +22,18 @@ def select_machine(
     """Select a machine for a task using a simple deterministic heuristic."""
     machines = state.get_machines(task_id)
 
-    for machine in sorted(machines):
-        start = state.get_start_lb(task_id, machine)
+    earliest_start = MAX_TIME
+    assigned_machine: MachineID = GLOBAL_MACHINE_ID
+    for machine in machines:
+        start_lb = state.get_start_lb(task_id, machine)
+        if start_lb < earliest_start:
+            earliest_start = start_lb
+            assigned_machine = machine
 
-        if start < state.get_latest_end():
-            return machine
+    if assigned_machine == GLOBAL_MACHINE_ID:
+        raise ValueError(f"No feasible machine for task {task_id}.")
 
-    raise ValueError(f"No feasible machine for task {task_id}.")
+    return assigned_machine
 
 
 class ExecuteInstruction(Instruction[TetrisBackend]):

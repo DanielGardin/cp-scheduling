@@ -37,7 +37,7 @@ class TetrisBackend(ScheduleBackend):
 
     @override
     def is_empty(self) -> bool:
-        return bool(self._queue)
+        return not self._queue
 
     @override
     def dispatch_instruction(self, state: ScheduleState) -> Instruction | None:
