@@ -370,7 +370,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
     # FUTURE: Candidate of changing in future API to a machine -> tasks mapping
     def get_action_support(self) -> list[TaskID]:
         """Retrieve the current feasible action set."""
-        return self.backend.get_eligible_set(self.state)
+        return self.backend.get_eligible_tasks(self.state)
 
     def get_schedule(self) -> dict[TaskID, tuple[MachineID, Time]]:
         """Return a mapping task_id -> machine_id, time."""

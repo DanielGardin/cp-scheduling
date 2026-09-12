@@ -140,7 +140,7 @@ class DESBackend(ScheduleBackend):
         self._time_trail.clear()
 
     @override
-    def get_eligible_set(self, state: ScheduleState) -> list[TaskID]:
+    def get_eligible_tasks(self, state: ScheduleState) -> list[TaskID]:
         return state.get_available_tasks(self.time)
 
     def is_empty(self) -> bool:

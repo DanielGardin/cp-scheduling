@@ -4,9 +4,11 @@ from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
+import numpy as np
 from gymnasium import ActionWrapper, Env
-from gymnasium.spaces import Box, Discrete, Sequence, Space
+from gymnasium.spaces import Box, Discrete, MultiDiscrete, Sequence, Space
 from numpy import int64
+from numpy.typing import NDArray
 from typing_extensions import override
 
 from cpscheduler.environment.backend import ActionType
@@ -97,6 +99,23 @@ class SchedulingActionWrapper(ActionWrapper[_Obs, _Act, ActionType], ABC):
         potentially changing the action space.
         """
 
+    def action_masks(self) -> NDArray[Any] | None:
+        """Get the action masks for the environment.
+
+        This method returns a binary mask indicating which actions are valid
+        in the current state of the environment.
+        Stable Baselines3 uses this method to filter out invalid actions during
+        training.
+
+        Returns
+        -------
+        NDArray[Any]
+            A numpy array of shape (n_actions,) where each element is 1 if the
+            action is valid and 0 if the action is invalid.
+
+        """
+        return None
+
 
 class PermutationActionWrapper(SchedulingActionWrapper[_Obs, Iterable[Int]]):
     """A wrapper that converts the action space to a permutation of the job IDs."""
@@ -167,6 +186,47 @@ class SingleActionWrapper(SchedulingActionWrapper[_Obs, Int]):
     def action(self, action: Int) -> ActionType:
         return ("execute", int(action))
 
+    @override
+    def action_masks(self) -> NDArray[Any] | None:
+        env: SchedulingEnv = self.get_wrapper_attr("core")
+
+        support = env.get_action_support()
+
+        mask = np.zeros(env.state.n_tasks, dtype=int)
+        mask[support] = 1
+
+        return mask
+
+
+class SingleAssignmentWrapper(SchedulingActionWrapper[_Obs, Iterable[Int]]):
+    """A wrapper for a single task, machine pair assignment per step."""
+
+    @override
+    def _get_action_space(self) -> Space[Iterable[Int]]:
+        env: SchedulingEnv = self.get_wrapper_attr("core")
+
+        n_tasks = env.observation.n_tasks or MAX_INT
+        n_machines = env.observation.n_machines or MAX_INT
+
+        return MultiDiscrete([n_tasks, n_machines])
+
+    @override
+    def action(self, action: Iterable[Int]) -> ActionType:
+        task_id, machine_id = action
+        return ("execute", int(task_id), int(machine_id))
+
+    @override
+    def action_masks(self) -> NDArray[Any] | None:
+        env: SchedulingEnv = self.get_wrapper_attr("core")
+
+        support = env.backend.get_action_mask(env.state)
+
+        mask = np.zeros((env.state.n_tasks, env.state.n_machines), dtype=int)
+        for machine_id, tasks in support.items():
+            mask[list(tasks), machine_id] = 1
+
+        return mask
+
 
 class SingleActionNoopWrapper(SchedulingActionWrapper[_Obs, Int]):
     """A wrapper for a single task execution per step, including noop."""
@@ -188,3 +248,15 @@ class SingleActionNoopWrapper(SchedulingActionWrapper[_Obs, Int]):
             return ("noop",)
 
         return ("execute", int(action))
+
+    @override
+    def action_masks(self) -> NDArray[Any] | None:
+        env: SchedulingEnv = self.get_wrapper_attr("core")
+
+        support = env.get_action_support()
+
+        mask = np.zeros(env.state.n_tasks + 1, dtype=int)
+        mask[-1] = 1  # The last action is always valid (noop)
+        mask[support] = 1
+
+        return mask

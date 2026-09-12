@@ -12,7 +12,7 @@ from cpscheduler.environment.mixins import EzPickle
 
 if TYPE_CHECKING:
     from cpscheduler.environment.backend.actions import Instruction
-    from cpscheduler.environment.constants import TaskID, Time
+    from cpscheduler.environment.constants import MachineID, TaskID, Time
     from cpscheduler.environment.state import ScheduleState
 
 
@@ -73,7 +73,25 @@ class ScheduleBackend(ABC, EzPickle):
     # if dispatch_instruction returns an execution instruction for task t,
     # then t must be in the eligible set.
     # FUTURE: Test this invariant explicitly.
-    def get_eligible_set(self, state: ScheduleState) -> list[TaskID]:
+    def get_action_mask(
+        self,
+        state: ScheduleState,
+    ) -> dict[MachineID, set[TaskID]]:
+        """Return admissible task-machine assignments.
+
+        The default implementation exposes all assignments feasible
+        under the current backend scheduling state.
+        """
+        eligible_set = self.get_eligible_tasks(state)
+
+        action_mask: dict[MachineID, set[TaskID]] = {}
+        for task_id in eligible_set:
+            for machine_id in state.get_machines(task_id):
+                action_mask.setdefault(machine_id, set()).add(task_id)
+
+        return action_mask
+
+    def get_eligible_tasks(self, state: ScheduleState) -> list[TaskID]:
         """Return the set of tasks that will be shown as available to the observer."""
         return state.get_unlocked_tasks()
 

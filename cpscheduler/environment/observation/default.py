@@ -183,7 +183,7 @@ class DefaultObservation(Observation[DefaultObsType]):
         eligible = self._eligible
         eligible[:] = [False] * state.n_tasks
 
-        for task_id in backend.get_eligible_set(state):
+        for task_id in backend.get_eligible_tasks(state):
             eligible[task_id] = True
 
     def __getitem__(self, key: str) -> Any:

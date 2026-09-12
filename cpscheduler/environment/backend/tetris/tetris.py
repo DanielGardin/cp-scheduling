@@ -49,7 +49,7 @@ class TetrisBackend(ScheduleBackend):
         return instruction
 
     @override
-    def get_eligible_set(self, state: ScheduleState) -> list[TaskID]:
+    def get_eligible_tasks(self, state: ScheduleState) -> list[TaskID]:
         return state.get_unlocked_tasks()
 
     def add_instruction(

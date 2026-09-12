@@ -100,7 +100,7 @@ class TrajectoryTracer(Tracer):
 
             self.tasks.append(task_id)
             self.machines.append(machine_id)
-            self.eligible.append(backend.get_eligible_set(state))
+            self.eligible.append(backend.get_eligible_tasks(state))
 
     def export(self) -> _TrajectoryExport:
         """Export the tracer's internal state to a serializable format."""
