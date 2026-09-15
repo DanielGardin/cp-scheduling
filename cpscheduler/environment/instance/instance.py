@@ -44,27 +44,6 @@ def _find_provider(features: list[Feature]) -> Feature | None:
     return provider
 
 
-def _load_data(
-    storage: dict[str, Any], features: dict[str, list[Feature]]
-) -> dict[str, int]:
-    symbol_values: dict[str, int] = {}
-
-    for feature, data in storage.items():
-        if feature not in features:
-            raise ValueError(
-                f"Data provided for feature '{feature}', but no such "
-                "feature is registered in the instance."
-            )
-
-        feat_list = features[feature]
-        for feat in feat_list:
-            feat.load_data(data)
-
-        merge_symbols(symbol_values, feat_list[0].solve_symbols())
-
-    return symbol_values
-
-
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
 class ProblemInstance(EzPickle):
     """Class representing a scheduling problem instance.
@@ -99,7 +78,8 @@ class ProblemInstance(EzPickle):
     _fingerprint: int
     original_instance: dict[str, Any]
 
-    features: dict[str, list[Feature]]
+    registered_features: dict[str, list[Feature]]
+    features: dict[str, Feature]  # Holds a single feature per name when loaded
 
     job_tasks: list[list[TaskID]]
     n_tasks: int
@@ -156,12 +136,13 @@ class ProblemInstance(EzPickle):
         )
 
         # Setting features without self.register(...)
-        self.features = {
+        self.registered_features = {
             "optional": [self._optional],
             "all_processing_times": [self._processing_times],
             "machine_mask": [self._machine_mask],
             "job": [self._job_ids],
         }
+        self.features = {}
 
         self.n_tasks = 0
         self.n_jobs = 0
@@ -186,7 +167,8 @@ class ProblemInstance(EzPickle):
         """Return all symbols in features."""
         symbols: set[str] = set()
 
-        for features in self.features.values():
+        # CHECK: Change this to features
+        for features in self.registered_features.values():
             for feature in features:
                 symbols |= feature.symbols
 
@@ -240,7 +222,7 @@ class ProblemInstance(EzPickle):
         """
         return {
             name: features[0].metadata
-            for name, features in self.features.items()
+            for name, features in self.registered_features.items()
             if _find_provider(features) is None
             and (not features[0].optional or show_optional)
         }
@@ -280,7 +262,7 @@ class ProblemInstance(EzPickle):
                 "directly using `get_processing_time`, and `has_processing_time`."
             )
 
-        self.features.setdefault(name, []).append(feature)
+        self.registered_features.setdefault(name, []).append(feature)
 
     def reset(self) -> None:
         """Reset instance-specific data for loading a new instance.
@@ -295,9 +277,11 @@ class ProblemInstance(EzPickle):
         self.n_machines = 0
         self.symbol_values.clear()
 
-        for features in self.features.values():
+        for features in self.registered_features.values():
             for feature in features:
                 feature.reset()
+
+        self.features.clear()
 
         # Remove stale data from internal features
         self._optional.empty()
@@ -331,16 +315,34 @@ class ProblemInstance(EzPickle):
             parameters that may be needed during instance initialization.
 
         """
-        storage: dict[str, Any] = {}
+        original_instance = self.original_instance
+        symbols_values = self.symbol_values
 
         for instance in instances:
-            for feature in instance:
-                data = deepcopy(instance[feature])
+            for feature_name in instance:
+                feat_data = instance[feature_name]
+                original_instance[feature_name] = feat_data
 
-                storage[feature] = data
-                self.original_instance[feature] = data
+                if feature_name not in self.registered_features:
+                    raise ValueError(
+                        f"Data provided for feature '{feature_name}', but no such "
+                        "feature is registered in the instance."
+                    )
 
-        symbols_values = _load_data(storage, self.features)
+                feat_list = self.registered_features[feature_name]
+                if self._debug and not feat_list:
+                    raise ValueError(
+                        f"Feature '{feature_name}' is registered, but has no "
+                        "associated Feature object."
+                    )
+
+                data = deepcopy(feat_data)
+                for feat in feat_list:
+                    feat.load_data(data)
+
+                feat = feat_list[0]
+                merge_symbols(symbols_values, feat.solve_symbols())
+                self.features[feature_name] = feat
 
         n_tasks = symbols_values.get("n_tasks", 0)
         n_jobs = symbols_values.get("n_jobs", 0)
@@ -393,48 +395,43 @@ class ProblemInstance(EzPickle):
         """Finalize the instance after loading, where all features are loaded."""
         symbol_values = self.symbol_values
 
-        for name, features in self.features.items():
+        for name, features in self.registered_features.items():
+            if name in self.features:
+                continue
+
             provider = _find_provider(features)
+            if provider is None:
+                raise ValueError(
+                    f"Feature '{name}' has no provider, but is required by the "
+                    "instance."
+                )
 
-            if provider is not None:
-                provider_symbols = provider.solve_symbols()
-                merge_symbols(symbol_values, provider_symbols)
+            provider_symbols = provider.solve_symbols()
+            merge_symbols(symbol_values, provider_symbols)
 
-                for feature in self.features[name]:
-                    if feature is provider:
-                        continue
+            for feature in features:
+                if feature is provider:
+                    continue
 
-                    feature.shared_data(provider)
+                feature.shared_data(provider)
+
+            self.features[name] = provider
 
         self._fingerprint = hash_anything(
             [
                 (name, features[0].compute_hash())
-                for name, features in self.features.items()
+                for name, features in self.registered_features.items()
             ]
         )
 
-    def has_feature(self, feat_name: str) -> bool:
-        """Check if a feature with the given name is registered in the instance."""
-        return feat_name in self.features
-
-    def get_feature(self, feat_name: str) -> Feature[Any]:
-        """Get the first registered feature with the given name.
-
-        Raises
-        ------
-        ValueError
-            If no feature with the given name is registered in the instance.
-        """
+    def get_feature_data(self, feat_name: str) -> Any:
+        """Get the data of a feature given its name."""
         if feat_name not in self.features:
             raise ValueError(
-                f"Feature '{feat_name}' is not registered in the instance."
+                f"Feature '{feat_name}' is not loaded in the instance."
             )
 
-        return self.features[feat_name][0]
-
-    def get(self, feat_name: str) -> Any:
-        """Get the value of a feature given its name."""
-        return self.get_feature(feat_name).value
+        return self.features[feat_name].value
 
     def get_machines(self, task_id: TaskID) -> list[MachineID]:
         """Get the list of eligible machines for a given task."""
@@ -471,7 +468,7 @@ class ProblemInstance(EzPickle):
 
     def __repr__(self) -> str:
         """Return a string representation of the instance, including its main features and dimensions."""
-        features = ", ".join(self.features.keys())
+        features = ", ".join(self.registered_features.keys())
 
         return (
             f"ProblemInstance("

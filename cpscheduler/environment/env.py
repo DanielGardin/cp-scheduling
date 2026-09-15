@@ -418,16 +418,17 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         problem_instance = self.instance
 
         problem_instance.initialize(instances, self.setup)
-        self.setup.initialize(problem_instance)
-        problem_instance.finalize()
 
         component: Component
         for component in [
+            self.setup,
             *self.setup_constraints,
             *self.constraints,
             self.objective,
         ]:
             component.initialize(problem_instance)
+
+        problem_instance.finalize()
 
         self.observation.initialize(problem_instance, self.backend)
 

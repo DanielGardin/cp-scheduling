@@ -117,7 +117,9 @@ class DefaultObservation(Observation[DefaultObsType]):
         feature_specs: dict[str, FeatureViewSpec[Any, Any]] = {}
 
         if self._all_features:
-            self._features = dict.fromkeys(instance.features.keys(), "default")
+            self._features = dict.fromkeys(
+                instance.registered_features.keys(), "default"
+            )
             self._features["eligible"] = "default"
 
         if "eligible" in self._features:
@@ -132,14 +134,14 @@ class DefaultObservation(Observation[DefaultObsType]):
                 shape=("n_tasks",),
             )
 
-        for feature_name, features in instance.features.items():
+        for feature_name, features in instance.registered_features.items():
             if feature_name not in self._features:
                 continue
 
             view = self._features[feature_name]
 
             if isinstance(view, FeatureViewSpec):
-                feature_specs[feature_name] = view
+                spec = view
 
             else:
                 possible_views = features[0].possible_views()
@@ -149,7 +151,9 @@ class DefaultObservation(Observation[DefaultObsType]):
                         f"Feature '{feature_name}' does not have a view named '{view}'."
                     )
 
-                feature_specs[feature_name] = possible_views[view]
+                spec = possible_views[view]
+
+            feature_specs[feature_name] = spec
 
         self.feature_specs = feature_specs
         return DictSpec(feature_specs)
@@ -166,7 +170,7 @@ class DefaultObservation(Observation[DefaultObsType]):
 
         obs["eligible"] = self._eligible
 
-        for feat_name, features in instance.features.items():
+        for feat_name, features in instance.registered_features.items():
             if feat_name not in self.feature_specs:
                 continue
 
