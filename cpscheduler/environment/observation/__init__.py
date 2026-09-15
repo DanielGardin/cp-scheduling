@@ -5,7 +5,12 @@ state and providing it in a structured format that can be used by learning algor
 or other components of the system.
 """
 
-__all__ = ["DefaultObservation", "NullObservation", "Observation"]
+__all__ = [
+    "DefaultObservation",
+    "GymSafeObservation",
+    "NullObservation",
+    "Observation",
+]
 
 from .base import NullObservation, Observation
-from .default import DefaultObservation
+from .default import DefaultObservation, GymSafeObservation

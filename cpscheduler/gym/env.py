@@ -14,6 +14,7 @@ from typing_extensions import TypeVar, override
 
 from cpscheduler.environment import (
     Constraint,
+    GymSafeObservation,
     Objective,
     ScheduleSetup,
     SchedulingEnv,
@@ -153,6 +154,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
                 machine_setup=machine_setup,
                 constraints=constraints,
                 objective=objective,
+                observation=GymSafeObservation(),
                 backend=backend,
                 reward=reward,
                 instance=instance,

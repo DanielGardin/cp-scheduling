@@ -14,7 +14,9 @@ from cpscheduler.environment.specs import (
     DenseViewSpec,
     DictSpec,
     FeatureViewSpec,
+    FreeViewSpec,
     ObservationSpec,
+    StackSpec,
 )
 from cpscheduler.environment.state import ScheduleState
 
@@ -197,3 +199,109 @@ class DefaultObservation(Observation[DefaultObsType]):
     @override
     def serialize(self) -> DefaultObsType:
         return self._obs
+
+
+UNSAFE_SPECS = (FreeViewSpec, StackSpec)
+
+
+def _select_safe_view(
+    views: Mapping[str, FeatureViewSpec[Any, Any]],
+) -> str | None:
+    """Select a safe view from the given mapping of views.
+
+    This function filters out incompatible views and selects a safe view
+    based on the following priority:
+    1. Dense views (fixed shape and type)
+    2. Views with a fixed shape (but not necessarily dense)
+    3. None (if no safe view is found)
+    """
+    safe_views = [
+        (key, spec)
+        for key, spec in views.items()
+        if not isinstance(spec, UNSAFE_SPECS)
+    ]
+    if not safe_views:
+        return None
+
+    for key, spec in safe_views:
+        if isinstance(spec, DenseViewSpec):
+            return key
+
+    for key, spec in safe_views:
+        if spec.shape is not None:
+            return key
+
+    return None
+
+
+class GymSafeObservation(DefaultObservation):
+    """Observation that keeps only Gymnasium-compatible views.
+
+    Some feature views cannot be converted into a Gymnasium `Space`.
+    This observation resolves those features to a safe alternative when one is
+    available.
+
+    When the features views are given via `features` argument, the observation
+    will raise an error if any of the selected views is not compatible with Gymnasium.
+    """
+
+    @override
+    def compile(
+        self, instance: ProblemInstance, backend: ScheduleBackend
+    ) -> ObservationSpec:
+        feature_specs: dict[str, FeatureViewSpec[Any, Any]] = {}
+
+        if self._all_features:
+            self._features = dict.fromkeys(
+                instance.registered_features.keys(), "auto"
+            )
+            self._features["eligible"] = "default"
+
+        if "eligible" in self._features:
+            if self._features["eligible"] != "default":
+                raise ValueError(
+                    "The 'eligible' feature does not have any other view than "
+                    "the default."
+                )
+
+            feature_specs["eligible"] = DenseViewSpec(
+                value_type="binary",
+                shape=("n_tasks",),
+            )
+
+        for feature_name, features in instance.registered_features.items():
+            if feature_name not in self._features:
+                continue
+
+            view = self._features[feature_name]
+
+            if isinstance(view, FeatureViewSpec):
+                spec = view
+
+            elif view == "auto":
+                possible_views = features[0].possible_views()
+                safe_view = _select_safe_view(possible_views)
+                if safe_view is None:
+                    continue
+
+                spec = possible_views[safe_view]
+
+            else:
+                possible_views = features[0].possible_views()
+                if view not in possible_views:
+                    raise ValueError(
+                        f"Feature '{feature_name}' does not have a view named '{view}'."
+                    )
+
+                spec = possible_views[view]
+
+            if isinstance(spec, UNSAFE_SPECS):
+                raise ValueError(
+                    f"Feature '{feature_name}''s view {view}"
+                    "is not compatible with Gymnasium."
+                )
+
+            feature_specs[feature_name] = spec
+
+        self.feature_specs = feature_specs
+        return DictSpec(feature_specs)

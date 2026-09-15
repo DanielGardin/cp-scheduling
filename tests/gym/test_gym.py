@@ -21,6 +21,23 @@ def test_scheduling_env_gym_wraps_core_env() -> None:
     assert info == core_info
 
 
+def test_gym_wrapper_uses_gym_safe_default_observation() -> None:
+    pytest.importorskip("gymnasium")
+
+    from cpscheduler.environment import JobShopSetup
+    from cpscheduler.gym import SchedulingEnvGym
+    from cpscheduler.instances.formats import read_standard_jobshop_instance
+
+    instance, _ = read_standard_jobshop_instance("instances/jobshop/ta01.txt")
+    env = SchedulingEnvGym(JobShopSetup(), instance=instance)
+
+    obs, info = env.reset()
+
+    assert "eligible" in obs
+    assert env.observation_space.contains(obs)
+    assert info is not None
+
+
 def test_observation_invariants_and_reset_step_consistency() -> None:
     pytest.importorskip("gymnasium")
 
