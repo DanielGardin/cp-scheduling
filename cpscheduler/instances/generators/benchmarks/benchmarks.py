@@ -16,6 +16,12 @@ class Benchmark:
 
     _registry: ClassVar[dict[str, SamplerFactory]] = {}
 
+    def __init__(self) -> None:
+        raise ValueError(
+            "Cannot instantiate a Benchmark object. See `create` or `apply` "
+            "class methods for usage."
+        )
+
     @classmethod
     def register(cls, name: str) -> Callable[[SamplerFactory], SamplerFactory]:
         r"""Register a new benchmark instance generator sampler.

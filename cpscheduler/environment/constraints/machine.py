@@ -17,6 +17,12 @@ from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.utils.general import convert_to_list, extend_list
 
 
+# FUTURE: This implementation inherently forces the append semantics in the
+# backend, not supporting insertion is an artifact of this implementation, not
+# a backend-specific behavior.
+# My proposal is to change the behavior of this function to allow gap insertion
+# by default, and document that append mechanism is enabled by the
+# on_time_update handler, instead of being on by default.
 class MachineConstraint(Constraint):
     """General Parallel machine constraint.
 

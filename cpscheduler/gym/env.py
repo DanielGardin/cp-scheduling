@@ -198,7 +198,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
 
     # FUTURE: There is an issue with this method, it does not recognize
     # SchedulingEnvGym as type[SchedulingEnvGym[_T]].
-    # As a result, verytime from_env is called, it returns a
+    # As a result, everytime from_env is called, it returns a
     # SchedulingEnvGym[DefaultObsType] instead of the correct type.
     @classmethod
     def from_env(
@@ -406,8 +406,8 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
 
         return None
 
+    @override
     def get_wrapper_attr(self, name: str) -> Any:
-        """Get an attribute from core environment."""
         if hasattr(self, name):
             return getattr(self, name)
 
@@ -415,3 +415,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
             return getattr(self._core, name)
 
         raise AttributeError(f"SchedulingEnv has no attribute {name!r}")
+
+    @override
+    def has_wrapper_attr(self, name: str) -> bool:
+        return hasattr(self, name) or hasattr(self._core, name)

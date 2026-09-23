@@ -56,7 +56,6 @@ T_REMAINING_TASKS = TrailField.REMAINING_TASKS
 T_INFEASIBLE = TrailField.INFEASIBLE
 
 
-# FUTURE: Study implementing backtracking functionality via trails
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
 class ScheduleState(EzPickle):
     """Core state kernel for scheduling problems.

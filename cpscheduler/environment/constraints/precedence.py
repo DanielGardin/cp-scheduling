@@ -102,12 +102,13 @@ class PrecedenceConstraint(Constraint):
             )
 
         parent, child = TaskID(parent_id), TaskID(child_id)
+        parents = self.parents.value
 
-        children = self.parents.value[child]
+        children = parents[child]
         children.remove(parent)
 
         if not children:
-            del self.parents.value[child]
+            del parents[child]
 
     def add_chain(self, chain: Sequence[Int]) -> None:
         """Add a chain of precedence relationships between a sequence of tasks."""
@@ -211,6 +212,22 @@ class PrecedenceConstraint(Constraint):
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:
         self.on_start_ub(task_id, machine_id, state)
+
+    @override
+    def on_absence(self, task_id: TaskID, state: ScheduleState) -> None:
+        children = self.children
+
+        if task_id in children:
+            for child_id in children[task_id]:
+                state.forbid_task(child_id)
+
+    @override
+    def on_presence(self, task_id: TaskID, state: ScheduleState) -> None:
+        parents = self.parents.value
+
+        if task_id in parents:
+            for parent_id in parents[task_id]:
+                state.require_task(parent_id)
 
     @override
     def get_entry(self) -> str:

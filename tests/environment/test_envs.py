@@ -40,7 +40,6 @@ def test_copy() -> None:
     env_copy = deepcopy(env)
 
     assert env is not env_copy
-    # assert EzPickle.__eq__(env, env_copy)
     assert env.state == env_copy.state
 
     env.step(("execute", 0))

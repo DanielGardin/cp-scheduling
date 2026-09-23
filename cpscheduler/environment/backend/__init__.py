@@ -6,6 +6,7 @@ __all__ = [
     "Instruction",
     "ScheduleBackend",
     "SingleAction",
+    "StepBackend",
     "TetrisBackend",
     "is_single_action",
     "parse_instruction",
@@ -20,4 +21,5 @@ from .actions import (
 )
 from .backend import ScheduleBackend
 from .des import DESBackend
+from .step import StepBackend
 from .tetris import TetrisBackend

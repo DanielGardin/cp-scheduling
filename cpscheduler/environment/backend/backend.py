@@ -48,7 +48,7 @@ class ScheduleBackend(ABC, EzPickle):
         backend_cls = backends.get(backend)
 
         if backend_cls is None:
-            all_backends = ",".join(backends)
+            all_backends = ", ".join(backends)
 
             raise ValueError(
                 f"No backend {backend} registered, choose one of the following: "

@@ -12,10 +12,11 @@ ensuring reproducibility and composability.
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, final
 
 from typing_extensions import override
+
+from cpscheduler.environment.mixins import EzPickle
 
 if TYPE_CHECKING:
     from collections.abc import Callable, MutableSequence, Sequence
@@ -28,7 +29,7 @@ _T_co = TypeVar("_T_co", covariant=True)
 _U = TypeVar("_U")
 
 
-class Sampler(ABC, Generic[_T_co]):
+class Sampler(EzPickle, Generic[_T_co]):
     """Base stochastic sampling interface.
 
     A Sampler is any object capable of generating values using a provided
@@ -67,7 +68,6 @@ class Sampler(ABC, Generic[_T_co]):
         """
         return ()
 
-    @abstractmethod
     def sample(self, rng: Random, *args: Any, **context: Any) -> _T_co:
         """Generate a sample.
 
@@ -90,7 +90,9 @@ class Sampler(ABC, Generic[_T_co]):
             - dependency feature names (described in the `dependencies` property)
 
         """
-        raise NotImplementedError
+        raise NotImplementedError(
+            f"{type(self).__name__} does not implement `sample`."
+        )
 
     def __call__(self, rng: Random, *args: Any, **context: Any) -> _T_co:
         """Callable shorthand for sample()."""
@@ -298,7 +300,7 @@ _M = TypeVar("_M", bound=NumericType)
 _O = TypeVar("_O", bound=NumericType)
 
 
-class Distribution(Sampler[_N_co], ABC):
+class Distribution(Sampler[_N_co]):
     """Base class for scalar numeric probability distributions.
 
     Distributions are intended for iid value generation:
@@ -393,7 +395,7 @@ class MappedDistribution(Distribution[_O]):
 _MS = TypeVar("_MS", bound="MutableSequence[Any]")
 
 
-class Process(Sampler[_T_co], ABC):
+class Process(Sampler[_T_co]):
     """Base class for structured stochastic processes.
 
     Processes generate correlated or structured outputs where samples
