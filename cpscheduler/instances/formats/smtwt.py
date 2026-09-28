@@ -12,6 +12,8 @@ where n is the number of jobs.
 from pathlib import Path
 from typing import Any
 
+from cpscheduler.instances.formats.common import read_metadata
+
 InstanceReturnType = tuple[dict[str, list[Any]], dict[str, Any]]
 
 
@@ -62,7 +64,8 @@ def read_smtwt_instance(
             instance["weight"].append(weight)
             instance["due_date"].append(due_date)
 
-        metadata = {"n_jobs": n_jobs}
+        metadata = read_metadata(f)
+        metadata["n_jobs"] = n_jobs
 
     return instance, metadata
 

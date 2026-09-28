@@ -12,6 +12,8 @@ where n is the number of jobs and m is the number of machines.
 from pathlib import Path
 from typing import Any
 
+from cpscheduler.instances.formats.common import read_metadata
+
 InstanceReturnType = tuple[dict[str, list[Any]], dict[str, Any]]
 
 
@@ -70,10 +72,9 @@ def read_dacolteppan_jobshop_instance(path: str | Path) -> InstanceReturnType:
             instance["machine"].extend(values[: n_operations * 2 : 2])
             instance["processing_time"].extend(values[1 : n_operations * 2 : 2])
 
-        metadata = {
-            "n_jobs": n_jobs,
-            "n_machines": n_machines,
-        }
+        metadata = read_metadata(f)
+        metadata["n_jobs"] = n_jobs
+        metadata["n_machines"] = n_machines
 
     return instance, metadata
 

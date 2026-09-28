@@ -13,6 +13,8 @@ where n is the number of tasks and r is the number of resources.
 from pathlib import Path
 from typing import Any
 
+from cpscheduler.instances.formats.common import read_metadata
+
 InstanceReturnType = tuple[dict[str, list[Any]], dict[str, Any], dict[str, Any]]
 
 
@@ -94,10 +96,9 @@ def read_rcpsp_instance(
 
         global_instance["precedence"] = precedence
 
-        metadata = {
-            "n_tasks": n_tasks,
-            "n_resources": n_resources,
-        }
+        metadata = read_metadata(f)
+        metadata["n_tasks"] = n_tasks
+        metadata["n_resources"] = n_resources
 
         return instance, global_instance, metadata
 
