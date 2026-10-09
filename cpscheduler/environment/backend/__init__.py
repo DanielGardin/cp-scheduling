@@ -3,6 +3,7 @@
 __all__ = [
     "ActionType",
     "DESBackend",
+    "GTTetrisBackend",
     "Instruction",
     "ScheduleBackend",
     "SingleAction",
@@ -22,4 +23,4 @@ from .actions import (
 from .backend import ScheduleBackend
 from .des import DESBackend
 from .step import StepBackend
-from .tetris import TetrisBackend
+from .tetris import GTTetrisBackend, TetrisBackend

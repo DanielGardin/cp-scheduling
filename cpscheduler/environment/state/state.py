@@ -80,6 +80,9 @@ class ScheduleState(EzPickle):
     domain_event_queue: DomainEventQueue
     trail: Trail
 
+    _generation: int
+    _generation_trail: list[int]
+
     _debug: bool
 
     def __init__(self, instance: ProblemInstance) -> None:
@@ -106,11 +109,19 @@ class ScheduleState(EzPickle):
         self.domain_event_queue = DomainEventQueue()
         self.trail = Trail()
 
+        self._generation = 0
+        self._generation_trail = []
+
     # Properties
     @property
     def debug(self) -> bool:
         """Return whether debug mode is enabled for the state."""
         return self._debug
+
+    @property
+    def generation(self) -> int:
+        """Return how many fixed-point iterations have run so far."""
+        return self._generation
 
     # Flow control methods
     def reset(self) -> None:
@@ -122,6 +133,9 @@ class ScheduleState(EzPickle):
         self.domain_event_queue.clear()
         self.trail.clear()
 
+        self._generation = 0
+        self._generation_trail.clear()
+
     def is_terminal(self) -> bool:
         """Return True if the problem is infeasible or all tasks are assigned."""
         return self.infeasible or self.remaining_tasks == 0
@@ -129,6 +143,7 @@ class ScheduleState(EzPickle):
     def finish_propagation(self) -> None:
         """Flush the current event queue after a fixed-point iteration."""
         self.domain_event_queue.clear()
+        self._generation += 1
 
     # Problem Instance API methods
 
@@ -960,6 +975,7 @@ class ScheduleState(EzPickle):
         if self.domain_event_queue:
             raise RuntimeError("Cannot create a checkpoint mid propagation.")
 
+        self._generation_trail.append(self._generation)
         return self.trail.mark()
 
     def backtrack(self, mark: int) -> set[TaskID]:
@@ -1046,12 +1062,15 @@ class ScheduleState(EzPickle):
             elif field == T_INFEASIBLE:
                 self.infeasible = bool(old_value)
 
+        self._generation = self._generation_trail[mark]
+
         del trail.marks[mark:]
         del trail.dep_marks[mark:]
         del fields[field_mark:]
         del tasks[field_mark:]
         del machines[field_mark:]
         del values[field_mark:]
+        del self._generation_trail[mark:]
 
         for task_id in changed_tasks:
             domains.restore_task(task_id)
