@@ -875,7 +875,9 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
         return mark
 
-    def backtrack(self, mark: int = -1) -> tuple[ObsT_co, InfoType]:
+    def backtrack(
+        self, mark: int = -1, drop: bool = True
+    ) -> tuple[ObsT_co, InfoType]:
         """Restore a checkpoint of the environment state given a checkpoint mark.
 
         You must have called `checkpoint` at least once before backtracking.
@@ -888,6 +890,8 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             The checkpoint mark to backtrack to. Defaults to the last
             checkpoint.
 
+        drop: bool, optional
+            Whether to drop the mark after backtracking. Defaults to True.
 
         Returns
         -------
@@ -916,5 +920,8 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
         observation.backtrack(mark, changed_tasks, state)
         observation.update(state, backend)
+
+        if not drop:
+            self.checkpoint()
 
         return observation, self.get_info()

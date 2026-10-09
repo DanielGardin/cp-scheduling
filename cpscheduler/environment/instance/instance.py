@@ -13,6 +13,7 @@ from mypy_extensions import mypyc_attr
 
 from cpscheduler.environment.constants import (
     MAX_TIME,
+    MIN_TIME,
     JobID,
     MachineID,
     TaskID,
@@ -211,6 +212,17 @@ class ProblemInstance(EzPickle):
         Gathered from the `job` feature, has shape (n_tasks,).
         """
         return self._job_ids.value
+
+    @property
+    def max_processing_time(self) -> Time:
+        """Return the maximum processing time in the instance."""
+        max_p_time = MIN_TIME
+        for p_times in self._processing_times.value:
+            for p_time in p_times:
+                if max_p_time < p_time < MAX_TIME:
+                    max_p_time = p_time
+
+        return max_p_time
 
     def required_features(
         self, show_optional: bool

@@ -9,6 +9,7 @@ from typing_extensions import Self, override
 from cpscheduler.environment.backend.des.base import SimulationEvent
 from cpscheduler.environment.constants import (
     GLOBAL_MACHINE_ID,
+    MAX_TIME,
     MachineID,
     TaskID,
     Time,
@@ -26,7 +27,7 @@ def select_machine(
     machines = state.get_machines(task_id)
 
     for machine in sorted(machines):
-        if state.can_start(time, task_id, machine):
+        if state.can_start(task_id, time, machine):
             return machine
 
     raise ValueError(f"No available machines for task {task_id}.")
@@ -191,7 +192,7 @@ class CheckpointEvent(SimulationEvent):
 
     @override
     def process(self, state: ScheduleState, backend: DESBackend) -> None:
-        return state.tight_global_time(backend.time)
+        state.tight_global_time(backend.time)
 
 
 class HaltEvent(SimulationEvent):
@@ -212,6 +213,9 @@ class NOOPEvent(SimulationEvent):
     @override
     def process(self, state: ScheduleState, backend: DESBackend) -> None:
         next_time = state.get_next_decision_point(backend.time)
+
+        if next_time == MAX_TIME:
+            return
 
         backend.advance_to(next_time)
 

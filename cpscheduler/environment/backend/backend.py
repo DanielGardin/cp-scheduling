@@ -66,7 +66,9 @@ class ScheduleBackend(ABC, EzPickle):
         """Return whether the backend has scheduled instructions or not."""
 
     @abstractmethod
-    def dispatch_instruction(self, state: ScheduleState) -> Instruction | None:
+    def dispatch_instruction(
+        self, state: ScheduleState
+    ) -> Instruction[Any] | None:
         """Return the next instruction to be processed in the environment."""
 
     # There is a implicit invariant hidden here, at any given time,
