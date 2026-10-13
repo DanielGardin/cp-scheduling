@@ -91,6 +91,10 @@ class ExecuteInstruction(Instruction[TetrisBackend]):
         return select_machine(state, self.task_id)
 
     @override
+    def is_ready(self, state: ScheduleState, backend: TetrisBackend) -> bool:
+        return not state.is_locked(self.task_id)
+
+    @override
     def process(
         self,
         state: ScheduleState,

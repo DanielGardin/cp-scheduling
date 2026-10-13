@@ -46,6 +46,11 @@ class TetrisBackend(ScheduleBackend):
 
         _, _, instruction = heappop(self._queue)
 
+        if not instruction.is_ready(state, self):
+            raise RuntimeError(
+                f"Cannot process unready instruction {instruction}."
+            )
+
         return instruction
 
     @override

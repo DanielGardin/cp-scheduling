@@ -10,7 +10,7 @@ from cpscheduler.environment.mixins import EzPickle
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from cpscheduler.environment.backend.des.des import DESBackend
+    from cpscheduler.environment.backend.des.des import DESBackend  # noqa: F401
     from cpscheduler.environment.constants import Time
     from cpscheduler.environment.state import ScheduleState
 
@@ -51,10 +51,6 @@ class SimulationEvent(Instruction["DESBackend"]):
 
         If None, the event is assumed to be always processable in the current time.
         """
-
-    def is_ready(self, state: ScheduleState, backend: DESBackend) -> bool:
-        """Check if the event is ready to be processed, given the current state."""
-        return True
 
 
 # B-events (rank=-1) are processed before any C-event (rank>=0)

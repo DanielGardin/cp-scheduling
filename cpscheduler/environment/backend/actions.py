@@ -45,6 +45,10 @@ class Instruction(EzPickle, Generic[B_contra]):
         """Return the resolved instruction. Defaults to self."""
         return self
 
+    def is_ready(self, state: ScheduleState, backend: B_contra) -> bool:
+        """Check if the event is ready to be processed, given the current state."""
+        return True
+
     def process(self, state: ScheduleState, backend: B_contra) -> None:
         """Process the instruction, modifying the schedule state accordingly."""
 

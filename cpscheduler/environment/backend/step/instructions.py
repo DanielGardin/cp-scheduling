@@ -79,6 +79,10 @@ class ExecuteInstruction(Instruction[StepBackend]):
         return select_machine(state, self.task_id, time)
 
     @override
+    def is_ready(self, state: ScheduleState, backend: StepBackend) -> bool:
+        return state.can_start(self.task_id, backend.time, self.machine_id)
+
+    @override
     def process(self, state: ScheduleState, backend: StepBackend) -> None:
         time = backend.time
         machine_id = self.resolve_machine(state, time)

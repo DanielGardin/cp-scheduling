@@ -53,6 +53,12 @@ class StepBackend(ScheduleBackend):
 
             if time == self.time:
                 heappop(self._queue)
+
+                if not instruction.is_ready(state, self):
+                    raise RuntimeError(
+                        f"Cannot process unready instruction {instruction}."
+                    )
+
                 return instruction
 
         if state.is_terminal():

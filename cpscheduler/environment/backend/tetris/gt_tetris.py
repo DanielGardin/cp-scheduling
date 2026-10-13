@@ -120,12 +120,20 @@ class GTTetrisBackend(TetrisBackend):
 
         _, _, instruction = heappop(self._queue)
 
+        if not instruction.is_ready(state, self):
+            raise RuntimeError(
+                f"Cannot process unready instruction {instruction}."
+            )
+
         semantic = instruction.semantic(state, self)
         if semantic and semantic["type"] == "execution":
             pair: tuple[int, int] = (semantic["task"], semantic["machine"])
 
             if pair not in self._compute_conflict_set(state)[0]:
-                return None
+                raise RuntimeError(
+                    f"Cannot execute task {pair[0]} on machine {pair[1]} because "
+                    "it does not belong to the current conflict set."
+                )
 
         return instruction
 
