@@ -47,6 +47,12 @@ class VarField(Enum):
     GLOBAL_TIME = 9
     """All remaining tasks must execute after a global time."""
 
+    LOCK_TASK = 10
+    """A task has been locked due to a dependency."""
+
+    UNLOCK_TASK = 11
+    """All dependencies have been resolved."""
+
 
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=False, acyclic=True)
 class DomainEventQueue(EzPickle):

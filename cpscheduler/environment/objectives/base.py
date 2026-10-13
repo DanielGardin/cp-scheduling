@@ -121,6 +121,12 @@ class Objective(Component):
     def on_time_update(self, time: Time, state: ScheduleState) -> None:
         """Handle the event of the current time being updated."""
 
+    def on_task_lock(self, task_id: TaskID, state: ScheduleState) -> None:
+        """Handle the event of a task being locked."""
+
+    def on_task_unlock(self, task_id: TaskID, state: ScheduleState) -> None:
+        """Handle the event of a task being unlocked."""
+
     def checkpoint(self, mark: int) -> None:
         """Checkpoints the current state for backtracking."""
 

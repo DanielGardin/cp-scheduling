@@ -43,6 +43,8 @@ ABSENCE = VarField.ABSENCE
 MACHINE_INFEASIBLE = VarField.MACHINE_INFEASIBLE
 STATE_INFEASIBLE = VarField.STATE_INFEASIBLE
 GLOBAL_TIME = VarField.GLOBAL_TIME
+LOCK_TASK = VarField.LOCK_TASK
+UNLOCK_TASK = VarField.UNLOCK_TASK
 
 T_START_LB = TrailField.START_LB
 T_START_UB = TrailField.START_UB
@@ -344,6 +346,8 @@ class ScheduleState(EzPickle):
 
             deps.add(name)
 
+            self.domain_event_queue.add_event(task_id, LOCK_TASK)
+
     def resolve_dependency(self, task_id: TaskID, name: str) -> None:
         """Remove a named dependency from a task; add to unlocked if all resolved."""
         deps = self.domains.dependencies[task_id]
@@ -352,6 +356,9 @@ class ScheduleState(EzPickle):
                 self.trail.record_dependency(task_id, name, False)
 
             deps.discard(name)
+
+            if not deps:
+                self.domain_event_queue.add_event(task_id, UNLOCK_TASK)
 
     ## Event-emitting methods
     def _restrict_presence(self, task_id: TaskID, mask: Presence) -> None:

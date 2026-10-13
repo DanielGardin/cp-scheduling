@@ -169,6 +169,12 @@ class Observation(EzPickle, Generic[Serialized_Obs]):
     def on_time_update(self, time: Time, state: ScheduleState) -> None:
         """Handle the observation change on time update."""
 
+    def on_task_lock(self, task_id: TaskID, state: ScheduleState) -> None:
+        """Handle the event of a task being locked."""
+
+    def on_task_unlock(self, task_id: TaskID, state: ScheduleState) -> None:
+        """Handle the event of a task being unlocked."""
+
     def update(self, state: ScheduleState, backend: ScheduleBackend) -> None:
         """Update the observation from the current stable scheduling state.
 

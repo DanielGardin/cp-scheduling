@@ -68,6 +68,8 @@ ABSENCE = VarField.ABSENCE
 MACHINE_INFEASIBLE = VarField.MACHINE_INFEASIBLE
 STATE_INFEASIBLE = VarField.STATE_INFEASIBLE
 GLOBAL_TIME = VarField.GLOBAL_TIME
+LOCK_TASK = VarField.LOCK_TASK
+UNLOCK_TASK = VarField.UNLOCK_TASK
 
 
 def _join_info(info: InfoType, key: str, new_item: InfoType | Any) -> None:
@@ -606,6 +608,18 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
                 idx += 1
                 break
 
+            elif field == LOCK_TASK:
+                for constraint in constraints:
+                    constraint.on_task_lock(task_id, state)
+                objective.on_task_lock(task_id, state)
+                observation.on_task_lock(task_id, state)
+
+            elif field == UNLOCK_TASK:
+                for constraint in constraints:
+                    constraint.on_task_unlock(task_id, state)
+                objective.on_task_unlock(task_id, state)
+                observation.on_task_unlock(task_id, state)
+
             idx += 1
 
         self.event_count += idx
@@ -680,6 +694,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
         state = self.state
         backend = self.backend
+        observation = self.observation
 
         backend.reset()
         state.reset()
@@ -691,6 +706,8 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         for component in [self.setup, *self._all_constraints, self.objective]:
             component.reset(state)
 
+        observation.reset(state, backend)
+
         self.event_count = 0
         self.propagate()
 
@@ -700,9 +717,6 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
                 "contradictory constraints included in your schedule problem."
             )
 
-        observation = self.observation
-
-        observation.reset(state, backend)
         observation.update(state, backend)
         self.reward.reset(state, self.objective)
 
