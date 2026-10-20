@@ -63,7 +63,7 @@ class PotentialRewardStrategy(RewardStrategy):
         reward = self._prev_potential - self.gamma * current_potential
 
         self._prev_potential = current_potential
-        return -reward if objective.minimize else reward
+        return reward if objective.minimize else -reward
 
 
 class LBPotentialRewardStrategy(PotentialRewardStrategy):

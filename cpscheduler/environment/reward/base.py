@@ -1,5 +1,7 @@
 """Base class for reward functions."""
 
+from collections.abc import Callable
+
 from mypy_extensions import mypyc_attr
 from typing_extensions import override
 
@@ -29,5 +31,20 @@ class SparseRewardStrategy(RewardStrategy):
     @override
     def compute(self, state: ScheduleState, objective: Objective) -> float:
         reward = objective.value if state.is_terminal() else 0.0
+
+        return -reward if objective.minimize else reward
+
+
+class SparseCustomReward(RewardStrategy):
+    """Reward strategy that returns a function of the objective value in the terminal state."""
+
+    fn: Callable[[float], float]
+
+    def __init__(self, fn: Callable[[float], float]) -> None:
+        self.fn = fn
+
+    @override
+    def compute(self, state: ScheduleState, objective: Objective) -> float:
+        reward = self.fn(objective.value) if state.is_terminal() else 0.0
 
         return -reward if objective.minimize else reward
