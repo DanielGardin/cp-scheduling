@@ -15,6 +15,8 @@ from cpscheduler.environment.constants import (
 )
 from cpscheduler.environment.state import ScheduleState
 
+STALE_GEN = -1
+
 
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
 class GTTetrisBackend(TetrisBackend):
@@ -42,7 +44,7 @@ class GTTetrisBackend(TetrisBackend):
         super().reset()
         self._cached_conflict_set = set()
         self._cached_critical_machine = GLOBAL_MACHINE_ID
-        self._cached_generation = -1
+        self._cached_generation = STALE_GEN
 
     def _compute_conflict_set(
         self, state: ScheduleState
@@ -84,6 +86,15 @@ class GTTetrisBackend(TetrisBackend):
                 if state.get_start_lb(task_id, c_machine) < best_completion
             }
         )
+
+        # The only scenario where the conflict set may be empty, but there are
+        # unlocked tasks is when some of them has p_j = 0.
+        if not conflict_set and c_machine != GLOBAL_MACHINE_ID:
+            conflict_set = {
+                (task_id, c_machine)
+                for task_id in machine_tasks[c_machine]
+                if state.get_remaining_time(task_id, c_machine) == 0
+            }
 
         self._cached_conflict_set = conflict_set
         self._cached_critical_machine = c_machine
@@ -142,4 +153,4 @@ class GTTetrisBackend(TetrisBackend):
         self, mark: int, changed_tasks: set[TaskID], state: ScheduleState
     ) -> None:
         super().backtrack(mark, changed_tasks, state)
-        self._cached_generation = state.generation
+        self._cached_generation = STALE_GEN

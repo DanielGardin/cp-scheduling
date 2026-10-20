@@ -9,7 +9,7 @@ the gymnasium infrastructure and semantics without friction.
 from collections.abc import Iterable, Mapping
 from typing import Any, cast, overload
 
-from gymnasium import Env, Space
+from gymnasium import Env
 from typing_extensions import TypeVar, override
 
 from cpscheduler.environment import (
@@ -147,54 +147,22 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
             Renderer instance or mode string. Defaults to a no-op renderer.
 
         """
-        self.action_space = ActionSpace
+        env = SchedulingEnv(
+            machine_setup=machine_setup,
+            constraints=constraints,
+            objective=objective,
+            observation=GymSafeObservation()
+            if observation is None
+            else observation,
+            backend=backend,
+            reward=reward,
+            instance=instance,
+            metrics=metrics,
+            tracers=tracers,
+            render_mode=render_mode,
+        )
 
-        if observation is None:
-            env = SchedulingEnv(
-                machine_setup=machine_setup,
-                constraints=constraints,
-                objective=objective,
-                observation=GymSafeObservation(),
-                backend=backend,
-                reward=reward,
-                instance=instance,
-                metrics=metrics,
-                tracers=tracers,
-                render_mode=render_mode,
-            )
-
-            self._core = cast("SchedulingEnv[Observation[ObsType]]", env)
-
-        else:
-            self._core = SchedulingEnv(
-                machine_setup=machine_setup,
-                constraints=constraints,
-                objective=objective,
-                observation=observation,
-                backend=backend,
-                reward=reward,
-                instance=instance,
-                metrics=metrics,
-                tracers=tracers,
-                render_mode=render_mode,
-            )
-
-        self._current_fingerprint = self.fingerprint
-        self.observation_space = self._get_observation_space()
-        self.metadata = {
-            "render_modes": RENDER_MODES,
-            "render_fps": 50,
-        }
-
-    def _get_observation_space(self) -> Space[Any]:
-        env = self._core
-        symbols = env.observation.symbols
-
-        for symbol in env.instance.symbols:
-            if symbol not in symbols:
-                symbols[symbol] = 0
-
-        return to_gym_space(env.observation_spec, "observation", symbols)
+        self._initialize_env(cast("SchedulingEnv[Observation[ObsType]]", env))
 
     # FUTURE: There is an issue with this method, it does not recognize
     # SchedulingEnvGym as type[SchedulingEnvGym[_T]].
@@ -206,18 +174,35 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
     ) -> "SchedulingEnvGym[_T]":
         """Create a `SchedulingEnvGym` instance from an existing `SchedulingEnv`."""
         self = cls.__new__(cls)
+        self._initialize_env(env)
 
-        self.action_space = ActionSpace
+        return self
+
+    def _initialize_env(self, env: SchedulingEnv[Observation[ObsType]]) -> None:
         self._core = env
 
-        self._current_fingerprint = self.fingerprint
-        self.observation_space = self._get_observation_space()
+        self.action_space = ActionSpace
+        self._current_fingerprint = None
+        self._may_update_observation_space()
         self.metadata = {
             "render_modes": RENDER_MODES,
             "render_fps": 50,
         }
 
-        return self
+    def _may_update_observation_space(self) -> None:
+        if self.fingerprint == self._current_fingerprint:
+            return
+
+        env = self._core
+        symbols = env.observation.symbols
+        spec = env.observation_spec
+
+        for symbol in env.instance.symbols:
+            if symbol not in symbols:
+                symbols[symbol] = 0
+
+        self.observation_space = to_gym_space(spec, "observation", symbols)
+        self._current_fingerprint = env.fingerprint
 
     @property
     def fingerprint(self) -> int:
@@ -276,10 +261,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
             options["seed"] = seed
 
         obs, info = self._core.reset(options=options)
-
-        if self.fingerprint != self._current_fingerprint:
-            self.observation_space = self._get_observation_space()
-            self._current_fingerprint = self.fingerprint
+        self._may_update_observation_space()
 
         return obs.snapshot(), info
 
@@ -351,6 +333,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         and objective modifications.
         """
         self._core.reset_instance()
+        self._current_fingerprint = None
 
     def required_features(self) -> dict[str, FeatureMetadata]:
         """Return a dictionary of all required features from the setup, constraints, and objective."""
@@ -386,6 +369,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
 
         """
         self._core.load_instance(*instances)
+        self._may_update_observation_space()
 
     def add_metric(self, name: str, metric: Metric[Any]) -> None:
         """Add a metric to the environment."""

@@ -166,12 +166,14 @@ class ProblemInstance(EzPickle):
     @property
     def symbols(self) -> set[str]:
         """Return all symbols in features."""
-        symbols: set[str] = set()
+        symbols = {
+            "n_tasks",
+            "n_jobs",
+            "n_machines",
+        }
 
-        # CHECK: Change this to features
-        for features in self.registered_features.values():
-            for feature in features:
-                symbols |= feature.symbols
+        for feature in self.features.values():
+            symbols |= feature.symbols
 
         return symbols
 

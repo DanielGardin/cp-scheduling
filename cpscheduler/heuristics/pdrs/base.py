@@ -82,6 +82,7 @@ def select_task(
     temperature: float = 0.0,
     *,
     rng: random.Random | None = None,
+    resolve_empty: Literal["raise", "skip", "ignore"] = "raise",
 ) -> SingleAction | None:
     """Select a task to dispatch based on the given priorities.
 
@@ -110,7 +111,18 @@ def select_task(
             dispatching_task = task_id
 
     if dispatching_task is None:
-        return None
+        match resolve_empty:
+            case "raise":
+                raise RuntimeError(
+                    "Priority dispatching failed because no task could be "
+                    "selected at the current time."
+                )
+
+            case "skip":
+                return ("skip",)
+
+            case "ignore":
+                return None
 
     return ("execute", dispatching_task)
 

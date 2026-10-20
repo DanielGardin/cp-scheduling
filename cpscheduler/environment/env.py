@@ -774,8 +774,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         if self._status != EnvStatus.RUNNING:
             if self._status == EnvStatus.UNLOADED:
                 raise RuntimeError(
-                    "Environment was not reset after loading an instance, or "
-                    "wasn't loaded. Please either call "
+                    "Environment has no loaded instance. Please either call "
                     "reset(options={'instance':<instance>}) or "
                     "load_instance(<instance>), then reset()."
                 )
