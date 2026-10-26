@@ -7,6 +7,7 @@ allowing components to interact with the instance's features and data in a struc
 """
 
 from copy import deepcopy
+from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from mypy_extensions import mypyc_attr
@@ -43,6 +44,14 @@ def _find_provider(features: list[Feature]) -> Feature | None:
         provider = feature
 
     return provider
+
+
+class InstanceStatus(Enum):
+    """Lifecycle state for a ProblemInstance."""
+
+    UNLOADED = 0
+    LOADED = 1
+    RUNNING = 2
 
 
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
@@ -94,6 +103,7 @@ class ProblemInstance(EzPickle):
     _job_ids: Feature[list[JobID]]
 
     _debug: bool
+    _status: InstanceStatus
 
     def __init__(self, debug_mode: bool) -> None:
         """Initialize an empty ProblemInstance.
@@ -153,6 +163,17 @@ class ProblemInstance(EzPickle):
         self.original_instance = {}
 
         self._debug = debug_mode
+        self._status = InstanceStatus.UNLOADED
+
+    @property
+    def status(self) -> InstanceStatus:
+        """Return the current lifecycle status of the instance."""
+        return self._status
+
+    @property
+    def mutable(self) -> bool:
+        """Return whether the instance currently accepts structural updates."""
+        return self._status == InstanceStatus.LOADED
 
     @property
     def fingerprint(self) -> int:
@@ -267,6 +288,12 @@ class ProblemInstance(EzPickle):
             incompatible with a previously registered feature with the same name.
 
         """
+        if self._status is not InstanceStatus.UNLOADED:
+            raise RuntimeError(
+                "ProblemInstance is no longer mutable; register features before "
+                "initializing or loading a new instance."
+            )
+
         name = feature.name
 
         if name in {"all_processing_times", "machine_mask"}:
@@ -305,6 +332,7 @@ class ProblemInstance(EzPickle):
 
         self._fingerprint = 0
         self.original_instance.clear()
+        self._status = InstanceStatus.UNLOADED
 
     # FUTURE: Memory allocation is currently the major bottleneck during
     # initialization (processing_times and machine_mask).
@@ -329,6 +357,11 @@ class ProblemInstance(EzPickle):
             parameters that may be needed during instance initialization.
 
         """
+        if self._status is not InstanceStatus.UNLOADED:
+            raise RuntimeError(
+                "ProblemInstance must be reset before loading a new instance."
+            )
+
         original_instance = self.original_instance
         symbols_values = self.symbol_values
 
@@ -404,9 +437,20 @@ class ProblemInstance(EzPickle):
         self.n_jobs = n_jobs
         self.n_machines = n_machines
         self.symbol_values = symbols_values
+        self._status = InstanceStatus.LOADED
 
     def finalize(self) -> None:
-        """Finalize the instance after loading, where all features are loaded."""
+        """Finalize the instance after loading.
+
+        After the instance is loaded and all components have been initalized,
+        this method finalizes the instance, freezing its state and sharing
+        the loaded data with all consumers.
+        """
+        if self._status is not InstanceStatus.LOADED:
+            raise RuntimeError(
+                "ProblemInstance must be loaded before finalization."
+            )
+
         symbol_values = self.symbol_values
 
         for name, features in self.registered_features.items():
@@ -437,6 +481,7 @@ class ProblemInstance(EzPickle):
                 for name, features in self.registered_features.items()
             ]
         )
+        self._status = InstanceStatus.RUNNING
 
     def get_feature_data(self, feat_name: str) -> Any:
         """Get the data of a feature given its name."""
@@ -459,6 +504,11 @@ class ProblemInstance(EzPickle):
         self, task_id: TaskID, machine_id: MachineID, time: Time
     ) -> None:
         """Set the processing time of a task on a specific machine."""
+        if self._status is InstanceStatus.RUNNING:
+            raise RuntimeError(
+                "ProblemInstance is frozen after finalization; reset it to load a new instance."
+            )
+
         if time < 0:
             raise ValueError("Processing time cannot be negative.")
 
@@ -473,11 +523,21 @@ class ProblemInstance(EzPickle):
 
     def remove_machine(self, task_id: TaskID, machine_id: MachineID) -> None:
         """Remove a machine from the eligibility list of a task, making it ineligible for that task."""
+        if self._status is InstanceStatus.RUNNING:
+            raise RuntimeError(
+                "ProblemInstance is frozen after finalization; reset it to load a new instance."
+            )
+
         self._machine_mask.value[task_id][machine_id] = False
         self._processing_times.value[task_id][machine_id] = MAX_TIME
 
     def set_optionality(self, task_id: TaskID, optional: bool = True) -> None:
         """Set the optional status of a task in the instance."""
+        if self._status is InstanceStatus.RUNNING:
+            raise RuntimeError(
+                "ProblemInstance is frozen after finalization; reset it to load a new instance."
+            )
+
         self._optional.value[task_id] = optional
 
     def __repr__(self) -> str:

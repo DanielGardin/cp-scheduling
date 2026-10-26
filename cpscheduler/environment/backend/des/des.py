@@ -212,10 +212,10 @@ class DESBackend(ScheduleBackend):
         size = len(snapshot)
 
         while idx < size:
-            entry = snapshot[self._timed_index]
+            entry = snapshot[idx]
+            idx += 1
 
             if entry.stale:
-                idx += 1
                 continue
 
             event = entry.event
@@ -226,10 +226,11 @@ class DESBackend(ScheduleBackend):
                 )
 
             del self._event_cache[entry.event_id]
-            self._timed_index = idx + 1
+            self._timed_index = idx
 
             return event
 
+        self._timed_index = idx
         self.stage = NON_TIMED_STAGE
         self._non_timed_snapshot = list(
             self._current_time_slot.non_timed_events

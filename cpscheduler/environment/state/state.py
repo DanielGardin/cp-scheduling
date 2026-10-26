@@ -251,7 +251,7 @@ class ScheduleState(EzPickle):
         """Return whether a task is feasible executing on the given machine."""
         domains = self.domains
 
-        if domains.presence[task_id] == INFEASIBLE:
+        if not domains.presence[task_id].contains_present():
             return False
 
         if machine_id == GLOBAL_MACHINE_ID:
@@ -275,7 +275,7 @@ class ScheduleState(EzPickle):
 
         if (
             domains.dependencies[task_id]
-            or domains.presence[task_id] == INFEASIBLE
+            or not domains.presence[task_id].contains_present()
         ):
             return False
 
