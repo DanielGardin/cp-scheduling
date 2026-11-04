@@ -64,11 +64,10 @@ class Component(EzPickle):
         ]
 
     def initialize(self, instance: "ProblemInstance") -> None:
-        """Initialize component state after the instance has been fully loaded.
+        """Initialize component state during instance loading.
 
-        Called once per instance load, after all features are registered and instance
-        data is ready. Any component configuration changes made after this call will
-        not take effect until a new instance is loaded.
+        Called once per instance load during instance loading to read external
+        instance data, or provide derived data into registered features.
 
         Parameters
         ----------

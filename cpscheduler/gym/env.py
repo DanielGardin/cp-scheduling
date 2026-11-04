@@ -356,7 +356,8 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         ----------
         *instances : InstanceTypes
             One or more instance data objects to load.
-            If multiple instances are provided, they are merged.
+            If multiple instances are provided, they are merged by feature name,
+            with later values overriding earlier ones for duplicate keys.
             Allows for heterogeneous instance data sources.
 
         Raises

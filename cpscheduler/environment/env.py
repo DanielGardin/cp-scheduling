@@ -138,6 +138,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
     # Helper variables
     event_count: int
+    _event_count_trail: list[int]
 
     _status: EnvStatus
 
@@ -306,6 +307,9 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             else Renderer.get_renderer(render_mode)
         )
 
+        self.event_count = 0
+        self._event_count_trail = []
+
     @property
     def fingerprint(self) -> int:
         """Return the instance fingerprint of the current loaded instance."""
@@ -403,7 +407,8 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         ----------
         *instances : InstanceTypes
             One or more instance data objects to load.
-            If multiple instances are provided, they are merged.
+            If multiple instances are provided, they are merged by feature name,
+            with later values overriding earlier ones for duplicate keys.
             Allows for heterogeneous instance data sources.
 
         Raises
@@ -511,12 +516,6 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         Processes all domain events in the queue, invoking constraint callbacks
         (assignment, bounds updates, presence/absence, etc.) until the queue is
         exhausted or infeasibility is detected.
-
-        Returns
-        -------
-        bool
-            True if propagation reached fixed-point.
-            False if state is infeasible.
 
         """
         state = self.state
@@ -709,6 +708,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         observation.reset(state, backend)
 
         self.event_count = 0
+        self._event_count_trail.clear()
         self.propagate()
 
         if state.infeasible:
@@ -877,6 +877,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             )
 
         mark = state.checkpoint()
+        self._event_count_trail.append(self.event_count)
 
         for constraint in self._all_constraints:
             constraint.checkpoint(mark)
@@ -932,6 +933,8 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         backend.backtrack(mark, changed_tasks, state)
 
         observation.backtrack(mark, changed_tasks, state)
+        self.event_count = self._event_count_trail[mark]
+        del self._event_count_trail[mark:]
         observation.update(state, backend)
 
         if not drop:

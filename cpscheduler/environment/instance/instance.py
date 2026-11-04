@@ -362,34 +362,36 @@ class ProblemInstance(EzPickle):
                 "ProblemInstance must be reset before loading a new instance."
             )
 
-        original_instance = self.original_instance
-        symbols_values = self.symbol_values
-
+        merged_instance: dict[str, Any] = {}
         for instance in instances:
             for feature_name in instance:
-                feat_data = instance[feature_name]
-                original_instance[feature_name] = feat_data
+                merged_instance[feature_name] = instance[feature_name]
 
-                if feature_name not in self.registered_features:
-                    raise ValueError(
-                        f"Data provided for feature '{feature_name}', but no such "
-                        "feature is registered in the instance."
-                    )
+        original_instance = self.original_instance
+        symbols_values = self.symbol_values
+        for feature_name, feat_data in merged_instance.items():
+            original_instance[feature_name] = feat_data
 
-                feat_list = self.registered_features[feature_name]
-                if self._debug and not feat_list:
-                    raise ValueError(
-                        f"Feature '{feature_name}' is registered, but has no "
-                        "associated Feature object."
-                    )
+            if feature_name not in self.registered_features:
+                raise ValueError(
+                    f"Data provided for feature '{feature_name}', but no such "
+                    "feature is registered in the instance."
+                )
 
-                data = deepcopy(feat_data)
-                for feat in feat_list:
-                    feat.load_data(data)
+            feat_list = self.registered_features[feature_name]
+            if self._debug and not feat_list:
+                raise ValueError(
+                    f"Feature '{feature_name}' is registered, but has no "
+                    "associated Feature object."
+                )
 
-                feat = feat_list[0]
-                merge_symbols(symbols_values, feat.solve_symbols())
-                self.features[feature_name] = feat
+            data = deepcopy(feat_data)
+            for feat in feat_list:
+                feat.load_data(data)
+
+            feat = feat_list[0]
+            merge_symbols(symbols_values, feat.solve_symbols())
+            self.features[feature_name] = feat
 
         n_tasks = symbols_values.get("n_tasks", 0)
         n_jobs = symbols_values.get("n_jobs", 0)
