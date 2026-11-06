@@ -129,21 +129,32 @@ class PrecedenceConstraint(Constraint):
             parent = child
 
     def is_intree(self) -> bool:
-        """Check if the precedence graph is an in-tree."""
+        """Check if the precedence graph is an in-tree.
+
+        In an in-tree every task has at most one successor (Pinedo, 2022).
+        """
         if self.parents.loaded:
+            seen: set[TaskID] = set()
+
             for parents in self.parents.value.values():
-                if len(parents) > 1:
-                    return False
+                for parent in parents:
+                    if parent in seen:
+                        return False
+
+                    seen.add(parent)
 
             return True
 
         raise ValueError("is_intree: Precedence graph has not been loaded yet.")
 
     def is_outtree(self) -> bool:
-        """Check if the precedence graph is an out-tree."""
+        """Check if the precedence graph is an out-tree.
+
+        In an out-tree every task has at most one predecessor (Pinedo, 2022).
+        """
         if self.parents.loaded:
-            for children in self.children.values():
-                if len(children) > 1:
+            for parents in self.parents.value.values():
+                if len(parents) > 1:
                     return False
 
             return True
@@ -154,6 +165,14 @@ class PrecedenceConstraint(Constraint):
 
     @override
     def initialize(self, instance: ProblemInstance) -> None:
+        for child_id, parent_ids in self.parents.value.items():
+            for task_id in (child_id, *parent_ids):
+                if not 0 <= task_id < instance.n_tasks:
+                    raise ValueError(
+                        f"Precedence refers to task {task_id}, but the instance "
+                        f"has {instance.n_tasks} tasks."
+                    )
+
         self.children = self.parents.forward()
         self._topological_order = self.parents.topological_sort(
             n_tasks=instance.n_tasks
@@ -315,13 +334,18 @@ class NoWaitConstraint(PrecedenceConstraint):
     def initialize(self, instance: ProblemInstance) -> None:
         super().initialize(instance)
 
-        if not self.is_intree():
-            raise ValueError("No-wait constraint must be an in-tree.")
+        if not self.is_outtree():
+            raise ValueError(
+                "No-wait constraint must be an out-tree: every task can have "
+                "at most one no-wait predecessor."
+            )
 
     @override
     def on_assignment(
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:
+        super().on_assignment(task_id, machine_id, state)
+
         if task_id in self.children:
             end_time = state.get_end_lb(task_id)
 

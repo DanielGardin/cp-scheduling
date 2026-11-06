@@ -188,6 +188,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
             "render_modes": RENDER_MODES,
             "render_fps": 50,
         }
+        self.render_mode = env.renderer.render_name
 
     def _may_update_observation_space(self) -> None:
         if self.fingerprint == self._current_fingerprint:
@@ -295,10 +296,12 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
             Signed reward (Delta objective value).
 
         terminated : bool
-            Whether all tasks are completed.
+            Whether the episode ended, all tasks are fixed or the state is
+            infeasible.
 
         truncated : bool
-            Whether the episode reached an infeasible state.
+            Whether the episode ended in an infeasible state. Check this flag
+            to distinguish a failure from a complete schedule.
 
         info : dict[str, Any]
             Environment info (time, objective, event count, etc.).

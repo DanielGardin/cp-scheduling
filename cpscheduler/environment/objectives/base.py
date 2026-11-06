@@ -161,6 +161,7 @@ class SatisfactionObjective(Objective):
 
     This is the default objective when none is passed explicitly to the
     environment.
+    It is a maximization problem by default, a feasible schedule is the goal.
     """
 
     backtrack_safe = True
@@ -168,6 +169,18 @@ class SatisfactionObjective(Objective):
     _value: float
     _lb: float
     _ub: float
+
+    def __init__(self, minimize: bool = False) -> None:
+        """Initialize the satisfaction objective.
+
+        Parameters
+        ----------
+        minimize: bool
+            Whether the objective should be minimized. Default is False, as
+            the value is 1 for feasible complete schedules and 0 otherwise.
+
+        """
+        super().__init__(minimize)
 
     @property
     @override
@@ -210,7 +223,13 @@ class SatisfactionObjective(Objective):
     def on_assignment(
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:
-        if state.remaining_tasks == 0 and not state.infeasible:
+        if not state.is_terminal():
+            self._value = 1.0
+            self._lb = 1.0
+
+    @override
+    def on_absence(self, task_id: TaskID, state: ScheduleState) -> None:
+        if not state.is_terminal():
             self._value = 1.0
             self._lb = 1.0
 
@@ -218,7 +237,7 @@ class SatisfactionObjective(Objective):
     def backtrack(
         self, mark: int, changed_tasks: set[TaskID], state: ScheduleState
     ) -> None:
-        done = state.remaining_tasks == 0 and not state.infeasible
+        done = not state.is_terminal()
         self._value = float(done)
         self._lb = float(done)
         self._ub = 0.0 if state.infeasible else 1.0

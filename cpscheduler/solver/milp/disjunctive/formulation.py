@@ -4,7 +4,12 @@ from copy import deepcopy
 
 from typing_extensions import override
 
-from cpscheduler.environment import SchedulingEnv
+from cpscheduler.environment import (
+    ComposedObjective,
+    Makespan,
+    SchedulingEnv,
+    SetupConstraint,
+)
 from cpscheduler.solver.milp.pyomo_formulation import (
     PYOMO_PARAM,
     PyomoFormulation,
@@ -154,15 +159,77 @@ class DisjunctiveMILPFormulation(PyomoFormulation):
         obj = env.objective
         backend = env.backend
 
-        if not obj.regular:
+        self._apply_trivial_horizon(env)
+
+        # An incumbent only bounds the end of every task when the objective is
+        # the makespan itself. For other objectives, even regular ones, the
+        # optimal schedule can finish later than a given feasible schedule.
+        if not isinstance(obj, Makespan) or backend.backend != "des":
             return
 
-        if backend.backend == "des":
-            cpy_env = deepcopy(env)
+        cpy_env = deepcopy(env)
+
+        try:
             cpy_env.step(
                 [("submit", t) for t in env.state.get_unassigned_tasks()]
             )
+
+        # The greedy schedule is only a hint, and it can get stuck
+        except RuntimeError:
+            return
+
+        if cpy_env.state.is_terminal() and not cpy_env.state.infeasible:
             self.warm_start(cpy_env)
+
+    # FUTURE: This is an invasive method that should be refactored to a more modular approach,
+    # where constraints can register their own tightening methods, for example.
+    def _apply_trivial_horizon(self, env: SchedulingEnv) -> None:
+        """Bound the time variables, as unbounded ones lead to huge big-M values.
+
+        Numerically, a big-M around the default MAX_TIME is enough for integer
+        feasibility tolerances to deactivate the implications.
+        """
+        state = env.state
+
+        horizon = max(
+            (
+                int(state.get_start_lb(task_id))
+                for task_id in state.get_unassigned_tasks()
+            ),
+            default=0,
+        )
+        horizon = max(horizon, int(state.get_latest_end()))
+
+        for task_id in state.get_unassigned_tasks():
+            horizon += max(
+                int(state.get_remaining_time(task_id, machine_id))
+                for machine_id in state.get_machines(task_id)
+            )
+
+        for constraint in env.constraints:
+            if isinstance(constraint, SetupConstraint):
+                horizon += sum(
+                    int(setup_time)
+                    for setup_times in constraint.setup_times.values()
+                    for setup_time in setup_times.values()
+                )
+
+        # Non-regular objectives may wait for a due date before starting a task
+        objectives = (
+            env.objective.objectives
+            if isinstance(env.objective, ComposedObjective)
+            else [env.objective]
+        )
+        for objective in objectives:
+            due_dates = getattr(objective, "due_dates", None)
+
+            if due_dates is not None and due_dates.value:
+                horizon += max(0, *(int(date) for date in due_dates.value))
+
+        for task_id in state.get_unassigned_tasks():
+            if self.get_ub(self.end_times[task_id]) > horizon:
+                self.set_ub(self.end_times[task_id], horizon)
+                self.set_ub(self.start_times[task_id], horizon)
 
     @override
     def warm_start(self, env: SchedulingEnv) -> None:
@@ -182,6 +249,10 @@ class DisjunctiveMILPFormulation(PyomoFormulation):
                 self.set_initial_value(var, 1 if m_id == machine_id else 0)
 
         for (i, j), var in self.orders.items():
+            # A warm start may be a partial schedule
+            if not (state.is_fixed(i) and state.is_fixed(j)):
+                continue
+
             start_i = state.get_start(i)
             end_i = state.get_end(i)
 
@@ -194,7 +265,7 @@ class DisjunctiveMILPFormulation(PyomoFormulation):
             elif end_j <= start_i:
                 self.set_initial_value(var, 0)
 
-        if not env.objective.regular or not state.is_terminal():
+        if not isinstance(env.objective, Makespan) or not state.is_terminal():
             return
 
         makespan = int(state.get_latest_end())

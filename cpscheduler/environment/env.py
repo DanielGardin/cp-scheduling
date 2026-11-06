@@ -458,7 +458,13 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         alpha = self.setup.get_entry()
 
         beta = ",".join(
-            [constraint.get_entry() for constraint in self.constraints]
+            [
+                entry
+                for entry in (
+                    constraint.get_entry() for constraint in self.constraints
+                )
+                if entry
+            ]
         )
 
         gamma = self.objective.get_entry()
@@ -496,6 +502,12 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         """
         if action is None:
             return
+
+        if isinstance(action, str):
+            raise ValueError(
+                f"Expected an instruction tuple, or an iterable of them, but "
+                f"got the string {action!r}."
+            )
 
         backend = self.backend.backend
         state = self.state
@@ -754,10 +766,12 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             Signed reward (Delta objective value).
 
         terminated : bool
-            Whether all tasks are completed.
+            Whether the episode ended, all tasks are fixed or the state is
+            infeasible.
 
         truncated : bool
-            Whether the episode reached an infeasible state.
+            Whether the episode ended in an infeasible state. Check this flag
+            to distinguish a failure from a complete schedule.
 
         info : dict[str, Any]
             Environment info (time, objective, event count, etc.).

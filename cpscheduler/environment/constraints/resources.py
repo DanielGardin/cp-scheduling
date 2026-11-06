@@ -300,7 +300,12 @@ class NonRenewableResourceConstraint(Constraint):
 
     @override
     def reset(self, state: ScheduleState) -> None:
-        self._current_capacity = self.capacity.value
+        capacity = self.capacity.value
+        self._current_capacity = capacity
+
+        for task_id, resource in enumerate(self.resources.value):
+            if resource > capacity:
+                state.forbid_task(task_id)
 
     @override
     def on_assignment(

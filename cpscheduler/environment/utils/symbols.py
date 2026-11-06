@@ -196,7 +196,13 @@ class SymbolicDim(EzPickle):
     def solve_symbol(self, value: int) -> dict[str, int]:
         """Solve for the value of the single symbol in this dimension, given the total value."""
         if self.is_constant():
-            raise ValueError("Cannot solve a constant dimension.")
+            if value != self._const_value:
+                raise ValueError(
+                    f"Expected a dimension of size {self._const_value}, "
+                    f"got {value}."
+                )
+
+            return {}
 
         if self.n_symbols > 1:
             raise ValueError(

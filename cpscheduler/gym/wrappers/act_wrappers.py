@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from cpscheduler.environment import SchedulingEnv
 
 
-MAX_INT = 2 << 31 - 1
+MAX_INT = (1 << 31) - 1
 
 _Obs = TypeVar("_Obs")
 _Act = TypeVar("_Act")

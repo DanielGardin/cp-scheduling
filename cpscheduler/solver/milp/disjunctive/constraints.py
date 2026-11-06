@@ -184,23 +184,30 @@ def _setup_constraint(
     state: ScheduleState,
     constraint: SetupConstraint,
 ) -> None:
+    # Setup times only separate tasks processed in the same machine
     for task_id, setup_times in constraint.current_setup_times.items():
         for other_task_id, setup_time in setup_times.items():
             time = int(setup_time)
 
-            if time > 0:
-                order_var = formulation.get_order(task_id, other_task_id)
+            if time <= 0:
+                continue
 
+            order_var = formulation.get_order(task_id, other_task_id)
+            shared_machines = set(state.get_machines(task_id)) & set(
+                state.get_machines(other_task_id)
+            )
+
+            for machine_id in shared_machines:
                 formulation.implication(
                     antecedent=(
                         order_var,
-                        formulation.present[task_id],
-                        formulation.present[other_task_id],
+                        formulation.assignments[task_id][machine_id],
+                        formulation.assignments[other_task_id][machine_id],
                     ),
                     consequent=(
                         formulation.start_times[other_task_id],
                         ">=",
                         formulation.end_times[task_id] + time,
                     ),
-                    name=f"setup_{task_id}_{other_task_id}",
+                    name=f"setup_{task_id}_{other_task_id}_{machine_id}",
                 )

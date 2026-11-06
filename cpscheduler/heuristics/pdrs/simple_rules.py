@@ -94,12 +94,10 @@ class WeightedShortestProcessingTime(StaticPriorityDispatchingRule):
 
     @override
     def priority_score(self, obs: DefaultObservation) -> list[float]:
-        task = obs
-
         return [
-            float(-w / p)
+            float(w / p) if p > 0 else float("inf")
             for w, p in zip(
-                task[self.weight], task[self.processing_time], strict=True
+                obs[self.weight], obs[self.processing_time], strict=True
             )
         ]
 
@@ -168,4 +166,4 @@ class FirstInFirstOut(StaticPriorityDispatchingRule):
 
     @override
     def priority_score(self, obs: DefaultObservation) -> list[float]:
-        return [-float(r) for r in obs["task"][self.release_time]]
+        return [-float(r) for r in obs[self.release_time]]

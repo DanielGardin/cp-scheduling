@@ -17,6 +17,11 @@ class SetupConstraint(Constraint):
     The setup times can be defined as a mapping of task IDs to a mapping of child task IDs
     and their respective setup times, or as a string that refers to a column in the tasks data.
 
+    A setup time separates two tasks processed in the same machine, tasks in
+    different machines are not affected. It holds for every later task in the
+    same machine, not only the next one, which is equivalent to the classical
+    definition when the setup times satisfy the triangle inequality.
+
     """
 
     setup_times: dict[TaskID, dict[TaskID, Time]]
@@ -88,4 +93,11 @@ class SetupConstraint(Constraint):
             setup_times_for_task = setup_times.pop(task_id)
 
             for child_id, setup_time in setup_times_for_task.items():
-                state.tight_global_start_lb(child_id, end_time + setup_time)
+                state.tight_start_lb(
+                    child_id, end_time + setup_time, machine_id
+                )
+
+    @classmethod
+    @override
+    def get_general_entry(cls) -> str:
+        return "s_jk"

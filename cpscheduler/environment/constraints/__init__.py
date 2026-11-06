@@ -10,10 +10,12 @@ implementing the required methods.
 """
 
 __all__ = [
+    "AtMostOneConstraint",
     "BatchConstraint",
     "ConstantProcessingTime",
     "Constraint",
     "DeadlineConstraint",
+    "ExactlyOneConstraint",
     "HorizonConstraint",
     "MachineBreakdownConstraint",
     "MachineConstraint",
@@ -26,6 +28,7 @@ __all__ = [
     "PassiveConstraint",
     "PrecedenceConstraint",
     "PreemptionConstraint",
+    "RejectableConstraint",
     "ReleaseDateConstraint",
     "ResourceConstraint",
     "SetupConstraint",
@@ -42,6 +45,11 @@ from .machine import (
     BatchConstraint,
     MachineBreakdownConstraint,
     MachineConstraint,
+)
+from .optional import (
+    AtMostOneConstraint,
+    ExactlyOneConstraint,
+    RejectableConstraint,
 )
 from .passive import (
     ConstantProcessingTime,

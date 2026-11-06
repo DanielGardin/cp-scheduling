@@ -66,14 +66,36 @@ def solve_p_star_temperature(
     """
     n = len(priorities)
 
+    # With a single option there is no choice to be calibrated
+    if n <= 1:
+        return 1.0
+
     ordered_priorities = sorted(priorities, reverse=True)
 
-    ts = sum(prio * rank for rank, prio in enumerate(ordered_priorities))
+    # Least squares slope of the priorities by rank. Ranks must be centered, as
+    # the model only depends on the differences between priorities. The priority
+    # decays with the rank, so the (positive) decay rate is the negative slope.
+    mean_rank = (n - 1) / 2
+    ts = sum(
+        prio * (mean_rank - rank)
+        for rank, prio in enumerate(ordered_priorities)
+    )
 
     lmbda = ts * 12 / (n * (n + 1) * (n - 1))
     target_lmbda = prob_to_lmbda(target_prob, n, n_iter)
 
     return lmbda / target_lmbda
+
+
+def _gumbel(rng: random.Random) -> float:
+    """Sample a standard Gumbel variable."""
+    uniform = rng.random()
+
+    # random() is in [0, 1), and log(0) is undefined.
+    while uniform == 0.0:
+        uniform = rng.random()
+
+    return -log(-log(uniform))
 
 
 def select_task(
@@ -101,7 +123,7 @@ def select_task(
 
         if temperature > 0.0:
             # Gumbel-max trick: add Gumbel noise to the priority score
-            prio += temperature * -log(-log(rng.random()))
+            prio += temperature * _gumbel(rng)
 
         if prio > best_prio:
             if prio == float("inf"):
@@ -119,7 +141,7 @@ def select_task(
                 )
 
             case "skip":
-                return ("skip",)
+                return ("noop",)
 
             case "ignore":
                 return None
@@ -360,7 +382,7 @@ class PriorityDispatchingRule:
         rng = self._internal_rng
         filtered_priorities = sorted(
             [
-                (-prio + temperature * -log(-log(rng.random())), task_id)
+                (-(prio + temperature * _gumbel(rng)), task_id)
                 for task_id, prio in enumerate(priorities)
             ]
         )

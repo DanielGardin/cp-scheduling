@@ -98,11 +98,18 @@ class NaiveBnBFormulation(Formulation[SolverResults]):
     solution: dict[TaskID, tuple[MachineID, Time]]
     obj_history: list[float]
     warm_obj: float
+    warm_solution: dict[TaskID, tuple[MachineID, Time]]
 
     @override
     def initialize_model(self, env: SchedulingEnv) -> None:
+        if not env.objective.minimize:
+            raise ValueError(
+                "NaiveBnBFormulation only supports minimization objectives."
+            )
+
         self._env = env
         self.warm_obj = float("inf")
+        self.warm_solution = {}
 
     def solve(
         self,
@@ -144,6 +151,20 @@ class NaiveBnBFormulation(Formulation[SolverResults]):
         root_mark = env.checkpoint()
         forced_actions = f_actions
         checkpoints = 1
+
+        # The whole problem may be decided by forced actions
+        if env.state.is_terminal():
+            leaves += 1
+            infeasible_leaves += int(env.state.infeasible)
+
+            if not env.state.infeasible:
+                solutions += 1
+                obj = env.objective.value
+
+                if obj < best_objective:
+                    best_objective = obj
+                    self.obj_history.append(obj)
+                    self.best_trace = initial_trace
 
         stack = [Frame(root_mark + 1, initial_trace, eligible, 0)]
 
@@ -211,6 +232,11 @@ class NaiveBnBFormulation(Formulation[SolverResults]):
                     )
                     stack.append(child)
 
+                else:
+                    # Dead end: nothing can be scheduled, and it is not terminal.
+                    env.backtrack(frame.mark)
+                    backtracks += 1
+
             else:
                 # Search was exhausted
                 optimal = True
@@ -221,7 +247,8 @@ class NaiveBnBFormulation(Formulation[SolverResults]):
         finally:
             end = perf_counter()
 
-        self.best_obj = self.obj_history[-1] if solutions else float("inf")
+        # No improvement over the warm start is a valid result of a search
+        self.best_obj = best_objective
         total_events = env.event_count
 
         env.state.finish_propagation()  # Hacky, just to avoid in-propagation errors.
@@ -229,13 +256,17 @@ class NaiveBnBFormulation(Formulation[SolverResults]):
         for action in self.best_trace:
             env.step(("execute", action))
 
-        self.solution = {
-            task_id: (
-                env.state.get_assignment(task_id),
-                env.state.get_start(task_id),
-            )
-            for task_id in self.best_trace
-        }
+        self.solution = (
+            {
+                task_id: (
+                    env.state.get_assignment(task_id),
+                    env.state.get_start(task_id),
+                )
+                for task_id in self.best_trace
+            }
+            if self.obj_history
+            else self.warm_solution
+        )
 
         return SolverResults(
             best_solution=self.best_obj,
@@ -260,8 +291,9 @@ class NaiveBnBFormulation(Formulation[SolverResults]):
 
     @override
     def warm_start(self, env: SchedulingEnv) -> None:
-        if env.state.is_terminal():
+        if env.state.is_terminal() and not env.state.infeasible:
             self.warm_obj = env.objective.value
+            self.warm_solution = env.get_schedule()
 
     @override
     def get_objective_value(self) -> float:
@@ -269,4 +301,9 @@ class NaiveBnBFormulation(Formulation[SolverResults]):
 
     @override
     def get_assignment(self, task_id: int) -> tuple[MachineID, Time]:
+        if task_id not in self.solution:
+            raise RuntimeError(
+                f"No solution found by the search includes task {task_id}."
+            )
+
         return self.solution[task_id]

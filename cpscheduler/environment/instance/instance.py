@@ -193,8 +193,9 @@ class ProblemInstance(EzPickle):
             "n_machines",
         }
 
-        for feature in self.features.values():
-            symbols |= feature.symbols
+        for features in self.registered_features.values():
+            for feature in features:
+                symbols |= feature.symbols
 
         return symbols
 
@@ -513,6 +514,17 @@ class ProblemInstance(EzPickle):
 
         if time < 0:
             raise ValueError("Processing time cannot be negative.")
+
+        if time >= MAX_TIME:
+            raise ValueError(
+                f"Processing time {time} is too large, it must be smaller than "
+                f"{MAX_TIME}."
+            )
+
+        # Compiled modules reject non integers by themselves, the same must
+        # happen when running interpreted, as the kernel works on integer time.
+        if int(time) != time:
+            raise ValueError(f"Processing time must be an integer, got {time}.")
 
         if machine_id >= self.n_machines:
             raise ValueError(

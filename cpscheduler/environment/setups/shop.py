@@ -151,6 +151,12 @@ def _build_job_precedence(
     for task_id, (job, op) in enumerate(
         zip(instance.job_ids, operation_order, strict=False)
     ):
+        if not 0 <= op < len(task_orders[job]):
+            raise ValueError(
+                f"Job {job} must have contiguous operations from 0 to "
+                f"{len(task_orders[job]) - 1}, but got operation {op}."
+            )
+
         if task_orders[job][op] != -1:
             raise ValueError(
                 f"Cannot have tasks have the same job and operation values: "
@@ -159,8 +165,16 @@ def _build_job_precedence(
 
         task_orders[job][op] = task_id
 
-    for chain in task_orders:
-        precedence.add_chain(chain)
+    for job, chain in enumerate(task_orders):
+        if -1 in chain:
+            raise ValueError(
+                f"Job {job} must have contiguous operations from 0 to "
+                f"{len(chain) - 1}, but {chain.index(-1)} is missing."
+            )
+
+        # Job ids can leave gaps, which results in jobs without any operation.
+        if chain:
+            precedence.add_chain(chain)
 
     return precedence
 
@@ -256,7 +270,7 @@ class FlexibleJobShopSetup(UnrelatedParallelMachineSetup):
 
     def __init__(
         self,
-        processing_times: str = "processing_times",
+        processing_times: str = "processing_time",
         operation_order: str = "operation",
         disjunctive: bool = True,
     ):
@@ -360,6 +374,7 @@ class FlowShopSetup(ScheduleSetup):
         self.processing_times = Feature(
             name=processing_times,
             shape=("n_tasks",),
+            value_type="duration",
         )
 
         self.operation_order = Feature(

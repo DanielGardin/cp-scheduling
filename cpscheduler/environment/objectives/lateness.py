@@ -51,6 +51,9 @@ class TotalTardiness(RegularObjective):
             preprocess=self._load_due_dates,
         )
 
+        if due_dates is not None:
+            self.due_dates.own_data(due_dates)
+
     def _load_due_dates(self, due_dates: Iterable[Int]) -> list[Time]:
         return convert_to_list(due_dates, Time)
 
@@ -132,6 +135,8 @@ class WeightedTardiness(TotalTardiness):
 
     @override
     def initialize(self, instance: ProblemInstance) -> None:
+        super().initialize(instance)
+
         if any(weight < 0 for weight in self.weights.value):
             raise ValueError("Regular objectives require non-negative weights.")
 

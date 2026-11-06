@@ -41,6 +41,9 @@ __all__ = [  # noqa: RUF022
     "MachineConstraint",
     "PreemptionConstraint",
     "OptionalityConstraint",
+    "RejectableConstraint",
+    "AtMostOneConstraint",
+    "ExactlyOneConstraint",
     "MachineEligibilityConstraint",
     "PrecedenceConstraint",
     "NoWaitConstraint",
@@ -85,10 +88,12 @@ __all__ = [  # noqa: RUF022
 
 from .backend import DESBackend
 from .constraints import (
+    AtMostOneConstraint,
     BatchConstraint,
     ConstantProcessingTime,
     Constraint,
     DeadlineConstraint,
+    ExactlyOneConstraint,
     HorizonConstraint,
     MachineBreakdownConstraint,
     MachineConstraint,
@@ -101,6 +106,7 @@ from .constraints import (
     PassiveConstraint,
     PrecedenceConstraint,
     PreemptionConstraint,
+    RejectableConstraint,
     ReleaseDateConstraint,
     ResourceConstraint,
     SetupConstraint,

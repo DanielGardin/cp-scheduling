@@ -204,14 +204,21 @@ class SparseFeasibleSet(EzPickle):
         return start, start + self.sizes[task_id]
 
     def __eq__(self, value: object, /) -> bool:
-        """Check equality of SparseFeasibleSet containers."""
+        """Check whether both containers represent the same feasible sets.
+
+        The internal order is not part of the value: backtracking restores the
+        sets without undoing the swaps made when forbidding machines.
+        """
         return (
             isinstance(value, SparseFeasibleSet)
             and self.pad == value.pad
             and self.offsets == value.offsets
             and self.sizes == value.sizes
-            and self.order == value.order
-            and self.sparse == value.sparse
+            and all(
+                sorted(self.order[start : start + size])
+                == sorted(value.order[start : start + size])
+                for start, size in zip(self.offsets, self.sizes, strict=False)
+            )
         )
 
 

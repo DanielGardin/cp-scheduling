@@ -25,13 +25,21 @@ from cpscheduler.solver.milp.pyomo_formulation import PYOMO_PARAM
 def _jobs_makespan(
     formulation: DisjunctiveMILPFormulation,
     state: ScheduleState,
+    exact: bool = False,
 ) -> list[PYOMO_PARAM]:
+    """Return variables for the job completion times.
+
+    A non-exact variable is only an upper bound of the completion time, which
+    is tight solely when the objective pushes it down. Objectives improved by
+    later completions, like earliness, must ask for exact variables.
+    """
     makespans = []
 
     for job_id, job_tasks in enumerate(state.instance.job_tasks):
         job_makespan = formulation.max_expr(
             [formulation.end_times[task_id] for task_id in job_tasks],
             name=f"makespan_job_{job_id}",
+            exact=exact,
         )
         makespans.append(job_makespan)
 
@@ -209,7 +217,7 @@ def _total_earliness_objective(
     state: ScheduleState,
     objective: TotalEarliness,
 ) -> PYOMO_PARAM:
-    job_makespans = _jobs_makespan(formulation, state)
+    job_makespans = _jobs_makespan(formulation, state, exact=True)
 
     due_dates = objective.due_dates.value
 
@@ -235,7 +243,7 @@ def _weighted_earliness_objective(
     state: ScheduleState,
     objective: WeightedEarliness,
 ) -> PYOMO_PARAM:
-    job_makespans = _jobs_makespan(formulation, state)
+    job_makespans = _jobs_makespan(formulation, state, exact=True)
 
     weights = objective.weights.value
     due_dates = objective.due_dates.value

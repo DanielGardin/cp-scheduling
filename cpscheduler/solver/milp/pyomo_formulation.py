@@ -4,6 +4,7 @@ import logging
 from typing import Any, Final, Literal, TypeAlias
 
 import pyomo.environ as pyo
+from pyomo.contrib.fbbt.fbbt import compute_bounds_on_expr
 from pyomo.core.base.objective import ObjectiveSense
 from pyomo.core.base.var import VarData
 from pyomo.core.expr.relational_expr import RelationalExpression
@@ -437,11 +438,11 @@ class PyomoFormulation(Formulation[SolverResults]):
         if isinstance(param, int | float):
             return float(param)
 
-        value = param.value
+        # Expressions have no `.value` attribute, unlike variables and parameters.
+        value = pyo.value(param, exception=False)
         if value is None:
             raise RuntimeError(
-                f"Unreachable code: Pyomo should have handled an exception for "
-                f"parameter {param}."
+                f"No value for {param}: the solver did not find a solution."
             )
 
         return float(value)
@@ -462,7 +463,11 @@ class PyomoFormulation(Formulation[SolverResults]):
         if isinstance(param, int | float):
             return float(param)
 
-        ub = param.ub
+        ub = (
+            param.ub
+            if hasattr(param, "ub")
+            else compute_bounds_on_expr(param)[1]
+        )
 
         assert ub is not None, f"Cannot obtain an upper bound for {param}."
 
@@ -473,12 +478,13 @@ class PyomoFormulation(Formulation[SolverResults]):
         if isinstance(param, int | float):
             return float(param)
 
-        lb = param.lb
+        lb = (
+            param.lb
+            if hasattr(param, "lb")
+            else compute_bounds_on_expr(param)[0]
+        )
 
         assert lb is not None, f"Cannot obtain a lower bound for {param}."
-
-        if hasattr(param, "lb") and param.lb is not None:
-            return float(param.lb)
 
         return float(lb)
 

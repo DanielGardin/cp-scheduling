@@ -97,6 +97,8 @@ class AtMostOneConstraint(Constraint):
             for other_task in tasks:
                 state.forbid_task(other_task)
 
+            tasks.clear()
+
     @override
     def on_absence(self, task_id: TaskID, state: ScheduleState) -> None:
         for tasks in self.current_tasks:
@@ -107,8 +109,6 @@ class AtMostOneConstraint(Constraint):
 class ExactlyOneConstraint(AtMostOneConstraint):
     """Alternative constraint where exactly one task have to be processed in each one of the groups."""
 
-    backtrack_safe = True
-
     @override
     def reset(self, state: ScheduleState) -> None:
         super().reset(state)
@@ -116,29 +116,21 @@ class ExactlyOneConstraint(AtMostOneConstraint):
         for tasks in self.current_tasks:
             if len(tasks) == 1:
                 remaining_task = next(iter(tasks))
+                tasks.clear()
                 state.require_task(remaining_task)
-                tasks.remove(remaining_task)
 
     @override
-    def on_presence(self, task_id: TaskID, state: ScheduleState) -> None:
+    def on_absence(self, task_id: TaskID, state: ScheduleState) -> None:
         for tasks in self.current_tasks:
             if task_id not in tasks:
                 continue
 
             tasks.remove(task_id)
 
-            for other_task in tasks:
-                state.forbid_task(other_task)
-
-    @override
-    def on_absence(self, task_id: TaskID, state: ScheduleState) -> None:
-        for tasks in self.current_tasks:
-            tasks.discard(task_id)
-
             if len(tasks) == 1:
                 remaining_task = next(iter(tasks))
+                tasks.clear()
                 state.require_task(remaining_task)
-                tasks.remove(remaining_task)
 
-            elif len(tasks) == 0:
-                state.fail()
+            elif not tasks:
+                state.fail(task_id)

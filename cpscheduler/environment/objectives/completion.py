@@ -78,6 +78,8 @@ class WeightedCompletionTime(TotalCompletionTime):
 
     @override
     def initialize(self, instance: ProblemInstance) -> None:
+        super().initialize(instance)
+
         if any(weight < 0 for weight in self.weights.value):
             raise ValueError("Regular objectives require non-negative weights.")
 

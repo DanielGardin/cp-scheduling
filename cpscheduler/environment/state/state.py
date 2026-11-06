@@ -267,14 +267,15 @@ class ScheduleState(EzPickle):
     ) -> bool:
         """Return whether a task can be scheduled on the given machine at the time.
 
-        A task is available if it is unlocked (all dependencies resolved) and the
-        time falls within the feasible start window [start_lb, start_ub)
-        on the machine(s).
+        A task is available if it is not fixed, unlocked (all dependencies
+        resolved) and the time falls within the feasible start window
+        [start_lb, start_ub] on the machine(s), both bounds are inclusive.
         """
         domains = self.domains
 
         if (
-            domains.dependencies[task_id]
+            domains.fixed[task_id]
+            or domains.dependencies[task_id]
             or not domains.presence[task_id].contains_present()
         ):
             return False
@@ -289,7 +290,7 @@ class ScheduleState(EzPickle):
 
             for i in range(start_idx, end_idx):
                 idx = row + order[i]
-                if start.lbs[idx] <= time < start.ubs[idx]:
+                if start.lbs[idx] <= time <= start.ubs[idx]:
                     return True
 
             return False
@@ -298,7 +299,7 @@ class ScheduleState(EzPickle):
             return False
 
         idx = row + machine_id
-        return start.lbs[idx] <= time < start.ubs[idx]
+        return start.lbs[idx] <= time <= start.ubs[idx]
 
     def get_unassigned_tasks(self) -> list[TaskID]:
         """Return a list of unassigned task IDs."""
@@ -1144,12 +1145,13 @@ class ScheduleState(EzPickle):
         return next_time
 
     def get_latest_end(self) -> Time:
-        """Return the end time of the latest task."""
+        """Return the end time of the latest scheduled task."""
         ends = self.domains.end.global_lbs
+        presence = self.domains.presence
 
         max_end = MIN_TIME
         for task_id, fixed in enumerate(self.domains.fixed):
-            if not fixed:
+            if not fixed or presence[task_id] != PRESENT:
                 continue
 
             end = ends[task_id]

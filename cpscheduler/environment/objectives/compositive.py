@@ -5,7 +5,7 @@ from collections.abc import Iterable
 from typing_extensions import override
 
 from cpscheduler.environment.constants import Float, MachineID, TaskID, Time
-from cpscheduler.environment.instance import ProblemInstance
+from cpscheduler.environment.instance import Feature, ProblemInstance
 from cpscheduler.environment.objectives.base import Objective
 from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.utils.general import convert_to_list
@@ -62,6 +62,15 @@ class ComposedObjective(Objective):
             raise ValueError(
                 "The number of coefficients must match the number of objectives."
             )
+
+    @override
+    def get_features(self) -> list[Feature]:
+        features = super().get_features()
+
+        for objective in self.objectives:
+            features.extend(objective.get_features())
+
+        return features
 
     @property
     @override
@@ -126,7 +135,7 @@ class ComposedObjective(Objective):
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:
         for objective in self.objectives:
-            objective.on_assignment(task_id, machine_id, state)
+            objective.on_start_lb(task_id, machine_id, state)
 
     @override
     def on_start_ub(
@@ -170,6 +179,16 @@ class ComposedObjective(Objective):
     def on_time_update(self, time: Time, state: ScheduleState) -> None:
         for objective in self.objectives:
             objective.on_time_update(time, state)
+
+    @override
+    def on_task_lock(self, task_id: TaskID, state: ScheduleState) -> None:
+        for objective in self.objectives:
+            objective.on_task_lock(task_id, state)
+
+    @override
+    def on_task_unlock(self, task_id: TaskID, state: ScheduleState) -> None:
+        for objective in self.objectives:
+            objective.on_task_unlock(task_id, state)
 
     @override
     def compute(self, state: ScheduleState) -> float:

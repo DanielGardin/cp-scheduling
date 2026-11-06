@@ -152,6 +152,9 @@ class DeadlineConstraint(Constraint):
             value_type="time",
         )
 
+        if due_dates is not None:
+            self.due_dates.own_data(due_dates)
+
     def _load_dates(self, dates: Iterable[Int]) -> list[Time]:
         return convert_to_list(dates, Time)
 
