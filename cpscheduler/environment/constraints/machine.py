@@ -5,6 +5,7 @@ from collections.abc import Iterable, Mapping
 from typing_extensions import Self, override
 
 from cpscheduler.environment.constants import (
+    GLOBAL_MACHINE_ID,
     MAX_TIME,
     Int,
     MachineID,
@@ -99,8 +100,10 @@ class MachineBreakdownConstraint(Constraint):
 
     """
 
+    backtrack_safe = True
+    time_aware = True
+
     breakdowns: Feature[list[list[tuple[Time, Time]]]]
-    next_breakdown: dict[MachineID, int]
 
     def __init__(
         self,
@@ -121,7 +124,9 @@ class MachineBreakdownConstraint(Constraint):
         """
         self.breakdowns = Feature(
             name=name,
-            shape=("n_machines", None, 2),
+            # Machines without breakdowns may be omitted, so its length
+            # cannot be used to infer n_machines.
+            shape=(None, None, 2),
             value_type="time",
         )
 
@@ -142,15 +147,13 @@ class MachineBreakdownConstraint(Constraint):
         self, machine_id: Int, start_time: Int, end_time: Int
     ) -> None:
         """Add a breakdown interval for a specific machine."""
-        if not self.breakdowns.loaded:
-            self.breakdowns.own_data([])
+        data = self.breakdowns.value if self.breakdowns.loaded else []
 
         machine = MachineID(machine_id)
-        extend_list(self.breakdowns.value, machine + 1, list)
+        extend_list(data, machine + 1, list)
+        data[machine].append((Time(start_time), Time(end_time)))
 
-        self.breakdowns.value[machine].append(
-            (Time(start_time), Time(end_time))
-        )
+        self.breakdowns.own_data(data)
 
     @classmethod
     def from_machine_step_function(
@@ -201,45 +204,98 @@ class MachineBreakdownConstraint(Constraint):
 
     @override
     def initialize(self, instance: ProblemInstance) -> None:
-        self.next_breakdown = {
-            machine: 0
-            for machine, breakdowns in enumerate(self.breakdowns.value)
-            if breakdowns
-        }
+        for intervals in self.breakdowns.value:
+            intervals.sort()
 
-        for machine in self.next_breakdown:
-            self.breakdowns.value[machine].sort()
+    def _first_available_start(
+        self, machine_id: MachineID, start: Time, duration: Time
+    ) -> Time:
+        """Return the first start >= `start` that overlaps no breakdown.
+
+        Tasks are non-preemptive, so they must fit entirely between breakdowns.
+        """
+        calendar = self.breakdowns.value
+
+        if machine_id >= len(calendar):
+            return start
+
+        for break_start, break_end in calendar[machine_id]:
+            if start < break_end and break_start < start + duration:
+                start = break_end
+
+        return start
+
+    def _push_task(
+        self,
+        task_id: TaskID,
+        machine_id: MachineID,
+        time: Time,
+        state: ScheduleState,
+    ) -> None:
+        start = max(time, state.get_start_lb(task_id, machine_id))
+        duration = state.get_remaining_time(task_id, machine_id)
+        available = self._first_available_start(machine_id, start, duration)
+
+        if available == start:
+            return
+
+        if available >= MAX_TIME - duration:
+            state.forbid_machine(task_id, machine_id)
+
+        else:
+            state.tight_start_lb(task_id, available, machine_id)
 
     @override
     def reset(self, state: ScheduleState) -> None:
-        for machine in self.next_breakdown:
-            self.next_breakdown[machine] = 0
+        for task_id in range(state.n_tasks):
+            for machine_id in state.get_machines(task_id).copy():
+                self._push_task(task_id, machine_id, 0, state)
 
-        self.on_time_update(0, state)
+    def _on_lb_change(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        if state.is_fixed(task_id):
+            return
+
+        machines = (
+            state.get_machines(task_id).copy()
+            if machine_id == GLOBAL_MACHINE_ID
+            else [machine_id]
+        )
+
+        for machine in machines:
+            if state.is_feasible(task_id, machine):
+                self._push_task(task_id, machine, 0, state)
+
+    @override
+    def on_start_lb(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        self._on_lb_change(task_id, machine_id, state)
+
+    @override
+    def on_end_lb(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        self._on_lb_change(task_id, machine_id, state)
 
     @override
     def on_time_update(self, time: Time, state: ScheduleState) -> None:
-        breakdowns = self.breakdowns.value
+        for task_id in state.get_unassigned_tasks():
+            for machine_id in state.get_machines(task_id).copy():
+                self._push_task(task_id, machine_id, time, state)
 
-        for machine, current_index in self.next_breakdown.items():
-            breakdown_intervals = breakdowns[machine]
+    @override
+    def on_assignment(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        # Safeguard for clocks that jump without notice (e.g. a timed instruction
+        # that was already validated): a schedule must never cross a breakdown.
+        start = state.get_start(task_id)
+        duration = state.get_remaining_time(task_id, machine_id)
 
-            while current_index < len(breakdown_intervals):
-                start, end = breakdown_intervals[current_index]
-
-                if end <= time:
-                    self.next_breakdown[machine] += 1
-                    current_index += 1
-                    continue
-
-                if start <= time < end:
-                    for task_id in state.get_unassigned_tasks():
-                        start_lb = state.get_start_lb(task_id, machine)
-
-                        if start_lb < end:
-                            state.tight_start_lb(task_id, end, machine)
-
-                break
+        if self._first_available_start(machine_id, start, duration) != start:
+            state.fail(task_id)
 
     @classmethod
     @override
@@ -251,15 +307,20 @@ class BatchConstraint(Constraint):
     """Parallel batch machine constraint with capacity b.
 
     Generalization of MachineConstraint (which corresponds to b = 1).
-    Each machine can process up to `capacity[m]` tasks simultaneously,
+    Each machine can process up to `capacity[m]` tasks simultaneously.
     """
 
     capacity: Feature[list[int]]
     constant_capacity: int | None
 
     machine_map: list[set[TaskID]]
-    running_tasks: list[set[TaskID]]
-    next_free_time: list[Time]
+
+    _release_times: list[list[Time]]
+    """For each machine: [MAX_TIME, t_1, ..., t_k], with t_1 >= ... >= t_k the
+    times at which a running task releases a slot."""
+
+    _free_slots: list[list[int]]
+    """For each machine: free slots during each interval [t_j, t_{j-1})."""
 
     def __init__(
         self,
@@ -303,9 +364,12 @@ class BatchConstraint(Constraint):
                 "Cannot add capacity to a batch constraint with constant capacity."
             )
 
-        extend_list(self.capacity.value, machine + 1, lambda: 1)
+        data = self.capacity.value if self.capacity.loaded else []
 
-        self.capacity.value[machine] = int(capacity)
+        extend_list(data, machine + 1, lambda: 1)
+        data[machine] = int(capacity)
+
+        self.capacity.own_data(data)
 
     @override
     def initialize(self, instance: ProblemInstance) -> None:
@@ -322,12 +386,6 @@ class BatchConstraint(Constraint):
 
     @override
     def reset(self, state: ScheduleState) -> None:
-        for machine_id, capacity in enumerate(self.capacity.value):
-            if capacity <= 0:
-                for task_id in state.get_unassigned_tasks():
-                    if machine_id in state.get_machines(task_id):
-                        state.forbid_machine(task_id, machine_id)
-
         n_tasks = state.n_tasks
         n_machines = state.n_machines
 
@@ -342,8 +400,10 @@ class BatchConstraint(Constraint):
             for machine in state.get_machines(task_id):
                 self.machine_map[machine].add(TaskID(task_id))
 
-        self.running_tasks = [set() for _ in range(n_machines)]
-        self.next_free_time = [0] * n_machines
+        self._release_times = [[MAX_TIME] for _ in range(n_machines)]
+        self._free_slots = [
+            [capacity] for capacity in self.capacity.value[:n_machines]
+        ]
 
     @override
     def on_infeasibility(
@@ -359,35 +419,28 @@ class BatchConstraint(Constraint):
             self.machine_map[machine].discard(task_id)
 
         end_time = state.get_end_lb(task_id)
+        release_times = self._release_times[machine_id]
+        free_slots = self._free_slots[machine_id]
 
-        if end_time > self.next_free_time[machine_id]:
-            self.next_free_time[machine_id] = end_time
+        # Same (append-only) profile as ResourceConstraint, with unit usage.
+        idx = len(release_times)
+        while idx > 0 and release_times[idx - 1] < end_time:
+            idx -= 1
 
-        self.running_tasks[machine_id].add(task_id)
+        release_times.insert(idx, end_time)
+        free_slots.insert(idx, free_slots[idx - 1])
 
-        if (
-            len(self.running_tasks[machine_id])
-            == self.capacity.value[machine_id]
-        ):
-            for other_task_id in self.machine_map[machine_id]:
-                state.tight_start_lb(other_task_id, end_time, machine_id)
+        for j in range(idx, len(free_slots)):
+            free_slots[j] -= 1
 
-    @override
-    def on_time_update(self, time: Time, state: ScheduleState) -> None:
-        for machine_id, free_time in enumerate(self.next_free_time):
-            if free_time < time:
-                continue
-
-            if free_time == time:
-                self.running_tasks[machine_id].clear()
-                continue
-
-            if (
-                len(self.running_tasks[machine_id])
-                < self.capacity.value[machine_id]
-            ):
+        for j, slots in enumerate(free_slots):
+            if slots <= 0:
                 for other_task_id in self.machine_map[machine_id]:
-                    state.tight_start_lb(other_task_id, free_time, machine_id)
+                    state.tight_start_lb(
+                        other_task_id, release_times[j], machine_id
+                    )
+
+                break
 
     @override
     def get_entry(self) -> str:

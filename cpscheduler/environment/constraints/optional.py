@@ -74,17 +74,18 @@ class AtMostOneConstraint(Constraint):
     @override
     def initialize(self, instance: ProblemInstance) -> None:
         for tasks in self.task_groups:
-            if not tasks:
-                raise ValueError(
-                    "Cannot enforce exactly one constraint in a empty set of tasks."
-                )
-
             for task in tasks:
                 debug.task_bounds(task, instance, type(self).__name__)
 
     @override
     def reset(self, state: ScheduleState) -> None:
         self.current_tasks = [set(tasks) for tasks in self.task_groups]
+        all_tasks = {task for tasks in self.task_groups for task in tasks}
+
+        # Tasks decided from the start emit no presence or absence events
+        for task_id in sorted(all_tasks):
+            if state.is_present(task_id):
+                self.on_presence(task_id, state)
 
     @override
     def on_presence(self, task_id: TaskID, state: ScheduleState) -> None:
@@ -105,9 +106,17 @@ class AtMostOneConstraint(Constraint):
             tasks.discard(task_id)
 
 
-# TODO: Convert external information as Features
 class ExactlyOneConstraint(AtMostOneConstraint):
     """Alternative constraint where exactly one task have to be processed in each one of the groups."""
+
+    @override
+    def initialize(self, instance: ProblemInstance) -> None:
+        if any(not tasks for tasks in self.task_groups):
+            raise ValueError(
+                "Cannot enforce exactly one task in an empty set of tasks."
+            )
+
+        super().initialize(instance)
 
     @override
     def reset(self, state: ScheduleState) -> None:

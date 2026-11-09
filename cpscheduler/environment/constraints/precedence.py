@@ -4,7 +4,13 @@ from collections.abc import Iterable, Mapping, Sequence
 
 from typing_extensions import Self, override
 
-from cpscheduler.environment.constants import Int, MachineID, TaskID
+from cpscheduler.environment.constants import (
+    MAX_TIME,
+    Int,
+    MachineID,
+    TaskID,
+    Time,
+)
 from cpscheduler.environment.constraints.base import Constraint
 from cpscheduler.environment.instance import DAGFeature, ProblemInstance
 from cpscheduler.environment.state import ScheduleState
@@ -87,12 +93,12 @@ class PrecedenceConstraint(Constraint):
 
     def add_precedence(self, parent_id: Int, child_id: Int) -> None:
         """Add a precedence relationship between two tasks."""
-        if not self.parents.loaded:
-            self.parents.own_data({})
+        data = self.parents.value if self.parents.loaded else {}
 
         parent, child = TaskID(parent_id), TaskID(child_id)
+        data.setdefault(child, []).append(parent)
 
-        self.parents.value.setdefault(child, []).append(parent)
+        self.parents.own_data(data)
 
     def remove_precedence(self, parent_id: Int, child_id: Int) -> None:
         """Remove a precedence relationship between two tasks."""
@@ -102,31 +108,32 @@ class PrecedenceConstraint(Constraint):
             )
 
         parent, child = TaskID(parent_id), TaskID(child_id)
-        parents = self.parents.value
+        data = self.parents.value
 
-        children = parents[child]
+        children = data[child]
         children.remove(parent)
 
         if not children:
-            del parents[child]
+            del data[child]
+
+        self.parents.own_data(data)
 
     def add_chain(self, chain: Sequence[Int]) -> None:
         """Add a chain of precedence relationships between a sequence of tasks."""
-        if not self.parents.loaded:
-            self.parents.own_data({})
-
         if not chain:
             raise ValueError("Invalid empty chain in precedence.")
 
-        parents = self.parents.value
+        data = self.parents.value if self.parents.loaded else {}
 
         parent = TaskID(chain[0])
 
         for i in range(1, len(chain)):
             child = TaskID(chain[i])
-            parents.setdefault(child, []).append(parent)
+            data.setdefault(child, []).append(parent)
 
             parent = child
+
+        self.parents.own_data(data)
 
     def is_intree(self) -> bool:
         """Check if the precedence graph is an in-tree.
@@ -393,6 +400,8 @@ class ORPrecedenceConstraint(PrecedenceConstraint):
 
     """
 
+    time_aware = True
+
     def __init__(
         self,
         precedence: Mapping[Int, Sequence[Int]] | None = None,
@@ -432,31 +441,119 @@ class ORPrecedenceConstraint(PrecedenceConstraint):
         """
         return super().from_edges(edges, name)
 
+    def _dependency(self) -> str:
+        return f"{self.parents.name}:or"
+
+    def _earliest_parent_end(
+        self, child_id: TaskID, state: ScheduleState
+    ) -> Time:
+        """Return the earliest time any of the remaining parents can finish."""
+        return min(
+            (
+                state.get_end_lb(parent_id)
+                for parent_id in self.parents.value[child_id]
+                if not state.is_absent(parent_id)
+            ),
+            default=MAX_TIME,
+        )
+
+    def _try_unlock(
+        self, child_id: TaskID, state: ScheduleState, time: Time | None = None
+    ) -> None:
+        """Unlock a child whose predecessor requirement is settled.
+
+        A child starts after the first parent to finish, but only scheduled
+        parents have a known end. The first scheduled end can be committed to
+        once no pending parent could finish earlier, either from its bounds or
+        because the clock has already reached that end.
+        """
+        first_end: Time = MAX_TIME
+        pending_end: Time = MAX_TIME
+
+        for parent_id in self.parents.value[child_id]:
+            if state.is_absent(parent_id):
+                continue
+
+            if state.is_assigned(parent_id):
+                first_end = min(first_end, state.get_end(parent_id))
+
+            else:
+                pending_end = min(pending_end, state.get_end_lb(parent_id))
+
+        if first_end == MAX_TIME:
+            return
+
+        if first_end <= pending_end or (time is not None and first_end <= time):
+            state.tight_global_start_lb(child_id, first_end)
+            state.resolve_dependency(child_id, self._dependency())
+
+    def _refresh_child(self, child_id: TaskID, state: ScheduleState) -> None:
+        state.tight_global_start_lb(
+            child_id, self._earliest_parent_end(child_id, state)
+        )
+        self._try_unlock(child_id, state)
+
     @override
     def reset(self, state: ScheduleState) -> None:
         parents = self.parents.value
 
         for task_id in self._topological_order:
             if task_id in parents:
-                earliest_start = min(
-                    state.get_end_lb(parent_id)
-                    for parent_id in parents[task_id]
+                state.add_dependency(task_id, self._dependency())
+                state.tight_global_start_lb(
+                    task_id, self._earliest_parent_end(task_id, state)
                 )
-                state.tight_global_start_lb(task_id, earliest_start)
+
+    @override
+    def on_assignment(
+        self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
+    ) -> None:
+        for child_id in self.children.get(task_id, ()):
+            self._try_unlock(child_id, state)
+
+    @override
+    def on_time_update(self, time: Time, state: ScheduleState) -> None:
+        for child_id in self.parents.value:
+            if state.is_locked(child_id) and not state.is_fixed(child_id):
+                self._try_unlock(child_id, state, time)
 
     @override
     def on_start_lb(
         self, task_id: TaskID, machine_id: MachineID, state: ScheduleState
     ) -> None:
-        parents = self.parents.value
+        for child_id in self.children.get(task_id, ()):
+            self._refresh_child(child_id, state)
 
-        if task_id in self.children:
-            for child_id in self.children[task_id]:
-                earliest_start = min(
-                    state.get_end_lb(parent_id)
-                    for parent_id in parents[child_id]
-                )
-                state.tight_global_start_lb(child_id, earliest_start)
+    @override
+    def on_absence(self, task_id: TaskID, state: ScheduleState) -> None:
+        for child_id in self.children.get(task_id, ()):
+            remaining = [
+                parent_id
+                for parent_id in self.parents.value[child_id]
+                if not state.is_absent(parent_id)
+            ]
+
+            if not remaining:
+                state.forbid_task(child_id)
+                continue
+
+            if len(remaining) == 1 and state.is_present(child_id):
+                state.require_task(remaining[0])
+
+            self._refresh_child(child_id, state)
+
+    @override
+    def on_presence(self, task_id: TaskID, state: ScheduleState) -> None:
+        # Only a single remaining alternative is implied by a present child.
+        if task_id in self.parents.value:
+            remaining = [
+                parent_id
+                for parent_id in self.parents.value[task_id]
+                if not state.is_absent(parent_id)
+            ]
+
+            if len(remaining) == 1:
+                state.require_task(remaining[0])
 
     @override
     def on_start_ub(

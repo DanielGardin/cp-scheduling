@@ -20,6 +20,10 @@ class Constraint(Component):
     environment that interacts with the tasks by limiting when they can be
     executed, how they are assigned to machines, etc.
 
+    `reset` must account for the domain as it stands when the episode starts.
+    Changes made by components reset earlier are also queued as events and
+    will be propagated afterward, so handlers must be idempotent.
+
     If the propagator is stateless and pure, with only event-creating calls
     inside the propagation functions, then the constraint is safe for backtracking,
     and the class should have backtrack_safe = True explicitly.
@@ -30,6 +34,13 @@ class Constraint(Component):
     """
 
     backtrack_safe: ClassVar[bool] = False
+
+    time_aware: ClassVar[bool] = False
+    """Whether `on_time_update` must fire whenever the backend clock advances.
+
+    The events have a cost per time step, so they are only produced for
+    environments with at least one constraint that depends on them.
+    """
 
     @override
     def __init_subclass__(cls) -> None:

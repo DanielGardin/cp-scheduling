@@ -62,25 +62,27 @@ class NonOverlapConstraint(Constraint):
 
     def add_task(self, group_id: Int, task: Int) -> None:
         """Add a task to a specific group."""
-        if not self.groups.loaded:
-            self.groups.own_data([])
+        data = self.groups.value if self.groups.loaded else []
 
         group = int(group_id)
+        extend_list(data, group + 1, list)
+        data[group].append(TaskID(task))
 
-        extend_list(self.groups.value, group + 1, list)
-
-        self.groups.value[group].append(TaskID(task))
+        self.groups.own_data(data)
 
     def add_group(self, task_group: Iterable[Int]) -> None:
         """Add a new group of tasks."""
-        if not self.groups.loaded:
-            self.groups.own_data([])
+        data = self.groups.value if self.groups.loaded else []
+        data.append(convert_to_list(task_group, TaskID))
 
-        self.groups.value.append(convert_to_list(task_group, TaskID))
+        self.groups.own_data(data)
 
     def remove_group(self, group_id: Int) -> None:
         """Remove a group of tasks by its ID."""
-        self.groups.value[int(group_id)].clear()
+        data = self.groups.value
+        data[int(group_id)].clear()
+
+        self.groups.own_data(data)
 
     @override
     def initialize(self, instance: ProblemInstance) -> None:
