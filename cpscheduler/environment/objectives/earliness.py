@@ -4,7 +4,7 @@ from collections.abc import Iterable
 
 from typing_extensions import override
 
-from cpscheduler.environment.constants import Int, Time
+from cpscheduler.environment.constants import Int, JobID, Time
 from cpscheduler.environment.instance import Feature, ProblemInstance
 from cpscheduler.environment.objectives.base import AntiRegularObjective
 from cpscheduler.environment.utils.general import convert_to_list
@@ -24,7 +24,6 @@ class TotalEarliness(AntiRegularObjective):
         self,
         due_dates_tag: str = "due_date",
         due_dates: Iterable[Int] | None = None,
-        minimize: bool = True,
     ) -> None:
         """Initialize the Total Earliness objective.
 
@@ -37,12 +36,8 @@ class TotalEarliness(AntiRegularObjective):
             The due dates for each job.
             If None is provided, the due dates will be loaded from the instance.
 
-        minimize: bool, optional
-            Whether to minimize or maximize the objective.
-            Default is True (i.e., minimize).
-
         """
-        super().__init__(minimize)
+        super().__init__()
 
         self.due_dates = Feature(
             name=due_dates_tag,
@@ -58,15 +53,8 @@ class TotalEarliness(AntiRegularObjective):
         return convert_to_list(due_dates, Time)
 
     @override
-    def evaluate(self, job_completions: list[Time]) -> float:
-        return float(
-            sum(
-                max(d_j - C_j, 0)
-                for d_j, C_j in zip(
-                    self.due_dates.value, job_completions, strict=False
-                )
-            )
-        )
+    def job_cost(self, job_id: JobID, completion: Time) -> float:
+        return float(max(self.due_dates.value[job_id] - completion, 0))
 
     @classmethod
     @override
@@ -91,7 +79,6 @@ class WeightedEarliness(TotalEarliness):
         due_dates: Iterable[Int] | None = None,
         weights_tag: str = "weight",
         weights: Iterable[float] | None = None,
-        minimize: bool = True,
     ):
         """Initialize the Weighted Earliness objective.
 
@@ -111,12 +98,8 @@ class WeightedEarliness(TotalEarliness):
             The name of the job feature that contains the weights for each job.
             If None is provided, the weights will be loaded from the instance.
 
-        minimize: bool, optional
-            Whether to minimize or maximize the objective.
-            Default is True (i.e., minimize).
-
         """
-        super().__init__(due_dates_tag, due_dates, minimize)
+        super().__init__(due_dates_tag, due_dates)
 
         self.weights = Feature(
             name=weights_tag,
@@ -141,17 +124,9 @@ class WeightedEarliness(TotalEarliness):
             )
 
     @override
-    def evaluate(self, job_completions: list[Time]) -> float:
-        return float(
-            sum(
-                w_j * float(max(d_j - C_j, 0))
-                for w_j, d_j, C_j in zip(
-                    self.weights.value,
-                    self.due_dates.value,
-                    job_completions,
-                    strict=False,
-                )
-            )
+    def job_cost(self, job_id: JobID, completion: Time) -> float:
+        return self.weights.value[job_id] * float(
+            max(self.due_dates.value[job_id] - completion, 0)
         )
 
     @classmethod

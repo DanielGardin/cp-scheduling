@@ -17,6 +17,7 @@ __all__ = [
     "Objective",
     "RegularObjective",
     "SatisfactionObjective",
+    "Sense",
     "TotalCompletionTime",
     "TotalEarliness",
     "TotalFlowTime",
@@ -34,6 +35,7 @@ from .base import (
     Objective,
     RegularObjective,
     SatisfactionObjective,
+    Sense,
     objectives,
 )
 from .completion import (

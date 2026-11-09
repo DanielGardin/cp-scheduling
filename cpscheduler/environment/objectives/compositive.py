@@ -14,14 +14,14 @@ from cpscheduler.environment.utils.general import convert_to_list
 class ComposedObjective(Objective):
     """A composed objective function that combines multiple objectives with coefficients.
 
-    The overall objective value is a weighted sum of the individual objectives.
-    A composed objective is regular if all non-zero-coefficient components are regular
-    and no regular component has a negative coefficient.
-    """
+    The composition is the function sum_i c_i * f_i: the coefficients carry the
+    direction of each term, and the terms' `default_sense` is not used. Its own
+    default sense is minimization.
 
-    # This is a lie, check whether each sub-objective is backtrack_safe
-    # before backtracking.
-    backtrack_safe = True
+    It is regular when every term with a positive coefficient is regular and
+    every term with a negative coefficient is anti-regular, and anti-regular in
+    the opposite case. It is backtrack-safe when all its terms are.
+    """
 
     objectives: list[Objective]
     coefficients: list[float]
@@ -30,7 +30,6 @@ class ComposedObjective(Objective):
         self,
         objectives: Iterable[Objective],
         coefficients: Iterable[Float] | None = None,
-        minimize: bool = True,
     ):
         """Initialize the ComposedObjective.
 
@@ -44,12 +43,8 @@ class ComposedObjective(Objective):
             If None is provided, all coefficients will be set to 1.0.
             Default to None.
 
-        minimize: bool, optional
-            Whether the composed objective should be minimized (True) or maximized (False).
-            Default is True (i.e., minimize).
-
         """
-        super().__init__(minimize)
+        super().__init__()
 
         self.objectives = list(objectives)
         self.coefficients = (
@@ -74,12 +69,29 @@ class ComposedObjective(Objective):
 
     @property
     @override
+    def backtrack_safe(self) -> bool:
+        return all(objective.backtrack_safe for objective in self.objectives)
+
+    @property
+    @override
     def regular(self) -> bool:
+        # A negative coefficient reverses the direction of its term
         return all(
-            (coef == 0 or objective.regular)
-            and not (coef < 0 and objective.regular)
+            coef == 0
+            or (objective.regular if coef > 0 else objective.anti_regular)
             for objective, coef in zip(
-                self.objectives, self.coefficients, strict=False
+                self.objectives, self.coefficients, strict=True
+            )
+        )
+
+    @property
+    @override
+    def anti_regular(self) -> bool:
+        return all(
+            coef == 0
+            or (objective.anti_regular if coef > 0 else objective.regular)
+            for objective, coef in zip(
+                self.objectives, self.coefficients, strict=True
             )
         )
 
@@ -198,6 +210,11 @@ class ComposedObjective(Objective):
                 self.objectives, self.coefficients, strict=False
             )
         )
+
+    @override
+    def on_failure(self, state: ScheduleState) -> None:
+        for objective in self.objectives:
+            objective.on_failure(state)
 
     @override
     def checkpoint(self, mark: int) -> None:

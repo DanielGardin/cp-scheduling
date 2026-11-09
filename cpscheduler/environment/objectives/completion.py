@@ -5,7 +5,7 @@ from math import expm1
 
 from typing_extensions import override
 
-from cpscheduler.environment.constants import Float, Int, Time
+from cpscheduler.environment.constants import Float, Int, JobID, Time
 from cpscheduler.environment.instance import Feature, ProblemInstance
 from cpscheduler.environment.objectives.base import RegularObjective
 from cpscheduler.environment.utils.general import convert_to_list
@@ -19,8 +19,8 @@ class TotalCompletionTime(RegularObjective):
     """
 
     @override
-    def evaluate(self, job_completions: list[Time]) -> float:
-        return float(sum(job_completions))
+    def job_cost(self, job_id: JobID, completion: Time) -> float:
+        return float(completion)
 
     @classmethod
     @override
@@ -40,8 +40,7 @@ class WeightedCompletionTime(TotalCompletionTime):
     def __init__(
         self,
         weights_tag: str = "weight",
-        weights: list[Float] | None = None,
-        minimize: bool = True,
+        weights: Iterable[Float] | None = None,
     ):
         """Initialize the Weighted Completion Time objective.
 
@@ -51,17 +50,13 @@ class WeightedCompletionTime(TotalCompletionTime):
             The name of the job feature that contains the weights.
             Default to "weight".
 
-        weights: list[Float] | None, optional
+        weights: Iterable[Float] | None, optional
             The weights for each job.
             If None is provided, the weights will be loaded from the instance.
             Default to None.
 
-        minimize: bool, optional
-            Whether to minimize or maximize the objective.
-            Default is True (i.e., minimize).
-
         """
-        super().__init__(minimize)
+        super().__init__()
 
         self.weights = Feature(
             name=weights_tag,
@@ -84,13 +79,8 @@ class WeightedCompletionTime(TotalCompletionTime):
             raise ValueError("Regular objectives require non-negative weights.")
 
     @override
-    def evaluate(self, job_completions: list[Time]) -> float:
-        weights = self.weights.value
-
-        return sum(
-            weight * float(C_j)
-            for weight, C_j in zip(weights, job_completions, strict=False)
-        )
+    def job_cost(self, job_id: JobID, completion: Time) -> float:
+        return self.weights.value[job_id] * float(completion)
 
     @classmethod
     @override
@@ -112,7 +102,6 @@ class DiscountedTotalCompletionTime(RegularObjective):
     def __init__(
         self,
         discount_factor: float = 0.99,
-        minimize: bool = True,
     ):
         """Initialize the Discounted Total Completion Time objective.
 
@@ -122,26 +111,28 @@ class DiscountedTotalCompletionTime(RegularObjective):
             The discount factor for the completion times.
             Default to 0.99.
 
-        minimize: bool, optional
-            Whether to minimize or maximize the objective.
-            Default is True (i.e., minimize).
-
         """
-        super().__init__(minimize)
+        super().__init__()
 
         self.discount_factor = Feature(
             name="discount_factor",
             shape=(),
             value_type="normalized",
+            low=0.0,
         )
 
         self.discount_factor.own_data(discount_factor)
 
     @override
-    def evaluate(self, job_completions: list[Time]) -> float:
-        alpha = self.discount_factor.value
+    def initialize(self, instance: ProblemInstance) -> None:
+        super().initialize(instance)
 
-        return -sum(expm1(-alpha * float(C_j)) for C_j in job_completions)
+        if self.discount_factor.value < 0:
+            raise ValueError("Discount factor must be non-negative.")
+
+    @override
+    def job_cost(self, job_id: JobID, completion: Time) -> float:
+        return -expm1(-self.discount_factor.value * float(completion))
 
     @override
     def get_entry(self) -> str:
@@ -170,7 +161,6 @@ class TotalFlowTime(RegularObjective):
         self,
         release_tag: str = "release_time",
         release_times: Iterable[Int] | None = None,
-        minimize: bool = True,
     ) -> None:
         """Initialize the Total Flow Time objective.
 
@@ -183,12 +173,8 @@ class TotalFlowTime(RegularObjective):
             The release times for each job.
             If None is provided, the release times will be loaded from the instance.
 
-        minimize: bool, optional
-            Whether to minimize or maximize the objective.
-            Default is True (i.e., minimize).
-
         """
-        super().__init__(minimize)
+        super().__init__()
 
         self.release_times = Feature(
             name=release_tag,
@@ -204,15 +190,8 @@ class TotalFlowTime(RegularObjective):
         return convert_to_list(release_times, Time)
 
     @override
-    def evaluate(self, job_completions: list[Time]) -> float:
-        return float(
-            sum(
-                C_j - r_j
-                for r_j, C_j in zip(
-                    self.release_times.value, job_completions, strict=False
-                )
-            )
-        )
+    def job_cost(self, job_id: JobID, completion: Time) -> float:
+        return float(completion - self.release_times.value[job_id])
 
     @classmethod
     @override

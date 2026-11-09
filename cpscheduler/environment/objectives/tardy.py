@@ -7,6 +7,7 @@ from typing_extensions import override
 from cpscheduler.environment.constants import (
     Float,
     Int,
+    JobID,
     Time,
 )
 from cpscheduler.environment.instance import Feature, ProblemInstance
@@ -27,7 +28,6 @@ class TotalTardyJobs(RegularObjective):
         self,
         due_dates_tag: str = "due_date",
         due_dates: Iterable[Int] | None = None,
-        minimize: bool = True,
     ) -> None:
         """Initialize the Total Tardy Jobs objective.
 
@@ -40,12 +40,8 @@ class TotalTardyJobs(RegularObjective):
             The due dates for each job.
             If None, due dates must be provided in the instance data.
 
-        minimize: bool, optional
-            Whether to minimize or maximize the objective.
-            Default is True (i.e., minimize).
-
         """
-        super().__init__(minimize)
+        super().__init__()
 
         self.due_dates = Feature(
             name=due_dates_tag,
@@ -61,15 +57,8 @@ class TotalTardyJobs(RegularObjective):
         return convert_to_list(due_dates, Time)
 
     @override
-    def evaluate(self, job_completions: list[Time]) -> float:
-        return float(
-            sum(
-                C_j > d_j
-                for d_j, C_j in zip(
-                    self.due_dates.value, job_completions, strict=True
-                )
-            )
-        )
+    def job_cost(self, job_id: JobID, completion: Time) -> float:
+        return 1.0 if completion > self.due_dates.value[job_id] else 0.0
 
     @classmethod
     @override
@@ -93,7 +82,6 @@ class WeightedTardyJobs(TotalTardyJobs):
         due_dates: Iterable[Int] | None = None,
         weights_tag: str = "weight",
         weights: Iterable[Float] | None = None,
-        minimize: bool = True,
     ) -> None:
         """Initialize the Weighted Tardy Jobs objective.
 
@@ -114,12 +102,8 @@ class WeightedTardyJobs(TotalTardyJobs):
             The weights for each job.
             If None is provided, the weights will be loaded from the instance.
 
-        minimize: bool, optional
-            Whether to minimize or maximize the objective.
-            Default is True (i.e., minimize).
-
         """
-        super().__init__(due_dates_tag, due_dates, minimize)
+        super().__init__(due_dates_tag, due_dates)
 
         self.weights = Feature(
             name=weights_tag,
@@ -142,16 +126,11 @@ class WeightedTardyJobs(TotalTardyJobs):
             raise ValueError("Regular objectives require non-negative weights.")
 
     @override
-    def evaluate(self, job_completions: list[Time]) -> float:
-        return sum(
-            w_j
-            for w_j, d_j, C_j in zip(
-                self.weights.value,
-                self.due_dates.value,
-                job_completions,
-                strict=False,
-            )
-            if C_j > d_j
+    def job_cost(self, job_id: JobID, completion: Time) -> float:
+        return (
+            self.weights.value[job_id]
+            if completion > self.due_dates.value[job_id]
+            else 0.0
         )
 
     @classmethod
