@@ -54,16 +54,20 @@ class PotentialRewardStrategy(RewardStrategy):
         return objective.value
 
     @override
-    def reset(self, state: ScheduleState, objective: Objective) -> None:
+    def reset(
+        self, state: ScheduleState, objective: Objective, minimize: bool
+    ) -> None:
         self._prev_potential = self.potential(state, objective)
 
     @override
-    def compute(self, state: ScheduleState, objective: Objective) -> float:
+    def compute(
+        self, state: ScheduleState, objective: Objective, minimize: bool
+    ) -> float:
         current_potential = self.potential(state, objective)
         reward = self._prev_potential - self.gamma * current_potential
 
         self._prev_potential = current_potential
-        return reward if objective.minimize else -reward
+        return reward if minimize else -reward
 
 
 class LBPotentialRewardStrategy(PotentialRewardStrategy):

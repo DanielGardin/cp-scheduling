@@ -22,10 +22,18 @@ from cpscheduler.environment.constants import MachineID, TaskID, Time
 from cpscheduler.environment.constraints import Constraint, PassiveConstraint
 from cpscheduler.environment.instance import FeatureMetadata, ProblemInstance
 from cpscheduler.environment.mixins import EzPickle
-from cpscheduler.environment.objectives import Objective, SatisfactionObjective
+from cpscheduler.environment.objectives import (
+    Objective,
+    SatisfactionObjective,
+    Sense,
+)
 from cpscheduler.environment.observation import DefaultObservation, Observation
 from cpscheduler.environment.render import Renderer
-from cpscheduler.environment.reward import RewardStrategy, SparseRewardStrategy
+from cpscheduler.environment.reward import (
+    InfeasibilityPenalty,
+    RewardStrategy,
+    SparseRewardStrategy,
+)
 from cpscheduler.environment.setups import ScheduleSetup
 from cpscheduler.environment.specs import ObservationSpec
 from cpscheduler.environment.state import ScheduleState
@@ -119,6 +127,8 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
     setup: ScheduleSetup
     constraints: tuple[Constraint, ...]
     objective: Objective
+    sense: Sense
+    minimize: bool
     observation: ObsT_co
     observation_spec: ObservationSpec
 
@@ -159,6 +169,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
     #     tracers: Iterable[Tracer] | None = None,
     #     render_mode: Renderer | str | None = None,
     #     *,
+    #     sense: Sense | None = None,
     #     debug_mode: bool = False,
     # ) -> None: ...
 
@@ -176,6 +187,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
     #     tracers: Iterable[Tracer] | None = None,
     #     render_mode: Renderer | str | None = None,
     #     *,
+    #     sense: Sense | None = None,
     #     debug_mode: bool = False,
     # ) -> None: ...
 
@@ -192,6 +204,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         tracers: Iterable[Tracer] | None = None,
         render_mode: Renderer | str | None = None,
         *,
+        sense: Sense | None = None,
         debug_mode: bool = False,
     ):
         """Initialize the scheduling environment.
@@ -227,7 +240,8 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
         reward: RewardStrategy, optional
             The reward strategy employed to the objective class. Defaults to
-            sparse reward at the terminal state.
+            sparse reward at the terminal state, wrapped in
+            `InfeasibilityPenalty` so failing is never better than finishing.
 
         instance : InstanceTypes or InstanceGenerator, optional
             Either concrete instance data or a generator stored for lazy sampling.
@@ -241,6 +255,11 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         render_mode : Renderer or str, optional
             Renderer instance or mode string. Defaults to a no-op renderer.
 
+        sense : {"minimize", "maximize"}, optional
+            Whether the objective is minimized or maximized. Defaults to the
+            objective's `default_sense`. The environment is the only source of
+            truth for the sense: objectives are functions of the schedule.
+
         debug_mode : bool, optional
             Enables additional runtime assertions during simulation.
             Defaults to False.
@@ -251,8 +270,13 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         machine_setup = machine_setup or ScheduleSetup()
         constraints = constraints or ()
         objective = objective or SatisfactionObjective()
+        sense = sense or objective.default_sense
+        if sense not in ("minimize", "maximize"):
+            raise ValueError(
+                f"sense must be 'minimize' or 'maximize', got {sense!r}."
+            )
         observation = observation or cast("ObsT_co", DefaultObservation())
-        reward = reward or SparseRewardStrategy()
+        reward = reward or InfeasibilityPenalty(SparseRewardStrategy())
 
         if isinstance(backend, str):
             backend = ScheduleBackend.from_register(backend)
@@ -277,6 +301,8 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         self.setup = machine_setup
         self.constraints = tuple(constraints)
         self.objective = objective
+        self.sense = sense
+        self.minimize = sense == "minimize"
         self.observation = observation
         self.backend = backend
         self.reward = reward
@@ -616,6 +642,8 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
                 assert state.infeasible, (
                     "STATE_INFEASIBLE event produced erroneously."
                 )
+                objective.on_failure(state)
+
                 idx += 1
                 break
 
@@ -730,7 +758,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             )
 
         observation.update(state, backend)
-        self.reward.reset(state, self.objective)
+        self.reward.reset(state, self.objective, self.minimize)
 
         self._status = EnvStatus.RUNNING
 
@@ -802,7 +830,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
         backend = self.backend
 
-        while True:
+        while not state.infeasible:
             instruction = backend.dispatch_instruction(state)
 
             if instruction is None:
@@ -815,10 +843,9 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             self.propagate()
 
         # Gymnasium-like step return
-
         self.observation.update(state, backend)
 
-        reward = self.reward.compute(state, self.objective)
+        reward = self.reward.compute(state, self.objective, self.minimize)
         truncated = state.infeasible
         terminal = state.is_terminal()
         info = self.get_info()

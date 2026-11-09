@@ -21,6 +21,7 @@ from cpscheduler.environment import (
 )
 from cpscheduler.environment.backend import ActionType, ScheduleBackend
 from cpscheduler.environment.instance import FeatureMetadata
+from cpscheduler.environment.objectives import Sense
 from cpscheduler.environment.observation import Observation
 from cpscheduler.environment.observation.default import DefaultObsType
 from cpscheduler.environment.render import Renderer
@@ -35,7 +36,11 @@ from cpscheduler.environment.utils.protocols import (
     Options,
 )
 from cpscheduler.gym.common import ActionSpace
-from cpscheduler.gym.obs_spaces import to_gym_space
+from cpscheduler.gym.obs_spaces import (
+    conform_to_space,
+    has_sequences,
+    to_gym_space,
+)
 
 ObsType = TypeVar("ObsType", default=DefaultObsType)
 _T = TypeVar("_T", covariant=True)
@@ -51,6 +56,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
     """
 
     _current_fingerprint: int | None
+    _conform: bool
     _core: SchedulingEnv[Observation[ObsType]]
 
     @overload
@@ -67,6 +73,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         tracers: Iterable[Tracer] | None = None,
         *,
         render_mode: Renderer | str | None = None,
+        sense: Sense | None = None,
     ) -> None: ...
 
     @overload
@@ -83,6 +90,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         metrics: Mapping[str, Metric[Any]] | None = None,
         tracers: Iterable[Tracer] | None = None,
         render_mode: Renderer | str | None = None,
+        sense: Sense | None = None,
     ) -> None: ...
 
     def __init__(
@@ -98,6 +106,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         tracers: Iterable[Tracer] | None = None,
         *,
         render_mode: Renderer | str | None = None,
+        sense: Sense | None = None,
     ):
         """Initialize the scheduling environment.
 
@@ -146,6 +155,10 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         render_mode : Renderer or str, optional
             Renderer instance or mode string. Defaults to a no-op renderer.
 
+        sense : {"minimize", "maximize"}, optional
+            Whether the objective is minimized or maximized. Defaults to the
+            objective's `default_sense`.
+
         """
         env = SchedulingEnv(
             machine_setup=machine_setup,
@@ -160,6 +173,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
             metrics=metrics,
             tracers=tracers,
             render_mode=render_mode,
+            sense=sense,
         )
 
         self._initialize_env(cast("SchedulingEnv[Observation[ObsType]]", env))
@@ -183,6 +197,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
 
         self.action_space = ActionSpace
         self._current_fingerprint = None
+        self._conform = False
         self._may_update_observation_space()
         self.metadata = {
             "render_modes": RENDER_MODES,
@@ -203,7 +218,18 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
                 symbols[symbol] = 0
 
         self.observation_space = to_gym_space(spec, "observation", symbols)
+        self._conform = has_sequences(self.observation_space)
         self._current_fingerprint = env.fingerprint
+
+    def _gym_observation(self, obs: Observation[ObsType]) -> ObsType:
+        snapshot = obs.snapshot()
+
+        if self._conform:
+            return cast(
+                "ObsType", conform_to_space(self.observation_space, snapshot)
+            )
+
+        return snapshot
 
     @property
     def fingerprint(self) -> int:
@@ -264,7 +290,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         obs, info = self._core.reset(options=options)
         self._may_update_observation_space()
 
-        return obs.snapshot(), info
+        return self._gym_observation(obs), info
 
     def step(
         self, action: ActionType
@@ -316,7 +342,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
         obs, reward, done, truncated, info = self._core.step(action)
 
         return (
-            obs.snapshot(),
+            self._gym_observation(obs),
             reward,
             done,
             truncated,

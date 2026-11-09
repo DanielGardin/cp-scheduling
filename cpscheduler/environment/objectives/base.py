@@ -587,9 +587,6 @@ class _RegularObjective(_SumCompletionObjective):
     """
 
 
-RegularObjective = _RegularObjective
-
-
 class _AntiRegularObjective(_SumCompletionObjective):
     """Base class for sum objectives that improve when jobs complete later.
 
@@ -598,9 +595,6 @@ class _AntiRegularObjective(_SumCompletionObjective):
     """
 
     increasing = False
-
-
-AntiRegularObjective = _AntiRegularObjective
 
 
 class _MaxCompletionObjective(_CompletionObjective):
@@ -697,4 +691,9 @@ class _MaxCompletionObjective(_CompletionObjective):
         self._value_cost = max(self._value_cost, cost)
 
 
+# To avoid registering base classes as objectives, we assign them to private names
+# and then export them with public names at the end of the file.
+CompletionObjective = _CompletionObjective
+RegularObjective = _RegularObjective
+AntiRegularObjective = _AntiRegularObjective
 MaxCompletionObjective = _MaxCompletionObjective

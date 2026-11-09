@@ -1,6 +1,6 @@
 """Backtracking utils."""
 
-from copy import deepcopy
+from copy import copy, deepcopy
 
 
 class GenericTrail:
@@ -8,7 +8,10 @@ class GenericTrail:
     Generic trail implementation for constraints and objectives.
 
     This class is a generic (non-optimized) util for enabling easy backtracking
-    capabilities by trailing a (deep)copy of the current state.
+    capabilities by trailing a copy of the current state.
+
+    A shallow copy is enough, and much cheaper, when the fields are replaced
+    instead of mutated, or hold immutable elements, as lists of numbers.
 
     Example
     -------
@@ -33,8 +36,9 @@ class GenericTrail:
 
     _fields: tuple[str, ...]
     _trail: list[list[object]]
+    _deep: bool
 
-    def __init__(self, *fields: str) -> None:
+    def __init__(self, *fields: str, deep: bool = True) -> None:
         """Initialize a generic trail.
 
         Parameters
@@ -43,8 +47,12 @@ class GenericTrail:
             Field names to trail.
             The objects must have an attribute matching the name.
 
+        deep: bool, optional
+            Whether to trail deep copies of the fields. Default to True.
+
         """
         self._fields = fields
+        self._deep = deep
 
         self._trail = [[] for _ in fields]
 
@@ -61,7 +69,8 @@ class GenericTrail:
         assert all(len(trail) == mark for trail in self._trail)
 
         for field, trail in zip(self._fields, self._trail, strict=True):
-            trail.append(deepcopy(getattr(obj, field)))
+            value = getattr(obj, field)
+            trail.append(deepcopy(value) if self._deep else copy(value))
 
     def backtrack(self, mark: int, obj: object) -> None:
         """Restore the state given a checkpoint mark."""

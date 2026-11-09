@@ -14,11 +14,18 @@ from cpscheduler.environment.state import ScheduleState
 class RewardStrategy(EzPickle):
     """General reward strategy computation class."""
 
-    def reset(self, state: ScheduleState, objective: Objective) -> None:
-        """Reset the internal reward state."""
+    def reset(
+        self, state: ScheduleState, objective: Objective, minimize: bool
+    ) -> None:
+        """Reset the internal reward state.
 
-    def compute(self, state: ScheduleState, objective: Objective) -> float:
-        """Compute reward, given the current state and objective values."""
+        `minimize` is the sense of the environment, the objective holds none.
+        """
+
+    def compute(
+        self, state: ScheduleState, objective: Objective, minimize: bool
+    ) -> float:
+        """Compute the reward, given the current state, objective and sense."""
         raise NotImplementedError(
             f"Reward strategy {type(self).__name__} has no implementation for "
             "the compute method."
@@ -26,13 +33,21 @@ class RewardStrategy(EzPickle):
 
 
 class SparseRewardStrategy(RewardStrategy):
-    """Reward strategy that returns the objective value only in the terminal state."""
+    """Reward strategy that returns the objective value only in the terminal state.
+
+    An infeasible terminal state receives the partial objective value.
+    To penalize infeasible solutions, wrap the strategy in `InfeasibilityPenalty`.
+    """
 
     @override
-    def compute(self, state: ScheduleState, objective: Objective) -> float:
-        reward = objective.value if state.is_terminal() else 0.0
+    def compute(
+        self, state: ScheduleState, objective: Objective, minimize: bool
+    ) -> float:
+        if not state.is_terminal():
+            return 0.0
 
-        return -reward if objective.minimize else reward
+        reward = objective.value
+        return -reward if minimize else reward
 
 
 class SparseCustomReward(RewardStrategy):
@@ -44,7 +59,11 @@ class SparseCustomReward(RewardStrategy):
         self.fn = fn
 
     @override
-    def compute(self, state: ScheduleState, objective: Objective) -> float:
-        reward = self.fn(objective.value) if state.is_terminal() else 0.0
+    def compute(
+        self, state: ScheduleState, objective: Objective, minimize: bool
+    ) -> float:
+        if not state.is_terminal():
+            return 0.0
 
-        return -reward if objective.minimize else reward
+        reward = self.fn(objective.value)
+        return -reward if minimize else reward

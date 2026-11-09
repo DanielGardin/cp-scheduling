@@ -261,3 +261,42 @@ def _(
         raise NotImplementedError(
             f"{name}: No gym.Space conversion registered for {type(spec).__name__}."
         ) from None
+
+
+def has_sequences(space: Space[Any]) -> bool:
+    """Return whether a space holds `Sequence` or `Tuple` subspaces."""
+    if isinstance(space, (Sequence, Tuple)):
+        return True
+
+    if isinstance(space, Dict):
+        return any(has_sequences(subspace) for subspace in space.values())
+
+    return False
+
+
+def conform_to_space(space: Space[Any], value: Any) -> Any:
+    """Convert the sequences of an observation into the tuples Gymnasium expects.
+
+    Observations are serialized with lists, but `Sequence` and `Tuple` spaces
+    only contain tuples.
+    """
+    if isinstance(space, Dict):
+        return {
+            key: conform_to_space(space[key], item)
+            if key in space.spaces
+            else item
+            for key, item in value.items()
+        }
+
+    if isinstance(space, Sequence):
+        return tuple(
+            conform_to_space(space.feature_space, item) for item in value
+        )
+
+    if isinstance(space, Tuple):
+        return tuple(
+            conform_to_space(subspace, item)
+            for subspace, item in zip(space.spaces, value, strict=True)
+        )
+
+    return value
