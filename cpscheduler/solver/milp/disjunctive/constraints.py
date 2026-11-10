@@ -3,7 +3,10 @@
 from itertools import combinations
 
 from cpscheduler.environment.constraints import (
+    AllOrNothingConstraint,
+    AtMostOneConstraint,
     DeadlineConstraint,
+    ExactlyOneConstraint,
     HorizonConstraint,
     MachineConstraint,
     # MachineBreakdownConstraint,
@@ -11,6 +14,7 @@ from cpscheduler.environment.constraints import (
     NonRenewableResourceConstraint,
     NoWaitConstraint,
     PrecedenceConstraint,
+    RejectableConstraint,
     ReleaseDateConstraint,
     ResourceConstraint,
     SetupConstraint,
@@ -19,6 +23,7 @@ from cpscheduler.environment.state import ScheduleState
 from cpscheduler.solver.milp.disjunctive.formulation import (
     DisjunctiveMILPFormulation,
 )
+from cpscheduler.solver.milp.pyomo_formulation import PYOMO_PARAM
 
 DisjunctiveMILPFormulation.mark_constraint_as_handled(
     ReleaseDateConstraint,
@@ -65,44 +70,66 @@ def _no_wait_constraint(
             formulation.set_global_order(task_id, child_id)
 
 
+def _disjunctive_pair(
+    formulation: DisjunctiveMILPFormulation,
+    i: int,
+    j: int,
+    shared: tuple[PYOMO_PARAM, ...],
+    name: str,
+) -> None:
+    """Separate i and j in time whenever both literals of `shared` hold.
+
+    The orders are local to the shared resource: `order(i, j)` and
+    `order(j, i)` are independent variables, and the clause only asks for one
+    of them when i and j actually compete for the resource.
+    """
+    # Tasks that can never share the resource are never ordered
+    if any(formulation.is_true(literal == 1) is False for literal in shared):
+        return
+
+    i_first = formulation.get_order(i, j)
+    j_first = formulation.get_order(j, i)
+
+    formulation.implication(
+        antecedent=(i_first, *shared),
+        consequent=(
+            formulation.end_times[i],
+            "<=",
+            formulation.start_times[j],
+        ),
+        name=f"{name}_{i}_{j}",
+    )
+
+    formulation.implication(
+        antecedent=(j_first, *shared),
+        consequent=(
+            formulation.end_times[j],
+            "<=",
+            formulation.start_times[i],
+        ),
+        name=f"{name}_{j}_{i}",
+    )
+
+    formulation.clause(
+        (i_first, j_first, *(1 - literal for literal in shared)),
+        name=f"{name}_{i}_{j}_cover",
+    )
+
+
 @DisjunctiveMILPFormulation.register_constraint(NonOverlapConstraint)
 def _non_overlap_constraint(
     formulation: DisjunctiveMILPFormulation,
     state: ScheduleState,
     constraint: NonOverlapConstraint,
 ) -> None:
-    for group in constraint.groups.value:
+    for group_id, group in enumerate(constraint.groups.value):
         for i, j in combinations(group, 2):
-            order_var = formulation.get_order(i, j)
-            presence_i = formulation.present[i]
-            presence_j = formulation.present[j]
-
-            formulation.implication(
-                antecedent=(
-                    order_var,
-                    presence_i,
-                    presence_j,
-                ),
-                consequent=(
-                    formulation.end_times[i],
-                    "<=",
-                    formulation.start_times[j],
-                ),
-                name=f"disjunctive_{i}_{j}_order",
-            )
-
-            formulation.implication(
-                antecedent=(
-                    1 - order_var,
-                    presence_i,
-                    presence_j,
-                ),
-                consequent=(
-                    formulation.end_times[j],
-                    "<=",
-                    formulation.start_times[i],
-                ),
-                name=f"disjunctive_{j}_{i}_order",
+            _disjunctive_pair(
+                formulation,
+                i,
+                j,
+                (formulation.present[i], formulation.present[j]),
+                f"disjunctive_{group_id}",
             )
 
 
@@ -114,36 +141,17 @@ def _machine_constraint(
 ) -> None:
     for machine_id, tasks in enumerate(constraint.machine_map):
         for i, j in combinations(tasks, 2):
-            order_var = formulation.get_order(i, j)
-            assignments_i = formulation.assignments[i]
-            assignments_j = formulation.assignments[j]
-
-            formulation.implication(
-                antecedent=(
-                    order_var,
-                    assignments_i[machine_id],
-                    assignments_j[machine_id],
+            _disjunctive_pair(
+                formulation,
+                i,
+                j,
+                (
+                    formulation.present[i],
+                    formulation.assignments[i][machine_id],
+                    formulation.present[j],
+                    formulation.assignments[j][machine_id],
                 ),
-                consequent=(
-                    formulation.end_times[i],
-                    "<=",
-                    formulation.start_times[j],
-                ),
-                name=f"machine_{machine_id}_order_{i}_{j}",
-            )
-
-            formulation.implication(
-                antecedent=(
-                    1 - order_var,
-                    assignments_i[machine_id],
-                    assignments_j[machine_id],
-                ),
-                consequent=(
-                    formulation.end_times[j],
-                    "<=",
-                    formulation.start_times[i],
-                ),
-                name=f"machine_{machine_id}_order_{j}_{i}",
+                f"machine_{machine_id}",
             )
 
 
@@ -192,15 +200,21 @@ def _setup_constraint(
             if time <= 0:
                 continue
 
-            order_var = formulation.get_order(task_id, other_task_id)
             shared_machines = set(state.get_machines(task_id)) & set(
                 state.get_machines(other_task_id)
             )
+
+            if not shared_machines:
+                continue
+
+            order_var = formulation.get_order(task_id, other_task_id)
 
             for machine_id in shared_machines:
                 formulation.implication(
                     antecedent=(
                         order_var,
+                        formulation.present[task_id],
+                        formulation.present[other_task_id],
                         formulation.assignments[task_id][machine_id],
                         formulation.assignments[other_task_id][machine_id],
                     ),
@@ -211,3 +225,77 @@ def _setup_constraint(
                     ),
                     name=f"setup_{task_id}_{other_task_id}_{machine_id}",
                 )
+
+
+def _group_presence(
+    formulation: DisjunctiveMILPFormulation, tasks: list[int]
+) -> PYOMO_PARAM | None:
+    """Return the number of present tasks, or None when all are decided.
+
+    A decided group was already checked by the constraint itself on reset.
+    """
+    literals = [formulation.present[task_id] for task_id in tasks]
+
+    if all(
+        formulation.is_true(literal == 1) is not None for literal in literals
+    ):
+        return None
+
+    return sum(literals)
+
+
+@DisjunctiveMILPFormulation.register_constraint(AtMostOneConstraint)
+def _at_most_one_constraint(
+    formulation: DisjunctiveMILPFormulation,
+    state: ScheduleState,
+    constraint: AtMostOneConstraint,
+) -> None:
+    for group_id, tasks in enumerate(constraint.task_groups):
+        n_present = _group_presence(formulation, tasks)
+
+        if n_present is not None:
+            formulation.add_constraint(
+                n_present <= 1, f"at_most_one_{group_id}"
+            )
+
+
+@DisjunctiveMILPFormulation.register_constraint(ExactlyOneConstraint)
+def _exactly_one_constraint(
+    formulation: DisjunctiveMILPFormulation,
+    state: ScheduleState,
+    constraint: ExactlyOneConstraint,
+) -> None:
+    for group_id, tasks in enumerate(constraint.task_groups):
+        n_present = _group_presence(formulation, tasks)
+
+        if n_present is not None:
+            formulation.add_constraint(
+                n_present == 1, f"exactly_one_{group_id}"
+            )
+
+
+@DisjunctiveMILPFormulation.register_constraint(AllOrNothingConstraint)
+def _all_or_nothing_constraint(
+    formulation: DisjunctiveMILPFormulation,
+    state: ScheduleState,
+    constraint: AllOrNothingConstraint,
+) -> None:
+    for group_id, tasks in enumerate(constraint.task_groups):
+        if not tasks:
+            continue
+
+        first = formulation.present[tasks[0]]
+        for task_id in tasks[1:]:
+            present = formulation.present[task_id]
+            formulation.add_constraint(
+                present == first, f"all_or_nothing_{group_id}_{task_id}"
+            )
+
+
+@DisjunctiveMILPFormulation.register_constraint(RejectableConstraint)
+def _rejectable_constraint(
+    formulation: DisjunctiveMILPFormulation,
+    state: ScheduleState,
+    constraint: RejectableConstraint,
+) -> None:
+    _all_or_nothing_constraint(formulation, state, constraint)

@@ -1,15 +1,18 @@
 """Pyomo-based MILP formulation for scheduling problems."""
 
 import logging
+from collections.abc import Sequence
 from typing import Any, Final, Literal, TypeAlias
 
 import pyomo.environ as pyo
+from pyomo.common.errors import ApplicationError
 from pyomo.contrib.fbbt.fbbt import compute_bounds_on_expr
 from pyomo.core.base.objective import ObjectiveSense
 from pyomo.core.base.var import VarData
 from pyomo.core.expr.relational_expr import RelationalExpression
 from pyomo.opt.base.solvers import OptSolver
 from pyomo.opt.results.results_ import SolverResults
+from pyomo.opt.results.solver import TerminationCondition
 from typing_extensions import assert_never, override
 
 from cpscheduler.environment import SchedulingEnv
@@ -20,6 +23,9 @@ PYOMO_PARAM: TypeAlias = ScalarValue | VarData
 PYOMO_CONSTRAINT: TypeAlias = bool | RelationalExpression
 
 # Maps solver tag to the option name it uses for time limits.
+INTEGRALITY_TOL: Final[float] = 1e-6
+"Largest distance to an integer of an integer variable in a solution."
+
 _SOLVER_TIME_LIMIT_OPTION: dict[str, str] = {
     "cplex": "timelimit",
     "cplex_direct": "timelimit",
@@ -119,6 +125,7 @@ class PyomoFormulation(Formulation[SolverResults]):
     _sense: ObjectiveSense
     _solver: OptSolver
     _result: SolverResults
+    _has_solution: bool
     _objective_expr: PYOMO_PARAM
 
     _variables: dict[str, VarData]
@@ -132,14 +139,11 @@ class PyomoFormulation(Formulation[SolverResults]):
         self._objective_expr = 0
 
         self.model = pyo.ConcreteModel(name=env.get_entry())
-        self._sense = pyo.minimize if env.objective.minimize else pyo.maximize
+        self._sense = pyo.minimize if env.minimize else pyo.maximize
         self.model.objective = pyo.Objective(expr=0, sense=self._sense)
+        self._has_solution = False
 
         self._variables = {}
-
-    @override
-    def post_build(self) -> None:
-        return super().post_build()
 
     def solve(
         self,
@@ -191,13 +195,64 @@ class PyomoFormulation(Formulation[SolverResults]):
                     f"Add it to _SOLVER_TIME_LIMIT_OPTION."
                 )
 
-        self._result = self._solver.solve(
-            self.model,
-            tee=not quiet,
-            keepfiles=keep_files,
-        )
+        # Initial values are only sent to the solver on request
+        options: dict[str, Any] = {}
+        if self._solver.warm_start_capable():
+            options["warmstart"] = True
+
+        try:
+            self._result = self._solver.solve(
+                self.model,
+                tee=not quiet,
+                keepfiles=keep_files,
+                **options,
+            )
+
+        # A solver process that crashes produced no schedule. The model keeps
+        # its initial values, which must not be read as a solution.
+        except ApplicationError as error:
+            logging.warning("Solver %s crashed: %s", solver_tag, error)
+
+            self._result = SolverResults()
+            self._result.solver.termination_condition = (
+                TerminationCondition.error
+            )
+            self._has_solution = False
+
+            return self._result
+
+        self._has_solution = self._integral_solution()
 
         return self._result
+
+    @override
+    def has_solution(self) -> bool:
+        return self._has_solution
+
+    def _integral_solution(self) -> bool:
+        """Return whether the solver loaded a schedule, integral when integer.
+
+        A solver stopped by a time limit may load an LP relaxation instead.
+        Variables absent from every constraint are never reported, and stay
+        stale without a value.
+        """
+        loaded = False
+
+        for var in self.model.component_data_objects(pyo.Var, active=True):
+            value = var.value
+
+            if value is None:
+                if var.stale:
+                    continue
+
+                return False
+
+            loaded = loaded or not var.stale
+
+            if var.is_integer() and abs(value - round(value)) > INTEGRALITY_TOL:
+                return False
+
+        return loaded
 
     def set_objective(self, expr: PYOMO_PARAM) -> None:
         """Set the objective expression of the model."""
@@ -276,10 +331,12 @@ class PyomoFormulation(Formulation[SolverResults]):
 
     def max_expr(
         self,
-        decision_vars: list[PYOMO_PARAM],
+        decision_vars: Sequence[PYOMO_PARAM],
         name: str,
         exact: bool = False,
-    ) -> VarData:
+        conditions: Sequence[PYOMO_PARAM] | None = None,
+        default: int = 0,
+    ) -> PYOMO_PARAM:
         """Create an auxiliary variable representing the maximum of a list of decision variables.
 
         This method creates a new variable `z` and adds constraints `z >= v` for
@@ -287,7 +344,7 @@ class PyomoFormulation(Formulation[SolverResults]):
 
         Parameters
         ----------
-        decision_vars: list[PYOMO_PARAM]
+        decision_vars: Sequence[PYOMO_PARAM]
             The list of decision variables to take the maximum over.
 
         name: str
@@ -301,11 +358,19 @@ class PyomoFormulation(Formulation[SolverResults]):
             to the maximum of the decision variables, making it exact even when
             `exact=False`.
 
+        conditions: Sequence[PYOMO_PARAM] | None, optional
+            A binary literal for each decision variable, which only takes part
+            in the maximum when its literal is 1. By default, all of them do.
+
+        default: int, default=0
+            The value of the maximum when no condition holds.
+
         Returns
         -------
-        VarData
+        PYOMO_PARAM
             The auxiliary variable representing the (upper bound for the)
-            maximum of the decision variables.
+            maximum of the decision variables, or `default` when no decision
+            variable can take part in it.
 
         """
         if len(decision_vars) == 0:
@@ -313,32 +378,94 @@ class PyomoFormulation(Formulation[SolverResults]):
                 "Cannot take the maximum of an empty list of variables."
             )
 
-        lb = max(self.get_lb(var) for var in decision_vars)
-        ub = max(self.get_ub(var) for var in decision_vars)
+        if conditions is None:
+            conditions = [1] * len(decision_vars)
+
+        # Constant literals fold: a true one makes its term unconditional, a
+        # false one drops its term.
+        terms: list[tuple[PYOMO_PARAM, PYOMO_PARAM | None]] = []
+        for var, condition in zip(decision_vars, conditions, strict=True):
+            truth = self.is_true(condition == 1)
+
+            if truth is True:
+                terms.append((var, None))
+
+            elif truth is None:
+                terms.append((var, condition))
+
+        if not terms:
+            return default
+
+        optional = [
+            condition for _, condition in terms if condition is not None
+        ]
+        may_be_empty = len(optional) == len(terms)
+
+        lb = max(
+            (self.get_lb(var) for var, condition in terms if condition is None),
+            default=min(default, *(self.get_lb(var) for var, _ in terms)),
+        )
+        ub = max(self.get_ub(var) for var, _ in terms)
+        if may_be_empty:
+            ub = max(ub, default)
 
         max_var = self.add_var(name, lb=lb, ub=ub, binary=False)
 
-        for i, var in enumerate(decision_vars):
-            self.add_constraint(max_var >= var, f"{name}_lb_{i}")
+        for i, (var, condition) in enumerate(terms):
+            if condition is None:
+                self.add_constraint(max_var >= var, f"{name}_lb_{i}")
+
+            else:
+                self.implication(
+                    (condition,), (max_var, ">=", var), f"{name}_lb_{i}"
+                )
 
         if not exact:
+            # Without any term, the maximum is the default
+            if may_be_empty and lb < default:
+                self.implication(
+                    tuple(1 - condition for condition in optional),
+                    (max_var, ">=", default),
+                    f"{name}_default",
+                )
+
             return max_var
 
         binaries = [
             self.add_var(f"{name}_is_max_{i}", binary=True)
-            for i in range(len(decision_vars))
+            for i in range(len(terms))
         ]
 
-        self.add_constraint(
-            pyo.quicksum(binaries) == 1, f"{name}_exact_one_max"
-        )
-
-        for i, (var, binary) in enumerate(
-            zip(decision_vars, binaries, strict=True)
+        for i, ((var, condition), binary) in enumerate(
+            zip(terms, binaries, strict=True)
         ):
+            if condition is not None:
+                # An absent term cannot be the maximum
+                self.add_constraint(
+                    binary <= condition, f"{name}_is_max_{i}_cond"
+                )
+
             self.implication(
                 (binary,), (max_var, "==", var), f"{name}_exact_max_{i}"
             )
+
+        selected = list(binaries)
+        if may_be_empty:
+            is_default = self.add_var(f"{name}_is_default", binary=True)
+
+            for i, condition in enumerate(optional):
+                self.add_constraint(
+                    is_default <= 1 - condition, f"{name}_is_default_{i}"
+                )
+
+            self.implication(
+                (is_default,), (max_var, "==", default), f"{name}_exact_default"
+            )
+            selected.append(is_default)
+
+        self.add_constraint(
+            pyo.quicksum(selected) == 1, f"{name}_exact_one_max"
+        )
 
         return max_var
 
@@ -371,7 +498,7 @@ class PyomoFormulation(Formulation[SolverResults]):
         premises: list[PYOMO_PARAM] = []
 
         for var in antecedent:
-            truth = self._is_true(var == 1)
+            truth = self.is_true(var == 1)
             if truth is True:
                 continue
 
@@ -416,6 +543,27 @@ class PyomoFormulation(Formulation[SolverResults]):
 
         else:
             assert_never(operator)
+
+    def clause(self, literals: tuple[PYOMO_PARAM, ...], name: str) -> None:
+        """Add a disjunctive clause: at least one of the literals is true.
+
+        Each literal is a binary variable, its negation `1 - var`, or a
+        constant. The clause is dropped when a constant literal is true.
+        """
+        free: list[PYOMO_PARAM] = []
+
+        for literal in literals:
+            truth = self.is_true(literal == 1)
+            if truth is True:
+                return
+
+            if truth is None:
+                free.append(literal)
+
+        if not free:
+            raise ValueError(f"Clause {name} has no literal that can be true.")
+
+        self.add_constraint(pyo.quicksum(free) >= 1, name)
 
     def _add_direct_consequent(
         self,
@@ -499,9 +647,8 @@ class PyomoFormulation(Formulation[SolverResults]):
 
         param.setub(ub)
 
-    def _is_true(
-        self, condition: PYOMO_CONSTRAINT | PYOMO_PARAM
-    ) -> bool | None:
+    def is_true(self, condition: PYOMO_CONSTRAINT | PYOMO_PARAM) -> bool | None:
+        """Return whether the condition is known to be true, false, or unknown."""
         if isinstance(condition, bool):
             return condition
 

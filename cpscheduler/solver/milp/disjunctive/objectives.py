@@ -1,9 +1,12 @@
 """Module for defining objective functions for the disjunctive MILP formulation."""
 
+from pyomo.environ import quicksum
+
 from cpscheduler.environment.objectives import (
     ComposedObjective,
     Makespan,
     MaximumLateness,
+    RejectionCost,
     SatisfactionObjective,
     TotalCompletionTime,
     TotalEarliness,
@@ -32,6 +35,8 @@ def _jobs_makespan(
     A non-exact variable is only an upper bound of the completion time, which
     is tight solely when the objective pushes it down. Objectives improved by
     later completions, like earliness, must ask for exact variables.
+
+    Absent tasks do not count, and a job without present tasks completes at 0.
     """
     makespans = []
 
@@ -40,10 +45,21 @@ def _jobs_makespan(
             [formulation.end_times[task_id] for task_id in job_tasks],
             name=f"makespan_job_{job_id}",
             exact=exact,
+            conditions=[formulation.present[task_id] for task_id in job_tasks],
         )
         makespans.append(job_makespan)
 
     return makespans
+
+
+def _jobs_presence(
+    formulation: DisjunctiveMILPFormulation, state: ScheduleState
+) -> list[PYOMO_PARAM]:
+    """Return whether each job has a present task."""
+    return [
+        formulation.job_presence(job_id, job_tasks)
+        for job_id, job_tasks in enumerate(state.instance.job_tasks)
+    ]
 
 
 @DisjunctiveMILPFormulation.register_objective(SatisfactionObjective)
@@ -65,6 +81,7 @@ def _makespan_objective(
     makespan = formulation.max_expr(
         formulation.end_times,
         name="makespan",
+        conditions=formulation.present,
     )
 
     formulation.set_objective(makespan)
@@ -78,7 +95,7 @@ def _composed_objective(
     state: ScheduleState,
     objective: ComposedObjective,
 ) -> PYOMO_PARAM:
-    sub_objectives = [
+    sub_objectives: list[PYOMO_PARAM] = [
         DisjunctiveMILPFormulation.get_objective_fn(type(sub_objective))(
             formulation, state, sub_objective
         )
@@ -86,7 +103,7 @@ def _composed_objective(
     ]
 
     coefficients = objective.coefficients
-    objective_value = sum(
+    objective_value = quicksum(
         coefficient * sub_objective
         for coefficient, sub_objective in zip(
             coefficients, sub_objectives, strict=False
@@ -106,7 +123,7 @@ def _total_completion_time_objective(
 ) -> PYOMO_PARAM:
     job_makespans = _jobs_makespan(formulation, state)
 
-    total_completion_time = sum(job_makespans)
+    total_completion_time = quicksum(job_makespans)
 
     formulation.set_objective(total_completion_time)
 
@@ -123,7 +140,7 @@ def _weighted_completion_time_objective(
 
     weights = objective.weights.value
 
-    weighted_completion_time = sum(
+    weighted_completion_time = quicksum(
         weight * makespan
         for weight, makespan in zip(weights, job_makespans, strict=False)
     )
@@ -140,14 +157,20 @@ def _maximum_lateness_objective(
     objective: MaximumLateness,
 ) -> PYOMO_PARAM:
     job_makespans = _jobs_makespan(formulation, state)
+    due_dates = [int(due_date) for due_date in objective.due_dates.value]
+    presence = _jobs_presence(formulation, state)
 
     lateness = [
-        job_makespan - int(due_date)
+        job_makespan - due_date
         for job_makespan, due_date in zip(
-            job_makespans, objective.due_dates.value, strict=False
+            job_makespans, due_dates, strict=False
         )
     ]
-    max_lateness = formulation.max_expr(lateness, name="max_lateness")
+
+    # A rejected job is left out of the maximum, which is 0 without any job
+    max_lateness = formulation.max_expr(
+        lateness, name="max_lateness", conditions=presence
+    )
 
     formulation.set_objective(max_lateness)
 
@@ -173,7 +196,7 @@ def _total_tardiness_objective(
             zip(job_makespans, due_dates, strict=False)
         )
     ]
-    total_tardiness = sum(tardiness_terms)
+    total_tardiness = quicksum(tardiness_terms)
 
     formulation.set_objective(total_tardiness)
 
@@ -204,7 +227,7 @@ def _weighted_tardiness_objective(
         )
         terms.append(weight * tardiness)
 
-    weighted_tardiness = sum(terms)
+    weighted_tardiness = quicksum(terms)
 
     formulation.set_objective(weighted_tardiness)
 
@@ -218,19 +241,21 @@ def _total_earliness_objective(
     objective: TotalEarliness,
 ) -> PYOMO_PARAM:
     job_makespans = _jobs_makespan(formulation, state, exact=True)
+    presence = _jobs_presence(formulation, state)
 
     due_dates = objective.due_dates.value
 
+    # A rejected job completes at 0, its due date must not count either
     earliness_terms = [
         formulation.max_expr(
-            [0, int(due_date) - job_makespan],
+            [0, int(due_date) * present - job_makespan],
             name=f"earliness_{job_id}",
         )
-        for job_id, (job_makespan, due_date) in enumerate(
-            zip(job_makespans, due_dates, strict=False)
+        for job_id, (job_makespan, due_date, present) in enumerate(
+            zip(job_makespans, due_dates, presence, strict=False)
         )
     ]
-    total_earliness = sum(earliness_terms)
+    total_earliness = quicksum(earliness_terms)
 
     formulation.set_objective(total_earliness)
 
@@ -244,24 +269,25 @@ def _weighted_earliness_objective(
     objective: WeightedEarliness,
 ) -> PYOMO_PARAM:
     job_makespans = _jobs_makespan(formulation, state, exact=True)
+    presence = _jobs_presence(formulation, state)
 
     weights = objective.weights.value
     due_dates = objective.due_dates.value
 
     terms = []
-    for job_id, (job_makespan, due_date, weight) in enumerate(
-        zip(job_makespans, due_dates, weights, strict=False)
+    for job_id, (job_makespan, due_date, weight, present) in enumerate(
+        zip(job_makespans, due_dates, weights, presence, strict=False)
     ):
         if weight == 0:
             continue
 
         earliness = formulation.max_expr(
-            [0, int(due_date) - job_makespan],
+            [0, int(due_date) * present - job_makespan],
             name=f"weighted_earliness_{job_id}",
         )
         terms.append(weight * earliness)
 
-    weighted_earliness = sum(terms)
+    weighted_earliness = quicksum(terms)
 
     formulation.set_objective(weighted_earliness)
 
@@ -286,15 +312,14 @@ def _total_tardy_jobs_objective(
         U_j = tardy_indicators[job_id]
 
         for task_id in task_ids[job_id]:
-            C_j = formulation.end_times[task_id]
-
+            # An absent task does not make its job tardy
             formulation.implication(
-                (1 - U_j,),
-                (C_j, "<=", due_date),
+                (1 - U_j, formulation.present[task_id]),
+                (formulation.end_times[task_id], "<=", due_date),
                 f"tardy_implication_{task_id}",
             )
 
-    total_tardy_jobs = sum(tardy_indicators)
+    total_tardy_jobs = quicksum(tardy_indicators)
 
     formulation.set_objective(total_tardy_jobs)
 
@@ -320,15 +345,14 @@ def _weighted_tardy_jobs_objective(
         U_j = tardy_indicators[job_id]
 
         for task_id in task_ids[job_id]:
-            C_j = formulation.end_times[task_id]
-
+            # An absent task does not make its job tardy
             formulation.implication(
-                (1 - U_j,),
-                (C_j, "<=", due_date),
+                (1 - U_j, formulation.present[task_id]),
+                (formulation.end_times[task_id], "<=", due_date),
                 f"tardy_implication_{task_id}",
             )
 
-    weighted_tardy_jobs = sum(
+    weighted_tardy_jobs = quicksum(
         tardy_indicators[job_id] * weight
         for job_id, weight in enumerate(weights)
     )
@@ -357,35 +381,32 @@ def _total_flow_time_objective(
             zip(job_makespans, release_times, strict=False)
         )
     ]
-    total_flow_time = sum(flow_terms)
+    total_flow_time = quicksum(flow_terms)
 
     formulation.set_objective(total_flow_time)
 
     return total_flow_time
 
 
-# @DisjunctiveMILPFormulation.register_objective(RejectionCost)
-# def rejection_cost_objective(
-#     formulation: DisjunctiveMILPFormulation,
-#     state: ScheduleState,
-#     objective: RejectionCost,
-# ) -> PYOMO_PARAM:
-#     weights =  objective.rejection_costs
+@DisjunctiveMILPFormulation.register_objective(RejectionCost)
+def _rejection_cost_objective(
+    formulation: DisjunctiveMILPFormulation,
+    state: ScheduleState,
+    objective: RejectionCost,
+) -> PYOMO_PARAM:
+    # A job is rejected when none of its tasks is present
+    rejection_cost = sum(
+        cost * (1 - formulation.job_presence(job_id, tasks))
+        for job_id, (cost, tasks) in enumerate(
+            zip(
+                objective.rejection_costs.value,
+                state.instance.job_tasks,
+                strict=True,
+            )
+        )
+        if cost != 0 and tasks
+    )
 
-#     terms: list[PYOMO_PARAM] = []
-#     for task_id, optional in enumerate(state.instance.optional):
-#         if not optional:
-#             continue
+    formulation.set_objective(rejection_cost)
 
-#         cost = weights[task_id]
-#         if cost == 0:
-#             continue
-
-#         present = formulation.present[task_id]
-#         terms.append(cost * (1 - present))
-
-#     rejection_cost = sum(terms)
-
-#     formulation.set_objective(rejection_cost)
-
-#     return rejection_cost
+    return rejection_cost

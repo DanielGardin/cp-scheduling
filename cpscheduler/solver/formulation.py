@@ -169,6 +169,21 @@ class Formulation(Generic[SolverResult], ABC):
     def get_objective_value(self) -> float:
         """Get the objective value of the current solution."""
 
+    def is_present(self, task_id: int) -> bool:
+        """Return whether the solution keeps a task in the schedule.
+
+        Formulations that never reject tasks keep every task present.
+        """
+        return True
+
+    @abstractmethod
+    def has_solution(self) -> bool:
+        """Return whether the last solve produced a complete schedule.
+
+        A solver can stop, at a time limit for instance, without a schedule, or
+        with values that are not one, such as an LP relaxation.
+        """
+
     @abstractmethod
     def initialize_model(self, env: SchedulingEnv[Observation[Any]]) -> None:
         """Initialize the model with variables.

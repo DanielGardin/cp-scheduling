@@ -102,7 +102,7 @@ class NaiveBnBFormulation(Formulation[SolverResults]):
 
     @override
     def initialize_model(self, env: SchedulingEnv) -> None:
-        if not env.objective.minimize:
+        if not env.minimize:
             raise ValueError(
                 "NaiveBnBFormulation only supports minimization objectives."
             )
@@ -298,6 +298,11 @@ class NaiveBnBFormulation(Formulation[SolverResults]):
     @override
     def get_objective_value(self) -> float:
         return self.best_obj
+
+    @override
+    def has_solution(self) -> bool:
+        # The warm start is the incumbent the search starts from
+        return self.best_obj < float("inf")
 
     @override
     def get_assignment(self, task_id: int) -> tuple[MachineID, Time]:

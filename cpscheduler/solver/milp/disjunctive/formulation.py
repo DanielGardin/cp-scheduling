@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 
+import pyomo.environ as pyo
 from typing_extensions import override
 
 from cpscheduler.environment import (
@@ -38,6 +39,7 @@ class DisjunctiveMILPFormulation(PyomoFormulation):
     assignments: list[list[PYOMO_PARAM]]
     orders: dict[tuple[int, int], PYOMO_PARAM]
     present: list[PYOMO_PARAM]
+    _job_presence: dict[int, PYOMO_PARAM]
 
     def __init__(self, horizon: int | None = None) -> None:
         super().__init__()
@@ -47,10 +49,15 @@ class DisjunctiveMILPFormulation(PyomoFormulation):
         self.end_times = []
         self.assignments = []
         self.present = []
+        self._job_presence = {}
 
         self.orders = {}
 
         self.horizon = horizon
+
+    @override
+    def is_present(self, task_id: int) -> bool:
+        return round(self.get_value(self.present[task_id])) == 1
 
     @override
     def get_assignment(self, task_id: int) -> tuple[int, int]:
@@ -79,10 +86,15 @@ class DisjunctiveMILPFormulation(PyomoFormulation):
         self.end_times = [0] * n_tasks
         self.orders.clear()
         self.present = [1] * n_tasks
+        self._job_presence = {}
 
         self.assignments = [[0] * n_machines for _ in range(n_tasks)]
 
         for task_id in range(n_tasks):
+            if state.is_absent(task_id):
+                self.present[task_id] = 0
+                continue
+
             if state.is_fixed(task_id):
                 self.start_times[task_id] = state.get_start(task_id)
                 self.end_times[task_id] = state.get_end(task_id)
@@ -113,6 +125,8 @@ class DisjunctiveMILPFormulation(PyomoFormulation):
                     f"present_{task_id}",
                     binary=True,
                 )
+
+            self.present[task_id] = presence
 
             machines = state.get_machines(task_id)
 
@@ -150,8 +164,10 @@ class DisjunctiveMILPFormulation(PyomoFormulation):
         else:
             horizon = self.horizon
             for task_id in range(n_tasks):
-                self.add_constraint(
-                    self.end_times[task_id] <= horizon, f"horizon_{task_id}"
+                self.implication(
+                    (self.present[task_id],),
+                    (self.end_times[task_id], "<=", horizon),
+                    f"horizon_{task_id}",
                 )
 
     def _tightening_maybe(self, env: SchedulingEnv) -> None:
@@ -235,8 +251,18 @@ class DisjunctiveMILPFormulation(PyomoFormulation):
     def warm_start(self, env: SchedulingEnv) -> None:
         state = env.state
         for task_id in range(state.n_tasks):
+            if state.is_absent(task_id):
+                self.set_initial_value(self.present[task_id], 0)
+
+                for var in self.assignments[task_id]:
+                    self.set_initial_value(var, 0)
+
+                continue
+
             if not state.is_fixed(task_id):
                 continue
+
+            self.set_initial_value(self.present[task_id], 1)
 
             start_time = state.get_start(task_id)
             self.set_initial_value(self.start_times[task_id], start_time)
@@ -249,8 +275,8 @@ class DisjunctiveMILPFormulation(PyomoFormulation):
                 self.set_initial_value(var, 1 if m_id == machine_id else 0)
 
         for (i, j), var in self.orders.items():
-            # A warm start may be a partial schedule
-            if not (state.is_fixed(i) and state.is_fixed(j)):
+            # A warm start may be a partial schedule, and rejects tasks
+            if not (state.is_assigned(i) and state.is_assigned(j)):
                 continue
 
             start_i = state.get_start(i)
@@ -271,11 +297,49 @@ class DisjunctiveMILPFormulation(PyomoFormulation):
         makespan = int(state.get_latest_end())
 
         for task_id in range(state.n_tasks):
+            # A task that may be rejected keeps the bounds of a present one,
+            # and its end does not count in the makespan when it is absent.
+            if self.is_true(self.present[task_id] == 1) is not True:
+                continue
+
             if self.get_ub(self.end_times[task_id]) > makespan:
                 self.set_ub(self.end_times[task_id], makespan)
                 self.set_ub(self.start_times[task_id], makespan)
 
     # Helper methods for building the model
+    def job_presence(self, job_id: int, job_tasks: list[int]) -> PYOMO_PARAM:
+        """Return whether any task of a job is present."""
+        if job_id in self._job_presence:
+            return self._job_presence[job_id]
+
+        literals: list[PYOMO_PARAM] = []
+        for task_id in job_tasks:
+            truth = self.is_true(self.present[task_id] == 1)
+
+            if truth is True:
+                self._job_presence[job_id] = 1
+                return 1
+
+            if truth is None:
+                literals.append(self.present[task_id])
+
+        if not literals:
+            self._job_presence[job_id] = 0
+            return 0
+
+        presence = self.add_var(f"job_present_{job_id}", binary=True)
+        for i, literal in enumerate(literals):
+            self.add_constraint(
+                presence >= literal, f"job_present_{job_id}_{i}"
+            )
+
+        self.add_constraint(
+            presence <= pyo.quicksum(literals), f"job_present_{job_id}_any"
+        )
+
+        self._job_presence[job_id] = presence
+        return presence
+
     def has_order(self, i: int, j: int) -> bool:
         """Check if there is an order variable defined for tasks i and j."""
         return (i, j) in self.orders
