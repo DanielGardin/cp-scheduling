@@ -60,6 +60,10 @@ class NonOverlapConstraint(Constraint):
             convert_to_list(task_group, TaskID) for task_group in task_groups
         ]
 
+    def clear_groups(self) -> None:
+        """Empty all groups in the constraint."""
+        self.groups.own_data([])
+
     def add_task(self, group_id: Int, task: Int) -> None:
         """Add a task to a specific group."""
         data = self.groups.value if self.groups.loaded else []

@@ -118,6 +118,7 @@ class OpenShopSetup(_ShopSetup):
     def initialize(self, instance: ProblemInstance) -> None:
         super().initialize(instance)
 
+        self._task_disjunction.clear_groups()
         for tasks in instance.job_tasks:
             self._task_disjunction.add_group(tasks)
 
@@ -165,6 +166,7 @@ def _build_job_precedence(
 
         task_orders[job][op] = task_id
 
+    precedence.clear_precedence()
     for job, chain in enumerate(task_orders):
         if -1 in chain:
             raise ValueError(

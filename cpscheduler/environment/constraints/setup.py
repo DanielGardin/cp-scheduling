@@ -49,6 +49,10 @@ class SetupConstraint(Constraint):
             for task, children in setup_times.items()
         }
 
+    def clear_setup_times(self) -> None:
+        """Empty the setup times mapping in the constraint."""
+        self.setup_times.clear()
+
     def add_setup_time(
         self, task_id: Int, child_id: Int, setup_time: Int
     ) -> None:

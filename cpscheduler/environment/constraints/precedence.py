@@ -91,6 +91,10 @@ class PrecedenceConstraint(Constraint):
 
         return cls(precedence, name)
 
+    def clear_precedence(self) -> None:
+        """Empty the precedence mapping in the constraint."""
+        self.parents.own_data({})
+
     def add_precedence(self, parent_id: Int, child_id: Int) -> None:
         """Add a precedence relationship between two tasks."""
         data = self.parents.value if self.parents.loaded else {}

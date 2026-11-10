@@ -135,6 +135,10 @@ class MachineEligibilityConstraint(PassiveConstraint):
 
         return cls(eligibility)
 
+    def clear_eligibility(self) -> None:
+        """Empty the eligibility mapping, allowing all tasks to be eligible on all machines."""
+        self.eligibility.clear()
+
     def add_eligibility(self, task_id: Int, machine_id: Int) -> None:
         """Add eligibility for a task on a specific machine."""
         if TaskID(task_id) not in self.eligibility:

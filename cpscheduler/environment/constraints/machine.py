@@ -143,6 +143,10 @@ class MachineBreakdownConstraint(Constraint):
 
             self.breakdowns.own_data(calendar)
 
+    def clear_breakdowns(self) -> None:
+        """Empty all breakdowns in the constraint."""
+        self.breakdowns.own_data([])
+
     def add_breakdown(
         self, machine_id: Int, start_time: Int, end_time: Int
     ) -> None:
@@ -354,6 +358,10 @@ class BatchConstraint(Constraint):
                 storage = convert_to_list(capacity, int)
 
             self.capacity.own_data(storage)
+
+    def clear_capacity(self) -> None:
+        """Empty the capacity list in the constraint."""
+        self.capacity.own_data([])
 
     def set_capacity(self, machine_id: Int, capacity: Int) -> None:
         """Set the capacity for a specific machine."""
