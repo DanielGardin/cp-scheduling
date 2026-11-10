@@ -10,6 +10,7 @@ implementing the required methods.
 """
 
 __all__ = [
+    "AllOrNothingConstraint",
     "AtMostOneConstraint",
     "BatchConstraint",
     "ConstantProcessingTime",
@@ -47,6 +48,7 @@ from .machine import (
     MachineConstraint,
 )
 from .optional import (
+    AllOrNothingConstraint,
     AtMostOneConstraint,
     ExactlyOneConstraint,
     RejectableConstraint,

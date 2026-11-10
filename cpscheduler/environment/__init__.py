@@ -42,6 +42,7 @@ __all__ = [  # noqa: RUF022
     "PreemptionConstraint",
     "OptionalityConstraint",
     "RejectableConstraint",
+    "AllOrNothingConstraint",
     "AtMostOneConstraint",
     "ExactlyOneConstraint",
     "MachineEligibilityConstraint",
@@ -61,6 +62,7 @@ __all__ = [  # noqa: RUF022
     # Gamma objectives
     "Objective",
     "RegularObjective",
+    "RejectionCost",
     "AntiRegularObjective",
     "SatisfactionObjective",
     "ComposedObjective",
@@ -89,6 +91,7 @@ __all__ = [  # noqa: RUF022
 
 from .backend import DESBackend
 from .constraints import (
+    AllOrNothingConstraint,
     AtMostOneConstraint,
     BatchConstraint,
     ConstantProcessingTime,
@@ -121,6 +124,7 @@ from .objectives import (
     MaximumLateness,
     Objective,
     RegularObjective,
+    RejectionCost,
     SatisfactionObjective,
     TotalCompletionTime,
     TotalEarliness,

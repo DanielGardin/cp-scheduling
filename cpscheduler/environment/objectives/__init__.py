@@ -16,6 +16,7 @@ __all__ = [
     "MaximumLateness",
     "Objective",
     "RegularObjective",
+    "RejectionCost",
     "SatisfactionObjective",
     "Sense",
     "TotalCompletionTime",
@@ -54,6 +55,7 @@ from .lateness import (
     WeightedTardiness,
 )
 from .makespan import Makespan, MaximumLateness
+from .rejection import RejectionCost
 from .tardy import (
     TotalTardyJobs,
     WeightedTardyJobs,
