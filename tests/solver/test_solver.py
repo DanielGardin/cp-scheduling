@@ -14,6 +14,11 @@ from tests.conftest import TEST_INSTANCES, env_setup  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
+SOLVE_KWARGS: dict[str, dict[str, int | bool]] = {
+    "disjunctive": {"time_limit": 10, "keep_files": False},
+    "naive": {"time_limit": 2, "quiet": True},
+}
+
 
 @pytest.mark.solver
 @pytest.mark.parametrize("instance_name", TEST_INSTANCES)
@@ -35,17 +40,10 @@ def test_solve(instance_name: str, formulation: str) -> None:
     time += perf_counter()
     logger.info(f"Initialized solver in {time:.2f} s")
 
-    try:
-        action, value, _ = solver.solve(
-            time_limit=10,
-            keep_files=False,
-        )
+    action, value, _ = solver.solve(**SOLVE_KWARGS[formulation])
 
-    except Exception as exc:
-        # Some MILP solvers can hit the time limit without producing an incumbent.
-        pytest.skip(
-            f"No incumbent solution found within time limit for {instance_name} ({formulation}): {exc}."
-        )
+    # The complete warm start is an incumbent, even without time to improve it
+    assert solver.found_solution
 
     assert len(action) == env.state.n_tasks
 
