@@ -67,6 +67,10 @@ class WeightedModifiedDueDate(PriorityDispatchingRule):
     which prioritizes jobs based on their due dates, or its expected completion
     time when the due date is violated, while also considering the weight of
     each job.
+
+    Jobs with the smallest max(p_j, d_j - t) / w_j are dispatched first
+    (Kanet and Li, 2004). Unlike in MDD, the current time cannot be added to
+    both terms: it would weigh heavier jobs more as time passes.
     """
 
     processing_time: str
@@ -114,7 +118,7 @@ class WeightedModifiedDueDate(PriorityDispatchingRule):
         weights = obs[self.weight]
 
         return [
-            -max(t + p, d) / w
+            -max(p, d - t) / w
             for p, d, w in zip(
                 processing_times, due_dates, weights, strict=False
             )

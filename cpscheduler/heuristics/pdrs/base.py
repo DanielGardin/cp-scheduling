@@ -281,10 +281,11 @@ class PriorityDispatchingRule:
         obs: DefaultObservation,
         schedule_generation: SCHEDULE_GENERATION_METHODS,
     ) -> list[SingleAction]:
-        """Return a ranking of the available tasks based on their priority scores.
+        """Return a ranking of the pending tasks based on their priority scores.
 
         This method returns a list of tasks sorted by their priority scores,
-        in descending order.
+        in descending order. Tasks already scheduled or rejected are left
+        out, so a ranking can be stepped at any point of an episode.
         This permutation can be decoded into a schedule by the environment, using
         either a serial or parallel schedule generation scheme.
 
@@ -305,7 +306,7 @@ class PriorityDispatchingRule:
         """
         priorities = self._priority_score(obs)
         filtered_priorities = sorted(
-            [(-prio, task_id) for task_id, prio in enumerate(priorities)]
+            [(-priorities[task_id], task_id) for task_id in obs.pending_tasks]
         )
 
         if schedule_generation == "parallel":
@@ -331,7 +332,7 @@ class PriorityDispatchingRule:
         target_prob: float | None = None,
         n_iter: int = 5,
     ) -> list[SingleAction]:
-        """Return a stochastically sampled ranking of the available tasks.
+        """Return a stochastically sampled ranking of the pending tasks.
 
         This method returns a list of tasks, sampled from a Plackett-Luce model
         defined by the priority scores, in descending order.
@@ -382,8 +383,8 @@ class PriorityDispatchingRule:
         rng = self._internal_rng
         filtered_priorities = sorted(
             [
-                (-(prio + temperature * _gumbel(rng)), task_id)
-                for task_id, prio in enumerate(priorities)
+                (-(priorities[task_id] + temperature * _gumbel(rng)), task_id)
+                for task_id in obs.pending_tasks
             ]
         )
 

@@ -45,6 +45,7 @@ class DefaultObservation(Observation[DefaultObsType]):
     feature_specs: dict[str, FeatureViewSpec[Any, Any]]
 
     _eligible: list[bool]
+    _pending: list[TaskID]
 
     _obs: DefaultObsType
 
@@ -102,6 +103,11 @@ class DefaultObservation(Observation[DefaultObsType]):
             self._features = dict.fromkeys(features, "default")
 
         self._obs = {}
+
+    @property
+    def pending_tasks(self) -> list[TaskID]:
+        """Return the tasks that are neither scheduled nor rejected yet."""
+        return self._pending
 
     @property
     def eligible_tasks(self) -> list[TaskID]:
@@ -167,6 +173,7 @@ class DefaultObservation(Observation[DefaultObsType]):
         super().initialize(instance, backend)
 
         self._eligible = [False] * instance.n_tasks
+        self._pending = list(range(instance.n_tasks))
 
         obs = self._obs
 
@@ -191,6 +198,12 @@ class DefaultObservation(Observation[DefaultObsType]):
 
         for task_id in backend.get_eligible_tasks(state):
             eligible[task_id] = True
+
+        self._pending = [
+            task_id
+            for task_id in range(state.n_tasks)
+            if not state.is_fixed(task_id)
+        ]
 
     def __getitem__(self, key: str) -> Any:
         """Get the features of the specified scope."""
