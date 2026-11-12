@@ -658,6 +658,13 @@ class EventClock(GlobalClock):
         time = event.earliest_time(state)
 
         if time is None or time <= self.time:
+            # An event processed after it in the slot can make it ready at
+            # the current time, such as a predecessor of zero duration.
+            if event.is_ready(state, transition):
+                slot = self._create_time_slot(self.time)
+                slot.add_non_timed_event(entry)
+                return True
+
             if event.is_locked(state, transition):
                 return False
 

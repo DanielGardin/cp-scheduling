@@ -99,6 +99,30 @@ def test_locked_instruction_without_an_unlocking_event_is_a_deadlock(
         env.step(action)
 
 
+def test_submit_unlocked_later_in_the_same_time_slot_runs_at_that_time() -> (
+    None
+):
+    # Task 0 has zero duration, so task 1 can start at 0 once it is placed
+    env = SchedulingEnv(
+        JobShopSetup(),
+        objective=Makespan(),
+        transition=des(),
+        instance={
+            "job": [0, 0],
+            "operation": [0, 1],
+            "machine": [0, 1],
+            "processing_time": [0, 3],
+        },
+    )
+    env.reset()
+
+    env.step([("submit", 1), ("submit", 0)])
+
+    assert env.state.get_start(0) == 0
+    assert env.state.get_start(1) == 0
+    assert env.transition.is_empty()
+
+
 def test_deferred_submit_is_not_duplicated_by_a_blocking_execute() -> None:
     # Task 1 is deferred by itself, and again by the blocked execute behind it
     env, transition = _released([0, 5, 3])

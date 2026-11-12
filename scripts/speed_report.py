@@ -449,14 +449,14 @@ class RunResult:
         plt.show()
 
 
-BACKENDS = Literal["des", "tetris", "step"]
+TRANSITIONS = Literal["des", "tetris", "step", "gt_tetris", "nd_tetris"]
 
 
 def run_cli(
     n_runs: Annotated[int, arg(aliases=("-n",))] = 1,
     full: bool = False,
     pdr: Annotated[PDR_NAMES, arg(aliases=("-p",))] = "spt",
-    backend: Annotated[BACKENDS, arg(aliases=("-b",))] = "des",
+    transition: Annotated[TRANSITIONS, arg(aliases=("-t",))] = "des",
     quiet: Annotated[bool, arg(aliases=("-q",))] = False,
     plot: bool = False,
     output: str = "report.pdf",
@@ -475,8 +475,8 @@ def run_cli(
     pdr: PDR_NAMES
         The priority dispatching rule to use for the benchmark.
 
-    backend: BACKENDS
-        The backend to use for the benchmark.
+    transition: TRANSITIONS
+        The transition to use for the benchmark.
 
     quiet: bool
         If True, suppress the output of the benchmark results.
@@ -541,7 +541,7 @@ def run_cli(
                 JobShopSetup(),
                 objective=Makespan(),
                 instance=instance,
-                backend=backend,
+                transition=transition,
             )
 
             initialization_times = perf_counter() - global_tick
