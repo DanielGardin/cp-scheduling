@@ -13,7 +13,7 @@ from cpscheduler.environment import (
 )
 from cpscheduler.environment.constraints import Constraint
 from cpscheduler.environment.instance import ProblemInstance
-from tests.schedule_checks import BACKENDS, optional_parallel_env
+from tests.schedule_checks import TRANSITIONS, optional_parallel_env
 
 
 class _OptionalTasks(Constraint):
@@ -34,13 +34,13 @@ def _group_env(group: Constraint, optional: list[int]) -> SchedulingEnv:
     )
 
 
-@pytest.mark.parametrize("backend", BACKENDS)
-def test_optional_task_can_be_rejected(backend: str) -> None:
+@pytest.mark.parametrize("transition", TRANSITIONS)
+def test_optional_task_can_be_rejected(transition: str) -> None:
     env = SchedulingEnv(
         SingleMachineSetup(),
         [OptionalityConstraint()],
         Makespan(),
-        backend=backend,
+        transition=transition,
         instance={"processing_time": [5, 100]},
     )
     env.reset()
@@ -51,12 +51,12 @@ def test_optional_task_can_be_rejected(backend: str) -> None:
     assert env.objective.value == 5
 
 
-@pytest.mark.parametrize("backend", ["des", "tetris"])
-def test_rejecting_a_required_task_is_infeasible(backend: str) -> None:
+@pytest.mark.parametrize("transition", ["des", "tetris"])
+def test_rejecting_a_required_task_is_infeasible(transition: str) -> None:
     env = SchedulingEnv(
         SingleMachineSetup(),
         objective=Makespan(),
-        backend=backend,
+        transition=transition,
         instance={"processing_time": [5]},
     )
     env.reset()

@@ -81,7 +81,7 @@ def test_modified_due_date_uses_the_current_time() -> None:
     obs, *_ = env.step(("execute", 0))
 
     # At t = 5, max(t + p_j, d_j) is 10, 10 and 9
-    assert env.backend.get_info()["current_time"] == 5
+    assert env.transition.get_info()["current_time"] == 5
     assert rule.priority_score(obs) == [-10, -10, -9]
     assert rule(obs) == ("execute", 2)
 
@@ -153,5 +153,5 @@ def test_weighted_modified_due_date_follows_kanet_and_li() -> None:
     env.reset()
     obs, *_ = env.step(("execute", 0))
 
-    assert env.backend.get_info()["current_time"] == 10
+    assert env.transition.get_info()["current_time"] == 10
     assert WeightedModifiedDueDate()(obs) == ("execute", 1)

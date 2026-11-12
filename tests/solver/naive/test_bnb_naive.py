@@ -35,7 +35,7 @@ def test_bnb_is_optimal_on_a_single_machine(objective: str) -> None:
             return SchedulingEnv(
                 SingleMachineSetup(),
                 objective=factory(),
-                backend="tetris",
+                transition="tetris",
                 instance=instance,
             )
 
@@ -53,9 +53,9 @@ def test_bnb_is_optimal_on_a_single_machine(objective: str) -> None:
 
 @pytest.mark.solver
 @pytest.mark.parametrize("seed", range(15))
-@pytest.mark.parametrize("backend", ["des", "tetris"])
+@pytest.mark.parametrize("transition", ["des", "tetris"])
 def test_bnb_reports_the_value_of_the_schedule_it_returns(
-    backend: str, seed: int
+    transition: str, seed: int
 ) -> None:
     # Machines selected during the search and in the final replay must agree
     rng = Random(seed)
@@ -64,7 +64,7 @@ def test_bnb_reports_the_value_of_the_schedule_it_returns(
     env = SchedulingEnv(
         UnrelatedParallelMachineSetup(),
         objective=TotalCompletionTime(),
-        backend=backend,
+        transition=transition,
         instance={"processing_time": processing},
     )
     env.reset()
@@ -84,7 +84,7 @@ def test_warm_start_at_the_optimum_is_returned() -> None:
     env = SchedulingEnv(
         SingleMachineSetup(),
         objective=TotalCompletionTime(),
-        backend="tetris",
+        transition="tetris",
         instance={"processing_time": [1, 2]},
     )
     env.reset()

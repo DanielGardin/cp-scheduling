@@ -15,20 +15,20 @@ from cpscheduler.environment import (
 )
 from cpscheduler.environment.constants import Int
 from tests.schedule_checks import (
-    BACKENDS,
+    TRANSITIONS,
     optional_parallel_env,
     run_random_episode,
 )
 
 
 def _or_env(
-    backend: str = "des", processing: Sequence[int] = (5, 1, 1)
+    transition: str = "des", processing: Sequence[int] = (5, 1, 1)
 ) -> SchedulingEnv:
     env = SchedulingEnv(
         IdenticalParallelMachineSetup(3, disjunctive=False),
         [ORPrecedenceConstraint({2: [0, 1]})],
         Makespan(),
-        backend=backend,
+        transition=transition,
         instance={"processing_time": list(processing)},
     )
     env.reset()
@@ -36,13 +36,13 @@ def _or_env(
     return env
 
 
-@pytest.mark.parametrize("backend", BACKENDS)
-def test_no_wait_child_starts_when_the_parent_ends(backend: str) -> None:
+@pytest.mark.parametrize("transition", TRANSITIONS)
+def test_no_wait_child_starts_when_the_parent_ends(transition: str) -> None:
     env = SchedulingEnv(
         IdenticalParallelMachineSetup(2, disjunctive=False),
         [NoWaitConstraint({1: [0]})],
         Makespan(),
-        backend=backend,
+        transition=transition,
         instance={"processing_time": [3, 2]},
     )
     run_random_episode(env, Random(0))
@@ -85,9 +85,11 @@ def test_no_wait_child_without_a_start_time_is_infeasible() -> None:
     assert env.state.infeasible
 
 
-@pytest.mark.parametrize("backend", BACKENDS)
-def test_or_child_is_locked_until_a_parent_is_scheduled(backend: str) -> None:
-    env = _or_env(backend)
+@pytest.mark.parametrize("transition", TRANSITIONS)
+def test_or_child_is_locked_until_a_parent_is_scheduled(
+    transition: str,
+) -> None:
+    env = _or_env(transition)
 
     assert env.state.is_locked(2)
     assert 2 not in env.get_action_support()
@@ -95,12 +97,12 @@ def test_or_child_is_locked_until_a_parent_is_scheduled(backend: str) -> None:
 
 @pytest.mark.env
 @pytest.mark.parametrize("seed", range(30))
-@pytest.mark.parametrize("backend", BACKENDS)
+@pytest.mark.parametrize("transition", TRANSITIONS)
 def test_or_child_starts_after_the_first_parent_ends(
-    backend: str, seed: int
+    transition: str, seed: int
 ) -> None:
     rng = Random(seed)
-    env = _or_env(backend, [rng.randint(1, 9) for _ in range(3)])
+    env = _or_env(transition, [rng.randint(1, 9) for _ in range(3)])
 
     run_random_episode(env, rng)
 
@@ -115,12 +117,12 @@ def test_or_child_does_not_wait_for_the_other_parent() -> None:
 
     env.step(("execute", 1))
 
-    assert env.backend.get_info()["current_time"] == 0
+    assert env.transition.get_info()["current_time"] == 0
     assert 2 not in env.get_action_support()
 
     env.step(("noop",))
 
-    assert env.backend.get_info()["current_time"] == 1
+    assert env.transition.get_info()["current_time"] == 1
     assert 2 in env.get_action_support()
 
     env.step(("execute", 2))

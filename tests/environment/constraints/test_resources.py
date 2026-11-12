@@ -19,9 +19,9 @@ from tests.schedule_checks import (
 
 @pytest.mark.env
 @pytest.mark.parametrize("seed", range(20))
-@pytest.mark.parametrize("backend", ["des", "tetris"])
+@pytest.mark.parametrize("transition", ["des", "tetris"])
 def test_renewable_resource_capacity_is_respected(
-    backend: str, seed: int
+    transition: str, seed: int
 ) -> None:
     rng = Random(seed)
     capacity = rng.randint(3, 6)
@@ -31,7 +31,7 @@ def test_renewable_resource_capacity_is_respected(
         IdenticalParallelMachineSetup(7),
         [ResourceConstraint(capacity=capacity, resources=usage)],
         Makespan(),
-        backend=backend,
+        transition=transition,
         instance={"processing_time": [rng.randint(1, 6) for _ in range(7)]},
     )
     run_random_episode(env, rng)

@@ -26,10 +26,7 @@ def test_blocking_instruction(instance_name: str) -> None:
     # Inverse order of execution (1 requires 0 to be completed first
     deadlock_action = [("execute", 1), ("execute", 0)]
 
-    with pytest.raises(
-        RuntimeError,
-        match=r"is potentially deadlocking the event queue",
-    ):
+    with pytest.raises(RuntimeError, match="Deadlock at time"):
         env.step(deadlock_action)
 
 

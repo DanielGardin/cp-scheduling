@@ -43,8 +43,8 @@ from cpscheduler.environment.objectives.base import MaxCompletionObjective
 from cpscheduler.environment.state import ScheduleState
 
 if TYPE_CHECKING:
-    from cpscheduler.environment.backend import ActionType
     from cpscheduler.environment.constants import Int
+    from cpscheduler.environment.transition import ActionType
 
 CompletionObjective: TypeAlias = (
     RegularObjective | AntiRegularObjective | MaxCompletionObjective
@@ -382,7 +382,7 @@ INCREMENTAL: dict[str, Callable[[], CompletionObjective]] = {
 
 def _incremental_env(
     objective: Objective,
-    backend: str,
+    transition: str,
     rng: Random,
     links: Literal["precedence", "no_wait"] = "precedence",
 ) -> SchedulingEnv:
@@ -405,7 +405,7 @@ def _incremental_env(
             else PrecedenceConstraint(chains),
         ],
         objective,
-        backend=backend,
+        transition=transition,
         instance={
             "job": [t % 6 for t in range(n_tasks)],
             "processing_time": [
@@ -419,16 +419,16 @@ def _incremental_env(
 
 @pytest.mark.env
 @pytest.mark.parametrize("links", ["precedence", "no_wait"])
-@pytest.mark.parametrize("backend", ["des", "tetris"])
+@pytest.mark.parametrize("transition", ["des", "tetris"])
 @pytest.mark.parametrize("objective", INCREMENTAL)
 def test_incremental_bounds_match_a_computation_from_scratch(
-    objective: str, backend: str, links: Literal["precedence", "no_wait"]
+    objective: str, transition: str, links: Literal["precedence", "no_wait"]
 ) -> None:
     rng = Random(11)
 
     for _ in range(25):
         tracked = INCREMENTAL[objective]()
-        env = _incremental_env(tracked, backend, rng, links)
+        env = _incremental_env(tracked, transition, rng, links)
         env.reset()
 
         checkpoints: list[int] = []
@@ -660,16 +660,16 @@ def _reference_rejection(costs: list[float], state: ScheduleState) -> Bounds:
 
 
 @pytest.mark.env
-@pytest.mark.parametrize("backend", ["des", "tetris"])
+@pytest.mark.parametrize("transition", ["des", "tetris"])
 def test_rejection_cost_matches_a_computation_from_scratch(
-    backend: str,
+    transition: str,
 ) -> None:
     rng = Random(13)
 
     for _ in range(25):
         costs = [float(rng.randint(0, 9)) for _ in range(6)]
         objective = RejectionCost(rejection_costs=costs)
-        env = _incremental_env(objective, backend, rng)
+        env = _incremental_env(objective, transition, rng)
         env.reset()
 
         checkpoints: list[int] = []

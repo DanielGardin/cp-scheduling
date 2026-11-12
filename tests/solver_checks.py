@@ -16,7 +16,7 @@ from cpscheduler.environment import (
     WeightedTardiness,
     WeightedTardyJobs,
 )
-from cpscheduler.environment.backend import ActionType
+from cpscheduler.environment.transition import ActionType
 
 InstanceData: TypeAlias = dict[str, list[int] | list[float]]
 EnvFactory: TypeAlias = Callable[[], SchedulingEnv]

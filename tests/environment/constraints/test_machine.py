@@ -22,13 +22,13 @@ if TYPE_CHECKING:
     from cpscheduler.environment.constants import Int
 
 
-@pytest.mark.parametrize("backend", ["des", "tetris"])
-def test_task_does_not_cross_a_breakdown(backend: str) -> None:
+@pytest.mark.parametrize("transition", ["des", "tetris"])
+def test_task_does_not_cross_a_breakdown(transition: str) -> None:
     env = SchedulingEnv(
         SingleMachineSetup(),
         [MachineBreakdownConstraint({0: [(2, 4)]})],
         Makespan(),
-        backend=backend,
+        transition=transition,
         instance={"processing_time": [3, 1]},
     )
     env.reset()
@@ -70,8 +70,8 @@ def test_every_breakdown_of_a_calendar_is_respected() -> None:
 
 @pytest.mark.env
 @pytest.mark.parametrize("seed", range(20))
-@pytest.mark.parametrize("backend", ["des", "step", "tetris"])
-def test_no_schedule_overlaps_a_breakdown(backend: str, seed: int) -> None:
+@pytest.mark.parametrize("transition", ["des", "step", "tetris"])
+def test_no_schedule_overlaps_a_breakdown(transition: str, seed: int) -> None:
     # Idle machines see their clock advanced by the others
     rng = Random(seed)
     calendar: dict[Int, list[tuple[Int, Int]]] = {
@@ -83,7 +83,7 @@ def test_no_schedule_overlaps_a_breakdown(backend: str, seed: int) -> None:
         IdenticalParallelMachineSetup(3),
         [MachineBreakdownConstraint(calendar)],
         Makespan(),
-        backend=backend,
+        transition=transition,
         instance={"processing_time": [rng.randint(1, 5) for _ in range(8)]},
     )
     run_random_episode(env, rng)
@@ -108,16 +108,16 @@ def test_permanent_breakdown_removes_machines_too_short_for_a_task() -> None:
     assert env.state.get_machines(0) == [0]
 
 
-@pytest.mark.parametrize("backend", ["des", "tetris"])
+@pytest.mark.parametrize("transition", ["des", "tetris"])
 @pytest.mark.parametrize("capacity", [1, 2, 3])
 def test_batch_capacity_is_reached_and_not_exceeded(
-    backend: str, capacity: int
+    transition: str, capacity: int
 ) -> None:
     env = SchedulingEnv(
         SingleMachineSetup(disjunctive=False),
         [BatchConstraint(capacity)],
         Makespan(),
-        backend=backend,
+        transition=transition,
         instance={"processing_time": [3] * 7},
     )
     run_random_episode(env, Random(capacity))

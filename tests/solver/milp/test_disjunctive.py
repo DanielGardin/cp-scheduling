@@ -78,12 +78,12 @@ def test_milp_is_optimal_with_parallel_machines(objective: str) -> None:
         instance = regular_instance(rng, 4, features)
 
         def make(
-            backend: str = "des", instance: InstanceData = instance
+            transition: str = "des", instance: InstanceData = instance
         ) -> SchedulingEnv:
             return SchedulingEnv(
                 IdenticalParallelMachineSetup(2),
                 objective=factory(),
-                backend=backend,
+                transition=transition,
                 instance=instance,
             )
 
@@ -107,13 +107,13 @@ def test_milp_is_optimal_with_optional_tasks(objective: str) -> None:
         instance = regular_instance(rng, 4, features)
 
         def make(
-            backend: str = "des", instance: InstanceData = instance
+            transition: str = "des", instance: InstanceData = instance
         ) -> SchedulingEnv:
             return SchedulingEnv(
                 IdenticalParallelMachineSetup(2),
                 [OptionalityConstraint()],
                 factory(),
-                backend=backend,
+                transition=transition,
                 instance=instance,
             )
 
@@ -136,7 +136,7 @@ def test_milp_is_optimal_with_rejection_costs(objective: str) -> None:
         costs = [float(rng.randint(0, 12)) for _ in range(4)]
 
         def make(
-            backend: str = "des",
+            transition: str = "des",
             instance: InstanceData = instance,
             costs: list[float] = costs,
         ) -> SchedulingEnv:
@@ -146,7 +146,7 @@ def test_milp_is_optimal_with_rejection_costs(objective: str) -> None:
                 ComposedObjective(
                     [factory(), RejectionCost(rejection_costs=costs)]
                 ),
-                backend=backend,
+                transition=transition,
                 instance=instance,
             )
 
@@ -178,13 +178,13 @@ def test_milp_is_optimal_with_rejectable_jobs(
         }
 
         def make(
-            backend: str = "des", instance: InstanceData = instance
+            transition: str = "des", instance: InstanceData = instance
         ) -> SchedulingEnv:
             env = SchedulingEnv(
                 IdenticalParallelMachineSetup(2),
                 [RejectableConstraint()],
                 ComposedObjective([objective(), RejectionCost()]),
-                backend=backend,
+                transition=transition,
             )
             features = set(env.required_features()) | {"job", "processing_time"}
             env.load_instance(
@@ -214,13 +214,13 @@ def test_milp_is_optimal_with_alternative_tasks(
         instance = regular_instance(rng, 4, features)
 
         def make(
-            backend: str = "des", instance: InstanceData = instance
+            transition: str = "des", instance: InstanceData = instance
         ) -> SchedulingEnv:
             return SchedulingEnv(
                 IdenticalParallelMachineSetup(2),
                 [OptionalityConstraint(), group([[0, 1], [2, 3]])],
                 factory(),
-                backend=backend,
+                transition=transition,
                 instance=instance,
             )
 

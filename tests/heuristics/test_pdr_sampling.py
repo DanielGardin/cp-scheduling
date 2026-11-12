@@ -14,7 +14,7 @@ from cpscheduler.heuristics.pdrs import PriorityDispatchingRule
 from cpscheduler.heuristics.pdrs.base import solve_p_star_temperature
 
 if TYPE_CHECKING:
-    from cpscheduler.environment.backend.actions import SingleAction
+    from cpscheduler.environment.transition import SingleAction
 
 
 class _Fixed(PriorityDispatchingRule):

@@ -21,7 +21,7 @@ from cpscheduler.environment import (
 from cpscheduler.environment.state.csp import TaskDomains
 from cpscheduler.environment.utils.protocols import InfoType
 from tests.schedule_checks import (
-    BACKENDS,
+    TRANSITIONS,
     Schedule,
     random_job_shop,
     schedule_of,
@@ -50,7 +50,7 @@ def _snapshot(env: SchedulingEnv) -> Snapshot:
         env.objective.value,
         env.objective.lb,
         env.objective.ub,
-        env.backend.get_info(),
+        env.transition.get_info(),
         env.event_count,
         sorted(env.get_action_support()),
     )
@@ -72,23 +72,23 @@ def _random_parallel(rng: Random, n_tasks: int) -> dict[str, list[int]]:
 
 
 FACTORIES: dict[str, EnvFactory] = {
-    "job_shop": lambda rng, backend: SchedulingEnv(
+    "job_shop": lambda rng, transition: SchedulingEnv(
         JobShopSetup(),
         objective=Makespan(),
-        backend=backend,
+        transition=transition,
         instance=random_job_shop(rng, 3, 3),
     ),
-    "total_completion": lambda rng, backend: SchedulingEnv(
+    "total_completion": lambda rng, transition: SchedulingEnv(
         JobShopSetup(),
         objective=TotalCompletionTime(),
-        backend=backend,
+        transition=transition,
         instance=random_job_shop(rng, 3, 3),
     ),
-    "parallel_released": lambda rng, backend: SchedulingEnv(
+    "parallel_released": lambda rng, transition: SchedulingEnv(
         IdenticalParallelMachineSetup(2),
         [ReleaseDateConstraint()],
         Makespan(),
-        backend=backend,
+        transition=transition,
         instance={
             key: values
             for key, values in _random_parallel(rng, 6).items()
@@ -97,21 +97,21 @@ FACTORIES: dict[str, EnvFactory] = {
     ),
     # Random dives often miss a deadline or reject a required task, while
     # optional tasks that cannot meet theirs become absent instead
-    "deadlines": lambda rng, backend: SchedulingEnv(
+    "deadlines": lambda rng, transition: SchedulingEnv(
         IdenticalParallelMachineSetup(2),
         [ReleaseDateConstraint(), DeadlineConstraint()],
         TotalCompletionTime(),
-        backend=backend,
+        transition=transition,
         instance=_random_parallel(rng, 6),
     ),
-    "rejectable_jobs": lambda rng, backend: SchedulingEnv(
+    "rejectable_jobs": lambda rng, transition: SchedulingEnv(
         JobShopSetup(),
         [RejectableConstraint()],
         Makespan(),
-        backend=backend,
+        transition=transition,
         instance=random_job_shop(rng, 3, 3),
     ),
-    "optional": lambda rng, backend: SchedulingEnv(
+    "optional": lambda rng, transition: SchedulingEnv(
         IdenticalParallelMachineSetup(2),
         [
             ReleaseDateConstraint(),
@@ -119,7 +119,7 @@ FACTORIES: dict[str, EnvFactory] = {
             OptionalityConstraint(),
         ],
         TotalCompletionTime(),
-        backend=backend,
+        transition=transition,
         instance=_random_parallel(rng, 6),
     ),
 }
@@ -172,15 +172,15 @@ def _explore(env: SchedulingEnv, rng: Random) -> Coverage:
 
 
 @pytest.mark.env
-@pytest.mark.parametrize("backend", BACKENDS)
+@pytest.mark.parametrize("transition", TRANSITIONS)
 @pytest.mark.parametrize("factory", FACTORIES)
 def test_backtrack_restores_exactly_every_checkpoint(
-    factory: str, backend: str
+    factory: str, transition: str
 ) -> None:
     rng = Random(7)
 
     coverage = [
-        _explore(FACTORIES[factory](rng, backend), rng)
+        _explore(FACTORIES[factory](rng, transition), rng)
         for _ in range(N_EPISODES)
     ]
 
@@ -209,13 +209,15 @@ def test_backtracked_queue_does_not_leak_into_new_decisions() -> None:
     assert env.state.get_start(0) == 0
 
 
-@pytest.mark.parametrize("backend", ["des", "tetris"])
-def test_machine_ties_do_not_depend_on_explored_branches(backend: str) -> None:
+@pytest.mark.parametrize("transition", ["des", "tetris"])
+def test_machine_ties_do_not_depend_on_explored_branches(
+    transition: str,
+) -> None:
     def play(explore: bool) -> Schedule:
         env = SchedulingEnv(
             UnrelatedParallelMachineSetup(),
             objective=Makespan(),
-            backend=backend,
+            transition=transition,
             instance={"processing_time": [[2, 2, 2]] * 5},
         )
         env.reset()
@@ -236,7 +238,7 @@ def test_state_equality_ignores_the_order_of_feasible_machines() -> None:
     env = SchedulingEnv(
         IdenticalParallelMachineSetup(3),
         objective=Makespan(),
-        backend="tetris",
+        transition="tetris",
         instance={"processing_time": [1, 1]},
     )
     env.reset()
