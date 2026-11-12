@@ -5,6 +5,7 @@ from typing import TypeAlias
 import pytest
 
 from cpscheduler.environment import (
+    DefaultObservation,
     IdenticalParallelMachineSetup,
     JobShopSetup,
     Makespan,
@@ -122,7 +123,7 @@ def _delta_gt_env(instance: JobShop, delta: float) -> SchedulingEnv:
 
 
 def _dispatched_starts(instance: JobShop, transition: str, rule: str) -> Starts:
-    env = SchedulingEnv(
+    env: SchedulingEnv[DefaultObservation] = SchedulingEnv(
         JobShopSetup(),
         objective=Makespan(),
         transition=transition,

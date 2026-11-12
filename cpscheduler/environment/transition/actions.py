@@ -80,9 +80,8 @@ class Instruction(EzPickle, Generic[C_contra]):
         before another instruction unlocks it.
         When an instruction is locked, its earliest time is a lower bound for
         when it can be ready, but it is not guaranteed to be ready at that time.
-        Defaults to whether `earliest_time` is None.
         """
-        return self.earliest_time(state) is None
+        return False
 
     def process(
         self, state: ScheduleState, transition: Transition[C_contra]

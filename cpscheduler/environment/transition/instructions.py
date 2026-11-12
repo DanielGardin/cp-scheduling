@@ -231,3 +231,20 @@ class CompleteInstruction(Instruction[GlobalClock]):
         self, state: ScheduleState, transition: Transition[GlobalClock]
     ) -> None:
         transition.clock.advance_to(state.get_end(self.task_id))
+
+
+class FinishEpisodeInstruction(Instruction[Clock]):
+    """Instruction for ending the episode when it is processed.
+
+    Any instructions queued after it are ignored, and any remaining tasks are
+    rejected.
+    """
+
+    blocking = True
+
+    @override
+    def process(
+        self, state: ScheduleState, transition: Transition[Clock]
+    ) -> None:
+        for task_id in state.get_unassigned_tasks():
+            state.forbid_task(task_id)
