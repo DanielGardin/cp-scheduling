@@ -6,11 +6,8 @@ from cpscheduler.environment.observation import DefaultObservation
 from cpscheduler.heuristics.pdrs.base import PriorityDispatchingRule
 
 
-# FUTURE: As we introduced Tetris backend, the concept or time now is
-# not as clear as we had with DES (global clock).
-# Most of the uses of such concept are actually used for estimating the lower
-# bound for start and end times. Maybe we should include bounds in the default
-# observation(?).
+# FUTURE: The current time is misleading here, the correct replacement would
+# be the expected start time of the task.
 class ModifiedDueDate(PriorityDispatchingRule):
     """Modified Due Date (MDD) heuristic.
 
@@ -50,7 +47,7 @@ class ModifiedDueDate(PriorityDispatchingRule):
 
     @override
     def priority_score(self, obs: DefaultObservation) -> list[float]:
-        t = 0
+        t = obs.current_time
         due_dates = obs[self.due_date]
         processing_times = obs[self.processing_time]
 
@@ -61,7 +58,7 @@ class ModifiedDueDate(PriorityDispatchingRule):
 
 
 class WeightedModifiedDueDate(PriorityDispatchingRule):
-    """Modified Weighted Due Date (MDD) heuristic.
+    """Weighted Modified Due Date (WMDD) heuristic.
 
     This heuristic is a weighted version of the Modified Due Date (MDD) heuristic,
     which prioritizes jobs based on their due dates, or its expected completion
@@ -112,7 +109,7 @@ class WeightedModifiedDueDate(PriorityDispatchingRule):
 
     @override
     def priority_score(self, obs: DefaultObservation) -> list[float]:
-        t = 0
+        t = obs.current_time
         due_dates = obs[self.due_date]
         processing_times = obs[self.processing_time]
         weights = obs[self.weight]
@@ -172,7 +169,7 @@ class MinimumSlackTime(PriorityDispatchingRule):
 
     @override
     def priority_score(self, obs: DefaultObservation) -> list[float]:
-        t = 0
+        t = obs.current_time
 
         processing_times = obs[self.processing_time]
         due_dates = obs[self.due_date]

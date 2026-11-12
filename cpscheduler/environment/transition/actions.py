@@ -1,4 +1,4 @@
-"""Common interface for actions in all schedule backends."""
+"""Instructions, the intermediate representation of the actions."""
 
 from __future__ import annotations
 
@@ -10,61 +10,123 @@ from typing_extensions import Self, TypeIs, TypeVar, Unpack
 
 from cpscheduler.environment.constants import Int, Time
 from cpscheduler.environment.mixins import EzPickle
+from cpscheduler.environment.transition.core import Clock
 
 if TYPE_CHECKING:
-    from cpscheduler.environment.backend.backend import ScheduleBackend
     from cpscheduler.environment.state import ScheduleState
+    from cpscheduler.environment.transition.core import Transition
 
-instructions: dict[str, dict[str, type[Instruction[Any]]]] = {}
+instructions: dict[str, type[Instruction[Any]]] = {}
 
-B_contra = TypeVar(
-    "B_contra", bound="ScheduleBackend", default=Any, contravariant=True
-)
+C = TypeVar("C", bound="Clock")
+C_contra = TypeVar("C_contra", bound="Clock", default=Any, contravariant=True)
 
 
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=True)
-class Instruction(EzPickle, Generic[B_contra]):
+class Instruction(EzPickle, Generic[C_contra]):
     """Intermediate representation of an action in the environment.
 
-    To create a new event, subclass this class to define the instruction type
-    and behavior in the simulation.
+    To create a new instruction, subclass this class and define how it changes
+    the state in `process`. The type parameter is the clock that `process`
+    sees in the transition: `Instruction[Clock]` for any clock, or a more
+    specific one such as `Instruction[GlobalClock]`.
 
-    Attributes
-    ----------
-    spec: str
-        Name of instruction used when parsing instruction tuples.
-
-    backend: str
-        Name of the backend that supports this instruction.
-
+    An instruction that needs a specific clock must be registered with it, see
+    `register_instruction`. One that is not registered is accepted by every
+    transition.
     """
 
-    backend: ClassVar[str] = ""
+    # By default, instructions work on all clocks.
+    clock: ClassVar[type[Clock]] = Clock
+
+    blocking: ClassVar[bool] = False
+    """Whether the instructions queued after this one wait for it.
+
+    A blocking instruction that is not ready holds the queue until the clock
+    makes it ready. A non-blocking one is skipped, and the next ready
+    instruction of the queue is processed instead.
+    """
 
     def resolve(self, state: ScheduleState) -> Self:
-        """Return the resolved instruction. Defaults to self."""
+        """Return the resolved instruction. Defaults to self.
+
+        This step is meant to resolve the instruction parameters statically, at
+        push time.
+        Raising errors during this step prevents the transition to parse incorrect
+        instructions.
+        """
         return self
 
-    def is_ready(self, state: ScheduleState, backend: B_contra) -> bool:
-        """Check if the event is ready to be processed, given the current state."""
+    def is_ready(
+        self, state: ScheduleState, transition: Transition[C_contra]
+    ) -> bool:
+        """Return whether the instruction can be processed in this state."""
         return True
 
-    def process(self, state: ScheduleState, backend: B_contra) -> None:
-        """Process the instruction, modifying the schedule state accordingly."""
+    def earliest_time(self, state: ScheduleState) -> Time | None:
+        """Return the earliest time at which the instruction can be ready.
+
+        Clocks that advance use it to wait for an instruction that is not
+        ready. None means that time alone does not make it ready.
+        """
+        return None
+
+    def process(
+        self, state: ScheduleState, transition: Transition[C_contra]
+    ) -> None:
+        """Process the instruction, changing the state accordingly."""
 
     def semantic(
-        self, state: ScheduleState, backend: B_contra
+        self, state: ScheduleState, transition: Transition[C_contra]
     ) -> dict[str, Any] | None:
         """Return the semantic metadata of this instruction, if any."""
         return None
 
 
+class TimeUpdateInstruction(Instruction[Clock]):
+    """Internal instruction that propagates a clock advancement to the state."""
+
+    time: Time
+
+    def __init__(self, time: Time) -> None:
+        self.time = time
+
+    def process(
+        self, state: ScheduleState, transition: Transition[Clock]
+    ) -> None:
+        """Announce the new time to the time-aware components."""
+        state.tight_global_time(self.time)
+
+
 def register_instruction(
-    instruction: type[Instruction[Any]], spec: str, backend: str
+    instruction: type[Instruction[C]], spec: str, clock: type[C]
 ) -> None:
-    """Register an instruction as an action for a backend."""
-    instruction.backend = backend
-    instructions.setdefault(backend, {})[spec] = instruction
+    """Register an instruction as an action for the transitions of a clock.
+
+    Parameters
+    ----------
+    instruction: type[Instruction]
+        The instruction class.
+
+    spec: str
+        The name of the instruction in the action tuples.
+
+    clock: type[Clock]
+        The clock class that the instruction needs. A transition accepts the
+        instruction when its clock is an instance of it, so `Clock` makes it
+        available everywhere.
+
+    """
+    original_clock = instruction.clock
+    if not issubclass(clock, original_clock):
+        raise ValueError(
+            f"Instruction {instruction.__name__} was defined for "
+            f"{original_clock.__name__}, but registered for {clock.__name__}, "
+            f"which is not a subtype of {original_clock.__name__}."
+        )
+
+    instruction.clock = clock
+    instructions[spec] = instruction
 
 
 SchedulerArgs = Int
@@ -104,7 +166,6 @@ def _parse_args(args: list[Any]) -> tuple[Any, ...]:
 
 def parse_instruction(
     action: SingleAction,
-    backend: str,
     state: ScheduleState,
     max_depth: int = 100,
 ) -> tuple[Instruction[Any], Time | None, float | None]:
@@ -117,9 +178,6 @@ def parse_instruction(
         following the formats defined below:
         - BAction: (time, instruction_name, *args)
         - CAction: (instruction_name, *args)
-
-    backend: str
-        The backend used for dispatching in the current environment.
 
     state: ScheduleState
         The current state of the schedule, used for validating the instruction.
@@ -146,7 +204,7 @@ def parse_instruction(
     ------
     ValueError
         If the action is not a valid BAction or CAction, or if the instruction
-        name is not defined for the specified backend.
+        name is not registered.
 
     RuntimeError
         If the instruction fails to reach a fixed point after the specified
@@ -182,21 +240,15 @@ def parse_instruction(
     args = _parse_args(spec_args)
 
     if isinstance(spec, str):
-        instruction_set = instructions[backend]
+        instruction_cls = instructions.get(spec)
 
-        if spec not in instruction_set:
+        if instruction_cls is None:
             raise ValueError(
-                f"Instruction '{spec}' is not defined for backend {backend}."
+                f"Instruction '{spec}' is not defined, choose one of the "
+                f"following: {', '.join(instructions)}."
             )
 
-        spec = instruction_set[spec]
-
-    elif spec.backend != backend:
-        text_args = ", ".join(str(arg) for arg in args)
-        raise ValueError(
-            f"Instruction {spec.__name__}({text_args}) is only defined for "
-            f"backend {spec.backend}, which is incompatible with {backend}."
-        )
+        spec = instruction_cls
 
     instruction = spec(*args)
     for _ in range(max_depth):

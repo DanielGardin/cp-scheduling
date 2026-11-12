@@ -2,18 +2,18 @@
 
 from typing import Any, ClassVar, TypeVar
 
-from cpscheduler.environment.backend import Instruction, ScheduleBackend
 from cpscheduler.environment.instance import ProblemInstance
 from cpscheduler.environment.mixins import EzPickle
 from cpscheduler.environment.state import ScheduleState
+from cpscheduler.environment.transition import Clock, Instruction, Transition
 
-S = TypeVar("S", bound=ScheduleBackend)
+S = TypeVar("S", bound=Clock)
 
 
 class Tracer(EzPickle):
     """Base class for tracers in the CPScheduler environment.
 
-    Tracers are called before each decision step, dispatched by the backend.
+    Tracers are called before each decision step, dispatched by the transition.
     They are often used as a snapshot of the environment's internal state right
     before an action, used in learning planning policies, for example.
     """
@@ -31,7 +31,7 @@ class Tracer(EzPickle):
         self,
         action: Instruction[S],
         state: ScheduleState,
-        backend: S,
+        transition: Transition[S],
     ) -> None:
         """Process a step in the tracer.
 

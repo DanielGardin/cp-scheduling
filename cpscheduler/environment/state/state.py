@@ -960,6 +960,29 @@ class ScheduleState(EzPickle):
             time=time,
         )
 
+    def expire_tasks(self, time: Time) -> bool:
+        """Remove the tasks whose start window ended before `time`.
+
+        Required tasks that can no longer start make the state infeasible,
+        while optional tasks become absent.
+        Without this, a task that missed its window would keep the episode open forever.
+
+        Returns
+        -------
+        bool
+            Whether any task expired, which leaves events to be propagated.
+        """
+        domains = self.domains
+        global_ubs = domains.start.global_ubs
+        expired = False
+
+        for task_id, fixed in enumerate(domains.fixed):
+            if not fixed and global_ubs[task_id] < time:
+                self.forbid_task(task_id)
+                expired = True
+
+        return expired
+
     def fail(self, task_id: TaskID = UNKNOWN_TASK) -> None:
         """Mark the problem as infeasible.
 

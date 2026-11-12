@@ -6,7 +6,6 @@ from typing import Any
 from mypy_extensions import mypyc_attr
 from typing_extensions import override
 
-from cpscheduler.environment.backend import ScheduleBackend
 from cpscheduler.environment.constants import TaskID
 from cpscheduler.environment.instance import ProblemInstance
 from cpscheduler.environment.observation.base import Observation
@@ -19,6 +18,7 @@ from cpscheduler.environment.specs import (
     StackSpec,
 )
 from cpscheduler.environment.state import ScheduleState
+from cpscheduler.environment.transition import Transition
 
 DefaultObsType = dict[str, Any]
 
@@ -46,6 +46,9 @@ class DefaultObservation(Observation[DefaultObsType]):
 
     _eligible: list[bool]
     _pending: list[TaskID]
+
+    current_time: int = 0
+    "Clock of the transition, it stays at 0 for the ones without a clock."
 
     _obs: DefaultObsType
 
@@ -120,7 +123,7 @@ class DefaultObservation(Observation[DefaultObsType]):
 
     @override
     def compile(
-        self, instance: ProblemInstance, backend: ScheduleBackend
+        self, instance: ProblemInstance, transition: Transition[Any]
     ) -> ObservationSpec:
         feature_specs: dict[str, FeatureViewSpec[Any, Any]] = {}
 
@@ -168,9 +171,9 @@ class DefaultObservation(Observation[DefaultObsType]):
 
     @override
     def initialize(
-        self, instance: ProblemInstance, backend: ScheduleBackend
+        self, instance: ProblemInstance, transition: Transition[Any]
     ) -> None:
-        super().initialize(instance, backend)
+        super().initialize(instance, transition)
 
         self._eligible = [False] * instance.n_tasks
         self._pending = list(range(instance.n_tasks))
@@ -192,11 +195,13 @@ class DefaultObservation(Observation[DefaultObsType]):
             obs[feat_name] = features[0].materialize(spec, **self.symbols)
 
     @override
-    def update(self, state: ScheduleState, backend: ScheduleBackend) -> None:
+    def update(self, state: ScheduleState, transition: Transition[Any]) -> None:
+        self.current_time = transition.time
+
         eligible = self._eligible
         eligible[:] = [False] * state.n_tasks
 
-        for task_id in backend.get_eligible_tasks(state):
+        for task_id in transition.get_eligible_tasks(state):
             eligible[task_id] = True
 
         self._pending = [
@@ -260,7 +265,7 @@ class GymSafeObservation(DefaultObservation):
 
     @override
     def compile(
-        self, instance: ProblemInstance, backend: ScheduleBackend
+        self, instance: ProblemInstance, transition: Transition[Any]
     ) -> ObservationSpec:
         feature_specs: dict[str, FeatureViewSpec[Any, Any]] = {}
 

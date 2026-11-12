@@ -11,8 +11,8 @@ from numpy import int64
 from numpy.typing import NDArray
 from typing_extensions import override
 
-from cpscheduler.environment.backend import ActionType
 from cpscheduler.environment.constants import Int
+from cpscheduler.environment.transition import ActionType
 from cpscheduler.environment.utils import Instance_T
 from cpscheduler.environment.utils.protocols import Options
 
@@ -219,7 +219,7 @@ class SingleAssignmentWrapper(SchedulingActionWrapper[_Obs, Iterable[Int]]):
     def action_masks(self) -> NDArray[Any] | None:
         env: SchedulingEnv = self.get_wrapper_attr("core")
 
-        support = env.backend.get_action_mask(env.state)
+        support = env.transition.get_action_mask(env.state)
 
         mask = np.zeros((env.state.n_tasks, env.state.n_machines), dtype=int)
         for machine_id, tasks in support.items():

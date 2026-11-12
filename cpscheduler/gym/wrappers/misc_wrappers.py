@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any, SupportsFloat, TypeVar
 from gymnasium import Env, Wrapper
 from typing_extensions import override
 
-from cpscheduler.environment.backend import ActionType
+from cpscheduler.environment.transition import ActionType
 from cpscheduler.gym.common import ActionSpace
 
 if TYPE_CHECKING:
@@ -19,7 +19,7 @@ _Act = TypeVar("_Act")
 class ForcedActionWrapper(Wrapper[_Obs, ActionType, _Obs, ActionType]):
     """Automatically commits forced actions without querying the policy.
 
-    For some backends, there are states where there is only one feasible action,
+    For some transitions, there are states where there is only one feasible action,
     making the decision fully determined by the environment. In such states,
     querying the policy provides no useful learning signal because the action
     always has probability one, regardless of the policy parameters.
@@ -30,7 +30,7 @@ class ForcedActionWrapper(Wrapper[_Obs, ActionType, _Obs, ActionType]):
 
     Note
     ----
-    This wrapper has an assumption that the chosen backend has an "execute"
+    This wrapper has an assumption that the chosen transition has an "execute"
     instruction.
     There is another underlying assumption regarding the rewards, forced action
     rewards are accumulated in the initial reward to allow credit assignment
@@ -56,9 +56,9 @@ class ForcedActionWrapper(Wrapper[_Obs, ActionType, _Obs, ActionType]):
         reward = float(reward)
 
         core_env: SchedulingEnv = self.env.get_wrapper_attr("core")
-        backend = core_env.backend
+        transition = core_env.transition
 
-        if backend.is_empty():
+        if transition.is_empty():
             support = core_env.get_action_support()
 
             while len(support) == 1:

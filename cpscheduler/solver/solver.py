@@ -15,8 +15,8 @@ from typing import Any, Generic, TypeVar
 
 from cpscheduler.common import AnySchedulingEnv, unwrap_env
 from cpscheduler.environment import SchedulingEnv
-from cpscheduler.environment.backend import ActionType
 from cpscheduler.environment.constants import MachineID, TaskID, Time
+from cpscheduler.environment.transition import ActionType
 from cpscheduler.environment.utils import InstanceTypes, ensure_iterable
 from cpscheduler.solver.formulation import Formulation, formulations
 
@@ -166,7 +166,7 @@ class SchedulingSolver(Generic[R]):
         -------
         actions : ReturnAction
             Instructions that replay the solution in the environment.
-            Backends without a clock receive the tasks ordered by start time,
+            Transitions without a clock receive the tasks ordered by start time,
             all others receive timed instructions.
 
         objective_value : float
@@ -260,16 +260,11 @@ class SchedulingSolver(Generic[R]):
         schedule.sort()
         actions: ReturnAction = [("reject", task_id) for task_id in rejected]
 
-        if self.env.backend.accepts_timed_instructions:
-            actions.extend(
-                (start_time, "execute", task_id, machine_id)
-                for start_time, task_id, machine_id in schedule
-            )
-
-        else:
-            actions.extend(
-                ("execute", task_id, machine_id)
-                for _, task_id, machine_id in schedule
-            )
+        # The clock of each transition defines what the start time means: an event
+        # time, a time step, or an ordering key when there is no clock.
+        actions.extend(
+            (start_time, "execute", task_id, machine_id)
+            for start_time, task_id, machine_id in schedule
+        )
 
         return actions

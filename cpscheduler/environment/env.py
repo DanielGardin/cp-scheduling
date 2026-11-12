@@ -12,12 +12,6 @@ from typing import TYPE_CHECKING, Any, Generic, cast
 
 from typing_extensions import TypeVar
 
-from cpscheduler.environment.backend import (
-    ActionType,
-    ScheduleBackend,
-    is_single_action,
-    parse_instruction,
-)
 from cpscheduler.environment.constants import MachineID, TaskID, Time
 from cpscheduler.environment.constraints import Constraint, PassiveConstraint
 from cpscheduler.environment.instance import FeatureMetadata, ProblemInstance
@@ -39,6 +33,12 @@ from cpscheduler.environment.specs import ObservationSpec
 from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.state.events import VarField
 from cpscheduler.environment.tracer import Tracer
+from cpscheduler.environment.transition import (
+    ActionType,
+    Transition,
+    is_single_action,
+    parse_instruction,
+)
 from cpscheduler.environment.utils import (
     InfoType,
     Instance_T,
@@ -143,7 +143,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
     instance: ProblemInstance
     instance_generator: InstanceGenerator | None
     state: ScheduleState
-    backend: ScheduleBackend
+    transition: Transition[Any]
     reward: RewardStrategy
 
     # Helper variables
@@ -162,7 +162,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
     #     constraints: Iterable[Constraint] | None = None,
     #     objective: Objective | None = None,
     #     observation: None = None,
-    #     backend: ScheduleBackend | str = "des",
+    #     transition: Transition | str = "des",
     #     reward: RewardStrategy | None = None,
     #     instance: InstanceTypes | InstanceGenerator | None = None,
     #     metrics: Mapping[str, Metric] | None = None,
@@ -180,7 +180,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
     #     constraints: Iterable[Constraint] | None = None,
     #     objective: Objective | None = None,
     #     observation: ObsT_co | None = None,
-    #     backend: ScheduleBackend | str = "des",
+    #     transition: Transition | str = "des",
     #     reward: RewardStrategy | None = None,
     #     instance: InstanceTypes | InstanceGenerator | None = None,
     #     metrics: Mapping[str, Metric] | None = None,
@@ -197,7 +197,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         constraints: Iterable[Constraint] | None = None,
         objective: Objective | None = None,
         observation: ObsT_co | None = None,
-        backend: ScheduleBackend | str = "des",
+        transition: Transition[Any] | str = "des",
         reward: RewardStrategy | None = None,
         instance: InstanceTypes | InstanceGenerator | None = None,
         metrics: Mapping[str, Metric] | None = None,
@@ -234,9 +234,9 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             Observation class used to build RL observations. Defaults to
             `DefaultObservation`.
 
-        backend: ScheduleBackend, str, optional
-            The schdeule dispatcher used in the environment. Defaults to the
-            DES kernel.
+        transition: Transition, str, optional
+            The transition used in the environment, or the name of a
+            registered one. Defaults to "des", the discrete event simulation.
 
         reward: RewardStrategy, optional
             The reward strategy employed to the objective class. Defaults to
@@ -278,8 +278,8 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         observation = observation or cast("ObsT_co", DefaultObservation())
         reward = reward or InfeasibilityPenalty(SparseRewardStrategy())
 
-        if isinstance(backend, str):
-            backend = ScheduleBackend.from_register(backend)
+        if isinstance(transition, str):
+            transition = Transition.from_register(transition)
 
         setup_constraints = machine_setup.setup_constraints()
 
@@ -304,10 +304,15 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         self.sense = sense
         self.minimize = sense == "minimize"
         self.observation = observation
-        self.backend = backend
+        self.transition = transition
         self.reward = reward
 
-        self.observation_spec = observation.compile(problem_instance, backend)
+        if any(c.time_aware for c in (*constraints, *setup_constraints)):
+            transition.track_time()
+
+        self.observation_spec = observation.compile(
+            problem_instance, transition
+        )
 
         self.metrics = dict(metrics) if metrics is not None else {}
         self.tracers = tuple(tracers) if tracers is not None else ()
@@ -402,7 +407,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
     # FUTURE: Candidate of changing in future API to a machine -> tasks mapping
     def get_action_support(self) -> list[TaskID]:
         """Retrieve the current feasible action set."""
-        return self.backend.get_eligible_tasks(self.state)
+        return self.transition.get_eligible_tasks(self.state)
 
     def get_schedule(self) -> dict[TaskID, tuple[MachineID, Time]]:
         """Return a mapping task_id -> machine_id, time."""
@@ -463,7 +468,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
         problem_instance.finalize()
 
-        self.observation.initialize(problem_instance, self.backend)
+        self.observation.initialize(problem_instance, self.transition)
 
         for tracer in self.tracers:
             tracer.initialize(problem_instance)
@@ -504,7 +509,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             "objective_value": self.objective.value,
             "event_count": self.event_count,
             "infeasible": self.state.infeasible,
-            **self.backend.get_info(),
+            **self.transition.get_info(),
         }
 
         for tracer in self.tracers:
@@ -535,18 +540,18 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
                 f"got the string {action!r}."
             )
 
-        backend = self.backend.backend
+        transition = self.transition
         state = self.state
 
         if is_single_action(action):
             action = [action]
 
         validated_instruction = [
-            parse_instruction(act, backend, state) for act in action
+            parse_instruction(act, state) for act in action
         ]
 
         for instruction, time, priority in validated_instruction:
-            self.backend.add_instruction(instruction, time, priority)
+            transition.add_instruction(instruction, time, priority)
 
     def propagate(self) -> None:
         """Execute constraint propagation to fixed-point.
@@ -732,10 +737,10 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             )
 
         state = self.state
-        backend = self.backend
+        transition = self.transition
         observation = self.observation
 
-        backend.reset()
+        transition.reset()
         state.reset()
 
         for tracer in self.tracers:
@@ -745,7 +750,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
         for component in [self.setup, *self._all_constraints, self.objective]:
             component.reset(state)
 
-        observation.reset(state, backend)
+        observation.reset(state, transition)
 
         self.event_count = 0
         self._event_count_trail.clear()
@@ -757,7 +762,9 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
                 "contradictory constraints included in your schedule problem."
             )
 
-        observation.update(state, backend)
+        transition.start_episode(state)
+
+        observation.update(state, transition)
         self.reward.reset(state, self.objective, self.minimize)
 
         self._status = EnvStatus.RUNNING
@@ -828,22 +835,22 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
         self.schedule_action(action)
 
-        backend = self.backend
+        transition = self.transition
 
         while not state.infeasible:
-            instruction = backend.dispatch_instruction(state)
+            instruction = transition.dispatch_instruction(state)
 
             if instruction is None:
                 break
 
             for tracer in self.tracers:
-                tracer.step(instruction, state, backend)
+                tracer.step(instruction, state, transition)
 
-            instruction.process(state, backend)
+            instruction.process(state, transition)
             self.propagate()
 
         # Gymnasium-like step return
-        self.observation.update(state, backend)
+        self.observation.update(state, transition)
 
         reward = self.reward.compute(state, self.objective, self.minimize)
         truncated = state.infeasible
@@ -912,9 +919,9 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
 
         # Checkpoint is not meant to support replayability as sequences of
         # actions _should_ be deterministic.
-        if not self.backend.is_empty():
+        if not self.transition.is_empty():
             raise RuntimeError(
-                "Cannot checkpoint while backend events are pending."
+                "Cannot checkpoint while instructions are pending."
             )
 
         mark = state.checkpoint()
@@ -924,7 +931,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             constraint.checkpoint(mark)
 
         self.objective.checkpoint(mark)
-        self.backend.checkpoint(mark)
+        self.transition.checkpoint(mark)
 
         self.observation.checkpoint(mark)
 
@@ -963,7 +970,7 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             )
 
         state = self.state
-        backend = self.backend
+        transition = self.transition
         observation = self.observation
         changed_tasks = state.backtrack(mark)
 
@@ -971,12 +978,12 @@ class SchedulingEnv(EzPickle, Generic[ObsT_co]):
             constraint.backtrack(mark, changed_tasks, state)
 
         self.objective.backtrack(mark, changed_tasks, state)
-        backend.backtrack(mark, changed_tasks, state)
+        transition.backtrack(mark)
 
         observation.backtrack(mark, changed_tasks, state)
         self.event_count = self._event_count_trail[mark]
         del self._event_count_trail[mark:]
-        observation.update(state, backend)
+        observation.update(state, transition)
 
         if not drop:
             self.checkpoint()

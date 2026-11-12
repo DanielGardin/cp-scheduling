@@ -1,13 +1,14 @@
 """Trajectory-tracing utilities for the environment."""
 
 from copy import deepcopy
+from typing import Any
 
 from typing_extensions import TypedDict, override
 
-from cpscheduler.environment.backend import Instruction, ScheduleBackend
 from cpscheduler.environment.constants import MachineID, TaskID
 from cpscheduler.environment.state import ScheduleState
 from cpscheduler.environment.tracer.base import S, Tracer
+from cpscheduler.environment.transition import Instruction, Transition
 
 
 class FullTrajectoryTracer(Tracer):
@@ -22,7 +23,7 @@ class FullTrajectoryTracer(Tracer):
 
     tracer_name = "full_trajectory"
 
-    trajectory: list[tuple[Instruction, ScheduleState, ScheduleBackend]]
+    trajectory: list[tuple[Instruction, ScheduleState, Transition[Any]]]
 
     def __init__(self) -> None:
         self.trajectory = []
@@ -36,10 +37,10 @@ class FullTrajectoryTracer(Tracer):
         self,
         action: Instruction[S],
         state: ScheduleState,
-        backend: S,
+        transition: Transition[S],
     ) -> None:
         self.trajectory.append(
-            (deepcopy(action), deepcopy(state), deepcopy(backend))
+            (deepcopy(action), deepcopy(state), deepcopy(transition))
         )
 
 
@@ -85,9 +86,9 @@ class TrajectoryTracer(Tracer):
         self,
         action: Instruction[S],
         state: ScheduleState,
-        backend: S,
+        transition: Transition[S],
     ) -> None:
-        metadata = action.semantic(state, backend)
+        metadata = action.semantic(state, transition)
 
         if (
             metadata
@@ -100,7 +101,7 @@ class TrajectoryTracer(Tracer):
 
             self.tasks.append(task_id)
             self.machines.append(machine_id)
-            self.eligible.append(backend.get_eligible_tasks(state))
+            self.eligible.append(transition.get_eligible_tasks(state))
 
     def export(self) -> _TrajectoryExport:
         """Export the tracer's internal state to a serializable format."""

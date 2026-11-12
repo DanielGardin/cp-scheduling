@@ -6,9 +6,9 @@ from typing import Literal
 
 from mypy_extensions import mypyc_attr
 
-from cpscheduler.environment.backend import SingleAction
 from cpscheduler.environment.constants import TaskID
 from cpscheduler.environment.observation import DefaultObservation
+from cpscheduler.environment.transition import SingleAction
 
 
 def prob_to_lmbda(prob: float, size: int, n_iter: int) -> float:

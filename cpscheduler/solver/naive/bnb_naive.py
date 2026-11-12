@@ -82,11 +82,11 @@ class NaiveBnBFormulation(Formulation[SolverResults]):
     Employ a DFS search with backtracking and simple pruning.
     Differently from other solvers, NaiveBnBFormulation does not necessarily yields a
     global optimum, but instead, it yields optimal solutions given the
-    schedule generation schema the backend implements.
+    schedule generation schema the transition implements.
 
-    As this solver steps one action at a time, it relies on backend.eligible_tasks
+    As this solver steps one action at a time, it relies on the eligible tasks of the transition
     to construct a solution, which may not include the optimal solution.
-    For example, using the DES backend searches over non-delay schedules, while
+    For example, using the DES transition searches over non-delay schedules, while
     Tetris would search over semi-active schedules, potentially giving different
     optimal solutions for the same instance.
     """

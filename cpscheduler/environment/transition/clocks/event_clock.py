@@ -1,77 +1,247 @@
-"""DES Backend class."""
+"""Event clock, a discrete event simulation of the instruction queue."""
 
 from __future__ import annotations
 
-from heapq import heappop, heappush
+from heapq import heapify, heappop, heappush
 from typing import TYPE_CHECKING, Any
 
 from mypy_extensions import mypyc_attr
 from typing_extensions import override
 
-from cpscheduler.environment.backend.backend import ScheduleBackend
-from cpscheduler.environment.backend.des.base import (
-    EventID,
-    PriorityValue,
-    Rank,
-    ScheduledEvent,
-    SimulationEvent,
-    TimeSlot,
-)
-from cpscheduler.environment.backend.des.events import CheckpointEvent
+from cpscheduler.environment.constants import MAX_TIME, Time
+from cpscheduler.environment.mixins import EzPickle
+from cpscheduler.environment.transition.actions import TimeUpdateInstruction
+from cpscheduler.environment.transition.core import GlobalClock
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from cpscheduler.environment.backend import Instruction
-    from cpscheduler.environment.constants import TaskID, Time
     from cpscheduler.environment.state import ScheduleState
+    from cpscheduler.environment.transition.actions import Instruction
+    from cpscheduler.environment.transition.core import Transition
 
+EventID = int
+PriorityValue = float
+Rank = int
 
 TIMED_STAGE = 0
 NON_TIMED_STAGE = 1
 
+# B-events (rank=-1) are processed before any C-event (rank>=0)
+_TIMED_RANK: Rank = -1
+
+
+class ScheduledEvent(EzPickle):
+    """Record of an event scheduled for processing in the simulation."""
+
+    event_id: EventID
+    time: Time
+    event: Instruction[Any]
+    stale: bool
+
+    rank: Rank
+    priority: PriorityValue
+
+    def __init__(
+        self,
+        event_id: EventID,
+        time: Time,
+        event: Instruction[Any],
+        priority: PriorityValue,
+        rank: Rank = _TIMED_RANK,
+    ) -> None:
+        self.event_id = event_id
+        self.time = time
+        self.event = event
+        self.rank = rank
+        self.priority = priority
+        self.stale = False
+
+    def __lt__(self, other: ScheduledEvent) -> bool:
+        """Compare two ScheduledEvents for ordering in the event queue."""
+        if self.time != other.time:
+            return self.time < other.time
+
+        if self.rank != other.rank:
+            return self.rank < other.rank
+
+        if self.priority != other.priority:
+            return self.priority > other.priority
+
+        return self.event_id < other.event_id
+
+    def __eq__(self, other: object) -> bool:
+        """Check if two ScheduledEvents are equal based on their event_id."""
+        return (
+            isinstance(other, ScheduledEvent)
+            and self.event_id == other.event_id
+        )
+
+    def invalidate(self) -> None:
+        """Invalidate the event, used when removing an event."""
+        self.stale = True
+
+
+class _EventQueue(EzPickle):
+    events: list[ScheduledEvent]
+    index_map: dict[EventID, int]
+
+    def __init__(self) -> None:
+        self.events = []
+        self.index_map = {}
+
+    def __bool__(self) -> bool:
+        return bool(self.events)
+
+    def __contains__(self, event_id: EventID) -> bool:
+        return event_id in self.index_map
+
+    def __iter__(self) -> Iterator[ScheduledEvent]:
+        return iter(sorted(self.events))
+
+    def __len__(self) -> int:
+        return len(self.events)
+
+    def get(self, event_id: EventID) -> ScheduledEvent:
+        return self.events[self.index_map[event_id]]
+
+    def push(self, entry: ScheduledEvent) -> None:
+        pos = len(self.events)
+
+        self.events.append(entry)
+        self.index_map[entry.event_id] = pos
+
+    def extend(self, entries: list[ScheduledEvent]) -> None:
+        pos = len(self.events)
+
+        self.events.extend(entries)
+        for idx, entry in enumerate(entries, start=pos):
+            self.index_map[entry.event_id] = idx
+
+    def remove(self, event_id: EventID) -> None:
+        if event_id not in self.index_map:
+            raise KeyError(f"Event {event_id} not found in heap.")
+
+        pos = self.index_map[event_id]
+        last_pos = len(self.events) - 1
+
+        removing_event = self.events[pos]
+        removing_event.time = -1
+
+        if pos != last_pos:
+            last_event = self.events[last_pos]
+
+            self.events[pos], self.events[last_pos] = last_event, removing_event
+            self.index_map[last_event.event_id] = pos
+
+        self.events.pop()
+        del self.index_map[event_id]
+
+
+class TimeSlot(EzPickle):
+    """Helper class for managing events scheduled at a specific time step.
+
+    Handles two heaps of events: one for timed events and one for non-timed events.
+    """
+
+    time: Time
+
+    timed_events: _EventQueue
+    non_timed_events: _EventQueue
+
+    def __init__(self, time: Time) -> None:
+        self.time = time
+        self.timed_events = _EventQueue()
+        self.non_timed_events = _EventQueue()
+
+    def __contains__(self, event_id: EventID) -> bool:
+        """Check whether an event ID is in this slot."""
+        return (
+            event_id in self.timed_events or event_id in self.non_timed_events
+        )
+
+    def __bool__(self) -> bool:
+        """Return whether the time slot is empty or not."""
+        return bool(self.timed_events) or bool(self.non_timed_events)
+
+    def get_event(self, event_id: EventID) -> ScheduledEvent:
+        """Return the event by its ID."""
+        if event_id in self.timed_events:
+            return self.timed_events.get(event_id)
+
+        if event_id in self.non_timed_events:
+            return self.non_timed_events.get(event_id)
+
+        raise KeyError(f"Cannot get event {event_id} at time {self.time}.")
+
+    def is_empty(self) -> bool:
+        """Return whether this time slot has no events."""
+        return not self
+
+    def add_timed_event(self, entry: ScheduledEvent) -> None:
+        """Add a timed event to the time slot."""
+        self.timed_events.push(entry)
+        entry.time = self.time
+
+    def add_non_timed_event(self, entry: ScheduledEvent) -> None:
+        """Add a non timed event to the time slot."""
+        self.non_timed_events.push(entry)
+        entry.time = self.time
+
+    def extend_non_timed_events(self, entries: list[ScheduledEvent]) -> None:
+        """Add multiple non timed events to the time slot."""
+        self.non_timed_events.extend(entries)
+        for entry in entries:
+            entry.time = self.time
+
+    def remove_event(self, event_id: EventID) -> None:
+        """Remove an event from its ID."""
+        if event_id in self.timed_events:
+            self.timed_events.remove(event_id)
+
+        elif event_id in self.non_timed_events:
+            self.non_timed_events.remove(event_id)
+
+        else:
+            raise KeyError(
+                f"Event {event_id} not found in time slot {self.time}"
+            )
+
 
 # FUTURE: A better way of detecting whether an instruction is deadlocked is by
-# implementing a method alongside `earliest_start`, like `is_unlocked`, which
-# hints to the backend whether the time in the earliest start is exact, or an heuristic.
+# implementing a method alongside `earliest_time`, like `is_unlocked`, which
+# hints to the clock whether the earliest time is exact, or an heuristic.
 #
-# FUTURE: This backend has a lot of error handling, which is good for debugging,
+# FUTURE: This clock has a lot of error handling, which is good for debugging,
 # but it is bad for RL training when an infeasible action is not masked.
 # An idea is to implement an explicit parameter to tell how to handle errors,
 # for instance: raise, terminate, truncate, ignore...
 @mypyc_attr(native_class=True, allow_interpreted_subclasses=False)
-class DESBackend(ScheduleBackend):
-    """Discrete Event Schedule kernel for managing and processing events in the simulation.
+class EventClock(GlobalClock):
+    """A clock that jumps to the next time at which something can happen.
 
-    This class is responsible for maintaining the event queue, scheduling events
-    according to their timing and blocking behavior, and providing an interface for
-    adding, removing, and rescheduling events during the simulation.
+    We use a three-phased approach (Pidd, 1998) to manage the queue:
+    1. Maintain a min-heap of scheduled times to determine the next time.
+    2. Process all timed instructions of the current time, they must be ready,
+    otherwise an error is raised.
+    3. Process the untimed instructions, sorted by their priority and order of
+    insertion. One that is not ready is deferred to its earliest time, and a
+    blocking one defers every instruction queued after it too.
 
-    We use a three-phased approach (Pidd, 1998) to manage the event queue:
-    1. Maintain a min-heap of scheduled times to determine the next time step.
-    2. Process all timed events at the current time step, they must be ready to
-    process, otherwise an error is raised.
-    3. Process non-timed events at the current time step, sorted by their priority
-    and order of insertion. If a non-timed event is not ready to be processed,
-    it is deferred to a next time.
-    Blocking events are a structural condition can cause the deferral of
-    all subsequent non-timed events when they are not ready.
+    When the queue is empty, the clock jumps to the earliest time at which a
+    task can start, so the next decision always has a candidate. This is what
+    makes the schedules non-delay when one task is executed per step.
     """
-
-    backend = "des"
 
     _time_slots: dict[Time, TimeSlot]
     _event_cache: dict[EventID, ScheduledEvent]
 
     _heap: list[Time]
 
-    _next_event_id: EventID
     _next_rank: Rank
     _tail: Time | None
 
-    time: Time
     stage: int
-    instruction_idx: int
 
     # Explicit dispatch state for the time slot currently being processed.
     _current_time_slot: TimeSlot | None
@@ -85,8 +255,12 @@ class DESBackend(ScheduleBackend):
     _explicit_defer_time: Time
     _explicit_halt: bool
 
+    # Last clock value announced to time-aware constraints
+    _announced_time: Time
+
     # Backtracking
     _time_trail: list[Time]
+    _tail_trail: list[Time | None]
 
     def __init__(self) -> None:
         """Initialize the Schedule with empty event queues and reset state."""
@@ -95,13 +269,11 @@ class DESBackend(ScheduleBackend):
 
         self._heap = []
 
-        self._next_event_id = 0
         self._next_rank = 0
         self._tail = None
 
         self.time = 0
         self.stage = TIMED_STAGE
-        self.instruction_idx = 0
 
         self._current_time_slot = None
         self._timed_snapshot = []
@@ -113,22 +285,19 @@ class DESBackend(ScheduleBackend):
         self._explicit_defer_time = 0
         self._explicit_halt = False
 
-        self._time_trail = []
+        self._announced_time = 0
 
-    def reset(self) -> None:
-        """Reset the schedule to its initial empty state."""
+        self._time_trail = []
+        self._tail_trail = []
+
+    def _drop_pending_events(self) -> None:
+        """Remove every scheduled event, without moving the clock."""
         self._time_slots.clear()
         self._event_cache.clear()
 
         self._heap.clear()
 
-        self._next_event_id = 0
-        self._next_rank = 0
-        self._tail = None
-
-        self.time = 0
         self.stage = TIMED_STAGE
-        self.instruction_idx = 0
 
         self._current_time_slot = None
         self._timed_snapshot.clear()
@@ -137,14 +306,35 @@ class DESBackend(ScheduleBackend):
         self._non_timed_index = 0
         self._deferred_events.clear()
 
-        self._time_trail.clear()
+        self._explicit_defer_time = 0
+        self._explicit_halt = False
 
     @override
-    def get_eligible_tasks(self, state: ScheduleState) -> list[TaskID]:
-        return state.get_available_tasks(self.time)
+    def reset(self) -> None:
+        self._drop_pending_events()
 
+        self._next_rank = 0
+        self._tail = None
+
+        self.time = 0
+        self._announced_time = 0
+
+        self._time_trail.clear()
+        self._tail_trail.clear()
+
+    @override
+    @override
+    def start_episode(self, state: ScheduleState) -> None:
+        # Same behavior of the termination phase: the first decision point is
+        # where some task can start, so the initial action support is not empty.
+        earliest_start = state.get_earliest_start_lb()
+
+        if earliest_start != MAX_TIME:
+            self.time = max(self.time, earliest_start)
+            self._announced_time = self.time
+
+    @override
     def is_empty(self) -> bool:
-        """Check if there are no scheduled events."""
         return not self._heap
 
     def _create_time_slot(self, time: Time) -> TimeSlot:
@@ -155,10 +345,10 @@ class DESBackend(ScheduleBackend):
 
         return self._time_slots[time]
 
-    def dispatch_instruction(
-        self, state: ScheduleState
-    ) -> SimulationEvent | None:
-        """Dispatch the next event by consuming an internal generator."""
+    @override
+    def pop(
+        self, state: ScheduleState, transition: Transition[Any]
+    ) -> Instruction[Any] | None:
         if self._explicit_halt:
             self._explicit_halt = False
             return None
@@ -175,14 +365,20 @@ class DESBackend(ScheduleBackend):
                 self._timed_snapshot = list(current_slot.timed_events)
                 self._timed_index = 0
 
+                # The constraints must see the new time before any event
+                # readiness is evaluated for it.
+                if transition.tracks_time and time != self._announced_time:
+                    self._announced_time = time
+                    return TimeUpdateInstruction(time)
+
             event = None
             # Stage B: Run all unconditional events
             if self.stage == TIMED_STAGE:
-                event = self._step_timed_stage(state)
+                event = self._step_timed_stage(state, transition)
 
             # Stage C: Check conditional events
             if self.stage == NON_TIMED_STAGE:
-                event = self._step_non_timed_stage(state)
+                event = self._step_non_timed_stage(state, transition)
 
             if event is not None:
                 return event
@@ -193,17 +389,31 @@ class DESBackend(ScheduleBackend):
         # This is the behavior that make DES non-delay by default, the termination
         # phase always jumps to a state where |eligible_tasks| > 0, or to
         # the latest end, when such state does not exist.
-        self.time = max(
-            self.time,
+        next_time = (
             state.get_latest_end()
             if state.is_terminal()
-            else state.get_earliest_start_lb(),
+            else state.get_earliest_start_lb()
         )
 
+        # No task can start, not even in the future. Time is not advanced to
+        # avoid leaking the MAX_TIME sentinel.
+        if next_time != MAX_TIME:
+            self.time = max(self.time, next_time)
+
         self.stage = TIMED_STAGE
+
+        if not state.is_terminal() and state.expire_tasks(self.time):
+            return TimeUpdateInstruction(self.time)
+
+        if transition.tracks_time and self.time != self._announced_time:
+            self._announced_time = self.time
+            return TimeUpdateInstruction(self.time)
+
         return None
 
-    def _step_timed_stage(self, state: ScheduleState) -> SimulationEvent | None:
+    def _step_timed_stage(
+        self, state: ScheduleState, transition: Transition[Any]
+    ) -> Instruction[Any] | None:
         """Process one timed event of the current time slot, or advance to the non-timed stage."""
         assert self._current_time_slot is not None
 
@@ -220,7 +430,7 @@ class DESBackend(ScheduleBackend):
 
             event = entry.event
 
-            if not event.is_ready(state, self):
+            if not event.is_ready(state, transition):
                 raise ValueError(
                     f"Event is not ready to be processed: {event} at time {self.time}"
                 )
@@ -241,8 +451,8 @@ class DESBackend(ScheduleBackend):
         return None
 
     def _step_non_timed_stage(
-        self, state: ScheduleState
-    ) -> SimulationEvent | None:
+        self, state: ScheduleState, transition: Transition[Any]
+    ) -> Instruction[Any] | None:
         """Process one non-timed event of the current time slot, or finalize the slot."""
         assert self._current_time_slot is not None
 
@@ -252,8 +462,8 @@ class DESBackend(ScheduleBackend):
             # Not sure if we really need this guy, I imagine so because it
             # triggers `tight_global_time` in the state, which is only required
             # when the schedule is non-delay (conjecture)
-            self.add_instruction(
-                CheckpointEvent(self._explicit_defer_time),
+            transition.add_instruction(
+                TimeUpdateInstruction(self._explicit_defer_time),
                 self._explicit_defer_time,
             )
             self._explicit_defer_time = 0
@@ -274,7 +484,7 @@ class DESBackend(ScheduleBackend):
 
             event = entry.event
 
-            if event.is_ready(state, self):
+            if event.is_ready(state, transition):
                 self._remove_event(entry.event_id)
 
                 self._non_timed_index = idx
@@ -283,13 +493,11 @@ class DESBackend(ScheduleBackend):
             if event.blocking:
                 next_time = event.earliest_time(state)
 
-                if next_time is None or next_time <= self.time:
-                    next_time = self.time if next_time is None else next_time
-
+                if next_time is None:
                     raise RuntimeError(
-                        f"Event {event} is potentially deadlocking the event "
-                        "queue: It is not ready, but its earliest time is earlier than "
-                        f"the current time ({next_time} <= {self.time})"
+                        f"Event {event} is locking the event queue without a "
+                        "earliest time to be ready. It might require another "
+                        "instruction to be processed first, or it might be deadlocked."
                     )
 
                 self._defer_remaining_events(next_time)
@@ -304,7 +512,9 @@ class DESBackend(ScheduleBackend):
         assert self._current_time_slot is not None
 
         self._current_time_slot.non_timed_events.remove(event_id)
-        del self._event_cache[event_id]
+
+        # Stale events have already left the cache when they were invalidated
+        self._event_cache.pop(event_id, None)
 
     def _defer_remaining_events(self, next_time: Time) -> None:
         """Defer all remaining C-events due to a blocking signal to `next time`."""
@@ -317,9 +527,19 @@ class DESBackend(ScheduleBackend):
                 f"({next_time} <= {self.time})."
             )
 
+        # Events that were individually deferred are rescheduled at the end of
+        # this time slot, moving them here too would duplicate them.
+        individually_deferred = {
+            entry.event_id for entry in self._deferred_events
+        }
+
         next_time_slot = self._create_time_slot(next_time)
         next_time_slot.extend_non_timed_events(
-            self._current_time_slot.non_timed_events.events
+            [
+                entry
+                for entry in self._current_time_slot.non_timed_events.events
+                if entry.event_id not in individually_deferred
+            ]
         )
 
         if self._tail is None or next_time > self._tail:
@@ -368,51 +588,24 @@ class DESBackend(ScheduleBackend):
             )
 
     @override
-    def get_info(self) -> dict[str, Any]:
-        return {"current_time": self.time}
-
     # Public API
     # -----------
-    # The following methods can be called by events during processing.
+    # The following methods can be called by instructions during processing.
 
     @override
-    def add_instruction(
+    def push(
         self,
-        instruction: Instruction[DESBackend],
-        time: Time | None = None,
-        priority: float | None = None,
-    ) -> EventID:
-        """Add an event to the schedule.
+        instruction: Instruction[Any],
+        time: Time | None,
+        priority: float | None,
+        event_id: int,
+    ) -> None:
+        """Queue an instruction.
 
-        Parameters
-        ----------
-        instruction: SimulationEvent
-            The event to be added to the schedule.
-
-        time: Time | None
-            The time at which the event should be scheduled. If None, the event will be
-            scheduled as a non-timed event at the current time step.
-
-        priority: float | None
-            The priority of the event, used for ordering non-timed events. Higher values
-            indicate higher priority. This parameter is only applicable for non-timed events
-            (when time is None) and will be ignored for timed events.
-
-        Raises
-        ------
-        ValueError
-            If the instruction is not a DES instruction.
-            If the event is not valid for the current state, or if the time or priority
-            parameters are invalid.
-
+        A timed instruction is processed exactly at its time, and it must be
+        ready then. An untimed one is processed at the current time, by
+        highest priority, then in insertion order, as soon as it is ready.
         """
-        if not isinstance(instruction, SimulationEvent):
-            raise ValueError(
-                f"{type(instruction).__name__} is not a subclass of SimulationEvent "
-                f"DES instructions are expected to subclass SimulationEvent."
-            )
-
-        event_id = super().add_instruction(instruction, time, priority)
         priority = priority if priority is not None else 0.0
 
         if time is None:
@@ -441,7 +634,6 @@ class DESBackend(ScheduleBackend):
             time_slot.add_timed_event(entry)
 
         self._event_cache[event_id] = entry
-        return event_id
 
     def remove_event(self, event_id: EventID) -> None:
         """Remove an event from the schedule, if it is still scheduled."""
@@ -457,6 +649,14 @@ class DESBackend(ScheduleBackend):
 
         else:
             self._time_slots[time].remove_event(event_id)
+            self._discard_if_empty(time)
+
+    def _discard_if_empty(self, time: Time) -> None:
+        """Drop an empty future time slot, so the clock does not visit it."""
+        if self._time_slots[time].is_empty():
+            del self._time_slots[time]
+            self._heap.remove(time)
+            heapify(self._heap)
 
     def reschedule_event(self, event_id: EventID, new_time: Time) -> None:
         """Reschedule an existing timed event to a new time."""
@@ -466,7 +666,12 @@ class DESBackend(ScheduleBackend):
         entry = self._event_cache[event_id]
         old_time = entry.time
 
-        time_slot = self._time_slots[old_time]
+        time_slot = self._time_slots.get(old_time)
+
+        if time_slot is None:
+            raise ValueError(
+                f"Event {event_id} is being processed, it cannot be rescheduled."
+            )
 
         if event_id in time_slot.non_timed_events:
             raise ValueError("Cannot reschedule non-timed events.")
@@ -481,6 +686,8 @@ class DESBackend(ScheduleBackend):
         new_time_slot = self._create_time_slot(new_time)
         new_time_slot.add_timed_event(entry)
 
+        self._discard_if_empty(old_time)
+
     def change_event_priority(
         self, event_id: EventID, new_priority: PriorityValue
     ) -> None:
@@ -491,16 +698,12 @@ class DESBackend(ScheduleBackend):
         entry = self._event_cache[event_id]
         entry.priority = new_priority
 
-    def clear_schedule(self) -> None:
-        """Clear all scheduled events, resetting the schedule to an empty state."""
-        self.reset()
-
-    def peek_events(self) -> Iterator[SimulationEvent]:
+    def peek_events(self) -> Iterator[Instruction[Any]]:
         """Peek at all scheduled events in the order they would be processed, without modifying the schedule."""
         for entry in sorted(self._event_cache.values()):
             yield entry.event
 
-    def peek_events_at_time(self, time: Time) -> Iterator[SimulationEvent]:
+    def peek_events_at_time(self, time: Time) -> Iterator[Instruction[Any]]:
         """Peek at all scheduled events at a specific time, without modifying the schedule."""
         if time not in self._time_slots:
             return
@@ -513,22 +716,17 @@ class DESBackend(ScheduleBackend):
         for entry in time_slot.non_timed_events:
             yield entry.event
 
+    @override
     def halt(self) -> None:
-        """Trigger a stop in the simulation."""
         self._explicit_halt = True
 
     # FUTURE: The interaction between non-blocking events and advancement is
     # not entirely known. We should make tests that stress that interface.
+    @override
     def advance_to(self, time: Time) -> None:
-        """Trigger an advancement requirement in the simulation.
-
-        Note
-        ----
-        This method does not make the global clock advance, because this would
-        violate a timed event that needs to be executed before `time`.
-        The expected behavior is that any C-events are deferred to the
-        advancement time, yielding a proper jump when no B-events exist.
-        """
+        # The clock is not moved here, as this would skip a timed event that
+        # is due before `time`. The untimed events are deferred to `time`
+        # instead, which gives a proper jump when no timed event exists.
         if time < self.time:
             raise RuntimeError(
                 "Cannot advance to a time earlier than the current time "
@@ -537,18 +735,25 @@ class DESBackend(ScheduleBackend):
 
         self._explicit_defer_time = time
 
+    @override
     def checkpoint(self, mark: int) -> None:
-        """Push a backtracking checkpoint."""
         assert len(self._time_trail) == mark
 
         self._time_trail.append(self.time)
+        self._tail_trail.append(self._tail)
 
-    def backtrack(
-        self, mark: int, changed_tasks: set[TaskID], state: ScheduleState
-    ) -> None:
-        """Undo all mutations recorded after checkpoint mark."""
+    @override
+    def backtrack(self, mark: int) -> None:
+        # Checkpoints are only taken with an empty queue, but a step that
+        # fails stops with its remaining instructions still scheduled.
+        self._drop_pending_events()
+
         self.time = self._time_trail[mark]
+        self._announced_time = self.time
+        self._tail = self._tail_trail[mark]
+
         del self._time_trail[mark:]
+        del self._tail_trail[mark:]
 
 
 # Why `advance_to`, and in which scenario it is used?

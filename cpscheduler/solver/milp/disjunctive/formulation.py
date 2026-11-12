@@ -173,14 +173,13 @@ class DisjunctiveMILPFormulation(PyomoFormulation):
     def _tightening_maybe(self, env: SchedulingEnv) -> None:
         """Try tightening the upper bounds for a better-behaved model."""
         obj = env.objective
-        backend = env.backend
 
         self._apply_trivial_horizon(env)
 
         # An incumbent only bounds the end of every task when the objective is
         # the makespan itself. For other objectives, even regular ones, the
         # optimal schedule can finish later than a given feasible schedule.
-        if not isinstance(obj, Makespan) or backend.backend != "des":
+        if not isinstance(obj, Makespan):
             return
 
         cpy_env = deepcopy(env)

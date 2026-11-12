@@ -6,12 +6,12 @@ from typing import Any, Generic
 from mypy_extensions import mypyc_attr
 from typing_extensions import TypeVar, override
 
-from cpscheduler.environment.backend import ScheduleBackend
 from cpscheduler.environment.constants import MachineID, TaskID, Time
 from cpscheduler.environment.instance import ProblemInstance
 from cpscheduler.environment.mixins import EzPickle
 from cpscheduler.environment.specs import ObservationSpec
 from cpscheduler.environment.state import ScheduleState
+from cpscheduler.environment.transition import Transition
 
 Serialized_Obs = TypeVar("Serialized_Obs", default=Any)
 
@@ -92,9 +92,9 @@ class Observation(EzPickle, Generic[Serialized_Obs]):
         return self.symbols.get("n_jobs")
 
     def compile(
-        self, instance: ProblemInstance, backend: ScheduleBackend
+        self, instance: ProblemInstance, transition: Transition[Any]
     ) -> ObservationSpec:
-        """Compile the instance and backend configuration into an observation spec.
+        """Compile the instance and transition configuration into an observation spec.
 
         This method declares the structure created by `serialize`, which will
         be further populated by a symbol table.
@@ -106,9 +106,9 @@ class Observation(EzPickle, Generic[Serialized_Obs]):
         )
 
     def initialize(
-        self, instance: ProblemInstance, backend: ScheduleBackend
+        self, instance: ProblemInstance, transition: Transition[Any]
     ) -> None:
-        """Initialize the observation with problem instance and backend configuration."""
+        """Initialize the observation with problem instance and transition configuration."""
         concrete_symbols = instance.symbol_values
 
         for symbol, value in self._default_symbols.items():
@@ -127,7 +127,7 @@ class Observation(EzPickle, Generic[Serialized_Obs]):
         self.fingerprint = instance.fingerprint
         self.symbols = concrete_symbols
 
-    def reset(self, state: ScheduleState, backend: ScheduleBackend) -> None:
+    def reset(self, state: ScheduleState, transition: Transition[Any]) -> None:
         """Reset the observation to its initial state."""
 
     def on_assignment(
@@ -175,7 +175,7 @@ class Observation(EzPickle, Generic[Serialized_Obs]):
     def on_task_unlock(self, task_id: TaskID, state: ScheduleState) -> None:
         """Handle the event of a task being unlocked."""
 
-    def update(self, state: ScheduleState, backend: ScheduleBackend) -> None:
+    def update(self, state: ScheduleState, transition: Transition[Any]) -> None:
         """Update the observation from the current stable scheduling state.
 
         This function is called immediatelly before the observation is returned
@@ -218,7 +218,7 @@ class NullObservation(Observation[None]):
 
     @override
     def compile(
-        self, instance: ProblemInstance, backend: ScheduleBackend
+        self, instance: ProblemInstance, transition: Transition[Any]
     ) -> ObservationSpec:
         return ObservationSpec()
 

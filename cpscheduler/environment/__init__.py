@@ -82,14 +82,24 @@ __all__ = [  # noqa: RUF022
     "DefaultObservation",
     "GymSafeObservation",
     "NullObservation",
-    # Backends
-    "DESBackend",
+    # Transitions
+    "Transition",
+    "Clock",
+    "EventClock",
+    "NoClock",
+    "UnitClock",
+    "CandidateRule",
+    "AvailableCandidates",
+    "ConflictSetCandidates",
+    "EarliestStartCandidates",
+    "UnlockedCandidates",
+    "Placement",
+    "EarliestStartPlacement",
     # Rewards
     "SparseRewardStrategy",
     "InfeasibilityPenalty",
 ]
 
-from .backend import DESBackend
 from .constraints import (
     AllOrNothingConstraint,
     AtMostOneConstraint,
@@ -148,4 +158,18 @@ from .setups import (
     SingleMachineSetup,
     UniformParallelMachineSetup,
     UnrelatedParallelMachineSetup,
+)
+from .transition import (
+    AvailableCandidates,
+    CandidateRule,
+    Clock,
+    ConflictSetCandidates,
+    EarliestStartCandidates,
+    EarliestStartPlacement,
+    EventClock,
+    NoClock,
+    Placement,
+    Transition,
+    UnitClock,
+    UnlockedCandidates,
 )

@@ -36,7 +36,7 @@ class Constraint(Component):
     backtrack_safe: ClassVar[bool] = False
 
     time_aware: ClassVar[bool] = False
-    """Whether `on_time_update` must fire whenever the backend clock advances.
+    """Whether `on_time_update` must fire whenever the clock of the transition advances.
 
     The events have a cost per time step, so they are only produced for
     environments with at least one constraint that depends on them.
