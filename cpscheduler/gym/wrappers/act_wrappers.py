@@ -11,8 +11,8 @@ from numpy import int64
 from numpy.typing import NDArray
 from typing_extensions import override
 
-from cpscheduler.environment.constants import Int
-from cpscheduler.environment.transition import ActionType
+from cpscheduler.environment.constants import MAX_TIME, Int
+from cpscheduler.environment.transition import ActionType, GlobalClock
 from cpscheduler.environment.utils import Instance_T
 from cpscheduler.environment.utils.protocols import Options
 
@@ -36,9 +36,16 @@ class SchedulingActionWrapper(ActionWrapper[_Obs, _Act, ActionType], ABC):
 
     requires_loaded: bool = False
 
+    _space_fingerprint: int
+    "Fingerprint of the instance the action space was built for."
+
     def __init__(self, env: Env[_Obs, ActionType]):
         super().__init__(env)
-        self.action_space = self._get_action_space()
+        self._rebuild_action_space()
+
+    def _rebuild_action_space(self) -> None:
+        self._space_fingerprint = self.fingerprint
+        self.action_space = self.get_action_space()
 
     def reset(
         self,
@@ -47,14 +54,12 @@ class SchedulingActionWrapper(ActionWrapper[_Obs, _Act, ActionType], ABC):
         options: Options | None = None,
     ) -> tuple[_Obs, dict[str, Any]]:
         """Reset the environment and update the action space if necessary."""
-        fingerprint: int = self.fingerprint
-
         obs, info = self.env.reset(
             seed=seed, options=dict(options) if options else None
         )
 
-        if self.fingerprint != fingerprint:
-            self.action_space = self._get_action_space()
+        if self.fingerprint != self._space_fingerprint:
+            self._rebuild_action_space()
 
         return obs, info
 
@@ -85,14 +90,13 @@ class SchedulingActionWrapper(ActionWrapper[_Obs, _Act, ActionType], ABC):
             If constraint propagation detects initial infeasibility.
 
         """
-        fingerprint: int = self.fingerprint
         self.env.get_wrapper_attr("load_instance")(*instances)
 
-        if self.fingerprint != fingerprint:
-            self.action_space = self._get_action_space()
+        if self.fingerprint != self._space_fingerprint:
+            self._rebuild_action_space()
 
     @abstractmethod
-    def _get_action_space(self) -> Space[_Act]:
+    def get_action_space(self) -> Space[_Act]:
         """Get the action space for the environment.
 
         This method is called when the environment loads a new instance,
@@ -159,7 +163,7 @@ class PermutationActionWrapper(SchedulingActionWrapper[_Obs, Iterable[Int]]):
             )
 
     @override
-    def _get_action_space(self) -> Space[Iterable[Int]]:
+    def get_action_space(self) -> Space[Iterable[Int]]:
         env: SchedulingEnv = self.get_wrapper_attr("core")
 
         n_tasks = env.observation.n_tasks or MAX_INT
@@ -175,7 +179,7 @@ class SingleActionWrapper(SchedulingActionWrapper[_Obs, Int]):
     """A wrapper for a single task execution per step."""
 
     @override
-    def _get_action_space(self) -> Space[Int]:
+    def get_action_space(self) -> Space[Int]:
         env: SchedulingEnv = self.get_wrapper_attr("core")
 
         n_tasks = env.observation.n_tasks or MAX_INT
@@ -202,7 +206,7 @@ class SingleAssignmentWrapper(SchedulingActionWrapper[_Obs, Iterable[Int]]):
     """A wrapper for a single task, machine pair assignment per step."""
 
     @override
-    def _get_action_space(self) -> Space[Iterable[Int]]:
+    def get_action_space(self) -> Space[Iterable[Int]]:
         env: SchedulingEnv = self.get_wrapper_attr("core")
 
         n_tasks = env.observation.n_tasks or MAX_INT
@@ -216,7 +220,7 @@ class SingleAssignmentWrapper(SchedulingActionWrapper[_Obs, Iterable[Int]]):
         return ("execute", int(task_id), int(machine_id))
 
     @override
-    def action_masks(self) -> NDArray[Any] | None:
+    def action_masks(self) -> NDArray[Any]:
         env: SchedulingEnv = self.get_wrapper_attr("core")
 
         support = env.transition.get_action_mask(env.state)
@@ -229,12 +233,17 @@ class SingleAssignmentWrapper(SchedulingActionWrapper[_Obs, Iterable[Int]]):
 
 
 class SingleActionNoopWrapper(SchedulingActionWrapper[_Obs, Int]):
-    """A wrapper for a single task execution per step, including noop."""
+    """A wrapper for a single task execution per step, including noop.
+
+    The last action is the noop, which waits until the next time a task can
+    start. It is masked when the clock has no time, or when no task can start
+    later.
+    """
 
     _n_tasks: int
 
     @override
-    def _get_action_space(self) -> Space[Int]:
+    def get_action_space(self) -> Space[Int]:
         env: SchedulingEnv = self.get_wrapper_attr("core")
 
         n_tasks = env.observation.n_tasks or MAX_INT
@@ -250,13 +259,20 @@ class SingleActionNoopWrapper(SchedulingActionWrapper[_Obs, Int]):
         return ("execute", int(action))
 
     @override
-    def action_masks(self) -> NDArray[Any] | None:
+    def action_masks(self) -> NDArray[Any]:
         env: SchedulingEnv = self.get_wrapper_attr("core")
 
         support = env.get_action_support()
 
-        mask = np.zeros(env.state.n_tasks + 1, dtype=int)
-        mask[-1] = 1  # The last action is always valid (noop)
+        mask = np.zeros(self._n_tasks + 1, dtype=int)
         mask[support] = 1
+
+        # Same condition under which the noop instruction moves the clock.
+        transition = env.transition
+        if (
+            isinstance(transition.clock, GlobalClock)
+            and env.state.get_next_decision_point(transition.time) != MAX_TIME
+        ):
+            mask[self._n_tasks] = 1
 
         return mask

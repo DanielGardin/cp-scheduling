@@ -127,6 +127,74 @@ def test_action_space_follows_the_loaded_instance() -> None:
     assert not env.action_space.contains(4)
 
 
+@pytest.mark.parametrize(
+    "wrapper", [SingleActionWrapper, SingleActionNoopWrapper]
+)
+def test_action_space_follows_an_instance_loaded_on_the_inner_env(
+    wrapper: type[SingleActionWrapper[DefaultObsType]]
+    | type[SingleActionNoopWrapper[DefaultObsType]],
+) -> None:
+    inner = SchedulingEnvGym(JobShopSetup(), objective=Makespan())
+    env = wrapper(inner)
+
+    inner.load_instance(JOB_SHOP)
+    env.reset()
+
+    mask = env.action_masks()
+
+    assert mask is not None
+    assert env.action_space.contains(len(mask) - 1)
+    assert not env.action_space.contains(len(mask))
+
+
+def test_noop_is_the_last_action_of_the_loaded_instance() -> None:
+    inner = SchedulingEnvGym(JobShopSetup(), objective=Makespan())
+    env = SingleActionNoopWrapper(inner)
+
+    inner.load_instance(JOB_SHOP)
+    env.reset()
+
+    assert env.action(4) == ("noop",)
+
+
+def test_noop_is_masked_without_a_clock() -> None:
+    env = SingleActionNoopWrapper(
+        SchedulingEnvGym(
+            JobShopSetup(),
+            objective=Makespan(),
+            transition="tetris",
+            instance=JOB_SHOP,
+        )
+    )
+    env.reset()
+
+    mask = env.action_masks()
+
+    assert mask is not None
+    assert mask[-1] == 0
+
+
+def test_noop_is_masked_once_no_task_can_start_later() -> None:
+    env = SingleActionNoopWrapper(
+        SchedulingEnvGym(
+            SingleMachineSetup(),
+            [ReleaseDateConstraint()],
+            Makespan(),
+            instance={"processing_time": [2, 2], "release_time": [0, 5]},
+        )
+    )
+    env.reset()
+
+    before = env.action_masks()
+    env.step(2)
+    after = env.action_masks()
+
+    assert before is not None
+    assert after is not None
+    assert before.tolist() == [1, 0, 1]
+    assert after.tolist() == [1, 1, 0]
+
+
 def test_forced_actions_are_played_without_asking() -> None:
     env = ForcedActionWrapper(_job_shop())
     env.reset()
