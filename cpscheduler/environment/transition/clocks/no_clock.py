@@ -91,9 +91,16 @@ class NoClock(Clock):
                     for other in skipped:
                         heappush(queue, other)
 
-                raise RuntimeError(
-                    f"Cannot process unready instruction {instruction}."
-                )
+                message = f"Cannot process unready instruction {instruction}."
+                if instruction.is_locked(state, transition):
+                    message += (
+                        " It is locked, it waits for another instruction, but "
+                        "being blocking it holds every instruction queued "
+                        "after it: the ones it depends on must be queued "
+                        "before it."
+                    )
+
+                raise RuntimeError(message)
 
             if skipped is None:
                 skipped = []

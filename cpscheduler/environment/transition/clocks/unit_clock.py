@@ -89,9 +89,14 @@ class UnitClock(GlobalClock):
             instruction = heappop(queue)[3]
 
             if not instruction.is_ready(state, transition):
-                raise RuntimeError(
-                    f"Cannot process unready instruction {instruction}."
-                )
+                message = f"Cannot process unready instruction {instruction}."
+                if instruction.is_locked(state, transition):
+                    message += (
+                        " It is locked, it waits for another instruction: the "
+                        "ones it depends on must be processed before it."
+                    )
+
+                raise RuntimeError(message)
 
             return instruction
 
@@ -117,7 +122,7 @@ class UnitClock(GlobalClock):
         self.time = next_time
 
         expired = state.expire_tasks(self.time)
-        if expired or transition.track_time:
+        if expired or transition.tracks_time:
             self._flush_tick = True
             return TimeUpdateInstruction(self.time)
 

@@ -208,10 +208,6 @@ class TimeSlot(EzPickle):
             )
 
 
-# FUTURE: A better way of detecting whether an instruction is deadlocked is by
-# implementing a method alongside `earliest_time`, like `is_unlocked`, which
-# hints to the clock whether the earliest time is exact, or an heuristic.
-#
 # FUTURE: This clock has a lot of error handling, which is good for debugging,
 # but it is bad for RL training when an infeasible action is not masked.
 # An idea is to implement an explicit parameter to tell how to handle errors,
@@ -226,7 +222,9 @@ class EventClock(GlobalClock):
     otherwise an error is raised.
     3. Process the untimed instructions, sorted by their priority and order of
     insertion. One that is not ready is deferred to its earliest time, and a
-    blocking one defers every instruction queued after it too.
+    blocking one defers every instruction queued after it too. A locked one,
+    whose earliest time has passed, waits for the next scheduled event
+    instead, and the queue is deadlocked when there is none.
 
     When the queue is empty, the clock jumps to the earliest time at which a
     task can start, so the next decision always has a candidate. This is what
@@ -383,7 +381,7 @@ class EventClock(GlobalClock):
             if event is not None:
                 return event
 
-            self._finalize_time_slot(state)
+            self._finalize_time_slot(state, transition)
 
         # Termination Phase: Advance to a potential next event
         # This is the behavior that make DES non-delay by default, the termination
@@ -431,9 +429,18 @@ class EventClock(GlobalClock):
             event = entry.event
 
             if not event.is_ready(state, transition):
-                raise ValueError(
-                    f"Event is not ready to be processed: {event} at time {self.time}"
+                message = (
+                    f"Event is not ready to be processed: {event} at time "
+                    f"{self.time}."
                 )
+                if event.is_locked(state, transition):
+                    message += (
+                        " It is locked, it waits for another instruction, and "
+                        "a timed instruction runs exactly at its time: the "
+                        "ones it depends on must be processed before it."
+                    )
+
+                raise ValueError(message)
 
             del self._event_cache[entry.event_id]
             self._timed_index = idx
@@ -493,14 +500,20 @@ class EventClock(GlobalClock):
             if event.blocking:
                 next_time = event.earliest_time(state)
 
-                if next_time is None:
-                    raise RuntimeError(
-                        f"Event {event} is locking the event queue without a "
-                        "earliest time to be ready. It might require another "
-                        "instruction to be processed first, or it might be deadlocked."
-                    )
+                if next_time is not None and next_time > self.time:
+                    self._defer_remaining_events(next_time)
+                    return None
 
-                self._defer_remaining_events(next_time)
+                # Time alone does not make it ready: wait for the next
+                # scheduled event, the only thing that can unlock it.
+                if not event.is_locked(state, transition):
+                    raise self._stuck_error(event, next_time)
+
+                pending_time = self._next_pending_time(state)
+                if pending_time is None:
+                    raise self._deadlock_error(event)
+
+                self._move_remaining_events(pending_time)
 
                 return None
 
@@ -527,6 +540,12 @@ class EventClock(GlobalClock):
                 f"({next_time} <= {self.time})."
             )
 
+        self._move_remaining_events(next_time)
+
+    def _move_remaining_events(self, next_time: Time) -> None:
+        """Move all remaining C-events of the current time slot to `next_time`."""
+        assert self._current_time_slot is not None
+
         # Events that were individually deferred are rescheduled at the end of
         # this time slot, moving them here too would duplicate them.
         individually_deferred = {
@@ -545,12 +564,75 @@ class EventClock(GlobalClock):
         if self._tail is None or next_time > self._tail:
             self._tail = next_time
 
-    def _finalize_time_slot(self, state: ScheduleState) -> None:
+    def _next_pending_time(self, state: ScheduleState) -> Time | None:
+        """Return the earliest time of an event other than the current ones.
+
+        The current time slot has left `_time_slots`, so a slot found at the
+        current time holds events pushed while processing it.
+        """
+        next_time: Time | None = None
+
+        for time in self._time_slots:
+            if next_time is None or time < next_time:
+                next_time = time
+
+        # The individually deferred events are rescheduled after this slot.
+        for entry in self._deferred_events:
+            earliest = entry.event.earliest_time(state)
+
+            if (
+                earliest is not None
+                and earliest > self.time
+                and (next_time is None or earliest < next_time)
+            ):
+                next_time = earliest
+
+        return next_time
+
+    def _deadlock_error(self, event: Instruction[Any]) -> RuntimeError:
+        message = (
+            f"Deadlock at time {self.time}: {event} is locked, it waits for "
+            "another instruction to make it ready, but no other instruction "
+            "is scheduled."
+        )
+
+        if event.blocking:
+            message += (
+                " Being blocking, it holds every instruction queued after it, "
+                "so the ones it depends on must be queued before it."
+            )
+
+        return RuntimeError(message)
+
+    def _stuck_error(
+        self, event: Instruction[Any], time: Time | None
+    ) -> RuntimeError:
+        return RuntimeError(
+            f"{event} is not ready at time {self.time} and not locked, but its "
+            f"earliest time ({time}) is not later: time alone cannot make it "
+            "ready. Its `earliest_time` or `is_locked` is inconsistent with "
+            "`is_ready`."
+        )
+
+    def _finalize_time_slot(
+        self, state: ScheduleState, transition: Transition[Any]
+    ) -> None:
         """Close out the current time slot and pop it from the heap."""
         heappop(self._heap)
 
+        # The locked events wait for the next event, so the others must be
+        # rescheduled first.
+        locked: list[ScheduledEvent] = []
         for entry in self._deferred_events:
-            self._reschedule_event(entry, state)
+            if not self._reschedule_event(entry, state, transition):
+                locked.append(entry)
+
+        for entry in locked:
+            pending_time = self._next_pending_time(state)
+            if pending_time is None:
+                raise self._deadlock_error(entry.event)
+
+            self._create_time_slot(pending_time).add_non_timed_event(entry)
 
         self._current_time_slot = None
         self._timed_snapshot.clear()
@@ -561,31 +643,33 @@ class EventClock(GlobalClock):
         self.stage = TIMED_STAGE
 
     def _reschedule_event(
-        self, entry: ScheduledEvent, state: ScheduleState
-    ) -> None:
+        self,
+        entry: ScheduledEvent,
+        state: ScheduleState,
+        transition: Transition[Any],
+    ) -> bool:
+        """Reschedule a deferred event to its earliest time.
+
+        Return False when the event is locked without a later earliest time,
+        so it must wait for the next scheduled event instead.
+        """
         event = entry.event
 
         time = event.earliest_time(state)
 
         if time is None or time <= self.time:
-            raise RuntimeError(
-                f"Event {event} is potentially deadlocking the event "
-                "queue: It is not ready, but its earliest time is earlier than "
-                f"the current time ({time} <= {self.time})"
-            )
+            if event.is_locked(state, transition):
+                return False
 
-        if time > self.time:
-            time_slot = self._create_time_slot(time)
-            time_slot.add_non_timed_event(entry)
+            raise self._stuck_error(event, time)
 
-            if event.blocking and (self._tail is None or time > self._tail):
-                self._tail = time
+        time_slot = self._create_time_slot(time)
+        time_slot.add_non_timed_event(entry)
 
-        else:
-            raise ValueError(
-                f"Cannot reschedule events triggered by {event} to the past: "
-                f"{time} < {self.time}."
-            )
+        if event.blocking and (self._tail is None or time > self._tail):
+            self._tail = time
+
+        return True
 
     @override
     # Public API

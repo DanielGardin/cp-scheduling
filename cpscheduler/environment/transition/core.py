@@ -335,14 +335,14 @@ class Transition(EzPickle, Generic[C_co]):
         """Whether advancing the clock notifies the time-aware components."""
         return self._track_time
 
-    def track_time(self, enabled: bool = True) -> None:
+    def track_time(self) -> None:
         """Make the clock notify the time-aware components when it advances.
 
         The notification costs a propagation per advancement, so it is off
         by default. The environment enables it when one of its constraints is
         time-aware.
         """
-        self._track_time = enabled
+        self._track_time = True
 
     def reset(self) -> None:
         """Empty the queue, and restart the clock and the candidate rule."""

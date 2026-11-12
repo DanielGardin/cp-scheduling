@@ -71,6 +71,19 @@ class Instruction(EzPickle, Generic[C_contra]):
         """
         return None
 
+    def is_locked(
+        self, state: ScheduleState, transition: Transition[C_contra]
+    ) -> bool:
+        """Return whether only another instruction can make this one ready.
+
+        A locked instruction is a non-ready instruction that cannot start
+        before another instruction unlocks it.
+        When an instruction is locked, its earliest time is a lower bound for
+        when it can be ready, but it is not guaranteed to be ready at that time.
+        Defaults to whether `earliest_time` is None.
+        """
+        return self.earliest_time(state) is None
+
     def process(
         self, state: ScheduleState, transition: Transition[C_contra]
     ) -> None:

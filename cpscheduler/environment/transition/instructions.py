@@ -79,6 +79,12 @@ class ExecuteInstruction(Instruction[Clock]):
         )
 
     @override
+    def is_locked(
+        self, state: ScheduleState, transition: Transition[Clock]
+    ) -> bool:
+        return state.is_locked(self.task_id)
+
+    @override
     def process(
         self, state: ScheduleState, transition: Transition[Clock]
     ) -> None:
@@ -212,6 +218,13 @@ class CompleteInstruction(Instruction[GlobalClock]):
         self, state: ScheduleState, transition: Transition[GlobalClock]
     ) -> bool:
         return state.is_fixed(self.task_id) and state.is_present(self.task_id)
+
+    @override
+    def is_locked(
+        self, state: ScheduleState, transition: Transition[GlobalClock]
+    ) -> bool:
+        # Only an instruction placing the task can make it ready.
+        return not state.is_fixed(self.task_id)
 
     @override
     def process(
