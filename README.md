@@ -20,7 +20,7 @@ cpscheduler/
 ├── heuristics/        Priority dispatching rules
 ├── instances/         Instance readers & generators (JSP, RCPSP, SMTWT)
 ├── renderers/         Render capabilities used in the environment
-└── solver/            Mathematical programming backends (MILP/CP formulations)
+└── solver/            MILP formulation and a branch and bound baseline
 ```
 
 ---
@@ -59,18 +59,18 @@ Constraints are split into **active** constraints (propagated during simulation)
 | `NonOverlapConstraint` | — | Active | Prevents overlapping execution within groups. |
 | `ResourceConstraint` | — | Active | Limits concurrent resource usage. |
 | `NonRenewableResourceConstraint` | — | Active | Tracks cumulative consumption of a depletable resource. |
-| `SetupConstraint` | $s_{jk}$ | Active | Adds sequence-dependent setup times between tasks. |
-| `MachineBreakdownConstraint` | $brkdwn$ | Active | Models machine unavailability windows. |
-| `BatchConstraint` | $batch$ | Active | Couples tasks that must be processed together on machines. |
+| `SetupConstraint` | $s_{jk}$ | Active | Adds sequence-dependent setup times between tasks in the same machine. |
+| `MachineBreakdownConstraint` | $brkdwn$ | Active | Models machine unavailability windows, tasks cannot run across them. |
+| `BatchConstraint` | $batch$ | Active | Allows machines to process up to a capacity of tasks at the same time. |
 | `ReleaseDateConstraint` | $r_j$ | Active | Tasks cannot start before a release time. |
 | `DeadlineConstraint` | $\bar{d}_j$ | Active | Tasks must finish before a deadline. |
 | `HorizonConstraint` | — | Active | Restricts task completion to a finite horizon. |
 | `PreemptionConstraint`* | $prmp$ | Passive | Allows tasks to be interrupted and resumed. |
-| `OptionalityConstraint` | $opt$ | Passive | Marks tasks as optional (can be left unscheduled). |
+| `OptionalityConstraint` | $opt$ | Passive | Marks tasks as optional, the `reject` instruction leaves them out of the schedule. |
 | `MachineEligibilityConstraint` | $M_j$ | Passive | Restricts tasks to a subset of machines. |
 | `ConstantProcessingTime` | $p_j = p$ | Passive | Forces all tasks to have the same processing time. |
 
-**Preemption is partially covered at the moment, we are working for its full functionality.*
+**Preemption is not available yet, instantiating this constraint raises `NotImplementedError`.*
 
 ### Objectives $(\gamma)$
 
@@ -79,7 +79,7 @@ Constraints are split into **active** constraints (propagated during simulation)
 | `Makespan` | $C_{\max}$ | Time at which the last task finishes. |
 | `TotalCompletionTime` | $\sum C_j$ | Sum of all job completion times. |
 | `WeightedCompletionTime` | $\sum w_j C_j$ | Weighted sum of completion times. |
-| `DiscountedTotalCompletionTime` | $\sum \rho^{C_j} C_j$ | Discounted completion-time objective. |
+| `DiscountedTotalCompletionTime` | $\sum (1 - e^{-r C_j})$ | Discounted completion-time objective. |
 | `TotalFlowTime` | $\sum F_j$ | Sum of flow times (completion − release). |
 | `MaximumLateness` | $L_{\max}$ | Worst-case lateness w.r.t. due dates. |
 | `TotalTardiness` | $\sum T_j$ | Sum of positive lateness values. |
@@ -161,11 +161,11 @@ print(env.required_features().keys())
 
 **Output:**
 ```text
-['job', 'processing_time', 'release_time', 'due_date', 'weight']
+dict_keys(['processing_time', 'release_time', 'due_date', 'weight'])
 ```
 
-The feature `'job'` is a reserved name that allows grouping tasks into jobs.
-If not provided, each task is treated as a single-job task.
+The optional feature `'job'` is a reserved name that allows grouping tasks into
+jobs. If not provided, each task is treated as a single-job task.
 
 To load an instance, you can use a dictionary with the required features as
 keys and lists of values for each task.
@@ -206,7 +206,7 @@ Other submodules require further third-party dependencies that are installed wit
 
 ```bash
 pip install -e .[gym]      # Gymnasium wrapper, Plotly rendering
-pip install -e .[solver]   # Pyomo MILP + MiniZinc CP backends
+pip install -e .[solver]   # Pyomo MILP backend
 pip install -e .[all]      # Gym + solver extras
 ```
 
@@ -218,6 +218,10 @@ Install development dependencies and run tests:
 pip install -e .[dev]
 pytest
 ```
+
+`tests/` mirrors the layout of `cpscheduler/`. Many tests run complete episodes
+under all transitions, and check the results with `tests/schedule_checks.py`, which
+does not depend on the kernel.
 
 Run test coverage:
 

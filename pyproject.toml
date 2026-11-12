@@ -9,7 +9,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cpscheduler"
-version = "0.9.2"
+version = "0.10.0"
 authors = [
     { name="Daniel Gardin", email="gardin.dan@gmail.com" },
 ]
@@ -49,8 +49,6 @@ gym = [
 
 solver = [
     "pyomo >= 6.7.3",
-    "nest_asyncio>=1.6.0",
-    "minizinc>=0.10.0"
 ]
 
 all = [
