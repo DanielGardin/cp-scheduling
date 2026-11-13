@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Callable
 from pathlib import Path
 from typing import TypeAlias
@@ -14,6 +15,11 @@ from cpscheduler.environment import (
 from cpscheduler.environment.constraints import PreemptionConstraint
 from cpscheduler.environment.observation import DefaultObservation
 from cpscheduler.instances.formats.jobshop import read_standard_jobshop_instance
+
+# The appsi HiGHS interface logs the solver output at INFO while it captures
+# the process output. Live logging (log_cli) swaps sys.stdout in between, and
+# Pyomo raises when the capture ends.
+logging.getLogger("pyomo.contrib.appsi.solvers.highs").setLevel(logging.WARNING)
 
 TEST_INSTANCES = [
     "dmu04",

@@ -37,6 +37,7 @@ _SOLVER_TIME_LIMIT_OPTION: dict[str, str] = {
     "xpress_direct": "maxtime",
     "mosek": "MSK_DPAR_OPTIMIZER_MAX_TIME",
     "mosek_direct": "MSK_DPAR_OPTIMIZER_MAX_TIME",
+    "appsi_highs": "time_limit",
     "highs": "time_limit",
     "scip": "limits/time",
     "cbc": "sec",
@@ -61,7 +62,9 @@ _SOLVER_PREFERENCE: list[str] = [
     # Commercial: MOSEK
     "mosek_direct",
     "mosek",
-    # Open-source: HiGHS (best open-source MILP as of 2024)
+    # Open-source: HiGHS (best open-source MILP as of 2024). The appsi
+    # interface comes first, as the newer "highs" one ignores warm starts.
+    "appsi_highs",
     "highs",
     # Open-source: SCIP
     "scip",
@@ -201,10 +204,13 @@ class PyomoFormulation(Formulation[SolverResults]):
             options["warmstart"] = True
 
         try:
+            # Loading is done below: some interfaces (appsi) raise when asked
+            # to load a solution that was not found.
             self._result = self._solver.solve(
                 self.model,
                 tee=not quiet,
                 keepfiles=keep_files,
+                load_solutions=False,
                 **options,
             )
 
@@ -220,6 +226,9 @@ class PyomoFormulation(Formulation[SolverResults]):
             self._has_solution = False
 
             return self._result
+
+        if len(self._result.solution) > 0:
+            self.model.solutions.load_from(self._result)
 
         self._has_solution = self._integral_solution()
 
