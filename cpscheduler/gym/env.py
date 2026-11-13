@@ -9,7 +9,7 @@ the gymnasium infrastructure and semantics without friction.
 from collections.abc import Iterable, Mapping
 from typing import Any, cast, overload
 
-from gymnasium import Env
+from gymnasium import Env, Space
 from typing_extensions import TypeVar, override
 
 from cpscheduler.environment import (
@@ -195,7 +195,7 @@ class SchedulingEnvGym(Env[ObsType, ActionType]):
     def _initialize_env(self, env: SchedulingEnv[Observation[ObsType]]) -> None:
         self._core = env
 
-        self.action_space = ActionSpace
+        self.action_space = cast("Space[ActionType]", ActionSpace)
         self._current_fingerprint = None
         self._conform = False
         self._may_update_observation_space()
